@@ -244,6 +244,45 @@ app.get("/metrics/funnel-stats", async (req, res) => {
   }
 });
 
+// --- NEW: GET /metrics/order-split?start=YYYY-MM-DD&end=YYYY-MM-DD
+// Returns COD vs Prepaid split (counts and percentages) over the date range.
+app.get("/metrics/order-split", async (req, res) => {
+  try {
+    const parsed = RangeSchema.safeParse({
+      start: req.query.start,
+      end: req.query.end,
+    });
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
+    }
+    const { start, end } = parsed.data;
+
+    await sequelize.authenticate();
+
+    const [cod_orders, prepaid_orders] = await Promise.all([
+      rawSum("cod_orders", { start, end }),
+      rawSum("prepaid_orders", { start, end }),
+    ]);
+
+    const total = cod_orders + prepaid_orders;
+    const cod_percent = total > 0 ? (cod_orders / total) * 100 : 0;
+    const prepaid_percent = total > 0 ? (prepaid_orders / total) * 100 : 0;
+
+    return res.json({
+      metric: "ORDER_SPLIT",
+      range: { start: start || null, end: end || null },
+      cod_orders,
+      prepaid_orders,
+      total_orders_from_split: total,
+      cod_percent,
+      prepaid_percent,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // --- DIAG: GET /metrics/diagnose/total-orders?start=YYYY-MM-DD&end=YYYY-MM-DD
 app.get("/metrics/diagnose/total-orders", async (req, res) => {
   try {
@@ -284,7 +323,6 @@ app.get("/metrics/diagnose/total-orders", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Metrics API running on :${port}`));
