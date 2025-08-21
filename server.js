@@ -72,11 +72,16 @@ async function rawSum(column, { start, end }) {
   return Number(rows[0]?.total || 0);
 }
 
-// AOV = SUM(total_sales) / SUM(total_orders)
+// AOV = (SUM(gross_sales) - SUM(total_sales)) / SUM(total_orders)
 async function computeAOV({ start, end }) {
+  const gross_sales = await rawSum("gross_sales", { start, end });
   const total_sales = await rawSum("total_sales", { start, end });
   const total_orders = await rawSum("total_orders", { start, end });
-  const aov = total_orders > 0 ? total_sales / total_orders : 0;
+
+  const numerator = gross_sales - total_sales;
+  const aov = total_orders > 0 ? numerator / total_orders : 0;
+
+  // Keep response shape unchanged (total_sales & total_orders returned)
   return { total_sales, total_orders, aov };
 }
 
