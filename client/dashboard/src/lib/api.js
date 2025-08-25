@@ -72,7 +72,8 @@ export async function getOrderSplit({ start, end }) {
 
 // Fetch last updated timestamp from external service (not using API_BASE)
 export async function getLastUpdatedPTS() {
-  const url = 'https://aws-data-upload-dashboard-i5ay.onrender.com/last-updated/pts';
+  const base = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+  const url = `${base}/external/last-updated/pts`;
   try {
     const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error('Failed');
