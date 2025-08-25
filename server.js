@@ -3,6 +3,8 @@ const express = require("express");
 const cors = require("cors");
 const { z } = require("zod");
 const { Sequelize, DataTypes, Op, QueryTypes } = require("sequelize");
+// Provide a fetch polyfill for Node versions <18
+const fetch = global.fetch || ((...args) => import('node-fetch').then(m => m.default(...args)));
 
 const app = express();
 app.use(cors());
@@ -108,6 +110,9 @@ async function computeFunnelStats({ start, end }) {
   ]);
   return { total_sessions, total_atc_sessions, total_orders };
 }
+
+// ---- Upstream cache (last-updated proxy) ------------------------------------
+const lastUpdatedCache = { data: null, fetchedAt: 0 };
 
 // ---- Routes ------------------------------------------------------------------
 
@@ -245,6 +250,27 @@ app.get("/metrics/funnel-stats", async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Proxy to avoid CORS for external last-updated endpoint
+app.get('/external/last-updated/pts', async (req, res) => {
+  try {
+    const now = Date.now();
+    if (lastUpdatedCache.data && now - lastUpdatedCache.fetchedAt < 60_000) {
+      return res.json(lastUpdatedCache.data);
+    }
+    const upstream = 'https://aws-data-upload-dashboard-i5ay.onrender.com/last-updated/pts';
+    const r = await fetch(upstream, { headers: { 'Accept': 'application/json' } });
+    if (!r.ok) throw new Error(`Upstream ${r.status}`);
+    const json = await r.json();
+    lastUpdatedCache.data = json;
+    lastUpdatedCache.fetchedAt = now;
+    res.set('Cache-Control', 'public, max-age=30');
+    return res.json(json);
+  } catch (e) {
+    console.error('Proxy error /external/last-updated/pts', e);
+    return res.status(502).json({ error: 'Upstream fetch failed' });
   }
 });
 
