@@ -69,3 +69,17 @@ export async function getOrderSplit({ start, end }) {
   const prepaid_percent = Number(json?.prepaid_percent || 0);
   return { cod_orders, prepaid_orders, total, cod_percent, prepaid_percent, error: json?.__error };
 }
+
+// Fetch last updated timestamp from external service (not using API_BASE)
+export async function getLastUpdatedPTS() {
+  const url = 'https://aws-data-upload-dashboard-i5ay.onrender.com/last-updated/pts';
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Failed');
+    const json = await res.json();
+    return { raw: json["Last successful run completed at"], timezone: json.timezone, error: false };
+  } catch (e) {
+    console.error('Last updated fetch error', e);
+    return { raw: null, timezone: null, error: true };
+  }
+}

@@ -6,6 +6,7 @@ import DateRangeFilter from './components/DateRangeFilter.jsx';
 import KPIs from './components/KPIs.jsx';
 import FunnelChart from './components/FunnelChart.jsx';
 import OrderSplit from './components/OrderSplit.jsx';
+import LastUpdated from './components/LastUpdated.jsx';
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -40,6 +41,7 @@ export default function App() {
         <Container maxWidth="sm" sx={{ py: 2 }}>
           <Stack spacing={2}>
             <DateRangeFilter value={range} onChange={setRange} />
+            <LastUpdated />
             <KPIs query={query} />
             <Divider textAlign="left">Funnel</Divider>
             <FunnelChart query={query} />
