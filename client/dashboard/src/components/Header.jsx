@@ -2,12 +2,12 @@ import { AppBar, Toolbar, Typography, Box } from '@mui/material';
 
 export default function Header() {
   return (
-    <AppBar position="static" color="transparent" elevation={0} sx={{ pt: 0.75, pb: 1 }}>
-      <Toolbar sx={{ flexDirection: 'column', gap: 0.75, minHeight: 'unset', py: 0 }}>
+    <AppBar position="static" color="transparent" elevation={0} sx={{ pt: 1, pb: 1 }}>
+      <Toolbar sx={{ flexDirection: 'column', gap: 0.5, minHeight: 'unset', py: 0 }}>
         <Typography
-          variant="h6"
+          variant="h5"
             component="div"
-            sx={{ fontWeight: 700, textAlign: 'center', lineHeight: 1.15 }}
+            sx={{ fontWeight: 800, textAlign: 'center', lineHeight: 1.1, letterSpacing: 0.2 }}
         >
           Personal Touch Skincare
         </Typography>
@@ -16,10 +16,13 @@ export default function Header() {
           src="/brand-logo.jpg"
           alt="Brand logo"
           sx={{
-            width: { xs: 160, sm: 200 },
+            width: { xs: 110, sm: 130 },
+            maxHeight: 60,
             height: 'auto',
             display: 'block',
-            filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.08))',
+            mt: 0.25,
+            opacity: 0.92,
+            filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.10))',
           }}
         />
       </Toolbar>
