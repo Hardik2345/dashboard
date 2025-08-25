@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import dayjs from 'dayjs';
 import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert } from '@mui/material';
 import Header from './components/Header.jsx';
@@ -18,8 +18,28 @@ function defaultRangeYesterdayToday() {
   return [start, end];
 }
 
+const RANGE_KEY = 'pts_date_range_v1';
+const TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+function loadInitialRange() {
+  try {
+    const raw = localStorage.getItem(RANGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.start && parsed.end && parsed.savedAt) {
+        if (Date.now() - parsed.savedAt < TTL_MS) {
+          return [dayjs(parsed.start), dayjs(parsed.end)];
+        } else {
+          localStorage.removeItem(RANGE_KEY);
+        }
+      }
+    }
+  } catch {}
+  return defaultRangeYesterdayToday();
+}
+
 export default function App() {
-  const [range, setRange] = useState(defaultRangeYesterdayToday());
+  const [range, setRange] = useState(loadInitialRange);
   const [start, end] = range;
 
   const query = useMemo(() => ({ start: formatDate(start), end: formatDate(end) }), [start, end]);
@@ -32,6 +52,15 @@ export default function App() {
     },
     shape: { borderRadius: 12 },
   }), []);
+
+  // Persist when range changes
+  useEffect(() => {
+    if (start && end) {
+      try {
+        localStorage.setItem(RANGE_KEY, JSON.stringify({ start: start.toISOString(), end: end.toISOString(), savedAt: Date.now() }));
+      } catch {}
+    }
+  }, [start, end]);
 
   return (
     <ThemeProvider theme={theme}>
