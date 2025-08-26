@@ -10,13 +10,42 @@ function qs(params) {
 async function getJSON(path, params) {
   const url = `${API_BASE}${path}${qs(params || {})}`;
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { credentials: 'include' });
     if (!res.ok) throw new Error(`${res.status}`);
     return await res.json();
   } catch (e) {
     console.error('API error', path, e);
     return { __error: true };
   }
+}
+
+// ---- Auth helpers -----------------------------------------------------------
+export async function login(email, password) {
+  try {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email, password })
+    });
+    if (!res.ok) return { error: true, status: res.status, data: await res.json().catch(()=>({})) };
+    return { error: false, data: await res.json() };
+  } catch (e) { return { error: true }; }
+}
+
+export async function logout() {
+  try {
+    await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
+  } catch {}
+}
+
+export async function me() {
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, { credentials: 'include' });
+    if (!res.ok) return { authenticated: false };
+    const json = await res.json();
+    return { authenticated: true, user: json.user };
+  } catch { return { authenticated: false }; }
 }
 
 export async function getTotalSales({ start, end }) {
@@ -75,7 +104,7 @@ export async function getLastUpdatedPTS() {
   const base = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
   const url = `${base}/external/last-updated/pts`;
   try {
-    const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, { cache: 'no-store', credentials: 'include' });
     if (!res.ok) throw new Error('Failed');
     const json = await res.json();
     return { raw: json["Last successful run completed at"], timezone: json.timezone, error: false };

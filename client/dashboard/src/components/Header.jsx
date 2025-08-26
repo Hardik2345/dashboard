@@ -1,9 +1,15 @@
-import { AppBar, Toolbar, Typography, Box } from '@mui/material';
+import { AppBar, Toolbar, Typography, Box, Button } from '@mui/material';
 
-export default function Header() {
+export default function Header({ user, onLogout }) {
   return (
     <AppBar position="static" color="transparent" elevation={0} sx={{ pt: 1, pb: 1 }}>
-      <Toolbar sx={{ flexDirection: 'column', gap: 0.5, minHeight: 'unset', py: 0 }}>
+      <Toolbar sx={{ flexDirection: 'column', gap: 0.5, minHeight: 'unset', py: 0, position: 'relative' }}>
+        {user && (
+          <Box sx={{ position: 'absolute', top: 4, right: 8, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="caption" sx={{ fontWeight: 500 }}>{user.email}</Typography>
+            <Button size="small" variant="outlined" color="inherit" onClick={onLogout}>Logout</Button>
+          </Box>
+        )}
         <Typography
           variant="h5"
             component="div"

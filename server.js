@@ -1,13 +1,34 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const session = require('express-session');
+const SequelizeStoreFactory = require('connect-session-sequelize');
+const passport = require('passport');
+const LocalStrategy = require('passport-local').Strategy;
+const bcrypt = require('bcrypt');
+const helmet = require('helmet');
 const { z } = require("zod");
 const { Sequelize, DataTypes, Op, QueryTypes } = require("sequelize");
 // Provide a fetch polyfill for Node versions <18
 const fetch = global.fetch || ((...args) => import('node-fetch').then(m => m.default(...args)));
 
 const app = express();
-app.use(cors());
+app.use(helmet());
+
+// Parse allowed origins from env (comma separated)
+const allowedOrigins = (process.env.CORS_ORIGIN || '').split(',').map(o => o.trim()).filter(Boolean);
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // non-browser / curl
+    if (!allowedOrigins.length || allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error('Not allowed by CORS'));
+  },
+  credentials: true
+}));
+app.use(express.json());
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1); // so secure cookies work behind reverse proxy / load balancer
+}
 
 // ---- DB: Sequelize -----------------------------------------------------------
 const sequelize = new Sequelize(
@@ -27,7 +48,7 @@ const sequelize = new Sequelize(
   }
 );
 
-// ---- Model: overall_summary --------------------------------------------------
+// ---- Models ------------------------------------------------------------------
 // Important: use DATEONLY for a DATE column
 const OverallSummary = sequelize.define(
   "overall_summary",
@@ -40,6 +61,62 @@ const OverallSummary = sequelize.define(
   },
   { tableName: "overall_summary", timestamps: false }
 );
+
+const User = sequelize.define('user', {
+  email: { type: DataTypes.STRING, allowNull: false, unique: true },
+  password_hash: { type: DataTypes.STRING, allowNull: false },
+  role: { type: DataTypes.STRING, allowNull: false, defaultValue: 'user' },
+  is_active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true }
+}, { tableName: 'users', timestamps: true });
+
+// ---- Session & Passport -----------------------------------------------------
+const SequelizeStore = SequelizeStoreFactory(session.Store);
+const sessionStore = new SequelizeStore({ db: sequelize, tableName: 'sessions' });
+
+const isProd = process.env.NODE_ENV === 'production';
+const crossSite = process.env.CROSS_SITE === 'true';
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'change_me_dev_secret',
+  resave: false,
+  saveUninitialized: false,
+  store: sessionStore,
+  cookie: {
+    httpOnly: true,
+    secure: isProd || crossSite, // must be true for SameSite=None
+    sameSite: crossSite ? 'none' : 'lax',
+    domain: process.env.COOKIE_DOMAIN || undefined, // set if you serve API on subdomain
+    maxAge: 1000 * 60 * 60 * 8,
+  }
+}));
+
+passport.use(new LocalStrategy({ usernameField: 'email', passwordField: 'password' }, async (email, password, done) => {
+  try {
+    const user = await User.findOne({ where: { email, is_active: true } });
+    if (!user) return done(null, false, { message: 'Invalid credentials' });
+    const ok = await bcrypt.compare(password, user.password_hash);
+    if (!ok) return done(null, false, { message: 'Invalid credentials' });
+    return done(null, { id: user.id, email: user.email, role: user.role });
+  } catch (e) {
+    return done(e);
+  }
+}));
+
+passport.serializeUser((user, done) => done(null, user.id));
+passport.deserializeUser(async (id, done) => {
+  try {
+    const user = await User.findByPk(id, { attributes: ['id','email','role','is_active'] });
+    if (!user || !user.is_active) return done(null, false);
+    done(null, { id: user.id, email: user.email, role: user.role });
+  } catch (e) { done(e); }
+});
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+function requireAuth(req, res, next) {
+  if (req.isAuthenticated && req.isAuthenticated()) return next();
+  return res.status(401).json({ error: 'Unauthorized' });
+}
 
 // ---- Validation --------------------------------------------------------------
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
@@ -114,10 +191,38 @@ async function computeFunnelStats({ start, end }) {
 // ---- Upstream cache (last-updated proxy) ------------------------------------
 const lastUpdatedCache = { data: null, fetchedAt: 0 };
 
-// ---- Routes ------------------------------------------------------------------
+// ---- Auth Routes -------------------------------------------------------------
+app.post('/auth/login', (req, res, next) => {
+  passport.authenticate('local', (err, user, info) => {
+    if (err) return next(err);
+    if (!user) return res.status(401).json({ error: info?.message || 'Invalid credentials' });
+    req.session.regenerate(err2 => {
+      if (err2) return next(err2);
+      req.login(user, err3 => {
+        if (err3) return next(err3);
+        return res.json({ user });
+      });
+    });
+  })(req, res, next);
+});
+
+app.post('/auth/logout', (req, res) => {
+  req.logout && req.logout(() => {});
+  req.session.destroy(() => {
+    res.clearCookie('connect.sid');
+    res.status(204).end();
+  });
+});
+
+app.get('/auth/me', (req, res) => {
+  if (req.isAuthenticated && req.isAuthenticated()) return res.json({ user: req.user });
+  return res.status(401).json({ error: 'Unauthorized' });
+});
+
+// ---- Routes (Protected) -----------------------------------------------------
 
 // GET /metrics/aov?start=YYYY-MM-DD&end=YYYY-MM-DD
-app.get("/metrics/aov", async (req, res) => {
+app.get("/metrics/aov", requireAuth, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({
       start: req.query.start,
@@ -145,7 +250,7 @@ app.get("/metrics/aov", async (req, res) => {
 });
 
 // GET /metrics/cvr?start=YYYY-MM-DD&end=YYYY-MM-DD
-app.get("/metrics/cvr", async (req, res) => {
+app.get("/metrics/cvr", requireAuth, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({
       start: req.query.start,
@@ -174,7 +279,7 @@ app.get("/metrics/cvr", async (req, res) => {
 });
 
 // GET /metrics/total-sales?start=YYYY-MM-DD&end=YYYY-MM-DD
-app.get("/metrics/total-sales", async (req, res) => {
+app.get("/metrics/total-sales", requireAuth, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({
       start: req.query.start,
@@ -200,7 +305,7 @@ app.get("/metrics/total-sales", async (req, res) => {
 });
 
 // GET /metrics/total-orders?start=YYYY-MM-DD&end=YYYY-MM-DD
-app.get("/metrics/total-orders", async (req, res) => {
+app.get("/metrics/total-orders", requireAuth, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({
       start: req.query.start,
@@ -226,7 +331,7 @@ app.get("/metrics/total-orders", async (req, res) => {
 });
 
 // GET /metrics/funnel-stats?start=YYYY-MM-DD&end=YYYY-MM-DD
-app.get("/metrics/funnel-stats", async (req, res) => {
+app.get("/metrics/funnel-stats", requireAuth, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({
       start: req.query.start,
@@ -254,7 +359,7 @@ app.get("/metrics/funnel-stats", async (req, res) => {
 });
 
 // Proxy to avoid CORS for external last-updated endpoint
-app.get('/external/last-updated/pts', async (req, res) => {
+app.get('/external/last-updated/pts', requireAuth, async (req, res) => {
   try {
     const now = Date.now();
     if (lastUpdatedCache.data && now - lastUpdatedCache.fetchedAt < 60_000) {
@@ -276,7 +381,7 @@ app.get('/external/last-updated/pts', async (req, res) => {
 
 // --- NEW: GET /metrics/order-split?start=YYYY-MM-DD&end=YYYY-MM-DD
 // Returns COD vs Prepaid split (counts and percentages) over the date range.
-app.get("/metrics/order-split", async (req, res) => {
+app.get("/metrics/order-split", requireAuth, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({
       start: req.query.start,
@@ -314,7 +419,7 @@ app.get("/metrics/order-split", async (req, res) => {
 });
 
 // --- DIAG: GET /metrics/diagnose/total-orders?start=YYYY-MM-DD&end=YYYY-MM-DD
-app.get("/metrics/diagnose/total-orders", async (req, res) => {
+app.get("/metrics/diagnose/total-orders", requireAuth, async (req, res) => {
   try {
     const start = req.query.start;
     const end = req.query.end;
@@ -354,5 +459,21 @@ app.get("/metrics/diagnose/total-orders", async (req, res) => {
   }
 });
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Metrics API running on :${port}`));
+// ---- Init -------------------------------------------------------------------
+async function init() {
+  await sequelize.authenticate();
+  await sessionStore.sync();
+  await User.sync(); // optionally use migrations in real app
+  // seed admin if none
+  if (!(await User.findOne({ where: { email: process.env.ADMIN_EMAIL || 'admin@example.com' } }))) {
+    const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'ChangeMe123!', 12);
+    await User.create({ email: process.env.ADMIN_EMAIL || 'admin@example.com', password_hash: hash, role: 'admin' });
+    console.log('Seeded admin user');
+  }
+  const port = process.env.PORT || 3000;
+  app.listen(port, () => console.log(`Metrics API running on :${port}`));
+}
+init().catch(e => {
+  console.error('Startup failure', e);
+  process.exit(1);
+});

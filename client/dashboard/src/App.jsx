@@ -7,6 +7,8 @@ import KPIs from './components/KPIs.jsx';
 import FunnelChart from './components/FunnelChart.jsx';
 import OrderSplit from './components/OrderSplit.jsx';
 import LastUpdated from './components/LastUpdated.jsx';
+import { me, login, logout } from './lib/api.js';
+import { TextField, Button, Paper } from '@mui/material';
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -41,6 +43,11 @@ function loadInitialRange() {
 export default function App() {
   const [range, setRange] = useState(loadInitialRange);
   const [start, end] = range;
+  const [authChecked, setAuthChecked] = useState(false);
+  const [user, setUser] = useState(null);
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [loginError, setLoginError] = useState(null);
+  const [loggingIn, setLoggingIn] = useState(false);
 
   const query = useMemo(() => ({ start: formatDate(start), end: formatDate(end) }), [start, end]);
 
@@ -62,11 +69,57 @@ export default function App() {
     }
   }, [start, end]);
 
+  // Check auth on mount
+  useEffect(() => {
+    me().then(r => { if (r.authenticated) setUser(r.user); setAuthChecked(true); });
+  }, []);
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    setLoggingIn(true);
+    setLoginError(null);
+    const r = await login(loginForm.email, loginForm.password);
+    setLoggingIn(false);
+    if (r.error) {
+      setLoginError(r.data?.error || 'Login failed');
+    } else {
+      setUser(r.data.user);
+    }
+  }
+
+  function handleLogout() {
+    logout();
+    setUser(null);
+  }
+
+  if (!authChecked) return null;
+
+  if (!user) {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Box sx={{ minHeight: '100svh', bgcolor: 'background.default', display: 'flex', alignItems: 'center', justifyContent: 'center', p:2 }}>
+          <Container maxWidth="xs">
+            <Paper elevation={3} sx={{ p:3, borderRadius:3 }} component="form" onSubmit={handleLogin}>
+              <Stack spacing={2}>
+                <Header />
+                <TextField size="small" label="Email" type="email" required value={loginForm.email} onChange={e=>setLoginForm(f=>({ ...f, email: e.target.value }))} />
+                <TextField size="small" label="Password" type="password" required value={loginForm.password} onChange={e=>setLoginForm(f=>({ ...f, password: e.target.value }))} />
+                {loginError && <Alert severity="error">{loginError}</Alert>}
+                <Button variant="contained" type="submit" disabled={loggingIn}>{loggingIn ? 'Logging in...' : 'Login'}</Button>
+              </Stack>
+            </Paper>
+          </Container>
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
-        <Header />
+        <Header user={user} onLogout={handleLogout} />
         <Container maxWidth="sm" sx={{ py: 2 }}>
           <Stack spacing={2}>
             <DateRangeFilter value={range} onChange={setRange} />
