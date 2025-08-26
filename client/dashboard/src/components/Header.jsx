@@ -1,19 +1,29 @@
-import { AppBar, Toolbar, Typography, Box, Button } from '@mui/material';
+import { AppBar, Toolbar, Typography, Box, Button, IconButton } from '@mui/material';
+import LogoutIcon from '@mui/icons-material/Logout';
 
 export default function Header({ user, onLogout }) {
   return (
     <AppBar position="static" color="transparent" elevation={0} sx={{ pt: 1, pb: 1 }}>
-      <Toolbar sx={{ flexDirection: 'column', gap: 0.5, minHeight: 'unset', py: 0, position: 'relative' }}>
+      <Toolbar sx={{ flexDirection: 'column', gap: 0.5, minHeight: 'unset', py: 0, width: '100%' }}>
         {user && (
-          <Box sx={{ position: 'absolute', top: 4, right: 8, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="caption" sx={{ fontWeight: 500 }}>{user.email}</Typography>
-            <Button size="small" variant="outlined" color="inherit" onClick={onLogout}>Logout</Button>
+          <Box sx={{ alignSelf: 'stretch', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1, mb: 0.5 }}>
+            <Typography variant="caption" noWrap sx={{ maxWidth: { xs: 130, sm: 200 }, overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>
+              {user.email}
+            </Typography>
+            <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
+              <Button size="small" variant="outlined" color="inherit" onClick={onLogout}>Logout</Button>
+            </Box>
+            <Box sx={{ display: { xs: 'flex', sm: 'none' } }}>
+              <IconButton size="small" aria-label="logout" onClick={onLogout} color="inherit">
+                <LogoutIcon fontSize="small" />
+              </IconButton>
+            </Box>
           </Box>
         )}
         <Typography
           variant="h5"
-            component="div"
-            sx={{ fontWeight: 800, textAlign: 'center', lineHeight: 1.1, letterSpacing: 0.2 }}
+          component="div"
+          sx={{ fontWeight: 800, textAlign: 'center', lineHeight: 1.1, letterSpacing: 0.2 }}
         >
           Personal Touch Skincare
         </Typography>

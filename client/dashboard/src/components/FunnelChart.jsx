@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, Typography, Skeleton } from '@mui/material';
 import { Bar } from 'react-chartjs-2';
+import { getFunnelStats } from '../lib/api.js';
 import {
   Chart as ChartJS,
   BarElement,
@@ -21,18 +22,18 @@ export default function FunnelChart({ query }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:3000'}/metrics/funnel-stats?start=${encodeURIComponent(query.start || '')}&end=${encodeURIComponent(query.end || '')}`)
-      .then(r => r.json())
-      .then(j => {
-        if (cancelled) return;
+    (async () => {
+      const j = await getFunnelStats({ start: query.start, end: query.end });
+      if (cancelled) return;
+      if (!j.error) {
         setStats({
-          total_sessions: Number(j?.total_sessions || 0),
-          total_atc_sessions: Number(j?.total_atc_sessions || 0),
-          total_orders: Number(j?.total_orders || 0),
+          total_sessions: j.total_sessions,
+          total_atc_sessions: j.total_atc_sessions,
+          total_orders: j.total_orders,
         });
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+      }
+      setLoading(false);
+    })();
     return () => { cancelled = true; };
   }, [query.start, query.end]);
 
