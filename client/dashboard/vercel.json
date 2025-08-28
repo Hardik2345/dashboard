@@ -5,18 +5,14 @@
 
   "rewrites": [
     {
-      "source": "/api/v1/(.*)",
-      "destination": "https://YOUR-BACKEND-HOST.example.com/api/v1/$1"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/"
+      "source": "/api/(.*)",
+      "destination": "https://dashboard-imn0.onrender.com/$1"
     }
   ],
 
   "headers": [
     {
-      "source": "/api/v1/(.*)",
+      "source": "/api/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "no-store" }
       ]
