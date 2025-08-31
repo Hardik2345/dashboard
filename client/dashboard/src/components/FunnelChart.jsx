@@ -50,6 +50,30 @@ export default function FunnelChart({ query }) {
     ],
   };
 
+  // Custom plugin to render value labels above each bar
+  const valueLabelPlugin = {
+    id: 'valueLabelPlugin',
+    afterDatasetsDraw(chart, args, pluginOptions) {
+      const { ctx } = chart;
+      const dataset = chart.data.datasets[0];
+      if (!dataset) return;
+      const meta = chart.getDatasetMeta(0);
+      ctx.save();
+      meta.data.forEach((bar, idx) => {
+        const raw = dataset.data[idx];
+        if (raw == null) return;
+        const { x, y } = bar.tooltipPosition();
+        const text = nfInt.format(raw);
+        ctx.font = '500 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+        ctx.fillStyle = '#0d47a1';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(text, x, y - 6); // 6px above bar top
+      });
+      ctx.restore();
+    }
+  };
+
   const options = {
     responsive: true,
     maintainAspectRatio: false,
@@ -77,7 +101,7 @@ export default function FunnelChart({ query }) {
           <Skeleton variant="rounded" width="100%" height={260} />
         ) : (
           <div style={{ position: 'relative', height: 260 }}>
-            <Bar data={data} options={options} />
+            <Bar data={data} options={options} plugins={[valueLabelPlugin]} />
           </div>
         )}
       </CardContent>
