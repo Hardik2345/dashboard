@@ -362,20 +362,30 @@ app.get("/metrics/funnel-stats", requireAuth, async (req, res) => {
 app.get('/external/last-updated/pts', requireAuth, async (req, res) => {
   try {
     const now = Date.now();
-    if (lastUpdatedCache.data && now - lastUpdatedCache.fetchedAt < 60_000) {
+    if (lastUpdatedCache.data && now - lastUpdatedCache.fetchedAt < 30_000) {
       return res.json(lastUpdatedCache.data);
     }
-    const upstream = 'https://aws-data-upload-dashboard-i5ay.onrender.com/last-updated/pts';
-    const r = await fetch(upstream, { headers: { 'Accept': 'application/json' } });
-    if (!r.ok) throw new Error(`Upstream ${r.status}`);
-    const json = await r.json();
-    lastUpdatedCache.data = json;
+    const rows = await sequelize.query(
+      "SELECT key_value FROM pipeline_metadata WHERE key_name = 'last_pipeline_completion_time' LIMIT 1",
+      { type: QueryTypes.SELECT }
+    );
+    if (!rows.length) {
+      return res.status(404).json({ error: 'No pipeline completion time found' });
+    }
+    const rawTs = rows[0].key_value; // assumed DATETIME string
+    // Normalize to ISO string (treat as UTC)
+    const iso = new Date(rawTs.replace(' ', 'T') + 'Z').toISOString();
+    const payload = {
+      "Last successful run completed at": iso,
+      timezone: 'UTC'
+    };
+    lastUpdatedCache.data = payload;
     lastUpdatedCache.fetchedAt = now;
-    res.set('Cache-Control', 'public, max-age=30');
-    return res.json(json);
+    res.set('Cache-Control', 'public, max-age=15');
+    return res.json(payload);
   } catch (e) {
-    console.error('Proxy error /external/last-updated/pts', e);
-    return res.status(502).json({ error: 'Upstream fetch failed' });
+    console.error('Error fetching last updated from DB', e);
+    return res.status(500).json({ error: 'Failed to read last updated' });
   }
 });
 
