@@ -358,37 +358,68 @@ app.get("/metrics/funnel-stats", requireAuth, async (req, res) => {
   }
 });
 
-// Proxy to avoid CORS for external last-updated endpoint
 app.get('/external/last-updated/pts', requireAuth, async (req, res) => {
   try {
     const now = Date.now();
     if (lastUpdatedCache.data && now - lastUpdatedCache.fetchedAt < 30_000) {
       return res.json(lastUpdatedCache.data);
     }
+
     const rows = await sequelize.query(
       "SELECT key_value FROM pipeline_metadata WHERE key_name = 'last_pipeline_completion_time' LIMIT 1",
       { type: QueryTypes.SELECT }
     );
-    let rawTs = rows.length ? rows[0].key_value : null; // expected 'YYYY-MM-DD HH:MM:SS'
-    if (!rawTs) {
+
+    const rawTs = rows?.[0]?.key_value ?? null;
+
+    let iso = null;
+    let legacy = null; // "YYYY-MM-DD HH:MM:SS"
+
+    if (rawTs instanceof Date) {
+      // DB gave us a Date object (UTC is safest to display)
+      iso = rawTs.toISOString();
+      legacy = iso.replace('T', ' ').replace('Z', '').slice(0, 19);
+    } else if (typeof rawTs === 'string' && rawTs.trim()) {
+      // If it's "YYYY-MM-DD HH:MM:SS", treat as UTC
+      const looksLegacy = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(rawTs);
+      const parsed = looksLegacy ? new Date(rawTs.replace(' ', 'T') + 'Z') : new Date(rawTs);
+      if (!isNaN(parsed.valueOf())) {
+        iso = parsed.toISOString();
+        legacy = looksLegacy ? rawTs : iso.replace('T', ' ').replace('Z', '').slice(0, 19);
+      } else {
+        console.warn('[last-updated] Unparseable timestamp string:', rawTs);
+        legacy = rawTs; // pass through unmodified
+      }
+    } else if (typeof rawTs === 'number') {
+      // epoch ms (or seconds) – normalize
+      const ms = rawTs > 1e12 ? rawTs : rawTs * 1000;
+      const d = new Date(ms);
+      iso = d.toISOString();
+      legacy = iso.replace('T', ' ').replace('Z', '').slice(0, 19);
+    } else if (rawTs == null) {
       console.warn('[last-updated] No row found in pipeline_metadata for last_pipeline_completion_time');
+    } else {
+      console.warn('[last-updated] Unexpected key_value type:', typeof rawTs);
     }
-    // Provide the raw timestamp (or null) so frontend parser formats it; also include iso for potential future use.
-    const iso = rawTs ? new Date(rawTs.replace(' ', 'T') + 'Z').toISOString() : null;
+
     const payload = {
-      "Last successful run completed at": rawTs, // keep legacy expected format
+      "Last successful run completed at": legacy, // keep legacy key
       iso,
       timezone: 'UTC'
     };
+
     lastUpdatedCache.data = payload;
     lastUpdatedCache.fetchedAt = now;
+
     res.set('Cache-Control', 'public, max-age=15');
     return res.json(payload);
   } catch (e) {
     console.error('Error fetching last updated from DB', e);
-    return res.status(500).json({ error: 'Failed to read last updated' });
+    const msg = process.env.NODE_ENV === 'production' ? 'Failed to read last updated' : (e?.message || 'Failed');
+    return res.status(500).json({ error: msg });
   }
 });
+
 
 // --- NEW: GET /metrics/order-split?start=YYYY-MM-DD&end=YYYY-MM-DD
 // Returns COD vs Prepaid split (counts and percentages) over the date range.
