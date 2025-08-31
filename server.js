@@ -362,27 +362,24 @@ app.get("/metrics/funnel-stats", requireAuth, async (req, res) => {
 app.get('/external/last-updated/pts', requireAuth, async (req, res) => {
   try {
     const now = Date.now();
-    // 30s in-memory cache
     if (lastUpdatedCache.data && now - lastUpdatedCache.fetchedAt < 30_000) {
       return res.json(lastUpdatedCache.data);
     }
-
     const rows = await sequelize.query(
       "SELECT key_value FROM pipeline_metadata WHERE key_name = 'last_pipeline_completion_time' LIMIT 1",
       { type: QueryTypes.SELECT }
     );
-
-    let rawTs = null;
-    if (rows.length) {
-      rawTs = rows[0].key_value; // MySQL DATETIME => 'YYYY-MM-DD HH:MM:SS'
+    let rawTs = rows.length ? rows[0].key_value : null; // expected 'YYYY-MM-DD HH:MM:SS'
+    if (!rawTs) {
+      console.warn('[last-updated] No row found in pipeline_metadata for last_pipeline_completion_time');
     }
-
-    // Return raw DB format so existing frontend parsing (YYYY-MM-DD HH:mm:ss) succeeds.
+    // Provide the raw timestamp (or null) so frontend parser formats it; also include iso for potential future use.
+    const iso = rawTs ? new Date(rawTs.replace(' ', 'T') + 'Z').toISOString() : null;
     const payload = {
-      "Last successful run completed at": rawTs, // may be null
+      "Last successful run completed at": rawTs, // keep legacy expected format
+      iso,
       timezone: 'UTC'
     };
-
     lastUpdatedCache.data = payload;
     lastUpdatedCache.fetchedAt = now;
     res.set('Cache-Control', 'public, max-age=15');
