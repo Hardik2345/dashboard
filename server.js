@@ -405,7 +405,7 @@ app.get('/external/last-updated/pts', requireAuth, async (req, res) => {
     const payload = {
       "Last successful run completed at": legacy, // keep legacy key
       iso,
-      timezone: 'UTC'
+      timezone: 'IST'
     };
 
     lastUpdatedCache.data = payload;
