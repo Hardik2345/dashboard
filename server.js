@@ -362,23 +362,27 @@ app.get("/metrics/funnel-stats", requireAuth, async (req, res) => {
 app.get('/external/last-updated/pts', requireAuth, async (req, res) => {
   try {
     const now = Date.now();
+    // 30s in-memory cache
     if (lastUpdatedCache.data && now - lastUpdatedCache.fetchedAt < 30_000) {
       return res.json(lastUpdatedCache.data);
     }
+
     const rows = await sequelize.query(
       "SELECT key_value FROM pipeline_metadata WHERE key_name = 'last_pipeline_completion_time' LIMIT 1",
       { type: QueryTypes.SELECT }
     );
-    if (!rows.length) {
-      return res.status(404).json({ error: 'No pipeline completion time found' });
+
+    let rawTs = null;
+    if (rows.length) {
+      rawTs = rows[0].key_value; // MySQL DATETIME => 'YYYY-MM-DD HH:MM:SS'
     }
-    const rawTs = rows[0].key_value; // assumed DATETIME string
-    // Normalize to ISO string (treat as UTC)
-    const iso = new Date(rawTs.replace(' ', 'T') + 'Z').toISOString();
+
+    // Return raw DB format so existing frontend parsing (YYYY-MM-DD HH:mm:ss) succeeds.
     const payload = {
-      "Last successful run completed at": iso,
+      "Last successful run completed at": rawTs, // may be null
       timezone: 'UTC'
     };
+
     lastUpdatedCache.data = payload;
     lastUpdatedCache.fetchedAt = now;
     res.set('Cache-Control', 'public, max-age=15');
