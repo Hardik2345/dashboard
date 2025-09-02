@@ -8,7 +8,7 @@ import FunnelChart from './components/FunnelChart.jsx';
 import OrderSplit from './components/OrderSplit.jsx';
 import LastUpdated from './components/LastUpdated.jsx';
 import { me, login, logout } from './lib/api.js';
-import { TextField, Button, Paper } from '@mui/material';
+import { TextField, Button, Paper, Typography } from '@mui/material';
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -102,7 +102,7 @@ export default function App() {
           <Container maxWidth="xs">
             <Paper elevation={3} sx={{ p:3, borderRadius:3 }} component="form" onSubmit={handleLogin}>
               <Stack spacing={2}>
-                <Header />
+                <Typography variant="h5" sx={{ fontWeight: 700, textAlign: 'center' }}>The Dashboard App</Typography>
                 <TextField size="small" label="Email" type="email" required value={loginForm.email} onChange={e=>setLoginForm(f=>({ ...f, email: e.target.value }))} />
                 <TextField size="small" label="Password" type="password" required value={loginForm.password} onChange={e=>setLoginForm(f=>({ ...f, password: e.target.value }))} />
                 {loginError && <Alert severity="error">{loginError}</Alert>}

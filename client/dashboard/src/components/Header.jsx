@@ -1,7 +1,8 @@
-import { AppBar, Toolbar, Typography, Box, Button, IconButton } from '@mui/material';
+import { AppBar, Toolbar, Typography, Box, Button, IconButton, Chip, Stack } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 
 export default function Header({ user, onLogout }) {
+  const brand = user?.email ? user.email.split('@')[0].toUpperCase() : null;
   return (
     <AppBar position="static" color="transparent" elevation={0} sx={{ pt: 1, pb: 1 }}>
       <Toolbar sx={{ flexDirection: 'column', gap: 0.5, minHeight: 'unset', py: 0, width: '100%' }}>
@@ -10,6 +11,7 @@ export default function Header({ user, onLogout }) {
             <Typography variant="caption" noWrap sx={{ maxWidth: { xs: 130, sm: 200 }, overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>
               {user.email}
             </Typography>
+            {brand && <Chip size="small" label={brand} color="primary" variant="outlined" sx={{ fontWeight: 600 }} />}
             <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
               <Button size="small" variant="outlined" color="inherit" onClick={onLogout}>Logout</Button>
             </Box>
@@ -20,27 +22,20 @@ export default function Header({ user, onLogout }) {
             </Box>
           </Box>
         )}
-        <Typography
-          variant="h5"
-          component="div"
-          sx={{ fontWeight: 800, textAlign: 'center', lineHeight: 1.1, letterSpacing: 0.2 }}
-        >
-          Personal Touch Skincare
-        </Typography>
-        <Box
-          component="img"
-          src="/brand-logo.jpg"
-          alt="Brand logo"
-          sx={{
-            width: { xs: 110, sm: 130 },
-            maxHeight: 60,
-            height: 'auto',
-            display: 'block',
-            mt: 0.25,
-            opacity: 0.92,
-            filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.10))',
-          }}
-        />
+        <Stack spacing={0.5} alignItems="center" sx={{ width: '100%' }}>
+          <Typography
+            variant="h5"
+            component="div"
+            sx={{ fontWeight: 800, textAlign: 'center', lineHeight: 1.1, letterSpacing: 0.2 }}
+          >
+            The Dashboard App
+          </Typography>
+          {brand && (
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+              Brand: {brand}
+            </Typography>
+          )}
+        </Stack>
       </Toolbar>
     </AppBar>
   );
