@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Grid from '@mui/material/Grid2';
 import KPIStat from './KPIStat.jsx';
-import { getTotalOrders, getTotalSales, getAOV, getCVR } from '../lib/api.js';
+import { getTotalOrders, getTotalSales, getAOV, getCVR, getFunnelStats } from '../lib/api.js';
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfMoney = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
@@ -19,18 +19,18 @@ export default function KPIs({ query }) {
       getTotalOrders(query),
       getTotalSales(query),
       getAOV(query),
-      getCVR(query)
-    ]).then(([orders, sales, aov, cvr]) => {
+      getCVR(query),
+      getFunnelStats(query)
+    ]).then(([orders, sales, aov, cvr, funnel]) => {
       if (cancelled) return;
-      setData({ orders, sales, aov, cvr });
+      setData({ orders, sales, aov, cvr, funnel });
       setLoading(false);
     }).catch(() => setLoading(false));
     return () => { cancelled = true; };
   }, [query.start, query.end]);
 
   const totalSessions = data.cvr?.total_sessions || 0;
-  const totalAtcSessions = data.cvr?.total_atc_sessions || undefined; // not in cvr response currently
-  // If ATC sessions not provided by cvr endpoint, we can compute by separate funnel fetch later; keep placeholder.
+  const totalAtcSessions = data.funnel?.total_atc_sessions || 0;
 
   return (
     <Grid container spacing={1.5} columns={{ xs: 2, sm: 6 }}>
@@ -66,7 +66,7 @@ export default function KPIs({ query }) {
           formatter={(v) => nfPct.format(v)}
         />
       </Grid>
-      <Grid size={{ xs: 1, sm: 2 }}>
+    <Grid size={{ xs: 1, sm: 2 }}>
         <KPIStat
           label="Total Sessions"
           value={totalSessions}
@@ -77,7 +77,7 @@ export default function KPIs({ query }) {
       <Grid size={{ xs: 1, sm: 2 }}>
         <KPIStat
           label="ATC Sessions"
-          value={data.funnel?.total_atc_sessions ?? data.funnel?.total_atc_sessions ?? 0}
+      value={totalAtcSessions}
           loading={loading}
           formatter={(v) => nfInt.format(v)}
         />
