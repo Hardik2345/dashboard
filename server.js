@@ -9,6 +9,7 @@ const bcrypt = require('bcrypt');
 const helmet = require('helmet');
 const { z } = require("zod");
 const { Sequelize, DataTypes, Op, QueryTypes } = require("sequelize");
+const { brandContext } = require('./middleware/brandContext');
 // Provide a fetch polyfill for Node versions <18
 const fetch = global.fetch || ((...args) => import('node-fetch').then(m => m.default(...args)));
 
@@ -143,18 +144,17 @@ function buildWhereClause(start, end) {
 }
 
 // raw SUM helper to avoid ORM coercion issues
-async function rawSum(column, { start, end }) {
+async function rawSum(column, { start, end, conn }) {
   const { where, params } = buildWhereClause(start, end);
   const sql = `SELECT COALESCE(SUM(${column}), 0) AS total FROM overall_summary ${where}`;
-  const rows = await sequelize.query(sql, { type: QueryTypes.SELECT, replacements: params });
-  // rows[0].total can be string for DECIMAL; Number() normalizes it
+  const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements: params });
   return Number(rows[0]?.total || 0);
 }
 
 // AOV = (SUM(gross_sales) - SUM(total_sales)) / SUM(total_orders)
-async function computeAOV({ start, end }) {
-  const total_sales = await rawSum("total_sales", { start, end });
-  const total_orders = await rawSum("total_orders", { start, end });
+async function computeAOV({ start, end, conn }) {
+  const total_sales = await rawSum("total_sales", { start, end, conn });
+  const total_orders = await rawSum("total_orders", { start, end, conn });
 
   const numerator = total_sales;
   const aov = total_orders > 0 ? numerator / total_orders : 0;
@@ -164,26 +164,20 @@ async function computeAOV({ start, end }) {
 }
 
 // CVR = SUM(total_orders) / SUM(total_sessions)
-async function computeCVR({ start, end }) {
-  const total_orders = await rawSum("total_orders", { start, end });
-  const total_sessions = await rawSum("total_sessions", { start, end });
+async function computeCVR({ start, end, conn }) {
+  const total_orders = await rawSum("total_orders", { start, end, conn });
+  const total_sessions = await rawSum("total_sessions", { start, end, conn });
   const cvr = total_sessions > 0 ? total_orders / total_sessions : 0;
   return { total_orders, total_sessions, cvr, cvr_percent: cvr * 100 };
 }
 
-async function computeTotalSales({ start, end }) {
-  return rawSum("total_sales", { start, end });
-}
-
-async function computeTotalOrders({ start, end }) {
-  return rawSum("total_orders", { start, end });
-}
-
-async function computeFunnelStats({ start, end }) {
+async function computeTotalSales({ start, end, conn }) { return rawSum("total_sales", { start, end, conn }); }
+async function computeTotalOrders({ start, end, conn }) { return rawSum("total_orders", { start, end, conn }); }
+async function computeFunnelStats({ start, end, conn }) {
   const [total_sessions, total_atc_sessions, total_orders] = await Promise.all([
-    rawSum("total_sessions", { start, end }),
-    rawSum("total_atc_sessions", { start, end }),
-    rawSum("total_orders", { start, end }),
+    rawSum("total_sessions", { start, end, conn }),
+    rawSum("total_atc_sessions", { start, end, conn }),
+    rawSum("total_orders", { start, end, conn }),
   ]);
   return { total_sessions, total_atc_sessions, total_orders };
 }
@@ -222,7 +216,7 @@ app.get('/auth/me', (req, res) => {
 // ---- Routes (Protected) -----------------------------------------------------
 
 // GET /metrics/aov?start=YYYY-MM-DD&end=YYYY-MM-DD
-app.get("/metrics/aov", requireAuth, async (req, res) => {
+app.get("/metrics/aov", requireAuth, brandContext, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({
       start: req.query.start,
@@ -233,8 +227,7 @@ app.get("/metrics/aov", requireAuth, async (req, res) => {
     }
     const { start, end } = parsed.data;
 
-    await sequelize.authenticate();
-    const result = await computeAOV({ start, end });
+  const result = await computeAOV({ start, end, conn: req.brandDb.sequelize });
 
     return res.json({
       metric: "AOV",
@@ -250,7 +243,7 @@ app.get("/metrics/aov", requireAuth, async (req, res) => {
 });
 
 // GET /metrics/cvr?start=YYYY-MM-DD&end=YYYY-MM-DD
-app.get("/metrics/cvr", requireAuth, async (req, res) => {
+app.get("/metrics/cvr", requireAuth, brandContext, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({
       start: req.query.start,
@@ -261,8 +254,7 @@ app.get("/metrics/cvr", requireAuth, async (req, res) => {
     }
     const { start, end } = parsed.data;
 
-    await sequelize.authenticate();
-    const result = await computeCVR({ start, end });
+  const result = await computeCVR({ start, end, conn: req.brandDb.sequelize });
 
     return res.json({
       metric: "CVR",
@@ -279,7 +271,7 @@ app.get("/metrics/cvr", requireAuth, async (req, res) => {
 });
 
 // GET /metrics/total-sales?start=YYYY-MM-DD&end=YYYY-MM-DD
-app.get("/metrics/total-sales", requireAuth, async (req, res) => {
+app.get("/metrics/total-sales", requireAuth, brandContext, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({
       start: req.query.start,
@@ -290,8 +282,7 @@ app.get("/metrics/total-sales", requireAuth, async (req, res) => {
     }
     const { start, end } = parsed.data;
 
-    await sequelize.authenticate();
-    const total_sales = await computeTotalSales({ start, end });
+  const total_sales = await computeTotalSales({ start, end, conn: req.brandDb.sequelize });
 
     return res.json({
       metric: "TOTAL_SALES",
@@ -305,7 +296,7 @@ app.get("/metrics/total-sales", requireAuth, async (req, res) => {
 });
 
 // GET /metrics/total-orders?start=YYYY-MM-DD&end=YYYY-MM-DD
-app.get("/metrics/total-orders", requireAuth, async (req, res) => {
+app.get("/metrics/total-orders", requireAuth, brandContext, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({
       start: req.query.start,
@@ -316,8 +307,7 @@ app.get("/metrics/total-orders", requireAuth, async (req, res) => {
     }
     const { start, end } = parsed.data;
 
-    await sequelize.authenticate();
-    const total_orders = await computeTotalOrders({ start, end });
+  const total_orders = await computeTotalOrders({ start, end, conn: req.brandDb.sequelize });
 
     return res.json({
       metric: "TOTAL_ORDERS",
@@ -331,7 +321,7 @@ app.get("/metrics/total-orders", requireAuth, async (req, res) => {
 });
 
 // GET /metrics/funnel-stats?start=YYYY-MM-DD&end=YYYY-MM-DD
-app.get("/metrics/funnel-stats", requireAuth, async (req, res) => {
+app.get("/metrics/funnel-stats", requireAuth, brandContext, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({
       start: req.query.start,
@@ -342,8 +332,7 @@ app.get("/metrics/funnel-stats", requireAuth, async (req, res) => {
     }
     const { start, end } = parsed.data;
 
-    await sequelize.authenticate();
-    const stats = await computeFunnelStats({ start, end });
+  const stats = await computeFunnelStats({ start, end, conn: req.brandDb.sequelize });
 
     return res.json({
       metric: "FUNNEL_STATS",
@@ -358,14 +347,19 @@ app.get("/metrics/funnel-stats", requireAuth, async (req, res) => {
   }
 });
 
-app.get('/external/last-updated/pts', requireAuth, async (req, res) => {
+// Per-brand last updated (uses brand DB)
+app.get('/external/last-updated/pts', requireAuth, brandContext, async (req, res) => {
   try {
+    if (!lastUpdatedCache[req.brandKey]) {
+      lastUpdatedCache[req.brandKey] = { data: null, fetchedAt: 0 };
+    }
+    const cacheEntry = lastUpdatedCache[req.brandKey];
     const now = Date.now();
-    if (lastUpdatedCache.data && now - lastUpdatedCache.fetchedAt < 30_000) {
-      return res.json(lastUpdatedCache.data);
+    if (cacheEntry.data && now - cacheEntry.fetchedAt < 30_000) {
+      return res.json(cacheEntry.data);
     }
 
-    const rows = await sequelize.query(
+    const rows = await req.brandDb.sequelize.query(
       "SELECT key_value FROM pipeline_metadata WHERE key_name = 'last_pipeline_completion_time' LIMIT 1",
       { type: QueryTypes.SELECT }
     );
@@ -408,8 +402,8 @@ app.get('/external/last-updated/pts', requireAuth, async (req, res) => {
       timezone: 'IST'
     };
 
-    lastUpdatedCache.data = payload;
-    lastUpdatedCache.fetchedAt = now;
+  cacheEntry.data = payload;
+  cacheEntry.fetchedAt = now;
 
     res.set('Cache-Control', 'public, max-age=15');
     return res.json(payload);
@@ -423,7 +417,7 @@ app.get('/external/last-updated/pts', requireAuth, async (req, res) => {
 
 // --- NEW: GET /metrics/order-split?start=YYYY-MM-DD&end=YYYY-MM-DD
 // Returns COD vs Prepaid split (counts and percentages) over the date range.
-app.get("/metrics/order-split", requireAuth, async (req, res) => {
+app.get("/metrics/order-split", requireAuth, brandContext, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({
       start: req.query.start,
@@ -434,11 +428,9 @@ app.get("/metrics/order-split", requireAuth, async (req, res) => {
     }
     const { start, end } = parsed.data;
 
-    await sequelize.authenticate();
-
     const [cod_orders, prepaid_orders] = await Promise.all([
-      rawSum("cod_orders", { start, end }),
-      rawSum("prepaid_orders", { start, end }),
+  rawSum("cod_orders", { start, end, conn: req.brandDb.sequelize }),
+  rawSum("prepaid_orders", { start, end, conn: req.brandDb.sequelize }),
     ]);
 
     const total = cod_orders + prepaid_orders;
