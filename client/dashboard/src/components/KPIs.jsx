@@ -28,9 +28,13 @@ export default function KPIs({ query }) {
     return () => { cancelled = true; };
   }, [query.start, query.end]);
 
+  const totalSessions = data.cvr?.total_sessions || 0;
+  const totalAtcSessions = data.cvr?.total_atc_sessions || undefined; // not in cvr response currently
+  // If ATC sessions not provided by cvr endpoint, we can compute by separate funnel fetch later; keep placeholder.
+
   return (
-    <Grid container spacing={1.5} columns={{ xs: 2 }}>
-      <Grid size={1}>
+    <Grid container spacing={1.5} columns={{ xs: 2, sm: 6 }}>
+      <Grid size={{ xs: 1, sm: 2 }}>
         <KPIStat
           label="Total Orders"
           value={data.orders?.value ?? 0}
@@ -38,7 +42,7 @@ export default function KPIs({ query }) {
           formatter={(v) => nfInt.format(v)}
         />
       </Grid>
-      <Grid size={1}>
+      <Grid size={{ xs: 1, sm: 2 }}>
         <KPIStat
           label="Total Sales"
           value={data.sales?.value ?? 0}
@@ -46,7 +50,7 @@ export default function KPIs({ query }) {
           formatter={(v) => nfMoney.format(v)}
         />
       </Grid>
-      <Grid size={1}>
+      <Grid size={{ xs: 1, sm: 2 }}>
         <KPIStat
           label="Avg Order Value"
           value={data.aov?.aov ?? 0}
@@ -54,12 +58,28 @@ export default function KPIs({ query }) {
           formatter={(v) => nfMoney2.format(v)}
         />
       </Grid>
-      <Grid size={1}>
+      <Grid size={{ xs: 1, sm: 2 }}>
         <KPIStat
           label="Conversion Rate"
           value={data.cvr?.cvr ?? 0}
           loading={loading}
           formatter={(v) => nfPct.format(v)}
+        />
+      </Grid>
+      <Grid size={{ xs: 1, sm: 2 }}>
+        <KPIStat
+          label="Total Sessions"
+          value={totalSessions}
+          loading={loading}
+          formatter={(v) => nfInt.format(v)}
+        />
+      </Grid>
+      <Grid size={{ xs: 1, sm: 2 }}>
+        <KPIStat
+          label="ATC Sessions"
+          value={data.funnel?.total_atc_sessions ?? data.funnel?.total_atc_sessions ?? 0}
+          loading={loading}
+          formatter={(v) => nfInt.format(v)}
         />
       </Grid>
     </Grid>
