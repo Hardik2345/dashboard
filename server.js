@@ -63,12 +63,15 @@ const OverallSummary = sequelize.define(
   { tableName: "overall_summary", timestamps: false }
 );
 
+// Global User model no longer used for authentication (auth is brand-specific now)
 const User = sequelize.define('user', {
-  email: { type: DataTypes.STRING, allowNull: false, unique: true },
-  password_hash: { type: DataTypes.STRING, allowNull: false },
-  role: { type: DataTypes.STRING, allowNull: false, defaultValue: 'user' },
-  is_active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true }
+  email: { type: DataTypes.STRING },
+  password_hash: { type: DataTypes.STRING },
+  role: { type: DataTypes.STRING },
+  is_active: { type: DataTypes.BOOLEAN }
 }, { tableName: 'users', timestamps: true });
+const { resolveBrandFromEmail } = require('./config/brands');
+const { getBrandConnection } = require('./lib/brandConnectionManager');
 
 // ---- Session & Passport -----------------------------------------------------
 const SequelizeStore = SequelizeStoreFactory(session.Store);
@@ -92,22 +95,31 @@ app.use(session({
 
 passport.use(new LocalStrategy({ usernameField: 'email', passwordField: 'password' }, async (email, password, done) => {
   try {
-    const user = await User.findOne({ where: { email, is_active: true } });
+    const brandCfg = resolveBrandFromEmail(email);
+    if (!brandCfg) return done(null, false, { message: 'Unknown brand' });
+    const brandConn = await getBrandConnection(brandCfg);
+    const BrandUser = brandConn.models.User;
+    const user = await BrandUser.findOne({ where: { email, is_active: true } });
     if (!user) return done(null, false, { message: 'Invalid credentials' });
     const ok = await bcrypt.compare(password, user.password_hash);
     if (!ok) return done(null, false, { message: 'Invalid credentials' });
-    return done(null, { id: user.id, email: user.email, role: user.role });
+    return done(null, { id: user.id, email: user.email, role: user.role, brandKey: brandCfg.key });
   } catch (e) {
     return done(e);
   }
 }));
 
-passport.serializeUser((user, done) => done(null, user.id));
-passport.deserializeUser(async (id, done) => {
+passport.serializeUser((user, done) => done(null, { id: user.id, email: user.email, brandKey: user.brandKey }));
+passport.deserializeUser(async (obj, done) => {
   try {
-    const user = await User.findByPk(id, { attributes: ['id','email','role','is_active'] });
+    // Re-fetch from brand DB to ensure still active
+    const brandCfg = resolveBrandFromEmail(obj.email);
+    if (!brandCfg) return done(null, false);
+    const brandConn = await getBrandConnection(brandCfg);
+    const BrandUser = brandConn.models.User;
+    const user = await BrandUser.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
     if (!user || !user.is_active) return done(null, false);
-    done(null, { id: user.id, email: user.email, role: user.role });
+    done(null, { id: user.id, email: user.email, role: user.role, brandKey: brandCfg.key });
   } catch (e) { done(e); }
 });
 
@@ -194,7 +206,7 @@ app.post('/auth/login', (req, res, next) => {
       if (err2) return next(err2);
       req.login(user, err3 => {
         if (err3) return next(err3);
-        return res.json({ user });
+  return res.json({ user });
       });
     });
   })(req, res, next);
