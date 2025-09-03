@@ -4,12 +4,12 @@ import { Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   ArcElement,
-  Tooltip,
+  Tooltip as ChartTooltip,
   Legend,
 } from 'chart.js';
 import { getPaymentSalesSplit } from '../lib/api.js';
 
-ChartJS.register(ArcElement, Tooltip, Legend);
+ChartJS.register(ArcElement, ChartTooltip, Legend);
 
 const nfInt = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 const nfPct1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
