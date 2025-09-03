@@ -6,6 +6,7 @@ import DateRangeFilter from './components/DateRangeFilter.jsx';
 import KPIs from './components/KPIs.jsx';
 import FunnelChart from './components/FunnelChart.jsx';
 import OrderSplit from './components/OrderSplit.jsx';
+import PaymentSalesSplit from './components/PaymentSalesSplit.jsx';
 import LastUpdated from './components/LastUpdated.jsx';
 import Footer from './components/Footer.jsx';
 import { me, login, logout } from './lib/api.js';
@@ -129,6 +130,7 @@ export default function App() {
             <Divider textAlign="left">Funnel</Divider>
             <FunnelChart query={query} />
             <OrderSplit query={query} />
+            <PaymentSalesSplit query={query} />
             <Alert severity="info" sx={{ display: { xs: 'flex', sm: 'none' } }}>
               Tip: Rotate for a wider chart.
             </Alert>

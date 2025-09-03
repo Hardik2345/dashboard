@@ -464,6 +464,96 @@ app.get("/metrics/order-split", requireAuth, brandContext, async (req, res) => {
   }
 });
 
+// --- NEW: GET /metrics/payment-sales-split?start=YYYY-MM-DD&end=YYYY-MM-DD
+// Returns COD vs Prepaid sales (sum of order max total_price) and percentages.
+app.get('/metrics/payment-sales-split', requireAuth, brandContext, async (req, res) => {
+  try {
+    const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+    }
+    const { start, end } = parsed.data;
+
+    // Build time window using sargable predicates (avoid DATE() on column)
+    // If only start is provided treat end=start. If neither provided return zeros.
+    if (!start && !end) {
+      return res.json({
+        metric: 'PAYMENT_SPLIT_SALES',
+        range: { start: null, end: null },
+        cod_sales: 0,
+        prepaid_sales: 0,
+        total_sales_from_split: 0,
+        cod_percent: 0,
+        prepaid_percent: 0,
+      });
+    }
+    const effectiveStart = start || end; // if only end provided
+    const effectiveEnd = end || start;   // if only start provided
+    const startTs = `${effectiveStart} 00:00:00`;
+    const endTsExclusive = new Date(`${effectiveEnd}T00:00:00Z`);
+    endTsExclusive.setUTCDate(endTsExclusive.getUTCDate() + 1);
+    const endTs = endTsExclusive.toISOString().slice(0,19).replace('T',' ');
+
+    // Query: collapse duplicate order rows by taking max(total_price) per order_name
+    const sql = `
+      SELECT payment_type, SUM(max_price) AS sales
+      FROM (
+        SELECT 
+          CASE 
+            WHEN payment_gateway_names LIKE '%Cash on Delivery (COD)%' OR payment_gateway_names LIKE '%cash_on_delivery%' THEN 'COD'
+            ELSE 'Prepaid'
+          END AS payment_type,
+          order_name,
+          MAX(total_price) AS max_price
+        FROM shopify_orders
+        WHERE created_at >= ? AND created_at < ?
+        GROUP BY payment_gateway_names, order_name
+      ) sub
+      GROUP BY payment_type`;
+
+    let rows = [];
+    try {
+      rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [startTs, endTs] });
+    } catch (e) {
+      console.error('[payment-sales-split] query failed', e.message);
+      // Return safe zeros (don't leak internal error in production)
+      return res.json({
+        metric: 'PAYMENT_SPLIT_SALES',
+        range: { start: effectiveStart, end: effectiveEnd },
+        cod_sales: 0,
+        prepaid_sales: 0,
+        total_sales_from_split: 0,
+        cod_percent: 0,
+        prepaid_percent: 0,
+        warning: 'Query failed'
+      });
+    }
+
+    let cod_sales = 0; let prepaid_sales = 0;
+    for (const r of rows) {
+      if (r.payment_type === 'COD') cod_sales = Number(r.sales || 0);
+      else if (r.payment_type === 'Prepaid') prepaid_sales = Number(r.sales || 0);
+    }
+    const total = cod_sales + prepaid_sales;
+    const cod_percent = total > 0 ? (cod_sales / total) * 100 : 0;
+    const prepaid_percent = total > 0 ? (prepaid_sales / total) * 100 : 0;
+
+    return res.json({
+      metric: 'PAYMENT_SPLIT_SALES',
+      range: { start: effectiveStart, end: effectiveEnd },
+      cod_sales,
+      prepaid_sales,
+      total_sales_from_split: total,
+      cod_percent,
+      prepaid_percent,
+      sql_used: process.env.NODE_ENV === 'production' ? undefined : sql
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // --- DIAG: GET /metrics/diagnose/total-orders?start=YYYY-MM-DD&end=YYYY-MM-DD
 app.get("/metrics/diagnose/total-orders", requireAuth, async (req, res) => {
   try {

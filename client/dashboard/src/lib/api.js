@@ -99,6 +99,16 @@ export async function getOrderSplit({ start, end }) {
   return { cod_orders, prepaid_orders, total, cod_percent, prepaid_percent, error: json?.__error };
 }
 
+export async function getPaymentSalesSplit({ start, end }) {
+  const json = await getJSON('/metrics/payment-sales-split', { start, end });
+  const cod_sales = Number(json?.cod_sales || 0);
+  const prepaid_sales = Number(json?.prepaid_sales || 0);
+  const total = Number(json?.total_sales_from_split || (cod_sales + prepaid_sales));
+  const cod_percent = Number(json?.cod_percent || 0);
+  const prepaid_percent = Number(json?.prepaid_percent || 0);
+  return { cod_sales, prepaid_sales, total, cod_percent, prepaid_percent, error: json?.__error };
+}
+
 // Fetch last updated timestamp from external service (not using API_BASE)
 export async function getLastUpdatedPTS() {
   const base = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
