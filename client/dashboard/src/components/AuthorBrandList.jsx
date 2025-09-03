@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Paper, Table, TableBody, TableCell, TableHead, TableRow, Typography, CircularProgress } from '@mui/material';
+import { Card, CardHeader, CardContent, Table, TableBody, TableCell, TableHead, TableRow, Typography, CircularProgress } from '@mui/material';
 
 export default function AuthorBrandList({ refreshSignal }) {
   const [loading, setLoading] = useState(true);
@@ -16,22 +16,33 @@ export default function AuthorBrandList({ refreshSignal }) {
   },[refreshSignal]);
 
   return (
-    <Paper sx={{ p:2 }} elevation={1}>
-      <Typography variant="subtitle2" sx={{ mb:1 }}>Existing Brands (runtime + env)</Typography>
-      {loading ? <CircularProgress size={20} /> : (
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Key</TableCell>
-              <TableCell>Host</TableCell>
-              <TableCell>DB</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map(r=> <TableRow key={r.key}><TableCell>{r.key}</TableCell><TableCell>{r.host}</TableCell><TableCell>{r.db}</TableCell></TableRow>)}
-          </TableBody>
-        </Table>
-      )}
-    </Paper>
+    <Card elevation={0} sx={{ border:'1px solid', borderColor:'divider' }}>
+      <CardHeader titleTypographyProps={{ variant:'h6', fontWeight:700 }} title="Existing Brands" subheader={<Typography variant="caption" color="text.secondary">Includes env + runtime-added brands.</Typography>} />
+      <CardContent sx={{ pt:0 }}>
+        {loading ? <CircularProgress size={20} /> : (
+          <Table size="small" sx={{ '& th': { fontWeight:600 } }}>
+            <TableHead>
+              <TableRow>
+                <TableCell width="15%">Key</TableCell>
+                <TableCell width="55%">Host</TableCell>
+                <TableCell width="30%">Database</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {rows.length === 0 && (
+                <TableRow><TableCell colSpan={3}><Typography variant="body2" color="text.secondary">No brands loaded.</Typography></TableCell></TableRow>
+              )}
+              {rows.map(r=> (
+                <TableRow key={r.key} hover>
+                  <TableCell>{r.key}</TableCell>
+                  <TableCell sx={{ fontFamily:'monospace', fontSize:13 }}>{r.host}</TableCell>
+                  <TableCell sx={{ fontFamily:'monospace', fontSize:13 }}>{r.db}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
