@@ -70,7 +70,7 @@ const User = sequelize.define('user', {
   role: { type: DataTypes.STRING },
   is_active: { type: DataTypes.BOOLEAN }
 }, { tableName: 'users', timestamps: true });
-const { resolveBrandFromEmail } = require('./config/brands');
+const { resolveBrandFromEmail, addBrandRuntime, getBrands } = require('./config/brands');
 const { getBrandConnection } = require('./lib/brandConnectionManager');
 
 // ---- Session & Passport -----------------------------------------------------
@@ -95,6 +95,23 @@ app.use(session({
 
 passport.use(new LocalStrategy({ usernameField: 'email', passwordField: 'password' }, async (email, password, done) => {
   try {
+    const authorEmail = (process.env.AUTHOR_EMAIL || '').toLowerCase();
+    if (authorEmail && email.toLowerCase() === authorEmail) {
+      // Author path (base connection)
+      try {
+        const authorUser = await User.findOne({ where: { email: authorEmail, is_active: true } });
+        if (!authorUser || authorUser.role !== 'author') {
+          return done(null, false, { message: 'Invalid credentials' });
+        }
+        const ok = await bcrypt.compare(password, authorUser.password_hash);
+        if (!ok) return done(null, false, { message: 'Invalid credentials' });
+        return done(null, { id: authorUser.id, email: authorUser.email, role: 'author', isAuthor: true, brandKey: null });
+      } catch (e) {
+        return done(e);
+      }
+    }
+
+    // Brand user path
     const brandCfg = resolveBrandFromEmail(email);
     if (!brandCfg) return done(null, false, { message: 'Unknown brand' });
     const brandConn = await getBrandConnection(brandCfg);
@@ -103,23 +120,29 @@ passport.use(new LocalStrategy({ usernameField: 'email', passwordField: 'passwor
     if (!user) return done(null, false, { message: 'Invalid credentials' });
     const ok = await bcrypt.compare(password, user.password_hash);
     if (!ok) return done(null, false, { message: 'Invalid credentials' });
-    return done(null, { id: user.id, email: user.email, role: user.role, brandKey: brandCfg.key });
+    return done(null, { id: user.id, email: user.email, role: user.role, brandKey: brandCfg.key, isAuthor: false });
   } catch (e) {
     return done(e);
   }
 }));
 
-passport.serializeUser((user, done) => done(null, { id: user.id, email: user.email, brandKey: user.brandKey }));
+passport.serializeUser((user, done) => done(null, { id: user.id, email: user.email, brandKey: user.brandKey, isAuthor: !!user.isAuthor }));
 passport.deserializeUser(async (obj, done) => {
   try {
-    // Re-fetch from brand DB to ensure still active
+    if (obj.isAuthor) {
+      const authorEmail = (process.env.AUTHOR_EMAIL || '').toLowerCase();
+      if (authorEmail !== obj.email.toLowerCase()) return done(null, false);
+      const authorUser = await User.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
+      if (!authorUser || !authorUser.is_active || authorUser.role !== 'author') return done(null, false);
+      return done(null, { id: authorUser.id, email: authorUser.email, role: 'author', brandKey: null, isAuthor: true });
+    }
     const brandCfg = resolveBrandFromEmail(obj.email);
     if (!brandCfg) return done(null, false);
     const brandConn = await getBrandConnection(brandCfg);
     const BrandUser = brandConn.models.User;
     const user = await BrandUser.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
     if (!user || !user.is_active) return done(null, false);
-    done(null, { id: user.id, email: user.email, role: user.role, brandKey: brandCfg.key });
+    done(null, { id: user.id, email: user.email, role: user.role, brandKey: brandCfg.key, isAuthor: false });
   } catch (e) { done(e); }
 });
 
@@ -129,6 +152,11 @@ app.use(passport.session());
 function requireAuth(req, res, next) {
   if (req.isAuthenticated && req.isAuthenticated()) return next();
   return res.status(401).json({ error: 'Unauthorized' });
+}
+
+function requireAuthor(req, res, next) {
+  if (req.isAuthenticated && req.isAuthenticated() && req.user?.isAuthor) return next();
+  return res.status(403).json({ error: 'Forbidden' });
 }
 
 // ---- Validation --------------------------------------------------------------
@@ -223,6 +251,49 @@ app.post('/auth/logout', (req, res) => {
 app.get('/auth/me', (req, res) => {
   if (req.isAuthenticated && req.isAuthenticated()) return res.json({ user: req.user });
   return res.status(401).json({ error: 'Unauthorized' });
+});
+
+// Author info endpoint
+app.get('/author/me', requireAuth, (req, res) => {
+  if (!req.user?.isAuthor) return res.status(403).json({ error: 'Forbidden' });
+  return res.json({ user: { email: req.user.email, role: 'author', isAuthor: true } });
+});
+
+// List brands (author only)
+app.get('/author/brands', requireAuth, (req, res) => {
+  if (!req.user?.isAuthor) return res.status(403).json({ error: 'Forbidden' });
+  return res.json({ brands: Object.values(getBrands()).map(b => ({ key: b.key, host: b.dbHost, db: b.dbName })) });
+});
+
+// Create brand runtime (no Render env push yet; purely in-memory for session lifetime)
+app.post('/author/brands', requireAuth, async (req, res) => {
+  if (!req.user?.isAuthor) return res.status(403).json({ error: 'Forbidden' });
+  const body = req.body || {};
+  const errors = [];
+  function reqStr(k){ if(!body[k]||typeof body[k]!== 'string'||!body[k].trim()) errors.push(k); }
+  ['key','dbHost','dbUser','dbPass','dbName'].forEach(reqStr);
+  if (body.key && !/^[A-Z0-9_]{2,20}$/i.test(body.key)) errors.push('key_format');
+  if (errors.length) return res.status(400).json({ error: 'Invalid input', fields: errors });
+  try {
+    const brandCfg = addBrandRuntime({
+      key: body.key.toUpperCase(),
+      dbHost: body.dbHost.trim(),
+      dbPort: body.dbPort || 3306,
+      dbUser: body.dbUser.trim(),
+      dbPass: body.dbPass,
+      dbName: body.dbName.trim(),
+    });
+    // Attempt connection test
+    try {
+      const conn = await getBrandConnection(brandCfg);
+      await conn.sequelize.authenticate();
+    } catch (e) {
+      return res.status(400).json({ error: 'Connection failed', detail: e.message });
+    }
+    return res.status(201).json({ brand: { key: brandCfg.key } });
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
 });
 
 // ---- Routes (Protected) -----------------------------------------------------
@@ -605,6 +676,15 @@ async function init() {
     const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'ChangeMe123!', 12);
     await User.create({ email: process.env.ADMIN_EMAIL || 'admin@example.com', password_hash: hash, role: 'admin' });
     console.log('Seeded admin user');
+  }
+  // seed author if configured
+  if (process.env.AUTHOR_EMAIL && process.env.AUTHOR_PASSWORD) {
+    const existingAuthor = await User.findOne({ where: { email: process.env.AUTHOR_EMAIL } });
+    if (!existingAuthor) {
+      const hash = await bcrypt.hash(process.env.AUTHOR_PASSWORD, 12);
+      await User.create({ email: process.env.AUTHOR_EMAIL, password_hash: hash, role: 'author', is_active: true });
+      console.log('Seeded author user');
+    }
   }
   const port = process.env.PORT || 3000;
   app.listen(port, () => console.log(`Metrics API running on :${port}`));

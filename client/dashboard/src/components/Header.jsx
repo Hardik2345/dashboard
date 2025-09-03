@@ -1,17 +1,22 @@
 import { AppBar, Toolbar, Typography, Box, Button, IconButton, Chip, Stack } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 
-export default function Header({ user, onLogout }) {
+export default function Header({ user, onLogout, onAuthorPanel }) {
   const brand = user?.email ? user.email.split('@')[0].toUpperCase() : null;
   return (
     <AppBar position="static" color="transparent" elevation={0} sx={{ pt: 1, pb: 1 }}>
       <Toolbar sx={{ flexDirection: 'column', gap: 0.5, minHeight: 'unset', py: 0, width: '100%' }}>
         {user && (
           <Box sx={{ alignSelf: 'stretch', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1, mb: 0.5 }}>
+            {user.isAuthor && (
+              <Button size="small" variant="contained" color="primary" onClick={onAuthorPanel} sx={{ mr: 'auto' }}>
+                Author Panel
+              </Button>
+            )}
             <Typography variant="caption" noWrap sx={{ maxWidth: { xs: 130, sm: 200 }, overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>
               {user.email}
             </Typography>
-            {brand && <Chip size="small" label={brand} color="primary" variant="outlined" sx={{ fontWeight: 600 }} />}
+            {!user.isAuthor && brand && <Chip size="small" label={brand} color="primary" variant="outlined" sx={{ fontWeight: 600 }} />}
             <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
               <Button size="small" variant="outlined" color="inherit" onClick={onLogout}>Logout</Button>
             </Box>

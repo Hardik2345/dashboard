@@ -28,7 +28,24 @@ function loadBrands() {
   return map;
 }
 
-const brands = loadBrands();
+let brands = loadBrands();
+
+function addBrandRuntime(cfg) {
+  const upper = cfg.key.toUpperCase();
+  if (brands[upper]) throw new Error(`Brand ${upper} already exists`);
+  const brandCfg = {
+    key: upper,
+    dbHost: cfg.dbHost,
+    dbPort: Number(cfg.dbPort || 3306),
+    dbUser: cfg.dbUser,
+    dbPass: cfg.dbPass,
+    dbName: cfg.dbName || upper,
+  };
+  brands[upper] = brandCfg;
+  return brandCfg;
+}
+
+function getBrands() { return { ...brands }; }
 
 function resolveBrandFromEmail(email) {
   if (!email) return null;
@@ -38,4 +55,4 @@ function resolveBrandFromEmail(email) {
   return brands[key] || null;
 }
 
-module.exports = { brands, resolveBrandFromEmail };
+module.exports = { brands, resolveBrandFromEmail, addBrandRuntime, getBrands };

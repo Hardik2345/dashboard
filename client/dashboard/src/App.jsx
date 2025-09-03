@@ -2,6 +2,8 @@ import { useMemo, useState, useEffect } from 'react';
 import dayjs from 'dayjs';
 import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert } from '@mui/material';
 import Header from './components/Header.jsx';
+import AuthorBrandForm from './components/AuthorBrandForm.jsx';
+import AuthorBrandList from './components/AuthorBrandList.jsx';
 import DateRangeFilter from './components/DateRangeFilter.jsx';
 import KPIs from './components/KPIs.jsx';
 import FunnelChart from './components/FunnelChart.jsx';
@@ -73,7 +75,7 @@ export default function App() {
 
   // Check auth on mount
   useEffect(() => {
-    me().then(r => { if (r.authenticated) setUser(r.user); setAuthChecked(true); });
+  me().then(r => { if (r.authenticated) setUser(r.user); setAuthChecked(true); });
   }, []);
 
   async function handleLogin(e) {
@@ -85,7 +87,7 @@ export default function App() {
     if (r.error) {
       setLoginError(r.data?.error || 'Login failed');
     } else {
-      setUser(r.data.user);
+  setUser(r.data.user);
     }
   }
 
@@ -117,11 +119,31 @@ export default function App() {
     );
   }
 
+  // Author placeholder view
+  if (user?.isAuthor) {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
+          <Header user={user} onLogout={handleLogout} onAuthorPanel={()=>{}} />
+          <Container maxWidth="md" sx={{ py:4 }}>
+            <Stack spacing={3}>
+              <Divider textAlign="left">Author Panel</Divider>
+              <AuthorBrandForm />
+              <AuthorBrandList />
+            </Stack>
+          </Container>
+          <Footer />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
-        <Header user={user} onLogout={handleLogout} />
+        <Header user={user} onLogout={handleLogout} onAuthorPanel={()=>{}} />
   <Container maxWidth="sm" sx={{ py: 2 }}>
           <Stack spacing={2}>
             <DateRangeFilter value={range} onChange={setRange} />
