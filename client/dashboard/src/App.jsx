@@ -7,6 +7,7 @@ import KPIs from './components/KPIs.jsx';
 import FunnelChart from './components/FunnelChart.jsx';
 import OrderSplit from './components/OrderSplit.jsx';
 import LastUpdated from './components/LastUpdated.jsx';
+import Footer from './components/Footer.jsx';
 import { me, login, logout } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
 
@@ -120,7 +121,7 @@ export default function App() {
       <CssBaseline />
       <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
         <Header user={user} onLogout={handleLogout} />
-        <Container maxWidth="sm" sx={{ py: 2 }}>
+  <Container maxWidth="sm" sx={{ py: 2 }}>
           <Stack spacing={2}>
             <DateRangeFilter value={range} onChange={setRange} />
             <LastUpdated />
@@ -133,6 +134,7 @@ export default function App() {
             </Alert>
           </Stack>
         </Container>
+  <Footer />
       </Box>
     </ThemeProvider>
   );
