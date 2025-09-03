@@ -125,7 +125,7 @@ export default function App() {
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
-          <Header user={user} onLogout={handleLogout} onAuthorPanel={()=>{}} />
+          <Header user={user} onLogout={handleLogout} />
           <Container maxWidth="md" sx={{ py:4 }}>
             <Stack spacing={3}>
               <Divider textAlign="left">Author Panel</Divider>
@@ -143,7 +143,7 @@ export default function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
-        <Header user={user} onLogout={handleLogout} onAuthorPanel={()=>{}} />
+  <Header user={user} onLogout={handleLogout} />
   <Container maxWidth="sm" sx={{ py: 2 }}>
           <Stack spacing={2}>
             <DateRangeFilter value={range} onChange={setRange} />
