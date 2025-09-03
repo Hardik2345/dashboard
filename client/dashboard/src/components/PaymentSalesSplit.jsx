@@ -74,9 +74,22 @@ export default function PaymentSalesSplit({ query }) {
           <Typography variant="body2" color="text.secondary">No sales in selected range.</Typography>
         ) : (
           <>
-            <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap' }}>
-              <Chip size="small" label={`COD ${nfPct1.format(data.cod_percent)}% (${nfCurrency0.format(data.cod_sales)})`} sx={{ bgcolor: '#fff7ed', color: '#92400e' }} />
-              <Chip size="small" label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfCurrency0.format(data.prepaid_sales)})`} sx={{ bgcolor: '#ecfdf5', color: '#065f46' }} />
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1}
+              sx={{ mb: 1 }}
+              alignItems={{ xs: 'flex-start', sm: 'center' }}
+            >
+              <Chip
+                size="small"
+                label={`COD ${nfPct1.format(data.cod_percent)}% (${nfCurrency0.format(data.cod_sales)})`}
+                sx={{ bgcolor: '#fff7ed', color: '#92400e', maxWidth: '100%' }}
+              />
+              <Chip
+                size="small"
+                label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfCurrency0.format(data.prepaid_sales)})`}
+                sx={{ bgcolor: '#ecfdf5', color: '#065f46', maxWidth: '100%' }}
+              />
             </Stack>
             <div style={{ position: 'relative', height: 180 }}>
               <Doughnut data={chartData} options={options} />
