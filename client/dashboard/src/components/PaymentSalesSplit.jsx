@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, CardContent, Typography, Skeleton, Stack, Chip } from '@mui/material';
+import { Card, CardContent, Typography, Skeleton, Stack, Chip, Tooltip } from '@mui/material';
 import { Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -62,8 +62,11 @@ export default function PaymentSalesSplit({ query }) {
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
       <CardContent sx={{ minHeight: 260 }}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
           Payment split (By Sales)
+          <Tooltip title="Does not include cancelled orders" arrow placement="right">
+            <Typography component="span" variant="inherit" sx={{ fontWeight: 'bold', ml: 0.5, cursor: 'help' }}>*</Typography>
+          </Tooltip>
         </Typography>
         {loading ? (
           <Skeleton variant="rounded" width="100%" height={180} />
@@ -80,6 +83,9 @@ export default function PaymentSalesSplit({ query }) {
             </div>
           </>
         )}
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          * Cancellations not included.
+        </Typography>
       </CardContent>
     </Card>
   );
