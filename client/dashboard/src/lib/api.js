@@ -109,6 +109,16 @@ export async function getPaymentSalesSplit({ start, end }) {
   return { cod_sales, prepaid_sales, total, cod_percent, prepaid_percent, error: json?.__error };
 }
 
+export async function getHourlySalesCompare({ hours = 6 } = {}) {
+  const json = await getJSON('/metrics/hourly-sales-compare', { hours });
+  return {
+    labels: Array.isArray(json?.labels) ? json.labels : [],
+    current: json?.series?.current || [],
+    yesterday: json?.series?.yesterday || [],
+    error: json?.__error,
+  };
+}
+
 // Fetch last updated timestamp from external service (not using API_BASE)
 export async function getLastUpdatedPTS() {
   const base = import.meta.env.VITE_API_BASE || 'http://localhost:3000';

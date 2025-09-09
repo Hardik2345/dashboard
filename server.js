@@ -695,6 +695,63 @@ app.get('/metrics/payment-sales-split', requireAuth, brandContext, async (req, r
   }
 });
 
+// --- NEW: GET /metrics/hourly-sales-compare?hours=6
+// Returns aligned arrays for the last N hours (default 6) and the same hours yesterday.
+app.get('/metrics/hourly-sales-compare', requireAuth, brandContext, async (req, res) => {
+  try {
+    const hoursParam = Number(req.query.hours || 6);
+    const N = Math.max(1, Math.min(12, isFinite(hoursParam) ? Math.floor(hoursParam) : 6));
+
+    // Use UTC to match server timezone configuration
+    const now = new Date();
+    now.setUTCMinutes(0, 0, 0); // floor to hour
+
+    const buckets = [];
+    for (let i = N - 1; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 3600_000);
+      const dateStr = d.toISOString().slice(0, 10);
+      const hour = d.getUTCHours();
+      buckets.push({ date: dateStr, hour });
+    }
+    const yBuckets = buckets.map(b => {
+      const d = new Date(`${b.date}T${String(b.hour).padStart(2, '0')}:00:00Z`);
+      d.setUTCHours(d.getUTCHours() - 24);
+      return { date: d.toISOString().slice(0, 10), hour: d.getUTCHours() };
+    });
+
+    function buildWherePairs(num) { return Array(num).fill('(date = ? AND hour = ?)').join(' OR '); }
+    const where = buildWherePairs(N);
+    const paramsCurrent = buckets.flatMap(b => [b.date, b.hour]);
+    const paramsY = yBuckets.flatMap(b => [b.date, b.hour]);
+
+    const sql = `SELECT date, hour, total_sales FROM hour_wise_sales WHERE ${where}`;
+    const [rowsCurrent, rowsY] = await Promise.all([
+      req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: paramsCurrent }),
+      req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: paramsY }),
+    ]);
+
+    const mapCurrent = new Map();
+    for (const r of rowsCurrent) {
+      const k = `${r.date}#${r.hour}`;
+      mapCurrent.set(k, Number(r.total_sales || 0));
+    }
+    const mapY = new Map();
+    for (const r of rowsY) {
+      const k = `${r.date}#${r.hour}`;
+      mapY.set(k, Number(r.total_sales || 0));
+    }
+
+    const labels = buckets.map(b => `${String(b.hour).padStart(2, '0')}:00`);
+    const current = buckets.map(b => mapCurrent.get(`${b.date}#${b.hour}`) || 0);
+    const yesterday = yBuckets.map(b => mapY.get(`${b.date}#${b.hour}`) || 0);
+
+    return res.json({ labels, series: { current, yesterday } });
+  } catch (e) {
+    console.error('[hourly-sales-compare] failed', e);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // --- DIAG: GET /metrics/diagnose/total-orders?start=YYYY-MM-DD&end=YYYY-MM-DD
 app.get("/metrics/diagnose/total-orders", requireAuth, async (req, res) => {
   try {
