@@ -702,27 +702,44 @@ app.get('/metrics/hourly-sales-compare', requireAuth, brandContext, async (req, 
     const hoursParam = Number(req.query.hours || 6);
     const N = Math.max(1, Math.min(12, isFinite(hoursParam) ? Math.floor(hoursParam) : 6));
 
-    // Use UTC to match server timezone configuration
-    const now = new Date();
-    now.setUTCMinutes(0, 0, 0); // floor to hour
+    // Use IST (UTC+5:30) for bucketing and labels
+    const IST_OFFSET_MIN = 330; // minutes
+    const offsetMs = IST_OFFSET_MIN * 60 * 1000;
 
-    const buckets = [];
+    // Current time in IST, floored to the start of the hour (in IST)
+    const nowUtc = new Date();
+    const nowIst = new Date(nowUtc.getTime() + offsetMs);
+    nowIst.setUTCMinutes(0, 0, 0);
+
+    // Build last N hourly buckets in IST
+    const bucketsIst = [];
     for (let i = N - 1; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 3600_000);
-      const dateStr = d.toISOString().slice(0, 10);
-      const hour = d.getUTCHours();
-      buckets.push({ date: dateStr, hour });
+      const ist = new Date(nowIst.getTime() - i * 3600_000);
+      const yyyy = ist.getUTCFullYear();
+      const mm = String(ist.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(ist.getUTCDate()).padStart(2, '0');
+      const hour = ist.getUTCHours(); // hour in IST space
+      bucketsIst.push({ date: `${yyyy}-${mm}-${dd}`, hour });
     }
-    const yBuckets = buckets.map(b => {
-      const d = new Date(`${b.date}T${String(b.hour).padStart(2, '0')}:00:00Z`);
-      d.setUTCHours(d.getUTCHours() - 24);
-      return { date: d.toISOString().slice(0, 10), hour: d.getUTCHours() };
+    // Same hours yesterday (in IST space)
+    const yBucketsIst = bucketsIst.map(b => {
+      const ist = new Date(Date.UTC(
+        Number(b.date.slice(0, 4)),
+        Number(b.date.slice(5, 7)) - 1,
+        Number(b.date.slice(8, 10)),
+        b.hour, 0, 0, 0
+      ));
+      const prev = new Date(ist.getTime() - 24 * 3600_000);
+      const yyyy = prev.getUTCFullYear();
+      const mm = String(prev.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(prev.getUTCDate()).padStart(2, '0');
+      return { date: `${yyyy}-${mm}-${dd}`, hour: prev.getUTCHours() };
     });
 
     function buildWherePairs(num) { return Array(num).fill('(date = ? AND hour = ?)').join(' OR '); }
     const where = buildWherePairs(N);
-    const paramsCurrent = buckets.flatMap(b => [b.date, b.hour]);
-    const paramsY = yBuckets.flatMap(b => [b.date, b.hour]);
+    const paramsCurrent = bucketsIst.flatMap(b => [b.date, b.hour]);
+    const paramsY = yBucketsIst.flatMap(b => [b.date, b.hour]);
 
     const sql = `SELECT date, hour, total_sales FROM hour_wise_sales WHERE ${where}`;
     const [rowsCurrent, rowsY] = await Promise.all([
@@ -741,11 +758,11 @@ app.get('/metrics/hourly-sales-compare', requireAuth, brandContext, async (req, 
       mapY.set(k, Number(r.total_sales || 0));
     }
 
-    const labels = buckets.map(b => `${String(b.hour).padStart(2, '0')}:00`);
-    const current = buckets.map(b => mapCurrent.get(`${b.date}#${b.hour}`) || 0);
-    const yesterday = yBuckets.map(b => mapY.get(`${b.date}#${b.hour}`) || 0);
+    const labels = bucketsIst.map(b => `${String(b.hour).padStart(2, '0')}:00`);
+    const current = bucketsIst.map(b => mapCurrent.get(`${b.date}#${b.hour}`) || 0);
+    const yesterday = yBucketsIst.map(b => mapY.get(`${b.date}#${b.hour}`) || 0);
 
-    return res.json({ labels, series: { current, yesterday } });
+    return res.json({ labels, series: { current, yesterday }, tz: 'IST' });
   } catch (e) {
     console.error('[hourly-sales-compare] failed', e);
     return res.status(500).json({ error: 'Internal server error' });
