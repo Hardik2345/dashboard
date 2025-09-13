@@ -10,7 +10,7 @@ export default function Header({ user, onLogout }) {
         <Box component="a" href="/" aria-label="Home" sx={{ display: 'inline-flex', alignItems: 'center' }}>
           <Box
             component="img"
-            src="/brand-logo.svg"
+            src="/brand-logo.jpg"
             alt="Brand"
             loading="eager"
             decoding="async"
