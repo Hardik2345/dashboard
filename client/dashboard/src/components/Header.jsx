@@ -31,7 +31,7 @@ export default function Header({ user, onLogout }) {
                 letterSpacing: { xs: '.2em', sm: '.28em' },
                 textTransform: 'uppercase',
                 color: 'text.primary',
-                fontSize: { xs: '0.9rem', sm: '1.05rem' },
+                fontSize: { xs: '1.9rem', sm: '1.05rem' },
                 whiteSpace: 'nowrap',
               }}
             >
