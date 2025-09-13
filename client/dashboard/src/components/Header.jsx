@@ -3,9 +3,11 @@ import LogoutIcon from '@mui/icons-material/Logout';
 
 export default function Header({ user, onLogout }) {
   const brand = user?.email ? user.email.split('@')[0].toUpperCase() : null;
+  // Prefer explicit brand fields if present; fallback to derived brand from email
+  const brandName = user?.activeBrand?.name || user?.brandName || brand;
   return (
     <AppBar position="static" color="transparent" elevation={0} sx={{ py: 1 }}>
-      <Toolbar sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 'unset', py: 0 }}>
+      <Toolbar sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 'unset', py: 0 }}>
         {/* Left: Brand logo linking to home */}
         <Box component="a" href="/" aria-label="Home" sx={{ display: 'inline-flex', alignItems: 'center' }}>
           <Box
@@ -17,6 +19,26 @@ export default function Header({ user, onLogout }) {
             sx={{ height: { xs: 28, sm: 36 }, width: 'auto', display: 'block' }}
           />
         </Box>
+
+        {/* Center: Dynamic brand title */}
+        {brandName && (
+          <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none' }}>
+            <Typography
+              variant="h6"
+              component="div"
+              sx={{
+                fontWeight: 800,
+                letterSpacing: { xs: '.2em', sm: '.28em' },
+                textTransform: 'uppercase',
+                color: 'text.primary',
+                fontSize: { xs: '0.9rem', sm: '1.05rem' },
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {brandName}
+            </Typography>
+          </Box>
+        )}
 
         {/* Right: User info and actions */}
         {user && (
