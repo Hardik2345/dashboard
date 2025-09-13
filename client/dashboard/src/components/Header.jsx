@@ -1,17 +1,29 @@
-import { AppBar, Toolbar, Typography, Box, Button, IconButton, Chip, Stack } from '@mui/material';
+import { AppBar, Toolbar, Box, Button, IconButton, Chip } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 
 export default function Header({ user, onLogout }) {
   const brand = user?.email ? user.email.split('@')[0].toUpperCase() : null;
   return (
-    <AppBar position="static" color="transparent" elevation={0} sx={{ pt: 1, pb: 1 }}>
-      <Toolbar sx={{ flexDirection: 'column', gap: 0.5, minHeight: 'unset', py: 0, width: '100%' }}>
+    <AppBar position="static" color="transparent" elevation={0} sx={{ py: 1 }}>
+      <Toolbar sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 'unset', py: 0 }}>
+        {/* Left: Brand logo linking to home */}
+        <Box component="a" href="/" aria-label="Home" sx={{ display: 'inline-flex', alignItems: 'center' }}>
+          <Box
+            component="img"
+            src="/brand-logo.svg"
+            alt="Brand"
+            loading="eager"
+            decoding="async"
+            sx={{ height: { xs: 28, sm: 36 }, width: 'auto', display: 'block' }}
+          />
+        </Box>
+
+        {/* Right: User info and actions */}
         {user && (
-          <Box sx={{ alignSelf: 'stretch', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1, mb: 0.5 }}>
-            <Typography variant="caption" noWrap sx={{ maxWidth: { xs: 130, sm: 200 }, overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>
-              {user.email}
-            </Typography>
-            {!user.isAuthor && brand && <Chip size="small" label={brand} color="primary" variant="outlined" sx={{ fontWeight: 600 }} />}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+            {!user.isAuthor && brand && (
+              <Chip size="small" label={brand} color="primary" variant="outlined" sx={{ fontWeight: 600 }} />
+            )}
             <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
               <Button size="small" variant="outlined" color="inherit" onClick={onLogout}>Logout</Button>
             </Box>
@@ -22,20 +34,6 @@ export default function Header({ user, onLogout }) {
             </Box>
           </Box>
         )}
-        <Stack spacing={0.5} alignItems="center" sx={{ width: '100%' }}>
-          <Typography
-            variant="h5"
-            component="div"
-            sx={{ fontWeight: 800, textAlign: 'center', lineHeight: 1.1, letterSpacing: 0.2 }}
-          >
-            The Dashboard App
-          </Typography>
-          {brand && (
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-              Brand: {brand}
-            </Typography>
-          )}
-        </Stack>
       </Toolbar>
     </AppBar>
   );
