@@ -1,4 +1,4 @@
-import { AppBar, Toolbar, Typography, Box, Button, IconButton, Chip, Stack } from '@mui/material';
+import { AppBar, Toolbar, Typography, Box, Button, IconButton, Chip } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 
 export default function Header({ user, onLogout }) {
@@ -34,20 +34,6 @@ export default function Header({ user, onLogout }) {
             </Box>
           </Box>
         )}
-        <Stack spacing={0.5} alignItems="center" sx={{ width: '100%' }}>
-          <Typography
-            variant="h5"
-            component="div"
-            sx={{ fontWeight: 800, textAlign: 'center', lineHeight: 1.1, letterSpacing: 0.2 }}
-          >
-            The Dashboard App
-          </Typography>
-          {brand && (
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-              Brand: {brand}
-            </Typography>
-          )}
-        </Stack>
       </Toolbar>
     </AppBar>
   );
