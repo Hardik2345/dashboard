@@ -27,7 +27,7 @@ export default function Header({ user, onLogout }) {
               variant="h6"
               component="div"
               sx={{
-                paddingTop:5,
+                paddingTop:3,
                 fontWeight: 800,
                 letterSpacing: { xs: '.02em', sm: '.28em' },
                 textTransform: 'uppercase',
