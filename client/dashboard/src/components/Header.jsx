@@ -28,7 +28,7 @@ export default function Header({ user, onLogout }) {
               component="div"
               sx={{
                 fontWeight: 800,
-                letterSpacing: { xs: '.2em', sm: '.28em' },
+                letterSpacing: { xs: '.02em', sm: '.28em' },
                 textTransform: 'uppercase',
                 color: 'text.primary',
                 fontSize: { xs: '1.9rem', sm: '1.05rem' },
