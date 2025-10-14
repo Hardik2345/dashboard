@@ -53,9 +53,33 @@ export async function getTotalSales({ start, end }) {
   return { value: Number(json?.total_sales || 0), error: json?.__error };
 }
 
+export async function getTotalSalesDelta({ start, end }) {
+  const json = await getJSON('/metrics/total-sales-delta', { start, end });
+  return {
+    date: json?.date || null,
+    current: Number(json?.current || 0),
+    previous: Number(json?.previous || 0),
+    diff_pct: Number(json?.diff_pct || 0),
+    direction: json?.direction || 'flat',
+    error: json?.__error,
+  };
+}
+
 export async function getTotalOrders({ start, end }) {
   const json = await getJSON('/metrics/total-orders', { start, end });
   return { value: Number(json?.total_orders || 0), error: json?.__error };
+}
+
+export async function getTotalOrdersDelta({ start, end }) {
+  const json = await getJSON('/metrics/total-orders-delta', { start, end });
+  return {
+    date: json?.date || null,
+    current: Number(json?.current || 0),
+    previous: Number(json?.previous || 0),
+    diff_pct: Number(json?.diff_pct || 0),
+    direction: json?.direction || 'flat',
+    error: json?.__error,
+  };
 }
 
 export async function getAOV({ start, end }) {
@@ -64,6 +88,18 @@ export async function getAOV({ start, end }) {
     aov: Number(json?.aov || 0),
     total_sales: Number(json?.total_sales || 0),
     total_orders: Number(json?.total_orders || 0),
+    error: json?.__error,
+  };
+}
+
+export async function getAOVDelta({ start, end }) {
+  const json = await getJSON('/metrics/aov-delta', { start, end });
+  return {
+    date: json?.date || null,
+    current: Number(json?.current || 0),
+    previous: Number(json?.previous || 0),
+    diff_pct: Number(json?.diff_pct || 0),
+    direction: json?.direction || 'flat',
     error: json?.__error,
   };
 }
@@ -97,6 +133,30 @@ export async function getFunnelStats({ start, end }) {
     total_sessions: Number(json?.total_sessions || 0),
     total_atc_sessions: Number(json?.total_atc_sessions || 0),
     total_orders: Number(json?.total_orders || 0),
+    error: json?.__error,
+  };
+}
+
+export async function getTotalSessionsDelta({ start, end }) {
+  const json = await getJSON('/metrics/total-sessions-delta', { start, end });
+  return {
+    date: json?.date || null,
+    current: Number(json?.current || 0),
+    previous: Number(json?.previous || 0),
+    diff_pct: Number(json?.diff_pct || 0),
+    direction: json?.direction || 'flat',
+    error: json?.__error,
+  };
+}
+
+export async function getAtcSessionsDelta({ start, end }) {
+  const json = await getJSON('/metrics/atc-sessions-delta', { start, end });
+  return {
+    date: json?.date || null,
+    current: Number(json?.current || 0),
+    previous: Number(json?.previous || 0),
+    diff_pct: Number(json?.diff_pct || 0),
+    direction: json?.direction || 'flat',
     error: json?.__error,
   };
 }

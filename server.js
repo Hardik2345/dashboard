@@ -228,6 +228,48 @@ async function computeFunnelStats({ start, end, conn }) {
   return { total_sessions, total_atc_sessions, total_orders };
 }
 
+// --- Delta helpers (day vs previous day) ------------------------------------
+function prevDayStr(date) {
+  const d = new Date(`${date}T00:00:00Z`);
+  const prev = new Date(d.getTime() - 24 * 3600_000);
+  return `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}-${String(prev.getUTCDate()).padStart(2, '0')}`;
+}
+
+async function sumForDay(column, date, conn) {
+  return rawSum(column, { start: date, end: date, conn });
+}
+
+async function deltaForSum(column, date, conn) {
+  if (!date) return { current: 0, previous: 0, diff_pct: 0, direction: 'flat' };
+  const prev = prevDayStr(date);
+  const [curr, prevVal] = await Promise.all([
+    sumForDay(column, date, conn),
+    sumForDay(column, prev, conn)
+  ]);
+  const diff = curr - prevVal;
+  const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+  const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+  return { current: curr, previous: prevVal, diff_pct, direction };
+}
+
+async function aovForDay(date, conn) {
+  const r = await computeAOV({ start: date, end: date, conn });
+  return r.aov || 0;
+}
+
+async function deltaForAOV(date, conn) {
+  if (!date) return { current: 0, previous: 0, diff_pct: 0, direction: 'flat' };
+  const prev = prevDayStr(date);
+  const [curr, prevVal] = await Promise.all([
+    aovForDay(date, conn),
+    aovForDay(prev, conn)
+  ]);
+  const diff = curr - prevVal;
+  const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+  const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+  return { current: curr, previous: prevVal, diff_pct, direction };
+}
+
 // ---- Upstream cache (last-updated proxy) ------------------------------------
 const lastUpdatedCache = { data: null, fetchedAt: 0 };
 
@@ -468,6 +510,66 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
     console.error(err);
     return res.status(500).json({ error: "Internal server error" });
   }
+});
+
+// Total Orders delta (vs previous day)
+app.get('/metrics/total-orders-delta', requireAuth, brandContext, async (req, res) => {
+  try {
+    const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+    const date = parsed.data.end || parsed.data.start;
+    if (!date) return res.json({ metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+    const d = await deltaForSum('total_orders', date, req.brandDb.sequelize);
+    return res.json({ metric: 'TOTAL_ORDERS_DELTA', date, ...d });
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// Total Sales delta (vs previous day)
+app.get('/metrics/total-sales-delta', requireAuth, brandContext, async (req, res) => {
+  try {
+    const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+    const date = parsed.data.end || parsed.data.start;
+    if (!date) return res.json({ metric: 'TOTAL_SALES_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+    const d = await deltaForSum('total_sales', date, req.brandDb.sequelize);
+    return res.json({ metric: 'TOTAL_SALES_DELTA', date, ...d });
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// Total Sessions delta (vs previous day)
+app.get('/metrics/total-sessions-delta', requireAuth, brandContext, async (req, res) => {
+  try {
+    const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+    const date = parsed.data.end || parsed.data.start;
+    if (!date) return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+    const d = await deltaForSum('total_sessions', date, req.brandDb.sequelize);
+    return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date, ...d });
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// ATC Sessions delta (vs previous day)
+app.get('/metrics/atc-sessions-delta', requireAuth, brandContext, async (req, res) => {
+  try {
+    const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+    const date = parsed.data.end || parsed.data.start;
+    if (!date) return res.json({ metric: 'ATC_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+    const d = await deltaForSum('total_atc_sessions', date, req.brandDb.sequelize);
+    return res.json({ metric: 'ATC_SESSIONS_DELTA', date, ...d });
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// AOV delta (vs previous day)
+app.get('/metrics/aov-delta', requireAuth, brandContext, async (req, res) => {
+  try {
+    const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+    const date = parsed.data.end || parsed.data.start;
+    if (!date) return res.json({ metric: 'AOV_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+    const d = await deltaForAOV(date, req.brandDb.sequelize);
+    return res.json({ metric: 'AOV_DELTA', date, ...d });
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // GET /metrics/total-sales?start=YYYY-MM-DD&end=YYYY-MM-DD

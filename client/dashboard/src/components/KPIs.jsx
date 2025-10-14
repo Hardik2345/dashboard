@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Grid from '@mui/material/Grid2';
 import KPIStat from './KPIStat.jsx';
-import { getTotalOrders, getTotalSales, getAOV, getCVR, getCVRDelta, getFunnelStats } from '../lib/api.js';
+import { getTotalOrders, getTotalSales, getAOV, getCVR, getCVRDelta, getFunnelStats, getTotalOrdersDelta, getTotalSalesDelta, getTotalSessionsDelta, getAtcSessionsDelta, getAOVDelta } from '../lib/api.js';
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfMoney = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
@@ -21,10 +21,15 @@ export default function KPIs({ query }) {
       getAOV(query),
       getCVR(query),
       getCVRDelta(query),
-      getFunnelStats(query)
-    ]).then(([orders, sales, aov, cvr, cvrDelta, funnel]) => {
+      getFunnelStats(query),
+      getTotalOrdersDelta(query),
+      getTotalSalesDelta(query),
+      getTotalSessionsDelta(query),
+      getAtcSessionsDelta(query),
+      getAOVDelta(query)
+    ]).then(([orders, sales, aov, cvr, cvrDelta, funnel, ordDelta, salesDelta, sessDelta, atcDelta, aovDelta]) => {
       if (cancelled) return;
-      setData({ orders, sales, aov, cvr, cvrDelta, funnel });
+      setData({ orders, sales, aov, cvr, cvrDelta, funnel, ordDelta, salesDelta, sessDelta, atcDelta, aovDelta });
       setLoading(false);
     }).catch(() => setLoading(false));
     return () => { cancelled = true; };
@@ -41,6 +46,7 @@ export default function KPIs({ query }) {
           value={data.orders?.value ?? 0}
           loading={loading}
           formatter={(v) => nfInt.format(v)}
+          delta={data.ordDelta ? { value: data.ordDelta.diff_pct, direction: data.ordDelta.direction } : undefined}
         />
       </Grid>
       <Grid size={{ xs: 1, sm: 2 }}>
@@ -49,6 +55,7 @@ export default function KPIs({ query }) {
           value={data.sales?.value ?? 0}
           loading={loading}
           formatter={(v) => nfMoney.format(v)}
+          delta={data.salesDelta ? { value: data.salesDelta.diff_pct, direction: data.salesDelta.direction } : undefined}
         />
       </Grid>
       <Grid size={{ xs: 1, sm: 2 }}>
@@ -57,6 +64,7 @@ export default function KPIs({ query }) {
           value={data.aov?.aov ?? 0}
           loading={loading}
           formatter={(v) => nfMoney2.format(v)}
+          delta={data.aovDelta ? { value: data.aovDelta.diff_pct, direction: data.aovDelta.direction } : undefined}
         />
       </Grid>
       <Grid size={{ xs: 1, sm: 2 }}>
@@ -74,6 +82,7 @@ export default function KPIs({ query }) {
           value={totalSessions}
           loading={loading}
           formatter={(v) => nfInt.format(v)}
+          delta={data.sessDelta ? { value: data.sessDelta.diff_pct, direction: data.sessDelta.direction } : undefined}
         />
       </Grid>
       <Grid size={{ xs: 1, sm: 2 }}>
@@ -82,6 +91,7 @@ export default function KPIs({ query }) {
       value={totalAtcSessions}
           loading={loading}
           formatter={(v) => nfInt.format(v)}
+          delta={data.atcDelta ? { value: data.atcDelta.diff_pct, direction: data.atcDelta.direction } : undefined}
         />
       </Grid>
     </Grid>
