@@ -531,6 +531,34 @@ app.get('/metrics/total-sales-delta', requireAuth, brandContext, async (req, res
     if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
     const date = parsed.data.end || parsed.data.start;
     if (!date) return res.json({ metric: 'TOTAL_SALES_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+
+    // Optional hour-aligned compare using hour_wise_sales
+    const align = (req.query.align || '').toString().toLowerCase();
+    if (align === 'hour') {
+      // Determine target hour (IST now if date is today; else 23)
+      const IST_OFFSET_MIN = 330;
+      const nowUtc = new Date();
+      const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
+      const yyyy = nowIst.getUTCFullYear();
+      const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(nowIst.getUTCDate()).padStart(2, '0');
+      const todayIst = `${yyyy}-${mm}-${dd}`;
+      const targetHour = (date === todayIst) ? nowIst.getUTCHours() : 23;
+
+      const prev = prevDayStr(date);
+      const sql = `SELECT COALESCE(SUM(total_sales),0) AS total FROM hour_wise_sales WHERE date = ? AND hour <= ?`;
+      const [currRow, prevRow] = await Promise.all([
+        req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
+        req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
+      ]);
+      const curr = Number(currRow?.[0]?.total || 0);
+      const prevVal = Number(prevRow?.[0]?.total || 0);
+      const diff = curr - prevVal;
+      const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+      return res.json({ metric: 'TOTAL_SALES_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
+    }
+
     const d = await deltaForSum('total_sales', date, req.brandDb.sequelize);
     return res.json({ metric: 'TOTAL_SALES_DELTA', date, ...d });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
@@ -543,6 +571,32 @@ app.get('/metrics/total-sessions-delta', requireAuth, brandContext, async (req, 
     if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
     const date = parsed.data.end || parsed.data.start;
     if (!date) return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+
+    const align = (req.query.align || '').toString().toLowerCase();
+    if (align === 'hour') {
+      const IST_OFFSET_MIN = 330;
+      const nowUtc = new Date();
+      const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
+      const yyyy = nowIst.getUTCFullYear();
+      const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(nowIst.getUTCDate()).padStart(2, '0');
+      const todayIst = `${yyyy}-${mm}-${dd}`;
+      const targetHour = (date === todayIst) ? nowIst.getUTCHours() : 23;
+
+      const prev = prevDayStr(date);
+      const sql = `SELECT COALESCE(SUM(number_of_sessions),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
+      const [currRow, prevRow] = await Promise.all([
+        req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
+        req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
+      ]);
+      const curr = Number(currRow?.[0]?.total || 0);
+      const prevVal = Number(prevRow?.[0]?.total || 0);
+      const diff = curr - prevVal;
+      const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+      return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
+    }
+
     const d = await deltaForSum('total_sessions', date, req.brandDb.sequelize);
     return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date, ...d });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
@@ -555,6 +609,32 @@ app.get('/metrics/atc-sessions-delta', requireAuth, brandContext, async (req, re
     if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
     const date = parsed.data.end || parsed.data.start;
     if (!date) return res.json({ metric: 'ATC_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+
+    const align = (req.query.align || '').toString().toLowerCase();
+    if (align === 'hour') {
+      const IST_OFFSET_MIN = 330;
+      const nowUtc = new Date();
+      const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
+      const yyyy = nowIst.getUTCFullYear();
+      const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(nowIst.getUTCDate()).padStart(2, '0');
+      const todayIst = `${yyyy}-${mm}-${dd}`;
+      const targetHour = (date === todayIst) ? nowIst.getUTCHours() : 23;
+
+      const prev = prevDayStr(date);
+      const sql = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
+      const [currRow, prevRow] = await Promise.all([
+        req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
+        req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
+      ]);
+      const curr = Number(currRow?.[0]?.total || 0);
+      const prevVal = Number(prevRow?.[0]?.total || 0);
+      const diff = curr - prevVal;
+      const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+      return res.json({ metric: 'ATC_SESSIONS_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
+    }
+
     const d = await deltaForSum('total_atc_sessions', date, req.brandDb.sequelize);
     return res.json({ metric: 'ATC_SESSIONS_DELTA', date, ...d });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }

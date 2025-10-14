@@ -53,8 +53,8 @@ export async function getTotalSales({ start, end }) {
   return { value: Number(json?.total_sales || 0), error: json?.__error };
 }
 
-export async function getTotalSalesDelta({ start, end }) {
-  const json = await getJSON('/metrics/total-sales-delta', { start, end });
+export async function getTotalSalesDelta({ start, end, align }) {
+  const json = await getJSON('/metrics/total-sales-delta', { start, end, align });
   return {
     date: json?.date || null,
     current: Number(json?.current || 0),
@@ -137,8 +137,8 @@ export async function getFunnelStats({ start, end }) {
   };
 }
 
-export async function getTotalSessionsDelta({ start, end }) {
-  const json = await getJSON('/metrics/total-sessions-delta', { start, end });
+export async function getTotalSessionsDelta({ start, end, align }) {
+  const json = await getJSON('/metrics/total-sessions-delta', { start, end, align });
   return {
     date: json?.date || null,
     current: Number(json?.current || 0),
@@ -149,8 +149,8 @@ export async function getTotalSessionsDelta({ start, end }) {
   };
 }
 
-export async function getAtcSessionsDelta({ start, end }) {
-  const json = await getJSON('/metrics/atc-sessions-delta', { start, end });
+export async function getAtcSessionsDelta({ start, end, align }) {
+  const json = await getJSON('/metrics/atc-sessions-delta', { start, end, align });
   return {
     date: json?.date || null,
     current: Number(json?.current || 0),

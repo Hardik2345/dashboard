@@ -23,9 +23,9 @@ export default function KPIs({ query }) {
       getCVRDelta(query),
       getFunnelStats(query),
       getTotalOrdersDelta(query),
-      getTotalSalesDelta(query),
-      getTotalSessionsDelta(query),
-      getAtcSessionsDelta(query),
+  getTotalSalesDelta({ ...query, align: 'hour' }),
+  getTotalSessionsDelta({ ...query, align: 'hour' }),
+  getAtcSessionsDelta({ ...query, align: 'hour' }),
       getAOVDelta(query)
     ]).then(([orders, sales, aov, cvr, cvrDelta, funnel, ordDelta, salesDelta, sessDelta, atcDelta, aovDelta]) => {
       if (cancelled) return;
