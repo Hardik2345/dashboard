@@ -93,14 +93,14 @@ export default function FunnelChart({ query }) {
 
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-      <CardContent sx={{ height: 320 }}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+      <CardContent sx={{ height: 320, pt: 1 }}>
+        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
           Session drop-offs
         </Typography>
         {loading ? (
-          <Skeleton variant="rounded" width="100%" height={260} />
+          <Skeleton variant="rounded" width="100%" height={268} />
         ) : (
-          <div style={{ position: 'relative', height: 260 }}>
+          <div style={{ position: 'relative', height: 268 }}>
             <Bar data={data} options={options} plugins={[valueLabelPlugin]} />
           </div>
         )}
