@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Grid from '@mui/material/Grid2';
 import KPIStat from './KPIStat.jsx';
-import { getTotalOrders, getTotalSales, getAOV, getCVR, getFunnelStats } from '../lib/api.js';
+import { getTotalOrders, getTotalSales, getAOV, getCVR, getCVRDelta, getFunnelStats } from '../lib/api.js';
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfMoney = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
@@ -20,10 +20,11 @@ export default function KPIs({ query }) {
       getTotalSales(query),
       getAOV(query),
       getCVR(query),
+      getCVRDelta(query),
       getFunnelStats(query)
-    ]).then(([orders, sales, aov, cvr, funnel]) => {
+    ]).then(([orders, sales, aov, cvr, cvrDelta, funnel]) => {
       if (cancelled) return;
-      setData({ orders, sales, aov, cvr, funnel });
+      setData({ orders, sales, aov, cvr, cvrDelta, funnel });
       setLoading(false);
     }).catch(() => setLoading(false));
     return () => { cancelled = true; };
@@ -64,6 +65,7 @@ export default function KPIs({ query }) {
           value={data.cvr?.cvr ?? 0}
           loading={loading}
           formatter={(v) => nfPct.format(v)}
+          delta={data.cvrDelta ? { value: data.cvrDelta.diff_pp, direction: data.cvrDelta.direction } : undefined}
         />
       </Grid>
     <Grid size={{ xs: 1, sm: 2 }}>

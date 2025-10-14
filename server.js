@@ -211,6 +211,12 @@ async function computeCVR({ start, end, conn }) {
   return { total_orders, total_sessions, cvr, cvr_percent: cvr * 100 };
 }
 
+// Helper: compute CVR for a single calendar day (YYYY-MM-DD)
+async function computeCVRForDay(date, conn) {
+  if (!date) return { total_orders: 0, total_sessions: 0, cvr: 0, cvr_percent: 0 };
+  return computeCVR({ start: date, end: date, conn });
+}
+
 async function computeTotalSales({ start, end, conn }) { return rawSum("total_sales", { start, end, conn }); }
 async function computeTotalOrders({ start, end, conn }) { return rawSum("total_orders", { start, end, conn }); }
 async function computeFunnelStats({ start, end, conn }) {
@@ -416,6 +422,47 @@ app.get("/metrics/cvr", requireAuth, brandContext, async (req, res) => {
       total_sessions: result.total_sessions,
       cvr: result.cvr,
       cvr_percent: result.cvr_percent,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /metrics/cvr-delta?start=YYYY-MM-DD&end=YYYY-MM-DD
+// Compares CVR for the selected day (prefers end, else start) against the previous day.
+app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
+  try {
+    const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
+    }
+    const { start, end } = parsed.data;
+    const target = end || start; // pick explicit end, otherwise start
+    if (!target) {
+      return res.json({ metric: 'CVR_DELTA', date: null, current: null, previous: null, diff_pp: 0, direction: 'flat' });
+    }
+    // previous day
+    const d = new Date(`${target}T00:00:00Z`);
+    const prev = new Date(d.getTime() - 24 * 3600_000);
+    const prevStr = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth()+1).padStart(2,'0')}-${String(prev.getUTCDate()).padStart(2,'0')}`;
+
+    const conn = req.brandDb.sequelize;
+    const [current, previous] = await Promise.all([
+      computeCVRForDay(target, conn),
+      computeCVRForDay(prevStr, conn)
+    ]);
+
+    const diff_pp = (current.cvr_percent || 0) - (previous.cvr_percent || 0);
+    const direction = diff_pp > 0.0001 ? 'up' : diff_pp < -0.0001 ? 'down' : 'flat';
+
+    return res.json({
+      metric: 'CVR_DELTA',
+      date: target,
+      current,
+      previous,
+      diff_pp, // percentage points
+      direction
     });
   } catch (err) {
     console.error(err);

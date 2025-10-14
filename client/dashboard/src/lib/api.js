@@ -79,6 +79,18 @@ export async function getCVR({ start, end }) {
   };
 }
 
+export async function getCVRDelta({ start, end }) {
+  const json = await getJSON('/metrics/cvr-delta', { start, end });
+  return {
+    date: json?.date || null,
+    current: json?.current || null,
+    previous: json?.previous || null,
+    diff_pp: Number(json?.diff_pp || 0),
+    direction: json?.direction || 'flat',
+    error: json?.__error,
+  };
+}
+
 export async function getFunnelStats({ start, end }) {
   const json = await getJSON('/metrics/funnel-stats', { start, end });
   return {
