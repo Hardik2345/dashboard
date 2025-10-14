@@ -68,7 +68,8 @@ export default function FunnelChart({ query }) {
         ctx.fillStyle = '#0d47a1';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(text, x, y - 6); // 6px above bar top
+        // Leave at least 8px from top edge; chart padding ensures space
+        ctx.fillText(text, x, y - 8); // 8px above bar top for clarity
       });
       ctx.restore();
     }
@@ -77,6 +78,11 @@ export default function FunnelChart({ query }) {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    layout: {
+      padding: {
+        top: 28, // reserve space so tallest label never clips
+      },
+    },
     plugins: {
       legend: { display: false },
       tooltip: {
