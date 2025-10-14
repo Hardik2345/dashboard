@@ -473,6 +473,7 @@ app.get("/metrics/cvr", requireAuth, brandContext, async (req, res) => {
 
 // GET /metrics/cvr-delta?start=YYYY-MM-DD&end=YYYY-MM-DD
 // Compares CVR for the selected day (prefers end, else start) against the previous day.
+// Supports align=hour to compare cumulative up to current IST hour vs same hour yesterday.
 app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
@@ -484,20 +485,83 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
     if (!target) {
       return res.json({ metric: 'CVR_DELTA', date: null, current: null, previous: null, diff_pp: 0, direction: 'flat' });
     }
-    // previous day
-    const d = new Date(`${target}T00:00:00Z`);
-    const prev = new Date(d.getTime() - 24 * 3600_000);
+    const align = (req.query.align || '').toString().toLowerCase();
+
+    // previous day string
+    const base = new Date(`${target}T00:00:00Z`);
+    const prev = new Date(base.getTime() - 24 * 3600_000);
     const prevStr = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth()+1).padStart(2,'0')}-${String(prev.getUTCDate()).padStart(2,'0')}`;
 
     const conn = req.brandDb.sequelize;
+    if (align === 'hour') {
+      // Determine target hour (IST now if target is today; else 23)
+      const IST_OFFSET_MIN = 330;
+      const offsetMs = IST_OFFSET_MIN * 60 * 1000;
+      const nowUtc = new Date();
+      const nowIst = new Date(nowUtc.getTime() + offsetMs);
+      const yyyy = nowIst.getUTCFullYear();
+      const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(nowIst.getUTCDate()).padStart(2, '0');
+      const todayIst = `${yyyy}-${mm}-${dd}`;
+      const targetHour = (target === todayIst) ? nowIst.getUTCHours() : 23;
+
+      // Sessions cumulative from hourly_sessions_summary
+      const sqlSess = `SELECT COALESCE(SUM(number_of_sessions),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
+
+      // Orders cumulative from shopify_orders counting distinct order_name in IST window [00:00, hour+1)
+      function buildIstWindow(dateStr, hour) {
+        const y = Number(dateStr.slice(0, 4));
+        const m = Number(dateStr.slice(5, 7));
+        const d0 = Number(dateStr.slice(8, 10));
+        const startUtcMs = Date.UTC(y, m - 1, d0, 0, 0, 0) - offsetMs; // IST midnight -> UTC
+        const endUtcMs = startUtcMs + (hour + 1) * 3600_000; // exclusive end at next hour
+        const startStr = new Date(startUtcMs).toISOString().slice(0,19).replace('T',' ');
+        const endStr = new Date(endUtcMs).toISOString().slice(0,19).replace('T',' ');
+        return { startStr, endStr };
+      }
+      const sqlOrders = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_at >= ? AND created_at < ?`;
+
+      const [sessCurRows, sessPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
+        conn.query(sqlSess, { type: QueryTypes.SELECT, replacements: [target, targetHour] }),
+        conn.query(sqlSess, { type: QueryTypes.SELECT, replacements: [prevStr, targetHour] }),
+        (async () => {
+          const { startStr, endStr } = buildIstWindow(target, targetHour);
+          return conn.query(sqlOrders, { type: QueryTypes.SELECT, replacements: [startStr, endStr] });
+        })(),
+        (async () => {
+          const { startStr, endStr } = buildIstWindow(prevStr, targetHour);
+          return conn.query(sqlOrders, { type: QueryTypes.SELECT, replacements: [startStr, endStr] });
+        })(),
+      ]);
+
+      const curSessions = Number(sessCurRows?.[0]?.total || 0);
+      const prevSessions = Number(sessPrevRows?.[0]?.total || 0);
+      const curOrders = Number(ordersCurRows?.[0]?.cnt || 0);
+      const prevOrders = Number(ordersPrevRows?.[0]?.cnt || 0);
+
+      const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
+      const prevCVR = prevSessions > 0 ? (prevOrders / prevSessions) : 0;
+      const diff_pp = (curCVR - prevCVR) * 100;
+      const direction = diff_pp > 0.0001 ? 'up' : diff_pp < -0.0001 ? 'down' : 'flat';
+      return res.json({
+        metric: 'CVR_DELTA',
+        date: target,
+        current: { total_orders: curOrders, total_sessions: curSessions, cvr: curCVR, cvr_percent: curCVR * 100 },
+        previous: { total_orders: prevOrders, total_sessions: prevSessions, cvr: prevCVR, cvr_percent: prevCVR * 100 },
+        diff_pp,
+        direction,
+        align: 'hour',
+        hour: targetHour
+      });
+    }
+
+    // Default day-based comparison
     const [current, previous] = await Promise.all([
       computeCVRForDay(target, conn),
       computeCVRForDay(prevStr, conn)
     ]);
-
     const diff_pp = (current.cvr_percent || 0) - (previous.cvr_percent || 0);
     const direction = diff_pp > 0.0001 ? 'up' : diff_pp < -0.0001 ? 'down' : 'flat';
-
     return res.json({
       metric: 'CVR_DELTA',
       date: target,
@@ -519,12 +583,12 @@ app.get('/metrics/total-orders-delta', requireAuth, brandContext, async (req, re
     if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
     const date = parsed.data.end || parsed.data.start;
     if (!date) return res.json({ metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
-    const d = await deltaForSum('total_orders', date, req.brandDb.sequelize);
-    return res.json({ metric: 'TOTAL_ORDERS_DELTA', date, ...d });
+    const delta = await deltaForSum('total_orders', date, req.brandDb.sequelize);
+    return res.json({ metric: 'TOTAL_ORDERS_DELTA', date, ...delta });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
 });
 
-// Total Sales delta (vs previous day)
+// Total Sales delta (vs previous day) with optional align=hour
 app.get('/metrics/total-sales-delta', requireAuth, brandContext, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
@@ -532,10 +596,8 @@ app.get('/metrics/total-sales-delta', requireAuth, brandContext, async (req, res
     const date = parsed.data.end || parsed.data.start;
     if (!date) return res.json({ metric: 'TOTAL_SALES_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
 
-    // Optional hour-aligned compare using hour_wise_sales
     const align = (req.query.align || '').toString().toLowerCase();
     if (align === 'hour') {
-      // Determine target hour (IST now if date is today; else 23)
       const IST_OFFSET_MIN = 330;
       const nowUtc = new Date();
       const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
@@ -559,8 +621,8 @@ app.get('/metrics/total-sales-delta', requireAuth, brandContext, async (req, res
       return res.json({ metric: 'TOTAL_SALES_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
     }
 
-    const d = await deltaForSum('total_sales', date, req.brandDb.sequelize);
-    return res.json({ metric: 'TOTAL_SALES_DELTA', date, ...d });
+    const delta = await deltaForSum('total_sales', date, req.brandDb.sequelize);
+    return res.json({ metric: 'TOTAL_SALES_DELTA', date, ...delta });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
 });
 

@@ -20,7 +20,7 @@ export default function KPIs({ query }) {
       getTotalSales(query),
       getAOV(query),
       getCVR(query),
-      getCVRDelta(query),
+  getCVRDelta({ ...query, align: 'hour' }),
       getFunnelStats(query),
       getTotalOrdersDelta(query),
   getTotalSalesDelta({ ...query, align: 'hour' }),

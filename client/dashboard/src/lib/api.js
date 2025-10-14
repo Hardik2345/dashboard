@@ -115,14 +115,16 @@ export async function getCVR({ start, end }) {
   };
 }
 
-export async function getCVRDelta({ start, end }) {
-  const json = await getJSON('/metrics/cvr-delta', { start, end });
+export async function getCVRDelta({ start, end, align }) {
+  const json = await getJSON('/metrics/cvr-delta', { start, end, align });
   return {
     date: json?.date || null,
     current: json?.current || null,
     previous: json?.previous || null,
     diff_pp: Number(json?.diff_pp || 0),
     direction: json?.direction || 'flat',
+    align: json?.align || undefined,
+    hour: typeof json?.hour === 'number' ? json.hour : undefined,
     error: json?.__error,
   };
 }
