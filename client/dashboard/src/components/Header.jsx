@@ -27,12 +27,12 @@ export default function Header({ user, onLogout }) {
               variant="h6"
               component="div"
               sx={{
-                paddingTop:3,
-                fontWeight: 800,
-                letterSpacing: { xs: '.02em', sm: '.28em' },
+                paddingTop: 3,
+                fontWeight: 900,
+                letterSpacing: { xs: '.08em', sm: '.22em' },
                 textTransform: 'uppercase',
                 color: 'text.primary',
-                fontSize: { xs: '1.9rem', sm: '1.05rem' },
+                fontSize: { xs: 'clamp(1.25rem, 6vw, 1.6rem)', sm: '1.5rem' },
                 whiteSpace: 'nowrap',
               }}
             >
