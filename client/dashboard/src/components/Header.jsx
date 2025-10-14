@@ -32,7 +32,9 @@ export default function Header({ user, onLogout }) {
                 letterSpacing: { xs: '.08em', sm: '.22em' },
                 textTransform: 'uppercase',
                 color: 'text.primary',
-                fontSize: { xs: 'clamp(1.25rem, 6vw, 1.6rem)', sm: '1.5rem' },
+                // Larger size on desktop while keeping mobile balanced
+                fontSize: { xs: 'clamp(1.25rem, 6vw, 1.6rem)', sm: '2.1rem', md: '2.4rem' },
+                lineHeight: 1.05,
                 whiteSpace: 'nowrap',
               }}
             >
