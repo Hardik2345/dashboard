@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import Grid from '@mui/material/Grid2';
 import KPIStat from './KPIStat.jsx';
-import { getTotalOrders, getTotalSales, getAOV, getCVR, getCVRDelta, getFunnelStats, getTotalOrdersDelta, getTotalSalesDelta, getTotalSessionsDelta, getAtcSessionsDelta, getAOVDelta } from '../lib/api.js';
+import {
+  getTotalOrders,
+  getTotalSales,
+  getAOV,
+  getCVR,
+  getCVRDelta,
+  getFunnelStats,
+  getTotalSalesDelta,
+  getTotalSessionsDelta,
+  getAtcSessionsDelta,
+  getAOVDelta,
+} from '../lib/api.js';
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfMoney = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
@@ -20,16 +31,15 @@ export default function KPIs({ query }) {
       getTotalSales(query),
       getAOV(query),
       getCVR(query),
-  getCVRDelta({ ...query, align: 'hour' }),
+      getCVRDelta({ ...query, align: 'hour' }),
       getFunnelStats(query),
-      getTotalOrdersDelta(query),
-  getTotalSalesDelta({ ...query, align: 'hour' }),
-  getTotalSessionsDelta({ ...query, align: 'hour' }),
-  getAtcSessionsDelta({ ...query, align: 'hour' }),
-      getAOVDelta(query)
-    ]).then(([orders, sales, aov, cvr, cvrDelta, funnel, ordDelta, salesDelta, sessDelta, atcDelta, aovDelta]) => {
+      getTotalSalesDelta({ ...query, align: 'hour' }),
+      getTotalSessionsDelta({ ...query, align: 'hour' }),
+      getAtcSessionsDelta({ ...query, align: 'hour' }),
+      getAOVDelta(query),
+    ]).then(([orders, sales, aov, cvr, cvrDelta, funnel, salesDelta, sessDelta, atcDelta, aovDelta]) => {
       if (cancelled) return;
-      setData({ orders, sales, aov, cvr, cvrDelta, funnel, ordDelta, salesDelta, sessDelta, atcDelta, aovDelta });
+      setData({ orders, sales, aov, cvr, cvrDelta, funnel, salesDelta, sessDelta, atcDelta, aovDelta });
       setLoading(false);
     }).catch(() => setLoading(false));
     return () => { cancelled = true; };
@@ -46,7 +56,6 @@ export default function KPIs({ query }) {
           value={data.orders?.value ?? 0}
           loading={loading}
           formatter={(v) => nfInt.format(v)}
-          delta={data.ordDelta ? { value: data.ordDelta.diff_pct, direction: data.ordDelta.direction } : undefined}
         />
       </Grid>
       <Grid size={{ xs: 1, sm: 2 }}>
