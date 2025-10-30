@@ -567,7 +567,76 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
       const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
       const dd = String(nowIst.getUTCDate()).padStart(2, '0');
       const todayIst = `${yyyy}-${mm}-${dd}`;
-      const targetHour = (target === todayIst) ? nowIst.getUTCHours() : 23;
+      const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
+
+      if (start && end) {
+        // Range: align to current IST hour if includes today; else full-day (23)
+        const targetHour = resolveTargetHour(end);
+
+        // Sessions cumulative across range
+        const sqlSessRange = `SELECT COALESCE(SUM(number_of_sessions),0) AS total FROM hourly_sessions_summary WHERE date >= ? AND date <= ? AND hour <= ?`;
+
+        // Orders cumulative across range, using IST date/hour buckets and counting distinct order_name per bucket
+        function istRangeUtcBounds(s, e) {
+          const y1 = Number(s.slice(0,4));
+          const m1 = Number(s.slice(5,7));
+          const d1 = Number(s.slice(8,10));
+          const y2 = Number(e.slice(0,4));
+          const m2 = Number(e.slice(5,7));
+          const d2 = Number(e.slice(8,10));
+          const startUtcMs = Date.UTC(y1, m1 - 1, d1, 0, 0, 0) - offsetMs; // IST midnight -> UTC
+          const endUtcMs = Date.UTC(y2, m2 - 1, d2 + 1, 0, 0, 0) - offsetMs; // end date + 1 day IST midnight -> UTC
+          const startStr = new Date(startUtcMs).toISOString().slice(0,19).replace('T',' ');
+          const endStr = new Date(endUtcMs).toISOString().slice(0,19).replace('T',' ');
+          return { startStr, endStr };
+        }
+        const sqlOrdersRange = `
+          SELECT COALESCE(SUM(cnt),0) AS total FROM (
+            SELECT DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) AS d,
+                   HOUR(CONVERT_TZ(created_at, '+00:00', '+05:30')) AS h,
+                   COUNT(DISTINCT order_name) AS cnt
+            FROM shopify_orders
+            WHERE created_at >= ? AND created_at < ?
+            GROUP BY d, h
+          ) t
+          WHERE h <= ? AND d >= ? AND d <= ?`;
+
+        const prevWin = previousWindow(start, end);
+        const [{ startStr, endStr }, { startStr: pStartStr, endStr: pEndStr }] = [
+          istRangeUtcBounds(start, end),
+          istRangeUtcBounds(prevWin.prevStart, prevWin.prevEnd)
+        ];
+
+        const [sessCurRows, sessPrevRows, ordCurRows, ordPrevRows] = await Promise.all([
+          conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
+          conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, targetHour] }),
+          conn.query(sqlOrdersRange, { type: QueryTypes.SELECT, replacements: [startStr, endStr, targetHour, start, end] }),
+          conn.query(sqlOrdersRange, { type: QueryTypes.SELECT, replacements: [pStartStr, pEndStr, targetHour, prevWin.prevStart, prevWin.prevEnd] }),
+        ]);
+
+        const curSessions = Number(sessCurRows?.[0]?.total || 0);
+        const prevSessions = Number(sessPrevRows?.[0]?.total || 0);
+        const curOrders = Number(ordCurRows?.[0]?.total || 0);
+        const prevOrders = Number(ordPrevRows?.[0]?.total || 0);
+
+        const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
+        const prevCVR = prevSessions > 0 ? (prevOrders / prevSessions) : 0;
+        const diff_pp = (curCVR - prevCVR) * 100;
+        const direction = diff_pp > 0.0001 ? 'up' : diff_pp < -0.0001 ? 'down' : 'flat';
+        return res.json({
+          metric: 'CVR_DELTA',
+          range: { start, end },
+          current: { total_orders: curOrders, total_sessions: curSessions, cvr: curCVR, cvr_percent: curCVR * 100 },
+          previous: { total_orders: prevOrders, total_sessions: prevSessions, cvr: prevCVR, cvr_percent: prevCVR * 100 },
+          diff_pp,
+          direction,
+          align: 'hour',
+          hour: targetHour
+        });
+      }
+
+      // Single-day align=hour (existing behavior)
+      const targetHour = resolveTargetHour(target);
 
       // Sessions cumulative from hourly_sessions_summary
       const sqlSess = `SELECT COALESCE(SUM(number_of_sessions),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
@@ -603,7 +672,7 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
       const curOrders = Number(ordersCurRows?.[0]?.cnt || 0);
       const prevOrders = Number(ordersPrevRows?.[0]?.cnt || 0);
 
-      const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
+  const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
       const prevCVR = prevSessions > 0 ? (prevOrders / prevSessions) : 0;
       const diff_pp = (curCVR - prevCVR) * 100;
       const direction = diff_pp > 0.0001 ? 'up' : diff_pp < -0.0001 ? 'down' : 'flat';
@@ -752,20 +821,37 @@ app.get('/metrics/total-sessions-delta', requireAuth, brandContext, async (req, 
       const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
       const dd = String(nowIst.getUTCDate()).padStart(2, '0');
       const todayIst = `${yyyy}-${mm}-${dd}`;
-      const targetHour = (date === todayIst) ? nowIst.getUTCHours() : 23;
+      const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
 
-      const prev = prevDayStr(date);
-      const sql = `SELECT COALESCE(SUM(number_of_sessions),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
-      const [currRow, prevRow] = await Promise.all([
-        req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
-        req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
-      ]);
-      const curr = Number(currRow?.[0]?.total || 0);
-      const prevVal = Number(prevRow?.[0]?.total || 0);
-      const diff = curr - prevVal;
-      const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
-      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-      return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
+      if (start && end) {
+        const targetHour = resolveTargetHour(end);
+        const prevWin = previousWindow(start, end);
+        const sqlRange = `SELECT COALESCE(SUM(number_of_sessions),0) AS total FROM hourly_sessions_summary WHERE date >= ? AND date <= ? AND hour <= ?`;
+        const [currRow, prevRow] = await Promise.all([
+          req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
+          req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, targetHour] }),
+        ]);
+        const curr = Number(currRow?.[0]?.total || 0);
+        const prevVal = Number(prevRow?.[0]?.total || 0);
+        const diff = curr - prevVal;
+        const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+        const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+        return res.json({ metric: 'TOTAL_SESSIONS_DELTA', range: { start, end }, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
+      } else {
+        const targetHour = resolveTargetHour(date);
+        const prev = prevDayStr(date);
+        const sql = `SELECT COALESCE(SUM(number_of_sessions),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
+        const [currRow, prevRow] = await Promise.all([
+          req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
+          req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
+        ]);
+        const curr = Number(currRow?.[0]?.total || 0);
+        const prevVal = Number(prevRow?.[0]?.total || 0);
+        const diff = curr - prevVal;
+        const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+        const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+        return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
+      }
     }
 
     const d = await deltaForSum('total_sessions', date, req.brandDb.sequelize);
@@ -802,20 +888,37 @@ app.get('/metrics/atc-sessions-delta', requireAuth, brandContext, async (req, re
       const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
       const dd = String(nowIst.getUTCDate()).padStart(2, '0');
       const todayIst = `${yyyy}-${mm}-${dd}`;
-      const targetHour = (date === todayIst) ? nowIst.getUTCHours() : 23;
+      const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
 
-      const prev = prevDayStr(date);
-      const sql = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
-      const [currRow, prevRow] = await Promise.all([
-        req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
-        req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
-      ]);
-      const curr = Number(currRow?.[0]?.total || 0);
-      const prevVal = Number(prevRow?.[0]?.total || 0);
-      const diff = curr - prevVal;
-      const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
-      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-      return res.json({ metric: 'ATC_SESSIONS_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
+      if (start && end) {
+        const targetHour = resolveTargetHour(end);
+        const prevWin = previousWindow(start, end);
+        const sqlRange = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary WHERE date >= ? AND date <= ? AND hour <= ?`;
+        const [currRow, prevRow] = await Promise.all([
+          req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
+          req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, targetHour] }),
+        ]);
+        const curr = Number(currRow?.[0]?.total || 0);
+        const prevVal = Number(prevRow?.[0]?.total || 0);
+        const diff = curr - prevVal;
+        const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+        const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+        return res.json({ metric: 'ATC_SESSIONS_DELTA', range: { start, end }, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
+      } else {
+        const targetHour = resolveTargetHour(date);
+        const prev = prevDayStr(date);
+        const sql = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
+        const [currRow, prevRow] = await Promise.all([
+          req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
+          req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
+        ]);
+        const curr = Number(currRow?.[0]?.total || 0);
+        const prevVal = Number(prevRow?.[0]?.total || 0);
+        const diff = curr - prevVal;
+        const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+        const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+        return res.json({ metric: 'ATC_SESSIONS_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
+      }
     }
 
     const d = await deltaForSum('total_atc_sessions', date, req.brandDb.sequelize);
