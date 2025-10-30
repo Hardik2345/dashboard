@@ -33,7 +33,7 @@ export default function KPIs({ query }) {
       getCVR(query),
   getCVRDelta({ ...query, compare: 'prev-range-avg' }),
       getFunnelStats(query),
-  getTotalSalesDelta({ ...query, compare: 'prev-range-avg' }),
+  getTotalSalesDelta({ ...query, align: 'hour' }),
   getTotalSessionsDelta({ ...query, compare: 'prev-range-avg' }),
   getAtcSessionsDelta({ ...query, compare: 'prev-range-avg' }),
   getAOVDelta({ ...query, compare: 'prev-range-avg' }),

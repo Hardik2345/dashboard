@@ -657,9 +657,9 @@ app.get('/metrics/total-sales-delta', requireAuth, brandContext, async (req, res
   try {
     const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
     if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
-    const { start, end } = parsed.data;
-    const date = end || start;
-    if (!date && !(start && end)) return res.json({ metric: 'TOTAL_SALES_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+  const { start, end } = parsed.data;
+  const date = end || start;
+  if (!date && !(start && end)) return res.json({ metric: 'TOTAL_SALES_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
 
     const compare = (req.query.compare || '').toString().toLowerCase();
     if (compare === 'prev-range-avg' && start && end) {
@@ -681,20 +681,38 @@ app.get('/metrics/total-sales-delta', requireAuth, brandContext, async (req, res
       const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
       const dd = String(nowIst.getUTCDate()).padStart(2, '0');
       const todayIst = `${yyyy}-${mm}-${dd}`;
-      const targetHour = (date === todayIst) ? nowIst.getUTCHours() : 23;
+      // Use today's IST hour cut-off for alignment across all dates in the window
+      const targetHour = nowIst.getUTCHours();
 
-      const prev = prevDayStr(date);
-      const sql = `SELECT COALESCE(SUM(total_sales),0) AS total FROM hour_wise_sales WHERE date = ? AND hour <= ?`;
-      const [currRow, prevRow] = await Promise.all([
-        req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
-        req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
-      ]);
-      const curr = Number(currRow?.[0]?.total || 0);
-      const prevVal = Number(prevRow?.[0]?.total || 0);
-      const diff = curr - prevVal;
-      const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
-      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-      return res.json({ metric: 'TOTAL_SALES_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
+      if (start && end) {
+        // Sum across the selected range up to targetHour for each day
+        const prevWin = previousWindow(start, end);
+        const sqlRange = `SELECT COALESCE(SUM(total_sales),0) AS total FROM hour_wise_sales WHERE date >= ? AND date <= ? AND hour <= ?`;
+        const [currRow, prevRow] = await Promise.all([
+          req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
+          req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, targetHour] }),
+        ]);
+        const curr = Number(currRow?.[0]?.total || 0);
+        const prevVal = Number(prevRow?.[0]?.total || 0);
+        const diff = curr - prevVal;
+        const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+        const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+        return res.json({ metric: 'TOTAL_SALES_DELTA', range: { start, end }, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
+      } else {
+        // Single day fallback
+        const prev = prevDayStr(date);
+        const sql = `SELECT COALESCE(SUM(total_sales),0) AS total FROM hour_wise_sales WHERE date = ? AND hour <= ?`;
+        const [currRow, prevRow] = await Promise.all([
+          req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
+          req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
+        ]);
+        const curr = Number(currRow?.[0]?.total || 0);
+        const prevVal = Number(prevRow?.[0]?.total || 0);
+        const diff = curr - prevVal;
+        const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+        const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+        return res.json({ metric: 'TOTAL_SALES_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
+      }
     }
 
     const delta = await deltaForSum('total_sales', date, req.brandDb.sequelize);
