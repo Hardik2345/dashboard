@@ -31,12 +31,12 @@ export default function KPIs({ query }) {
       getTotalSales(query),
       getAOV(query),
       getCVR(query),
-      getCVRDelta({ ...query, align: 'hour' }),
+  getCVRDelta({ ...query, compare: 'prev-range-avg' }),
       getFunnelStats(query),
-      getTotalSalesDelta({ ...query, align: 'hour' }),
-      getTotalSessionsDelta({ ...query, align: 'hour' }),
-      getAtcSessionsDelta({ ...query, align: 'hour' }),
-      getAOVDelta(query),
+  getTotalSalesDelta({ ...query, compare: 'prev-range-avg' }),
+  getTotalSessionsDelta({ ...query, compare: 'prev-range-avg' }),
+  getAtcSessionsDelta({ ...query, compare: 'prev-range-avg' }),
+  getAOVDelta({ ...query, compare: 'prev-range-avg' }),
     ]).then(([orders, sales, aov, cvr, cvrDelta, funnel, salesDelta, sessDelta, atcDelta, aovDelta]) => {
       if (cancelled) return;
       setData({ orders, sales, aov, cvr, cvrDelta, funnel, salesDelta, sessDelta, atcDelta, aovDelta });

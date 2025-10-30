@@ -113,6 +113,7 @@ passport.use(new LocalStrategy({ usernameField: 'email', passwordField: 'passwor
 
     // Brand user path
     const brandCfg = resolveBrandFromEmail(email);
+    console.log(`Authenticating brand user ${email} with brand config:`, brandCfg);
     if (!brandCfg) return done(null, false, { message: 'Unknown brand' });
     const brandConn = await getBrandConnection(brandCfg);
     const BrandUser = brandConn.models.User;
@@ -268,6 +269,51 @@ async function deltaForAOV(date, conn) {
   const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
   const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
   return { current: curr, previous: prevVal, diff_pct, direction };
+}
+
+// ---- Range-average helpers --------------------------------------------------
+function parseIsoDate(s) { return new Date(`${s}T00:00:00Z`); }
+function formatIsoDate(d) {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+}
+function daysInclusive(start, end) {
+  const ds = parseIsoDate(start).getTime();
+  const de = parseIsoDate(end).getTime();
+  return Math.floor((de - ds) / 86400000) + 1;
+}
+function shiftDays(dateStr, delta) {
+  const d = parseIsoDate(dateStr);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return formatIsoDate(d);
+}
+
+async function avgForRange(column, { start, end, conn }) {
+  if (!start || !end) return 0;
+  const n = daysInclusive(start, end);
+  if (n <= 0) return 0;
+  const total = await rawSum(column, { start, end, conn });
+  return total / n;
+}
+
+function previousWindow(start, end) {
+  if (!start || !end) return null;
+  const n = daysInclusive(start, end);
+  const prevEnd = shiftDays(start, -1);
+  const prevStart = shiftDays(prevEnd, -(n - 1));
+  return { prevStart, prevEnd };
+}
+
+async function aovForRange({ start, end, conn }) {
+  if (!start || !end) return 0;
+  const { total_sales, total_orders } = await computeAOV({ start, end, conn });
+  return total_orders > 0 ? total_sales / total_orders : 0;
+}
+
+async function cvrForRange({ start, end, conn }) {
+  if (!start || !end) return { cvr: 0, cvr_percent: 0 };
+  const { total_orders, total_sessions } = await computeCVR({ start, end, conn });
+  const cvr = total_sessions > 0 ? total_orders / total_sessions : 0;
+  return { cvr, cvr_percent: cvr * 100 };
 }
 
 // ---- Upstream cache (last-updated proxy) ------------------------------------
@@ -486,6 +532,24 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
       return res.json({ metric: 'CVR_DELTA', date: null, current: null, previous: null, diff_pp: 0, direction: 'flat' });
     }
     const align = (req.query.align || '').toString().toLowerCase();
+    const compare = (req.query.compare || '').toString().toLowerCase();
+
+    if (compare === 'prev-range-avg' && start && end) {
+      const curr = await cvrForRange({ start, end, conn: req.brandDb.sequelize });
+      const prevWin = previousWindow(start, end);
+      const prev = await cvrForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn: req.brandDb.sequelize });
+      const diff_pp = (curr.cvr_percent || 0) - (prev.cvr_percent || 0);
+      const direction = diff_pp > 0.0001 ? 'up' : diff_pp < -0.0001 ? 'down' : 'flat';
+      return res.json({
+        metric: 'CVR_DELTA',
+        range: { start, end },
+        current: curr,
+        previous: prev,
+        diff_pp,
+        direction,
+        compare: 'prev-range-avg'
+      });
+    }
 
     // previous day string
     const base = new Date(`${target}T00:00:00Z`);
@@ -593,8 +657,20 @@ app.get('/metrics/total-sales-delta', requireAuth, brandContext, async (req, res
   try {
     const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
     if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
-    const date = parsed.data.end || parsed.data.start;
-    if (!date) return res.json({ metric: 'TOTAL_SALES_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+    const { start, end } = parsed.data;
+    const date = end || start;
+    if (!date && !(start && end)) return res.json({ metric: 'TOTAL_SALES_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+
+    const compare = (req.query.compare || '').toString().toLowerCase();
+    if (compare === 'prev-range-avg' && start && end) {
+      const currAvg = await avgForRange('total_sales', { start, end, conn: req.brandDb.sequelize });
+      const prevWin = previousWindow(start, end);
+      const prevAvg = await avgForRange('total_sales', { start: prevWin.prevStart, end: prevWin.prevEnd, conn: req.brandDb.sequelize });
+      const diff = currAvg - prevAvg;
+      const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+      return res.json({ metric: 'TOTAL_SALES_DELTA', range: { start, end }, current: currAvg, previous: prevAvg, diff_pct, direction, compare: 'prev-range-avg' });
+    }
 
     const align = (req.query.align || '').toString().toLowerCase();
     if (align === 'hour') {
@@ -631,8 +707,20 @@ app.get('/metrics/total-sessions-delta', requireAuth, brandContext, async (req, 
   try {
     const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
     if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
-    const date = parsed.data.end || parsed.data.start;
-    if (!date) return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+    const { start, end } = parsed.data;
+    const date = end || start;
+    if (!date && !(start && end)) return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+
+    const compare = (req.query.compare || '').toString().toLowerCase();
+    if (compare === 'prev-range-avg' && start && end) {
+      const currAvg = await avgForRange('total_sessions', { start, end, conn: req.brandDb.sequelize });
+      const prevWin = previousWindow(start, end);
+      const prevAvg = await avgForRange('total_sessions', { start: prevWin.prevStart, end: prevWin.prevEnd, conn: req.brandDb.sequelize });
+      const diff = currAvg - prevAvg;
+      const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+      return res.json({ metric: 'TOTAL_SESSIONS_DELTA', range: { start, end }, current: currAvg, previous: prevAvg, diff_pct, direction, compare: 'prev-range-avg' });
+    }
 
     const align = (req.query.align || '').toString().toLowerCase();
     if (align === 'hour') {
@@ -669,8 +757,20 @@ app.get('/metrics/atc-sessions-delta', requireAuth, brandContext, async (req, re
   try {
     const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
     if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
-    const date = parsed.data.end || parsed.data.start;
-    if (!date) return res.json({ metric: 'ATC_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+    const { start, end } = parsed.data;
+    const date = end || start;
+    if (!date && !(start && end)) return res.json({ metric: 'ATC_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+
+    const compare = (req.query.compare || '').toString().toLowerCase();
+    if (compare === 'prev-range-avg' && start && end) {
+      const currAvg = await avgForRange('total_atc_sessions', { start, end, conn: req.brandDb.sequelize });
+      const prevWin = previousWindow(start, end);
+      const prevAvg = await avgForRange('total_atc_sessions', { start: prevWin.prevStart, end: prevWin.prevEnd, conn: req.brandDb.sequelize });
+      const diff = currAvg - prevAvg;
+      const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+      return res.json({ metric: 'ATC_SESSIONS_DELTA', range: { start, end }, current: currAvg, previous: prevAvg, diff_pct, direction, compare: 'prev-range-avg' });
+    }
 
     const align = (req.query.align || '').toString().toLowerCase();
     if (align === 'hour') {
@@ -707,8 +807,21 @@ app.get('/metrics/aov-delta', requireAuth, brandContext, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
     if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
-    const date = parsed.data.end || parsed.data.start;
-    if (!date) return res.json({ metric: 'AOV_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+    const { start, end } = parsed.data;
+    const date = end || start;
+    if (!date && !(start && end)) return res.json({ metric: 'AOV_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+
+    const compare = (req.query.compare || '').toString().toLowerCase();
+    if (compare === 'prev-range-avg' && start && end) {
+      const curr = await aovForRange({ start, end, conn: req.brandDb.sequelize });
+      const prevWin = previousWindow(start, end);
+      const prev = await aovForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn: req.brandDb.sequelize });
+      const diff = curr - prev;
+      const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+      return res.json({ metric: 'AOV_DELTA', range: { start, end }, current: curr, previous: prev, diff_pct, direction, compare: 'prev-range-avg' });
+    }
+
     const d = await deltaForAOV(date, req.brandDb.sequelize);
     return res.json({ metric: 'AOV_DELTA', date, ...d });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }

@@ -53,14 +53,15 @@ export async function getTotalSales({ start, end }) {
   return { value: Number(json?.total_sales || 0), error: json?.__error };
 }
 
-export async function getTotalSalesDelta({ start, end, align }) {
-  const json = await getJSON('/metrics/total-sales-delta', { start, end, align });
+export async function getTotalSalesDelta({ start, end, align, compare }) {
+  const json = await getJSON('/metrics/total-sales-delta', { start, end, align, compare });
   return {
     date: json?.date || null,
     current: Number(json?.current || 0),
     previous: Number(json?.previous || 0),
     diff_pct: Number(json?.diff_pct || 0),
     direction: json?.direction || 'flat',
+    compare: json?.compare,
     error: json?.__error,
   };
 }
@@ -92,14 +93,15 @@ export async function getAOV({ start, end }) {
   };
 }
 
-export async function getAOVDelta({ start, end }) {
-  const json = await getJSON('/metrics/aov-delta', { start, end });
+export async function getAOVDelta({ start, end, compare }) {
+  const json = await getJSON('/metrics/aov-delta', { start, end, compare });
   return {
     date: json?.date || null,
     current: Number(json?.current || 0),
     previous: Number(json?.previous || 0),
     diff_pct: Number(json?.diff_pct || 0),
     direction: json?.direction || 'flat',
+    compare: json?.compare,
     error: json?.__error,
   };
 }
@@ -115,8 +117,8 @@ export async function getCVR({ start, end }) {
   };
 }
 
-export async function getCVRDelta({ start, end, align }) {
-  const json = await getJSON('/metrics/cvr-delta', { start, end, align });
+export async function getCVRDelta({ start, end, align, compare }) {
+  const json = await getJSON('/metrics/cvr-delta', { start, end, align, compare });
   return {
     date: json?.date || null,
     current: json?.current || null,
@@ -125,6 +127,7 @@ export async function getCVRDelta({ start, end, align }) {
     direction: json?.direction || 'flat',
     align: json?.align || undefined,
     hour: typeof json?.hour === 'number' ? json.hour : undefined,
+    compare: json?.compare,
     error: json?.__error,
   };
 }
@@ -139,26 +142,28 @@ export async function getFunnelStats({ start, end }) {
   };
 }
 
-export async function getTotalSessionsDelta({ start, end, align }) {
-  const json = await getJSON('/metrics/total-sessions-delta', { start, end, align });
+export async function getTotalSessionsDelta({ start, end, align, compare }) {
+  const json = await getJSON('/metrics/total-sessions-delta', { start, end, align, compare });
   return {
     date: json?.date || null,
     current: Number(json?.current || 0),
     previous: Number(json?.previous || 0),
     diff_pct: Number(json?.diff_pct || 0),
     direction: json?.direction || 'flat',
+    compare: json?.compare,
     error: json?.__error,
   };
 }
 
-export async function getAtcSessionsDelta({ start, end, align }) {
-  const json = await getJSON('/metrics/atc-sessions-delta', { start, end, align });
+export async function getAtcSessionsDelta({ start, end, align, compare }) {
+  const json = await getJSON('/metrics/atc-sessions-delta', { start, end, align, compare });
   return {
     date: json?.date || null,
     current: Number(json?.current || 0),
     previous: Number(json?.previous || 0),
     diff_pct: Number(json?.diff_pct || 0),
     direction: json?.direction || 'flat',
+    compare: json?.compare,
     error: json?.__error,
   };
 }
