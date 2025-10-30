@@ -681,11 +681,13 @@ app.get('/metrics/total-sales-delta', requireAuth, brandContext, async (req, res
       const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
       const dd = String(nowIst.getUTCDate()).padStart(2, '0');
       const todayIst = `${yyyy}-${mm}-${dd}`;
-      // Use today's IST hour cut-off for alignment across all dates in the window
-      const targetHour = nowIst.getUTCHours();
+
+      // For past-only selections, use full-day (23) cutoff; if selection includes today, use current IST hour
+      const resolveTargetHour = (rangeEndOrDate) => (rangeEndOrDate === todayIst ? nowIst.getUTCHours() : 23);
 
       if (start && end) {
-        // Sum across the selected range up to targetHour for each day
+        // If the range does not include today (end < today), compare full-day vs full-day; else align to current hour
+        const targetHour = resolveTargetHour(end);
         const prevWin = previousWindow(start, end);
         const sqlRange = `SELECT COALESCE(SUM(total_sales),0) AS total FROM hour_wise_sales WHERE date >= ? AND date <= ? AND hour <= ?`;
         const [currRow, prevRow] = await Promise.all([
@@ -699,7 +701,8 @@ app.get('/metrics/total-sales-delta', requireAuth, brandContext, async (req, res
         const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
         return res.json({ metric: 'TOTAL_SALES_DELTA', range: { start, end }, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
       } else {
-        // Single day fallback
+        // Single day selection: if not today, use full-day vs full-day
+        const targetHour = resolveTargetHour(date);
         const prev = prevDayStr(date);
         const sql = `SELECT COALESCE(SUM(total_sales),0) AS total FROM hour_wise_sales WHERE date = ? AND hour <= ?`;
         const [currRow, prevRow] = await Promise.all([
