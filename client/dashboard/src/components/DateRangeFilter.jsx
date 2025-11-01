@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Paper, Stack, Typography } from '@mui/material';
-import { Button, DatePicker, Popover } from '@shopify/polaris';
+import { ActionList, Button, DatePicker, Popover } from '@shopify/polaris';
 import dayjs from 'dayjs';
 
 export default function DateRangeFilter({ value, onChange }) {
@@ -83,6 +83,41 @@ export default function DateRangeFilter({ value, onChange }) {
     onChange([startDay, endDay ?? startDay ?? null]);
   }, [onChange]);
 
+  const presetOptions = [
+    {
+      key: 'today',
+      label: 'Today',
+      getRange: () => {
+        const today = dayjs().startOf('day');
+        return { start: today, end: today };
+      }
+    },
+    {
+      key: 'yesterday',
+      label: 'Yesterday',
+      getRange: () => {
+        const yesterday = dayjs().subtract(1, 'day').startOf('day');
+        return { start: yesterday, end: yesterday };
+      }
+    }
+  ];
+
+  const currentPresetKey = start && end
+    ? presetOptions.find(({ getRange }) => {
+        const { start: presetStart, end: presetEnd } = getRange();
+        return start.isSame(presetStart, 'day') && end.isSame(presetEnd, 'day');
+      })?.key ?? null
+    : null;
+
+  const handlePresetSelect = useCallback((preset) => {
+    const { start: presetStart, end: presetEnd } = preset.getRange();
+    const startDay = dayjs(presetStart).startOf('day');
+    const endDay = dayjs(presetEnd).startOf('day');
+    onChange([startDay, endDay]);
+    setMonth(endDay.month());
+    setYear(endDay.year());
+  }, [onChange]);
+
   const activator = (
     <div style={{ width: '100%' }}>
       <Button onClick={togglePopover} disclosure fullWidth variant="secondary">
@@ -98,16 +133,27 @@ export default function DateRangeFilter({ value, onChange }) {
           Date range
         </Typography>
         <Popover active={popoverActive} activator={activator} fullWidth onClose={handleClose} preferInputActivator={false}>
-          <div style={{ padding: '12px' }}>
-            <DatePicker
-              month={month}
-              year={year}
-              onChange={handleRangeChange}
-              onMonthChange={handleMonthChange}
-              selected={selectedRange}
-              allowRange
-              multiMonth
-            />
+          <div style={{ padding: '12px', width: '320px' }}>
+            <Stack spacing={1.5}>
+              <ActionList
+                actionRole="menuitemradio"
+                items={presetOptions.map((preset) => ({
+                  content: preset.label,
+                  onAction: () => handlePresetSelect(preset),
+                  active: currentPresetKey === preset.key,
+                  id: preset.key
+                }))}
+              />
+              <DatePicker
+                month={month}
+                year={year}
+                onChange={handleRangeChange}
+                onMonthChange={handleMonthChange}
+                selected={selectedRange}
+                allowRange
+                multiMonth
+              />
+            </Stack>
           </div>
         </Popover>
       </Stack>
