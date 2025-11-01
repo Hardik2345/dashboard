@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Paper, Stack, Typography } from '@mui/material';
+import { Card, CardContent, Stack, Typography } from '@mui/material';
 import { Button, DatePicker, Popover } from '@shopify/polaris';
 import dayjs from 'dayjs';
 
@@ -92,25 +92,26 @@ export default function DateRangeFilter({ value, onChange }) {
   );
 
   return (
-    <Paper elevation={0} sx={{ p: 1.5 }}>
-      <Stack spacing={0.75}>
-        <Typography variant="caption" sx={{ textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>
-          Date range
-        </Typography>
-        <Popover active={popoverActive} activator={activator} fullWidth onClose={handleClose} preferInputActivator={false}>
-          <div style={{ padding: '12px' }}>
-            <DatePicker
-              month={month}
-              year={year}
-              onChange={handleRangeChange}
-              onMonthChange={handleMonthChange}
-              selected={selectedRange}
-              allowRange
-              multiMonth
-            />
-          </div>
-        </Popover>
-      </Stack>
-    </Paper>
+    <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+      <CardContent sx={{ py: 1.5 }}>
+        <Stack spacing={0.75}>
+          <Typography variant="body2" sx={{ fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+            Date range
+          </Typography>
+          <Popover active={popoverActive} activator={activator} fullWidth onClose={handleClose} preferInputActivator={false}>
+            <div style={{ padding: '12px', width: 'fit-content', maxWidth: '100%' }}>
+              <DatePicker
+                month={month}
+                year={year}
+                onChange={handleRangeChange}
+                onMonthChange={handleMonthChange}
+                selected={selectedRange}
+                allowRange
+              />
+            </div>
+          </Popover>
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }
