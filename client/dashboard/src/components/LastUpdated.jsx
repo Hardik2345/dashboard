@@ -38,8 +38,8 @@ export default function LastUpdated() {
   }, []);
 
   return (
-    <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-      <CardContent sx={{ py: 1.5 }}>
+    <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', height: '100%' }}>
+      <CardContent sx={{ py: 1.5, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         {state.loading ? (
           <Skeleton variant="text" width={220} />
         ) : state.error || !state.ts ? (

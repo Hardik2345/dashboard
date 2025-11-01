@@ -92,8 +92,8 @@ export default function DateRangeFilter({ value, onChange }) {
   );
 
   return (
-    <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-      <CardContent sx={{ py: 1.5 }}>
+    <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', height: '100%' }}>
+      <CardContent sx={{ py: 1.5, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <Stack spacing={0.75}>
           <Typography variant="body2" sx={{ fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
             Date range
