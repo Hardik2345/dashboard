@@ -149,10 +149,10 @@ export default function App() {
   <Container maxWidth="sm" sx={{ py: 2 }}>
           <Stack spacing={2}>
             <Grid container spacing={1.5} columns={{ xs: 2, sm: 6 }} alignItems="stretch">
-              <Grid size={{ xs: 2, sm: 3 }}>
+              <Grid size={{ xs: 1, sm: 3 }}>
                 <LastUpdated />
               </Grid>
-              <Grid size={{ xs: 2, sm: 3 }}>
+              <Grid size={{ xs: 1, sm: 3 }}>
                 <DateRangeFilter value={range} onChange={setRange} />
               </Grid>
             </Grid>
