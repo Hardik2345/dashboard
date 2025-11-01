@@ -99,7 +99,16 @@ export default function DateRangeFilter({ value, onChange }) {
             Date range
           </Typography>
           <Popover active={popoverActive} activator={activator} fullWidth onClose={handleClose} preferInputActivator={false}>
-            <div style={{ padding: '12px', width: 'fit-content', maxWidth: '100%' }}>
+            <div
+              style={{
+                padding: '12px',
+                width: '100%',
+                maxWidth: '320px',
+                display: 'flex',
+                justifyContent: 'center',
+                overflowX: 'hidden'
+              }}
+            >
               <DatePicker
                 month={month}
                 year={year}
