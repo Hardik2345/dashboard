@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import dayjs from 'dayjs';
 import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert } from '@mui/material';
-import { Grid, Stack as MuiStack } from '@mui/material';
+import Grid from '@mui/material/Grid2';
 import Header from './components/Header.jsx';
 import AuthorBrandForm from './components/AuthorBrandForm.jsx';
 import AuthorBrandList from './components/AuthorBrandList.jsx';
@@ -147,16 +147,16 @@ export default function App() {
       <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
   <Header user={user} onLogout={handleLogout} />
   <Container maxWidth="sm" sx={{ py: 2 }}>
-              <MuiStack spacing={2}>
-                <Grid container spacing={2} alignItems="stretch">
-                  <Grid item xs={12} md={6}>
+          <Stack spacing={2}>
+            <Grid container spacing={1.5} columns={{ xs: 2, sm: 6 }} alignItems="stretch">
+              <Grid size={{ xs: 2, sm: 3 }}>
                 <LastUpdated />
               </Grid>
-                  <Grid item xs={12} md={6}>
+              <Grid size={{ xs: 2, sm: 3 }}>
                 <DateRangeFilter value={range} onChange={setRange} />
               </Grid>
             </Grid>
-                <KPIs query={query} />
+            <KPIs query={query} />
             <Divider textAlign="left">Funnel</Divider>
             <FunnelChart query={query} />
             <OrderSplit query={query} />
@@ -165,7 +165,7 @@ export default function App() {
             <Alert severity="info" sx={{ display: { xs: 'flex', sm: 'none' } }}>
               Tip: Rotate for a wider chart.
             </Alert>
-          </MuiStack>
+          </Stack>
         </Container>
   <Footer />
       </Box>
