@@ -111,9 +111,11 @@ export default function DateRangeFilter({ value, onChange }) {
                 padding: '12px',
                 width: '100%',
                 maxWidth: '360px',
+                maxHeight: '70vh',
                 display: 'flex',
                 justifyContent: 'center',
-                overflowX: 'hidden'
+                overflowX: 'hidden',
+                overflowY: 'auto'
               }}
             >
               <DatePicker
