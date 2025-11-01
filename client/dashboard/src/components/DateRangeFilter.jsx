@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Paper, Stack, Typography } from '@mui/material';
-import { Button, DatePicker, Popover } from '@shopify/polaris';
+import { Grid2 as Grid, Paper, Typography } from '@mui/material';
+import { ActionList, Button, DatePicker, Popover } from '@shopify/polaris';
 import dayjs from 'dayjs';
 
 export default function DateRangeFilter({ value, onChange }) {
@@ -83,12 +83,61 @@ export default function DateRangeFilter({ value, onChange }) {
     onChange([startDay, endDay ?? startDay ?? null]);
   }, [onChange]);
 
+  const presets = useMemo(() => ([
+    {
+      key: 'today',
+      content: 'Today',
+      range: () => {
+        const today = dayjs().startOf('day');
+        return { start: today, end: today };
+      }
+    },
+    {
+      key: 'yesterday',
+      content: 'Yesterday',
+      range: () => {
+        const yesterday = dayjs().subtract(1, 'day').startOf('day');
+        return { start: yesterday, end: yesterday };
+      }
+    }
+  ]), []);
+
+  const activePresetKey = useMemo(() => {
+    if (!start || !end) return null;
+    return presets.find(({ range }) => {
+      const preset = range();
+      return start.isSame(preset.start, 'day') && end.isSame(preset.end, 'day');
+    })?.key ?? null;
+  }, [presets, start, end]);
+
+  const handlePreset = useCallback((rangeFn) => {
+    const { start: presetStart, end: presetEnd } = rangeFn();
+    onChange([presetStart, presetEnd]);
+    setMonth(presetEnd.month());
+    setYear(presetEnd.year());
+  }, [onChange]);
+
   const activator = (
-    <div style={{ width: '100%' }}>
-      <Button onClick={togglePopover} disclosure fullWidth variant="secondary">
-        {label}
-      </Button>
-    </div>
+    <Grid container spacing={1} alignItems="center">
+      <Grid size={{ xs: 12, sm: 6 }}>
+        <div style={{ width: '100%' }}>
+          <Button onClick={togglePopover} disclosure fullWidth variant="secondary">
+            {label}
+          </Button>
+        </div>
+      </Grid>
+      <Grid size={{ xs: 12, sm: 6 }}>
+        <ActionList
+          actionRole="menuitemradio"
+          items={presets.map((preset) => ({
+            id: preset.key,
+            content: preset.content,
+            active: preset.key === activePresetKey,
+            onAction: () => handlePreset(preset.range)
+          }))}
+        />
+      </Grid>
+    </Grid>
   );
 
   return (
