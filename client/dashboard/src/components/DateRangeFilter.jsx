@@ -101,19 +101,22 @@ export default function DateRangeFilter({ value, onChange }) {
           <Popover
             active={popoverActive}
             activator={activator}
-            fullWidth
+            fullWidth={false}
             onClose={handleClose}
             preferInputActivator={false}
+            preferredAlignment="center"
             sectioned={false}
           >
             <div
               style={{
                 padding: '12px',
-                width: '100%',
-                maxWidth: '360px',
-                maxHeight: '70vh',
                 display: 'flex',
                 justifyContent: 'center',
+                boxSizing: 'border-box',
+                width: 'clamp(320px, 90vw, 360px)',
+                minWidth: 'clamp(320px, 90vw, 360px)',
+                maxWidth: 'clamp(320px, 90vw, 360px)',
+                maxHeight: '70vh',
                 overflowX: 'hidden',
                 overflowY: 'auto'
               }}
