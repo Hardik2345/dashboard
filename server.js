@@ -1223,6 +1223,104 @@ app.get('/metrics/payment-sales-split', requireAuth, brandContext, async (req, r
   }
 });
 
+// Hourly trend data across sales, sessions, CVR, and ATC sessions
+app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => {
+  try {
+    const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+    }
+    const { start, end } = parsed.data;
+    if (!start || !end) {
+      return res.status(400).json({ error: 'Both start and end dates are required' });
+    }
+    if (start > end) {
+      return res.status(400).json({ error: 'Start date must be on or before end date' });
+    }
+
+    const IST_OFFSET_MIN = 330;
+    const offsetMs = IST_OFFSET_MIN * 60 * 1000;
+    const nowIst = new Date(Date.now() + offsetMs);
+    const todayIst = `${nowIst.getUTCFullYear()}-${String(nowIst.getUTCMonth() + 1).padStart(2, '0')}-${String(nowIst.getUTCDate()).padStart(2, '0')}`;
+    const currentHourIst = nowIst.getUTCHours();
+    const alignHourRaw = end === todayIst ? currentHourIst : 23;
+    const alignHour = Math.max(0, Math.min(23, alignHourRaw));
+
+    const rows = await req.brandDb.sequelize.query(
+      `SELECT date, hour, total_sales, number_of_orders, number_of_sessions, number_of_atc_sessions
+       FROM hour_wise_sales
+       WHERE date >= ? AND date <= ?`,
+      { type: QueryTypes.SELECT, replacements: [start, end] }
+    );
+
+    const rowMap = new Map();
+    for (const row of rows) {
+      if (!row?.date) continue;
+      const hourVal = typeof row.hour === 'number' ? row.hour : Number(row.hour);
+      if (!Number.isFinite(hourVal) || hourVal < 0 || hourVal > 23) continue;
+      const key = `${row.date}#${hourVal}`;
+      rowMap.set(key, {
+        sales: Number(row.total_sales || 0),
+        sessions: Number(row.number_of_sessions || 0),
+        orders: Number(row.number_of_orders || 0),
+        atc: Number(row.number_of_atc_sessions || 0),
+      });
+    }
+
+    const startDate = new Date(`${start}T00:00:00Z`);
+    const endDate = new Date(`${end}T00:00:00Z`);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      return res.status(400).json({ error: 'Unable to parse date range' });
+    }
+
+    const DAY_MS = 24 * 3600_000;
+    const buckets = [];
+    for (let ts = startDate.getTime(); ts <= endDate.getTime(); ts += DAY_MS) {
+      const dt = new Date(ts);
+      const yyyy = dt.getUTCFullYear();
+      const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getUTCDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      const maxHour = dateStr === end ? alignHour : 23;
+      for (let hour = 0; hour <= maxHour; hour += 1) {
+        buckets.push({ date: dateStr, hour });
+      }
+    }
+
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const points = buckets.map(({ date: bucketDate, hour }) => {
+      const metrics = rowMap.get(`${bucketDate}#${hour}`) || { sales: 0, sessions: 0, orders: 0, atc: 0 };
+      const cvrRatio = metrics.sessions > 0 ? metrics.orders / metrics.sessions : 0;
+      const monthIndex = Math.max(0, Math.min(11, Number(bucketDate.slice(5, 7)) - 1));
+      const dayNum = Number(bucketDate.slice(8, 10));
+      const label = `${String(dayNum).padStart(2, '0')} ${monthNames[monthIndex]} ${String(hour).padStart(2, '0')}:00`;
+      return {
+        date: bucketDate,
+        hour,
+        label,
+        metrics: {
+          sales: metrics.sales,
+          sessions: metrics.sessions,
+          orders: metrics.orders,
+          atc: metrics.atc,
+          cvr_ratio: cvrRatio,
+          cvr_percent: cvrRatio * 100,
+        }
+      };
+    });
+
+    return res.json({
+      range: { start, end },
+      timezone: 'IST',
+      alignHour,
+      points,
+    });
+  } catch (e) {
+    console.error('[hourly-trend] failed', e);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // --- NEW: GET /metrics/hourly-sales-compare?hours=6
 // Returns aligned arrays for the last N hours (default 6) and the same hours yesterday.
 app.get('/metrics/hourly-sales-compare', requireAuth, brandContext, async (req, res) => {
