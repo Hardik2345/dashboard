@@ -98,12 +98,19 @@ export default function DateRangeFilter({ value, onChange }) {
           <Typography variant="body2" sx={{ fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
             Date range
           </Typography>
-          <Popover active={popoverActive} activator={activator} fullWidth onClose={handleClose} preferInputActivator={false}>
+          <Popover
+            active={popoverActive}
+            activator={activator}
+            fullWidth
+            onClose={handleClose}
+            preferInputActivator={false}
+            sectioned={false}
+          >
             <div
               style={{
                 padding: '12px',
                 width: '100%',
-                maxWidth: '320px',
+                maxWidth: '360px',
                 display: 'flex',
                 justifyContent: 'center',
                 overflowX: 'hidden'
