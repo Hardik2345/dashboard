@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import dayjs from 'dayjs';
 import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert } from '@mui/material';
+import Grid from '@mui/material/Unstable_Grid2';
 import Header from './components/Header.jsx';
 import AuthorBrandForm from './components/AuthorBrandForm.jsx';
 import AuthorBrandList from './components/AuthorBrandList.jsx';
@@ -147,8 +148,14 @@ export default function App() {
   <Header user={user} onLogout={handleLogout} />
   <Container maxWidth="sm" sx={{ py: 2 }}>
           <Stack spacing={2}>
-            <DateRangeFilter value={range} onChange={setRange} />
-            <LastUpdated />
+            <Grid container spacing={2} alignItems="stretch">
+              <Grid xs={12} md={6}>
+                <LastUpdated />
+              </Grid>
+              <Grid xs={12} md={6}>
+                <DateRangeFilter value={range} onChange={setRange} />
+              </Grid>
+            </Grid>
             <KPIs query={query} />
             <Divider textAlign="left">Funnel</Divider>
             <FunnelChart query={query} />
