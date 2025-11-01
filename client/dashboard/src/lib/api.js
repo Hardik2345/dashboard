@@ -198,17 +198,6 @@ export async function getHourlySalesCompare({ hours = 6 } = {}) {
   };
 }
 
-export async function getHourlyTrend({ start, end }) {
-  const json = await getJSON('/metrics/hourly-trend', { start, end });
-  return {
-    points: Array.isArray(json?.points) ? json.points : [],
-    range: json?.range || null,
-    timezone: json?.timezone || 'IST',
-    alignHour: typeof json?.alignHour === 'number' ? json.alignHour : null,
-    error: json?.__error,
-  };
-}
-
 // Fetch last updated timestamp from external service (not using API_BASE)
 export async function getLastUpdatedPTS() {
   const base = import.meta.env.VITE_API_BASE || 'http://localhost:3000';

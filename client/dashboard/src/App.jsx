@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import dayjs from 'dayjs';
 import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert } from '@mui/material';
 import Grid from '@mui/material/Grid2';
@@ -10,7 +10,7 @@ import KPIs from './components/KPIs.jsx';
 import FunnelChart from './components/FunnelChart.jsx';
 import OrderSplit from './components/OrderSplit.jsx';
 import PaymentSalesSplit from './components/PaymentSalesSplit.jsx';
-import HourlyMetricTrend from './components/HourlyMetricTrend.jsx';
+import HourlySalesCompare from './components/HourlySalesCompare.jsx';
 import LastUpdated from './components/LastUpdated.jsx';
 import Footer from './components/Footer.jsx';
 import { me, login, logout } from './lib/api.js';
@@ -28,8 +28,6 @@ function defaultRangeYesterdayToday() {
 
 const RANGE_KEY = 'pts_date_range_v1';
 const TTL_MS = 30 * 60 * 1000; // 30 minutes
-const DEFAULT_METRIC = 'sales';
-const METRIC_KEYS = new Set(['sales', 'sessions', 'cvr', 'atc']);
 
 function loadInitialRange() {
   try {
@@ -56,13 +54,8 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [loginError, setLoginError] = useState(null);
   const [loggingIn, setLoggingIn] = useState(false);
-  const [selectedMetric, setSelectedMetric] = useState(DEFAULT_METRIC);
 
   const query = useMemo(() => ({ start: formatDate(start), end: formatDate(end) }), [start, end]);
-
-  const handleSelectMetric = useCallback((metricKey) => {
-    setSelectedMetric(METRIC_KEYS.has(metricKey) ? metricKey : DEFAULT_METRIC);
-  }, []);
 
   const theme = useMemo(() => createTheme({
     palette: {
@@ -163,15 +156,14 @@ export default function App() {
                 <DateRangeFilter value={range} onChange={setRange} />
               </Grid>
             </Grid>
-            <KPIs query={query} selectedMetric={selectedMetric} onSelectMetric={handleSelectMetric} />
+            <KPIs query={query} />
             <Divider textAlign="left">Funnel</Divider>
             <FunnelChart query={query} />
             <OrderSplit query={query} />
             <PaymentSalesSplit query={query} />
-            <Divider textAlign="left">Hourly Trend</Divider>
-            <HourlyMetricTrend query={query} metric={selectedMetric} />
+            <HourlySalesCompare hours={6} />
             <Alert severity="info" sx={{ display: { xs: 'flex', sm: 'none' } }}>
-              Tip: Tap a KPI card to switch the hourly trend metric.
+              Tip: Rotate for a wider chart.
             </Alert>
           </Stack>
         </Container>
