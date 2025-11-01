@@ -10,16 +10,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
-  "@emotion/react": "^11.13.5",
-  "@emotion/styled": "^11.13.5",
-  "@mui/icons-material": "^6.4.2",
-  "@mui/material": "^6.4.2",
-  "@mui/x-date-pickers": "^7.22.2",
-  "chart.js": "^4.4.7",
-  "dayjs": "^1.11.13",
-  "react": "^19.1.1",
-  "react-chartjs-2": "^5.2.0",
-  "react-dom": "^19.1.1"
+    "@emotion/react": "^11.13.5",
+    "@emotion/styled": "^11.13.5",
+    "@mui/icons-material": "^6.4.2",
+    "@mui/material": "^6.4.2",
+    "@mui/x-date-pickers": "^7.22.2",
+    "@shopify/polaris": "^13.9.5",
+    "@shopify/polaris-icons": "^9.3.1",
+    "chart.js": "^4.4.7",
+    "dayjs": "^1.11.13",
+    "react": "^19.1.1",
+    "react-chartjs-2": "^5.2.0",
+    "react-dom": "^19.1.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",

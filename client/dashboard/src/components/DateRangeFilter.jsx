@@ -1,39 +1,116 @@
-import { useEffect } from 'react';
-import { Stack, TextField, Paper } from '@mui/material';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Paper, Stack, Typography } from '@mui/material';
+import { Button, DatePicker, Popover } from '@shopify/polaris';
 import dayjs from 'dayjs';
 
 export default function DateRangeFilter({ value, onChange }) {
   const [start, end] = value;
+  const initialReference = end || start || dayjs();
+  const [popoverActive, setPopoverActive] = useState(false);
+  const [month, setMonth] = useState(initialReference.month());
+  const [year, setYear] = useState(initialReference.year());
+
   useEffect(() => {
-    // ensure start <= end
-    if (start && end && dayjs(start).isAfter(dayjs(end))) {
+    if (start && end && start.isAfter(end)) {
       onChange([end, start]);
     }
   }, [start, end, onChange]);
 
+  useEffect(() => {
+    const focusDate = end || start;
+    if (focusDate) {
+      setMonth(focusDate.month());
+      setYear(focusDate.year());
+    }
+  }, [start, end]);
+
+  const selectedRange = useMemo(() => {
+    if (!start && !end) return undefined;
+    const rangeStart = start ? start.startOf('day').toDate() : undefined;
+    const effectiveEnd = end || start;
+    const rangeEnd = effectiveEnd ? effectiveEnd.startOf('day').toDate() : undefined;
+    if (!rangeStart || !rangeEnd) return undefined;
+    return { start: rangeStart, end: rangeEnd };
+  }, [start, end]);
+
+  const label = useMemo(() => {
+    if (start && end) {
+      const sameDay = start.isSame(end, 'day');
+      if (sameDay) {
+        return start.format('DD MMM YYYY');
+      }
+      return `${start.format('DD MMM YYYY')} – ${end.format('DD MMM YYYY')}`;
+    }
+    if (start) {
+      return start.format('DD MMM YYYY');
+    }
+    return 'Select dates';
+  }, [start, end]);
+
+  const togglePopover = useCallback(() => {
+    setPopoverActive((prev) => !prev);
+  }, []);
+
+  const handleClose = useCallback(() => {
+    setPopoverActive(false);
+  }, []);
+
+  const handleMonthChange = useCallback((newMonth, newYear) => {
+    setMonth(newMonth);
+    setYear(newYear);
+  }, []);
+
+  const handleRangeChange = useCallback(({ start: nextStart, end: nextEnd }) => {
+    const startDay = nextStart ? dayjs(nextStart).startOf('day') : null;
+    const endDay = nextEnd ? dayjs(nextEnd).startOf('day') : null;
+    const focus = endDay || startDay;
+
+    if (focus) {
+      setMonth(focus.month());
+      setYear(focus.year());
+    }
+
+    if (startDay && endDay && startDay.isAfter(endDay)) {
+      onChange([endDay, startDay]);
+      return;
+    }
+
+    if (startDay && !endDay) {
+      onChange([startDay, startDay]);
+      return;
+    }
+
+    onChange([startDay, endDay ?? startDay ?? null]);
+  }, [onChange]);
+
+  const activator = (
+    <div style={{ width: '100%' }}>
+      <Button onClick={togglePopover} disclosure fullWidth variant="secondary">
+        {label}
+      </Button>
+    </div>
+  );
+
   return (
     <Paper elevation={0} sx={{ p: 1.5 }}>
-      <LocalizationProvider dateAdapter={AdapterDayjs}>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <DatePicker
-            label="Start"
-            value={start ? dayjs(start) : null}
-            format="DD-MM-YYYY"
-            onChange={(d) => onChange([d || null, end])}
-            slotProps={{ textField: { size: 'small', fullWidth: true } }}
-          />
-          <DatePicker
-            label="End"
-            value={end ? dayjs(end) : null}
-            format="DD-MM-YYYY"
-            onChange={(d) => onChange([start, d || null])}
-            slotProps={{ textField: { size: 'small', fullWidth: true } }}
-          />
-        </Stack>
-      </LocalizationProvider>
+      <Stack spacing={0.75}>
+        <Typography variant="caption" sx={{ textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>
+          Date range
+        </Typography>
+        <Popover active={popoverActive} activator={activator} fullWidth onClose={handleClose} preferInputActivator={false}>
+          <div style={{ padding: '12px' }}>
+            <DatePicker
+              month={month}
+              year={year}
+              onChange={handleRangeChange}
+              onMonthChange={handleMonthChange}
+              selected={selectedRange}
+              allowRange
+              multiMonth
+            />
+          </div>
+        </Popover>
+      </Stack>
     </Paper>
   );
 }
