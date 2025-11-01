@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Grid from '@mui/material/Grid2';
 import KPIStat from './KPIStat.jsx';
 import {
@@ -19,31 +19,34 @@ const nfMoney = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'I
 const nfMoney2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 const nfPct = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
 
-export default function KPIs({ query }) {
+export default function KPIs({ query, selectedMetric, onSelectMetric }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({});
+  const start = query?.start;
+  const end = query?.end;
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    const range = { start, end };
     Promise.all([
-      getTotalOrders(query),
-      getTotalSales(query),
-      getAOV(query),
-      getCVR(query),
-  getCVRDelta({ ...query, compare: 'prev-range-avg' }),
-      getFunnelStats(query),
-  getTotalSalesDelta({ ...query, align: 'hour' }),
-  getTotalSessionsDelta({ ...query, compare: 'prev-range-avg' }),
-  getAtcSessionsDelta({ ...query, compare: 'prev-range-avg' }),
-  getAOVDelta({ ...query, compare: 'prev-range-avg' }),
+      getTotalOrders(range),
+      getTotalSales(range),
+      getAOV(range),
+      getCVR(range),
+      getCVRDelta({ ...range, compare: 'prev-range-avg' }),
+      getFunnelStats(range),
+      getTotalSalesDelta({ ...range, align: 'hour' }),
+      getTotalSessionsDelta({ ...range, compare: 'prev-range-avg' }),
+      getAtcSessionsDelta({ ...range, compare: 'prev-range-avg' }),
+      getAOVDelta({ ...range, compare: 'prev-range-avg' }),
     ]).then(([orders, sales, aov, cvr, cvrDelta, funnel, salesDelta, sessDelta, atcDelta, aovDelta]) => {
       if (cancelled) return;
       setData({ orders, sales, aov, cvr, cvrDelta, funnel, salesDelta, sessDelta, atcDelta, aovDelta });
       setLoading(false);
     }).catch(() => setLoading(false));
     return () => { cancelled = true; };
-  }, [query.start, query.end]);
+  }, [start, end]);
 
   const totalSessions = data.cvr?.total_sessions || 0;
   const totalAtcSessions = data.funnel?.total_atc_sessions || 0;
@@ -65,6 +68,8 @@ export default function KPIs({ query }) {
           loading={loading}
           formatter={(v) => nfMoney.format(v)}
           delta={data.salesDelta ? { value: data.salesDelta.diff_pct, direction: data.salesDelta.direction } : undefined}
+          onSelect={onSelectMetric ? () => onSelectMetric('sales') : undefined}
+          selected={selectedMetric === 'sales'}
         />
       </Grid>
       <Grid size={{ xs: 1, sm: 2 }}>
@@ -83,24 +88,30 @@ export default function KPIs({ query }) {
           loading={loading}
           formatter={(v) => nfPct.format(v)}
           delta={data.cvrDelta ? { value: data.cvrDelta.diff_pp, direction: data.cvrDelta.direction } : undefined}
+          onSelect={onSelectMetric ? () => onSelectMetric('cvr') : undefined}
+          selected={selectedMetric === 'cvr'}
         />
       </Grid>
-    <Grid size={{ xs: 1, sm: 2 }}>
+      <Grid size={{ xs: 1, sm: 2 }}>
         <KPIStat
           label="Total Sessions"
           value={totalSessions}
           loading={loading}
           formatter={(v) => nfInt.format(v)}
           delta={data.sessDelta ? { value: data.sessDelta.diff_pct, direction: data.sessDelta.direction } : undefined}
+          onSelect={onSelectMetric ? () => onSelectMetric('sessions') : undefined}
+          selected={selectedMetric === 'sessions'}
         />
       </Grid>
       <Grid size={{ xs: 1, sm: 2 }}>
         <KPIStat
           label="ATC Sessions"
-      value={totalAtcSessions}
+          value={totalAtcSessions}
           loading={loading}
           formatter={(v) => nfInt.format(v)}
           delta={data.atcDelta ? { value: data.atcDelta.diff_pct, direction: data.atcDelta.direction } : undefined}
+          onSelect={onSelectMetric ? () => onSelectMetric('atc') : undefined}
+          selected={selectedMetric === 'atc'}
         />
       </Grid>
     </Grid>

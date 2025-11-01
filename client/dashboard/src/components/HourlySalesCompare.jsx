@@ -10,52 +10,94 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import { getHourlySalesCompare } from '../lib/api.js';
+import { getHourlyTrend } from '../lib/api.js';
 
 ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend);
 
 const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
 
-export default function HourlySalesCompare({ hours = 6 }) {
+const METRIC_CONFIG = {
+  sales: {
+    label: 'Total Sales',
+    color: '#0b6bcb',
+    bg: 'rgba(11,107,203,0.12)',
+    accessor: (metrics) => metrics?.sales ?? 0,
+    formatter: (value) => nfCurrency0.format(value || 0),
+  },
+  sessions: {
+    label: 'Total Sessions',
+    color: '#2563eb',
+    bg: 'rgba(37,99,235,0.12)',
+    accessor: (metrics) => metrics?.sessions ?? 0,
+    formatter: (value) => nfInt0.format(value || 0),
+  },
+  cvr: {
+    label: 'Conversion Rate',
+    color: '#7c3aed',
+    bg: 'rgba(124,58,237,0.14)',
+    accessor: (metrics) => metrics?.cvr_ratio ?? 0,
+    formatter: (value) => nfPercent1.format(value || 0),
+  },
+  atc: {
+    label: 'ATC Sessions',
+    color: '#16a34a',
+    bg: 'rgba(22,163,74,0.14)',
+    accessor: (metrics) => metrics?.atc ?? 0,
+    formatter: (value) => nfInt0.format(value || 0),
+  },
+};
+
+export default function HourlySalesCompare({ query, metric = 'sales' }) {
   const [loading, setLoading] = useState(true);
-  const [labels, setLabels] = useState([]);
-  const [current, setCurrent] = useState([]);
-  const [yesterday, setYesterday] = useState([]);
+  const [state, setState] = useState({ labels: [], values: [], timezone: 'IST', error: null });
+  const start = query?.start;
+  const end = query?.end;
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    getHourlySalesCompare({ hours }).then(res => {
-      if (cancelled) return;
-      setLabels(res.labels || []);
-      setCurrent(res.current || []);
-      setYesterday(res.yesterday || []);
+    if (!start || !end) {
+      setState({ labels: [], values: [], timezone: 'IST', error: null });
       setLoading(false);
-    }).catch(() => setLoading(false));
+      return () => { cancelled = true; };
+    }
+    setLoading(true);
+    getHourlyTrend({ start, end }).then((res) => {
+      if (cancelled) return;
+      if (res?.error) {
+        setState({ labels: [], values: [], timezone: 'IST', error: true });
+        setLoading(false);
+        return;
+      }
+      const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+      const labels = res.points.map((p) => p.label);
+      const values = res.points.map((p) => config.accessor(p.metrics || {}));
+      setState({ labels, values, timezone: res.timezone || 'IST', error: null });
+      setLoading(false);
+    }).catch(() => {
+      if (!cancelled) {
+        setState({ labels: [], values: [], timezone: 'IST', error: true });
+        setLoading(false);
+      }
+    });
     return () => { cancelled = true; };
-  }, [hours]);
+  }, [start, end, metric]);
+
+  const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
 
   const data = {
-    labels,
+    labels: state.labels,
     datasets: [
       {
-        label: 'Today',
-        data: current,
-        borderColor: '#0b6bcb',
-        backgroundColor: 'rgba(11,107,203,0.1)',
+        label: config.label,
+        data: state.values,
+        borderColor: config.color,
+        backgroundColor: config.bg,
         borderWidth: 2,
         pointRadius: 2,
-        tension: 0.3,
-      },
-      {
-        label: 'Yesterday',
-        data: yesterday,
-        borderColor: '#9ca3af',
-        backgroundColor: 'rgba(156,163,175,0.1)',
-        borderWidth: 2,
-        borderDash: [6, 4],
-        pointRadius: 2,
-        tension: 0.3,
+        pointHoverRadius: 4,
+        tension: 0.25,
       },
     ],
   };
@@ -65,19 +107,19 @@ export default function HourlySalesCompare({ hours = 6 }) {
     maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
     plugins: {
-      legend: { display: true, position: 'bottom' },
+      legend: { display: false },
       tooltip: {
         callbacks: {
-          label: (ctx) => `${ctx.dataset.label}: ${nfCurrency0.format(ctx.parsed.y || 0)}`,
+          label: (ctx) => `${config.label}: ${config.formatter(ctx.parsed.y || 0)}`,
         }
       }
     },
     scales: {
-      x: { grid: { display: false } },
+      x: { grid: { display: false }, ticks: { maxRotation: 0, minRotation: 0 } },
       y: {
         grid: { color: 'rgba(0,0,0,0.05)' },
         ticks: {
-          callback: (v) => nfCurrency0.format(v),
+          callback: (v) => config.formatter(v),
         }
       }
     }
@@ -85,16 +127,21 @@ export default function HourlySalesCompare({ hours = 6 }) {
 
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-      <CardContent sx={{ minHeight: 280 }}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-          Sales last {hours} hours vs same hours yesterday
+      <CardContent sx={{ minHeight: 320, display: 'flex', flexDirection: 'column' }}>
+        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+          Hour-wise trend · {config.label}
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
+          Timezone: {state.timezone}
         </Typography>
         {loading ? (
-          <Skeleton variant="rounded" width="100%" height={220} />
-        ) : labels.length === 0 ? (
+          <Skeleton variant="rounded" width="100%" height={240} />
+        ) : state.error ? (
+          <Typography variant="body2" color="error.main">Failed to load hourly trend.</Typography>
+        ) : state.labels.length === 0 ? (
           <Typography variant="body2" color="text.secondary">No data available.</Typography>
         ) : (
-          <div style={{ position: 'relative', height: 220 }}>
+          <div style={{ position: 'relative', flexGrow: 1 }}>
             <Line data={data} options={options} />
           </div>
         )}
