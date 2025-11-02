@@ -224,6 +224,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           boxWidth: 10,
           boxHeight: 10,
           padding: 18,
+          marginBottom: 10,
           font: { size: 10 },
           generateLabels: (chart) => {
             const labels = defaultLegendLabels(chart);
