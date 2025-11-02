@@ -255,7 +255,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     layout: {
       padding: {
         top: 24,
-        bottom: 15,
+        bottom: 0,
         left: 0,
         right: 0,
       },
