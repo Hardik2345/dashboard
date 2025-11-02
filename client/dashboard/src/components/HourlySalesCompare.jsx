@@ -209,92 +209,99 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   };
 
   const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-      legend: {
-        display: Boolean(state.comparisonValues.length),
-        align: 'start',
-        position: 'top',
-        fullSize: false,
-        padding: 16,
-        labels: {
-          usePointStyle: true,
-          pointStyle: 'rectRounded',
-          boxWidth: 10,
-          boxHeight: 10,
-          padding: 18,
-          font: { size: 10 },
-          generateLabels: (chart) => {
-            const labels = defaultLegendLabels(chart);
-            return labels.map((item) => ({
-              ...item,
-              text: `  ${item.text}`,
-            }));
-          },
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { mode: 'index', intersect: false },
+  plugins: {
+    legend: {
+      display: Boolean(state.comparisonValues.length),
+      align: 'start',
+      position: 'top',
+      fullSize: false, // ✅ ensures legend sits above chart, not overlapping
+      padding: 16,
+      labels: {
+        usePointStyle: true,
+        pointStyle: 'rectRounded',
+        boxWidth: 10,
+        boxHeight: 10,
+        padding: 24, // ✅ increased space between legend items
+        font: { size: 10 },
+        generateLabels: (chart) => {
+          const labels = defaultLegendLabels(chart);
+          return labels.map((item) => ({
+            ...item,
+            text: `  ${item.text}`,
+          }));
         },
       },
-      tooltip: {
-        callbacks: {
-          title: (items) => {
-            const idx = items?.[0]?.dataIndex;
-            const point = typeof idx === 'number' ? state.points[idx] : null;
-            return point?.label || '';
-          },
-          label: (ctx) => {
-            const idx = ctx.dataIndex;
-            const label = state.labels[idx] || '';
-            const value = config.formatter(ctx.parsed.y || 0);
-            const datasetLabel = ctx.dataset?.label || config.label;
-            return label ? `${datasetLabel}: ${value} · ${label}` : `${datasetLabel}: ${value}`;
-          },
-        }
-      }
     },
-    layout: {
-      padding: {
-        top: 24,
-        bottom: 0,
-        left: 0,
-        right: 0,
+    tooltip: {
+      callbacks: {
+        title: (items) => {
+          const idx = items?.[0]?.dataIndex;
+          const point = typeof idx === 'number' ? state.points[idx] : null;
+          return point?.label || '';
+        },
+        label: (ctx) => {
+          const idx = ctx.dataIndex;
+          const label = state.labels[idx] || '';
+          const value = config.formatter(ctx.parsed.y || 0);
+          const datasetLabel = ctx.dataset?.label || config.label;
+          return label
+            ? `${datasetLabel}: ${value} · ${label}`
+            : `${datasetLabel}: ${value}`;
+        },
       },
     },
-    scales: {
-      x: {
-        grid: { display: false },
-        ticks: {
-          maxRotation: 0,
-          minRotation: 0,
-          autoSkip: false,
-          padding: 4,
-          callback: (value, index) => {
-            const total = state.labels.length || 1;
-            const maxTicks = 8;
-            const step = Math.max(1, Math.ceil(total / maxTicks));
-            if (index === total - 1) {
-              return state.labels[index] || value;
+    title: {
+      display: true,
+      text: '', // ✅ invisible spacer title
+      padding: { bottom: 20 }, // ✅ adds space below legend
+    },
+  },
+  layout: {
+    padding: {
+      top: 32,  // ✅ increases gap between legend and chart
+      bottom: 8,
+      left: 8,
+      right: 8,
+    },
+  },
+  scales: {
+    x: {
+      grid: { display: false },
+      ticks: {
+        maxRotation: 0,
+        minRotation: 0,
+        autoSkip: false,
+        padding: 8, // ✅ more breathing room below x-axis
+        callback: (value, index) => {
+          const total = state.labels.length || 1;
+          const maxTicks = 8;
+          const step = Math.max(1, Math.ceil(total / maxTicks));
+          if (index === total - 1) {
+            return state.labels[index] || value;
+          }
+          if (index % step === 0) {
+            const distanceToEnd = (total - 1) - index;
+            if (distanceToEnd <= step / 2) {
+              return '';
             }
-            if (index % step === 0) {
-              const distanceToEnd = (total - 1) - index;
-              if (distanceToEnd <= step / 2) {
-                return '';
-              }
-              return state.labels[index] || value;
-            }
-            return '';
-          },
-        }
+            return state.labels[index] || value;
+          }
+          return '';
+        },
       },
-      y: {
-        grid: { color: 'rgba(0,0,0,0.05)' },
-        ticks: {
-          padding: 4,
-          callback: (v) => config.formatter(v),
-        }
-      }
-    }
-  };
+    },
+    y: {
+      grid: { color: 'rgba(0,0,0,0.05)' },
+      ticks: {
+        padding: 8, // ✅ slightly more inner spacing
+        callback: (v) => config.formatter(v),
+      },
+    },
+  },
+};
 
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
