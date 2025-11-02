@@ -55,16 +55,61 @@ function formatHourLabel(hour) {
   return `${normalized} ${suffix}`;
 }
 
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function formatRangeLabel(range) {
+  if (!range || !range.start || !range.end) return '';
+  const startDate = new Date(`${range.start}T00:00:00Z`);
+  const endDate = new Date(`${range.end}T00:00:00Z`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return '';
+  const sMonth = MONTH_NAMES[startDate.getUTCMonth()] || '';
+  const eMonth = MONTH_NAMES[endDate.getUTCMonth()] || '';
+  const sDay = startDate.getUTCDate();
+  const eDay = endDate.getUTCDate();
+  const sYear = startDate.getUTCFullYear();
+  const eYear = endDate.getUTCFullYear();
+  if (range.start === range.end) {
+    return `${sMonth} ${sDay}, ${sYear}`;
+  }
+  if (sYear === eYear) {
+    if (startDate.getUTCMonth() === endDate.getUTCMonth()) {
+      return `${sMonth} ${sDay}-${eDay}, ${sYear}`;
+    }
+    return `${sMonth} ${sDay} - ${eMonth} ${eDay}, ${sYear}`;
+  }
+  return `${sMonth} ${sDay}, ${sYear} - ${eMonth} ${eDay}, ${eYear}`;
+}
+
 export default function HourlySalesCompare({ query, metric = 'sales' }) {
   const [loading, setLoading] = useState(true);
-  const [state, setState] = useState({ labels: [], values: [], points: [], timezone: 'IST', error: null });
+  const [state, setState] = useState({
+    labels: [],
+    values: [],
+    comparisonValues: [],
+    points: [],
+    comparisonPoints: [],
+    timezone: 'IST',
+    rangeLabel: '',
+    comparisonLabel: '',
+    error: null,
+  });
   const start = query?.start;
   const end = query?.end;
 
   useEffect(() => {
     let cancelled = false;
     if (!start || !end) {
-      setState({ labels: [], values: [], points: [], timezone: 'IST', error: null });
+      setState({
+        labels: [],
+        values: [],
+        comparisonValues: [],
+        points: [],
+        comparisonPoints: [],
+        timezone: 'IST',
+        rangeLabel: '',
+        comparisonLabel: '',
+        error: null,
+      });
       setLoading(false);
       return () => { cancelled = true; };
     }
@@ -72,7 +117,17 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     getHourlyTrend({ start, end }).then((res) => {
       if (cancelled) return;
       if (res?.error) {
-        setState({ labels: [], values: [], points: [], timezone: 'IST', error: true });
+        setState({
+          labels: [],
+          values: [],
+          comparisonValues: [],
+          points: [],
+          comparisonPoints: [],
+          timezone: 'IST',
+          rangeLabel: '',
+          comparisonLabel: '',
+          error: true,
+        });
         setLoading(false);
         return;
       }
@@ -80,11 +135,33 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       const points = Array.isArray(res.points) ? res.points : [];
       const labels = points.map((p) => formatHourLabel(p.hour));
       const values = points.map((p) => configNext.accessor(p.metrics || {}));
-      setState({ labels, values, points, timezone: res.timezone || 'IST', error: null });
+      const comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
+      const comparisonValues = comparisonPoints.map((p) => configNext.accessor(p.metrics || {}));
+      setState({
+        labels,
+        values,
+        comparisonValues,
+        points,
+        comparisonPoints,
+        timezone: res.timezone || 'IST',
+        rangeLabel: formatRangeLabel(res.range),
+        comparisonLabel: formatRangeLabel(res?.comparison?.range),
+        error: null,
+      });
       setLoading(false);
     }).catch(() => {
       if (!cancelled) {
-        setState({ labels: [], values: [], points: [], timezone: 'IST', error: true });
+        setState({
+          labels: [],
+          values: [],
+          comparisonValues: [],
+          points: [],
+          comparisonPoints: [],
+          timezone: 'IST',
+          rangeLabel: '',
+          comparisonLabel: '',
+          error: true,
+        });
         setLoading(false);
       }
     });
@@ -93,20 +170,40 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
 
   const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
 
+  const primaryLabel = state.rangeLabel ? `${config.label} (${state.rangeLabel})` : config.label;
+  const comparisonLabel = state.comparisonLabel ? `${config.label} (${state.comparisonLabel})` : `${config.label} · Prev window`;
+
+  const datasets = [
+    {
+      label: primaryLabel,
+      data: state.values,
+      borderColor: config.color,
+      backgroundColor: config.bg,
+      borderWidth: 2,
+      pointRadius: 2,
+      pointHoverRadius: 4,
+      tension: 0.25,
+    },
+  ];
+
+  if (state.comparisonValues.length) {
+    datasets.push({
+      label: comparisonLabel,
+      data: state.comparisonValues,
+      borderColor: config.color,
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      borderDash: [6, 4],
+      pointRadius: 1,
+      pointHoverRadius: 3,
+      pointHitRadius: 8,
+      tension: 0.25,
+    });
+  }
+
   const data = {
     labels: state.labels,
-    datasets: [
-      {
-        label: config.label,
-        data: state.values,
-        borderColor: config.color,
-        backgroundColor: config.bg,
-        borderWidth: 2,
-        pointRadius: 2,
-        pointHoverRadius: 4,
-        tension: 0.25,
-      },
-    ],
+    datasets,
   };
 
   const options = {
@@ -114,7 +211,19 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
     plugins: {
-      legend: { display: false },
+      legend: {
+        display: Boolean(state.comparisonValues.length),
+        align: 'start',
+        position: 'top',
+        labels: {
+          usePointStyle: true,
+          pointStyle: 'rectRounded',
+          boxWidth: 10,
+          boxHeight: 10,
+          padding: 12,
+          font: { size: 10 },
+        },
+      },
       tooltip: {
         callbacks: {
           title: (items) => {
@@ -126,7 +235,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             const idx = ctx.dataIndex;
             const label = state.labels[idx] || '';
             const value = config.formatter(ctx.parsed.y || 0);
-            return label ? `${config.label}: ${value} · ${label}` : `${config.label}: ${value}`;
+            const datasetLabel = ctx.dataset?.label || config.label;
+            return label ? `${datasetLabel}: ${value} · ${label}` : `${datasetLabel}: ${value}`;
           },
         }
       }
@@ -138,11 +248,19 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           maxRotation: 0,
           minRotation: 0,
           autoSkip: false,
+          padding: 4,
           callback: (value, index) => {
             const total = state.labels.length || 1;
             const maxTicks = 8;
             const step = Math.max(1, Math.ceil(total / maxTicks));
-            if (index % step === 0 || index === total - 1) {
+            if (index === total - 1) {
+              return state.labels[index] || value;
+            }
+            if (index % step === 0) {
+              const distanceToEnd = (total - 1) - index;
+              if (distanceToEnd <= step / 2) {
+                return '';
+              }
               return state.labels[index] || value;
             }
             return '';
@@ -152,6 +270,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       y: {
         grid: { color: 'rgba(0,0,0,0.05)' },
         ticks: {
+          padding: 4,
           callback: (v) => config.formatter(v),
         }
       }
