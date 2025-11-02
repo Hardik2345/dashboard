@@ -360,7 +360,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                       backgroundColor: renderConfig.color,
                       borderColor: renderConfig.color,
                       borderWidth: 1,
-                      stack: 'compare',
+                      barPercentage: 0.5,
+                      categoryPercentage: 0.6,
+                      borderRadius: 3,
                     },
                     ...(state.comparisonValues.length ? [{
                       label: comparisonLabel,
@@ -368,7 +370,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                       backgroundColor: 'rgba(11,107,203,0.25)',
                       borderColor: renderConfig.color,
                       borderWidth: 1,
-                      stack: 'compare',
+                      barPercentage: 0.5,
+                      categoryPercentage: 0.6,
+                      borderRadius: 3,
                     }] : []),
                   ],
                 }}
@@ -378,8 +382,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   plugins: options.plugins,
                   layout: options.layout,
                   scales: {
-                    x: { stacked: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: (v) => renderConfig.formatter(v) } },
-                    y: { stacked: true, grid: { display: false } },
+                    x: { stacked: false, grid: { color: 'rgba(0,0,0,0.05)' } },
+                    y: { stacked: false, grid: { display: false }, ticks: { callback: (v) => renderConfig.formatter(v) } },
                   },
                 }}
               />
