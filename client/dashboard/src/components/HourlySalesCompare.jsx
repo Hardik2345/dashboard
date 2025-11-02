@@ -217,6 +217,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         display: Boolean(state.comparisonValues.length),
         align: 'start',
         position: 'top',
+        fullSize: false,
         padding: 16,
         labels: {
           usePointStyle: true,
