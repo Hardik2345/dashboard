@@ -329,12 +329,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
       <CardContent sx={{ minHeight: 320, display: 'flex', flexDirection: 'column' }}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
-          Hour-wise trend · {config.label}
-        </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-          <Typography variant="caption" color="text.secondary">
-            Timezone: {state.timezone}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+          <Typography variant="subtitle2" color="text.secondary">
+            Hour-wise trend · {config.label}
           </Typography>
           <FormControl size="small" sx={{ minWidth: 136 }} variant="outlined">
             <InputLabel id="trend-view-mode-label" sx={{ fontSize: 12 }}>View</InputLabel>
@@ -363,6 +360,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             </Select>
           </FormControl>
         </Box>
+        <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
+          Timezone: {state.timezone}
+        </Typography>
         {loading ? (
           <Skeleton variant="rounded" width="100%" height={240} />
         ) : state.error ? (
