@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Card, CardContent, Typography, Skeleton } from '@mui/material';
-import { Line } from 'react-chartjs-2';
+import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, MenuItem, InputLabel } from '@mui/material';
+import { Line, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   LineElement,
@@ -9,10 +9,12 @@ import {
   LinearScale,
   Tooltip,
   Legend,
+  BarElement,
 } from 'chart.js';
-import { getHourlyTrend } from '../lib/api.js';
+import { getHourlyTrend, getDailyTrend } from '../lib/api.js';
 
-ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend);
+ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, BarElement);
+const defaultLegendLabels = ChartJS.defaults.plugins.legend.labels.generateLabels;
 
 const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
@@ -93,6 +95,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     comparisonLabel: '',
     error: null,
   });
+  const [viewMode, setViewMode] = useState('hourly'); // 'hourly' | 'daily'
   const start = query?.start;
   const end = query?.end;
 
@@ -114,7 +117,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       return () => { cancelled = true; };
     }
     setLoading(true);
-    getHourlyTrend({ start, end }).then((res) => {
+    const fetcher = viewMode === 'daily' ? getDailyTrend : getHourlyTrend;
+    fetcher({ start, end }).then((res) => {
       if (cancelled) return;
       if (res?.error) {
         setState({
@@ -132,11 +136,26 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         return;
       }
       const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
-      const points = Array.isArray(res.points) ? res.points : [];
-      const labels = points.map((p) => formatHourLabel(p.hour));
-      const values = points.map((p) => configNext.accessor(p.metrics || {}));
-      const comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
-      const comparisonValues = comparisonPoints.map((p) => configNext.accessor(p.metrics || {}));
+      let labels = [];
+      let values = [];
+      let comparisonValues = [];
+      let points = [];
+      let comparisonPoints = [];
+      if (viewMode === 'daily') {
+        const days = Array.isArray(res.days) ? res.days : [];
+        points = days; // reuse naming for simplicity
+        labels = days.map((d) => d.date);
+        values = days.map((d) => configNext.accessor(d.metrics || {}));
+        const compDays = Array.isArray(res?.comparison?.days) ? res.comparison.days : [];
+        comparisonPoints = compDays;
+        comparisonValues = compDays.map((d) => configNext.accessor(d.metrics || {}));
+      } else {
+        points = Array.isArray(res.points) ? res.points : [];
+        labels = points.map((p) => formatHourLabel(p.hour));
+        values = points.map((p) => configNext.accessor(p.metrics || {}));
+        comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
+        comparisonValues = comparisonPoints.map((p) => configNext.accessor(p.metrics || {}));
+      }
       setState({
         labels,
         values,
@@ -166,7 +185,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       }
     });
     return () => { cancelled = true; };
-  }, [start, end, metric]);
+  }, [start, end, metric, viewMode]);
 
   const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
 
@@ -215,14 +234,18 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         display: Boolean(state.comparisonValues.length),
         align: 'start',
         position: 'top',
-        fullSize: false,
+        padding: 16,
         labels: {
           usePointStyle: true,
           pointStyle: 'rectRounded',
           boxWidth: 10,
           boxHeight: 10,
-          padding: 12,
+          padding: 18,
           font: { size: 10 },
+          generateLabels: (chart) => {
+            const labels = defaultLegendLabels(chart);
+            return labels.map((item) => ({ ...item, text: `  ${item.text}` }));
+          },
         },
       },
       tooltip: {
@@ -242,6 +265,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         }
       }
     },
+    layout: { padding: { top: 12, bottom: 4 } },
     scales: {
       x: {
         grid: { display: false },
@@ -254,14 +278,10 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             const total = state.labels.length || 1;
             const maxTicks = 8;
             const step = Math.max(1, Math.ceil(total / maxTicks));
-            if (index === total - 1) {
-              return state.labels[index] || value;
-            }
+            if (index === total - 1) return state.labels[index] || value;
             if (index % step === 0) {
               const distanceToEnd = (total - 1) - index;
-              if (distanceToEnd <= step / 2) {
-                return '';
-              }
+              if (distanceToEnd <= step / 2) return '';
               return state.labels[index] || value;
             }
             return '';
@@ -270,10 +290,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       },
       y: {
         grid: { color: 'rgba(0,0,0,0.05)' },
-        ticks: {
-          padding: 4,
-          callback: (v) => config.formatter(v),
-        }
+        ticks: { padding: 4, callback: (v) => config.formatter(v) }
       }
     }
   };
@@ -284,9 +301,24 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
           Hour-wise trend · {config.label}
         </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
-          Timezone: {state.timezone}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+          <Typography variant="caption" color="text.secondary">
+            Timezone: {state.timezone}
+          </Typography>
+          <FormControl size="small" sx={{ minWidth: 140 }}>
+            <InputLabel id="trend-view-mode-label">View</InputLabel>
+            <Select
+              labelId="trend-view-mode-label"
+              id="trend-view-mode"
+              value={viewMode}
+              label="View"
+              onChange={(e) => setViewMode(e.target.value)}
+            >
+              <MenuItem value="hourly">Hourly</MenuItem>
+              <MenuItem value="daily">Day wise</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
         {loading ? (
           <Skeleton variant="rounded" width="100%" height={240} />
         ) : state.error ? (
@@ -295,7 +327,47 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           <Typography variant="body2" color="text.secondary">No data available.</Typography>
         ) : (
           <div style={{ position: 'relative', flexGrow: 1 }}>
-            <Line data={data} options={options} />
+            {viewMode === 'daily' ? (
+              <Bar
+                data={{
+                  labels: state.labels.map(d => {
+                    const dt = new Date(`${d}T00:00:00Z`);
+                    return `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
+                  }),
+                  datasets: [
+                    {
+                      label: primaryLabel,
+                      data: state.values,
+                      backgroundColor: config.bg,
+                      borderColor: config.color,
+                      borderWidth: 1,
+                      stack: 'compare',
+                    },
+                    {
+                      label: comparisonLabel,
+                      data: state.comparisonValues,
+                      backgroundColor: 'rgba(11,107,203,0.08)',
+                      borderColor: config.color,
+                      borderWidth: 1,
+                      stack: 'compare',
+                    },
+                  ],
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  indexAxis: 'y',
+                  plugins: options.plugins,
+                  layout: options.layout,
+                  scales: {
+                    x: { stacked: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: (v) => config.formatter(v) } },
+                    y: { stacked: true, grid: { display: false } },
+                  },
+                }}
+              />
+            ) : (
+              <Line data={data} options={options} />
+            )}
           </div>
         )}
       </CardContent>

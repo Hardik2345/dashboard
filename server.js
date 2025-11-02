@@ -1429,6 +1429,77 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
   }
 });
 
+// Daily trend (aggregated by calendar day) for sales, sessions, orders, ATC; includes comparison to previous window
+app.get('/metrics/daily-trend', requireAuth, brandContext, async (req, res) => {
+  try {
+    const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+    }
+    const { start, end } = parsed.data;
+    if (!start || !end) return res.status(400).json({ error: 'Both start and end dates are required' });
+    if (start > end) return res.status(400).json({ error: 'Start date must be on or before end date' });
+
+    const DAY_MS = 24 * 3600_000;
+    const sTs = parseIsoDate(start).getTime();
+    const eTs = parseIsoDate(end).getTime();
+    const dayList = [];
+    for (let ts = sTs; ts <= eTs; ts += DAY_MS) {
+      dayList.push(formatIsoDate(new Date(ts)));
+    }
+
+    const sql = `
+      SELECT date, 
+             SUM(total_sales) AS sales,
+             SUM(number_of_orders) AS orders,
+             SUM(number_of_sessions) AS sessions,
+             SUM(number_of_atc_sessions) AS atc
+      FROM hour_wise_sales
+      WHERE date >= ? AND date <= ?
+      GROUP BY date
+      ORDER BY date ASC`;
+    const rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [start, end] });
+    const map = new Map(rows.map(r => [r.date, {
+      sales: Number(r.sales || 0),
+      orders: Number(r.orders || 0),
+      sessions: Number(r.sessions || 0),
+      atc: Number(r.atc || 0),
+    }]));
+    const days = dayList.map(d => {
+      const m = map.get(d) || { sales: 0, orders: 0, sessions: 0, atc: 0 };
+      const cvr = m.sessions > 0 ? m.orders / m.sessions : 0;
+      return { date: d, label: d, metrics: { ...m, cvr_ratio: cvr, cvr_percent: cvr * 100 } };
+    });
+
+    const prevWin = previousWindow(start, end);
+    let comparison = null;
+    if (prevWin?.prevStart && prevWin?.prevEnd) {
+      const pDayList = [];
+      for (let ts = parseIsoDate(prevWin.prevStart).getTime(); ts <= parseIsoDate(prevWin.prevEnd).getTime(); ts += DAY_MS) {
+        pDayList.push(formatIsoDate(new Date(ts)));
+      }
+      const pRows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] });
+      const pMap = new Map(pRows.map(r => [r.date, {
+        sales: Number(r.sales || 0),
+        orders: Number(r.orders || 0),
+        sessions: Number(r.sessions || 0),
+        atc: Number(r.atc || 0),
+      }]));
+      const pDays = pDayList.map(d => {
+        const m = pMap.get(d) || { sales: 0, orders: 0, sessions: 0, atc: 0 };
+        const cvr = m.sessions > 0 ? m.orders / m.sessions : 0;
+        return { date: d, label: d, metrics: { ...m, cvr_ratio: cvr, cvr_percent: cvr * 100 } };
+      });
+      comparison = { range: { start: prevWin.prevStart, end: prevWin.prevEnd }, days: pDays };
+    }
+
+    return res.json({ range: { start, end }, timezone: 'IST', days, comparison });
+  } catch (e) {
+    console.error('[daily-trend] failed', e);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // --- NEW: GET /metrics/hourly-sales-compare?hours=6
 // Returns aligned arrays for the last N hours (default 6) and the same hours yesterday.
 app.get('/metrics/hourly-sales-compare', requireAuth, brandContext, async (req, res) => {

@@ -216,6 +216,19 @@ export async function getHourlyTrend({ start, end }) {
   };
 }
 
+export async function getDailyTrend({ start, end }) {
+  const json = await getJSON('/metrics/daily-trend', { start, end });
+  return {
+    days: Array.isArray(json?.days) ? json.days : [],
+    comparison: json?.comparison && Array.isArray(json?.comparison?.days)
+      ? { range: json.comparison.range || null, days: json.comparison.days }
+      : null,
+    range: json?.range || null,
+    timezone: json?.timezone || 'IST',
+    error: json?.__error,
+  };
+}
+
 // Fetch last updated timestamp from external service (not using API_BASE)
 export async function getLastUpdatedPTS() {
   const base = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
