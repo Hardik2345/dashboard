@@ -13,6 +13,16 @@ import {
 } from 'chart.js';
 import { getHourlyTrend, getDailyTrend } from '../lib/api.js';
 
+function hexToRgba(hex, alpha) {
+  if (!hex || typeof hex !== 'string') return `rgba(0,0,0,${alpha || 1})`;
+  const clean = hex.replace('#','');
+  const bigint = parseInt(clean.length === 3 ? clean.split('').map(c=>c+c).join('') : clean, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, BarElement);
 const defaultLegendLabels = ChartJS.defaults.plugins.legend.labels.generateLabels;
 
@@ -150,10 +160,10 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         const compAligned = compDays.slice(0, n);
         points = daysAligned; // reuse naming for simplicity
         labels = daysAligned.map((d) => d.date);
-        // Always use total sales for daily view
-        values = daysAligned.map((d) => (d?.metrics?.sales ?? 0));
+        // Use selected metric for daily view
+        values = daysAligned.map((d) => (configNext.accessor(d?.metrics || {}) || 0));
         comparisonPoints = compAligned;
-        comparisonValues = compAligned.map((d) => (d?.metrics?.sales ?? 0));
+        comparisonValues = compAligned.map((d) => (configNext.accessor(d?.metrics || {}) || 0));
       } else {
         points = Array.isArray(res.points) ? res.points : [];
         labels = points.map((p) => formatHourLabel(p.hour));
@@ -193,17 +203,16 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   }, [start, end, metric, viewMode]);
 
   const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
-  const renderConfig = viewMode === 'daily' ? METRIC_CONFIG.sales : config;
 
-  const primaryLabel = state.rangeLabel ? `${renderConfig.label} (${state.rangeLabel})` : renderConfig.label;
-  const comparisonLabel = state.comparisonLabel ? `${renderConfig.label} (${state.comparisonLabel})` : `${renderConfig.label} · Prev window`;
+  const primaryLabel = state.rangeLabel ? `${config.label} (${state.rangeLabel})` : config.label;
+  const comparisonLabel = state.comparisonLabel ? `${config.label} (${state.comparisonLabel})` : `${config.label} · Prev window`;
 
   const datasets = [
     {
       label: primaryLabel,
       data: state.values,
-  borderColor: renderConfig.color,
-  backgroundColor: renderConfig.bg,
+  borderColor: config.color,
+  backgroundColor: config.bg,
       borderWidth: 2,
       pointRadius: 2,
       pointHoverRadius: 4,
@@ -215,7 +224,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     datasets.push({
       label: comparisonLabel,
       data: state.comparisonValues,
-  borderColor: renderConfig.color,
+  borderColor: config.color,
       backgroundColor: 'transparent',
       borderWidth: 2,
       borderDash: [6, 4],
@@ -275,8 +284,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             return point?.label || '';
           },
           label: (ctx) => {
-            const value = renderConfig.formatter(ctx.parsed.y || 0);
-            const datasetLabel = ctx.dataset?.label || renderConfig.label;
+            const value = config.formatter(ctx.parsed.y || 0);
+            const datasetLabel = ctx.dataset?.label || config.label;
             if (viewMode === 'daily') {
               return `${datasetLabel}: ${value}`;
             }
@@ -312,7 +321,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       },
       y: {
         grid: { color: 'rgba(0,0,0,0.05)' },
-        ticks: { padding: 4, callback: (v) => renderConfig.formatter(v) }
+        ticks: { padding: 4, callback: (v) => config.formatter(v) }
       }
     }
   };
@@ -373,8 +382,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     {
                       label: primaryLabel,
                       data: state.values,
-                      backgroundColor: renderConfig.color,
-                      borderColor: renderConfig.color,
+                      backgroundColor: config.color,
+                      borderColor: config.color,
                       borderWidth: 1,
                       barPercentage: 0.9,
                       categoryPercentage: 0.8,
@@ -383,8 +392,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     ...(state.comparisonValues.length ? [{
                       label: comparisonLabel,
                       data: state.comparisonValues,
-                      backgroundColor: 'rgba(11,107,203,0.25)',
-                      borderColor: renderConfig.color,
+                      backgroundColor: hexToRgba(config.color, 0.25),
+                      borderColor: config.color,
                       borderWidth: 1,
                       barPercentage: 0.9,
                       categoryPercentage: 0.8,
@@ -399,7 +408,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   layout: options.layout,
                   scales: {
                     x: { stacked: false, grid: { color: 'rgba(0,0,0,0.05)' } },
-                    y: { stacked: false, grid: { display: false }, ticks: { callback: (v) => renderConfig.formatter(v) } },
+                    y: { stacked: false, grid: { display: false }, ticks: { callback: (v) => config.formatter(v) } },
                   },
                 }}
               />
