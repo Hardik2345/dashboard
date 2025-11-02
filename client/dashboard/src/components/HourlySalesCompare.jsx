@@ -207,85 +207,76 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   };
 
   const options = {
-  responsive: true,
-  maintainAspectRatio: false,
-  interaction: { mode: 'index', intersect: false },
-
-  // Small right padding so grid/lines don't feel cramped
-  layout: { padding: { right: 8 } },
-
-  plugins: {
-    legend: {
-      display: !!state.comparisonValues.length,
-      position: 'top',
-      align: 'start',
-      fullSize: false,
-      labels: {
-        usePointStyle: true,
-        pointStyle: 'rectRounded',
-        boxWidth: 12,      // slightly larger marker
-        boxHeight: 12,
-        padding: 18,       // more space between marker and text (and between items)
-        font: { size: 10 },
-      },
-    },
-
-    tooltip: {
-      callbacks: {
-        title(items) {
-          const i = items?.[0]?.dataIndex;
-          const p = typeof i === 'number' ? state.points[i] : null;
-          return p?.label || '';
-        },
-        label(ctx) {
-          const idx = ctx.dataIndex;
-          const label = state.labels[idx] || '';
-          const value = config.formatter(ctx.parsed.y || 0);
-          const dsLabel = ctx.dataset?.label || config.label;
-          return label ? `${dsLabel}: ${value} · ${label}` : `${dsLabel}: ${value}`;
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        display: Boolean(state.comparisonValues.length),
+        align: 'start',
+        position: 'top',
+        fullSize: false,
+        labels: {
+          usePointStyle: true,
+          pointStyle: 'rectRounded',
+          boxWidth: 10,
+          boxHeight: 10,
+          padding: 12,
+          font: { size: 10 },
         },
       },
+      tooltip: {
+        callbacks: {
+          title: (items) => {
+            const idx = items?.[0]?.dataIndex;
+            const point = typeof idx === 'number' ? state.points[idx] : null;
+            return point?.label || '';
+          },
+          label: (ctx) => {
+            const idx = ctx.dataIndex;
+            const label = state.labels[idx] || '';
+            const value = config.formatter(ctx.parsed.y || 0);
+            const datasetLabel = ctx.dataset?.label || config.label;
+            return label ? `${datasetLabel}: ${value} · ${label}` : `${datasetLabel}: ${value}`;
+          },
+        }
+      }
     },
-  },
-
-  scales: {
-    x: {
-      grid: { display: false },
-      ticks: {
-        maxRotation: 0,
-        minRotation: 0,
-        autoSkip: false,
-        padding: 4,
-        callback(value, index) {
-          const total = state.labels.length || 1;
-          const maxTicks = 8;
-          const step = Math.max(1, Math.ceil(total / maxTicks));
-
-          if (index === total - 1) return state.labels[index] || value;
-
-          if (index % step === 0) {
-            const distanceToEnd = (total - 1) - index;
-            if (distanceToEnd <= step / 2) return '';
-            return state.labels[index] || value;
-          }
-          return '';
-        },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: {
+          maxRotation: 0,
+          minRotation: 0,
+          autoSkip: false,
+          padding: 4,
+          callback: (value, index) => {
+            const total = state.labels.length || 1;
+            const maxTicks = 8;
+            const step = Math.max(1, Math.ceil(total / maxTicks));
+            if (index === total - 1) {
+              return state.labels[index] || value;
+            }
+            if (index % step === 0) {
+              const distanceToEnd = (total - 1) - index;
+              if (distanceToEnd <= step / 2) {
+                return '';
+              }
+              return state.labels[index] || value;
+            }
+            return '';
+          },
+        }
       },
-    },
-
-    y: {
-      grid: { color: 'rgba(0,0,0,0.05)' },
-      ticks: {
-        padding: 10,                      // more gap between tick label and grid/tick
-        callback: (v) => config.formatter(v),
-      },
-      afterFit(scale) {
-        scale.width += 10;                // add fixed extra width for label spacing
-      },
-    },
-  },
-};
-
+      y: {
+        grid: { color: 'rgba(0,0,0,0.05)' },
+        ticks: {
+          padding: 4,
+          callback: (v) => config.formatter(v),
+        }
+      }
+    }
+  };
 
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
