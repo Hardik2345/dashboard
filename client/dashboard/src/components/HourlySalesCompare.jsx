@@ -220,7 +220,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           pointStyle: 'rectRounded',
           boxWidth: 10,
           boxHeight: 10,
-          padding: 12,
+          padding: 18,
           font: { size: 10 },
         },
       },
