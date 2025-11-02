@@ -76,10 +76,10 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         setLoading(false);
         return;
       }
-      const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+      const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
       const points = Array.isArray(res.points) ? res.points : [];
-  const labels = points.map((p) => formatHourLabel(p.hour));
-      const values = points.map((p) => config.accessor(p.metrics || {}));
+      const labels = points.map((p) => formatHourLabel(p.hour));
+      const values = points.map((p) => configNext.accessor(p.metrics || {}));
       setState({ labels, values, points, timezone: res.timezone || 'IST', error: null });
       setLoading(false);
     }).catch(() => {
@@ -124,9 +124,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           },
           label: (ctx) => {
             const idx = ctx.dataIndex;
-            const suffix = state.labels[idx] ? state.labels[idx].replace(/^[^ ]+ /, '') : '';
+            const label = state.labels[idx] || '';
             const value = config.formatter(ctx.parsed.y || 0);
-            return `${config.label}: ${value} · ${suffix}`.trim();
+            return label ? `${config.label}: ${value} · ${label}` : `${config.label}: ${value}`;
           },
         }
       }
@@ -143,7 +143,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             const maxTicks = 8;
             const step = Math.max(1, Math.ceil(total / maxTicks));
             if (index % step === 0 || index === total - 1) {
-              return value;
+              return state.labels[index] || value;
             }
             return '';
           },
