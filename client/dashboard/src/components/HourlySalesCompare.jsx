@@ -143,13 +143,17 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       let comparisonPoints = [];
       if (viewMode === 'daily') {
         const days = Array.isArray(res.days) ? res.days : [];
-        points = days; // reuse naming for simplicity
-        labels = days.map((d) => d.date);
-        // Always use total sales for daily view
-        values = days.map((d) => (d?.metrics?.sales ?? 0));
         const compDays = Array.isArray(res?.comparison?.days) ? res.comparison.days : [];
-        comparisonPoints = [];
-        comparisonValues = [];
+        // Align by index (day 1 with previous window day 1, etc.) and trim to shortest length
+        const n = Math.min(days.length, compDays.length || days.length);
+        const daysAligned = days.slice(0, n);
+        const compAligned = compDays.slice(0, n);
+        points = daysAligned; // reuse naming for simplicity
+        labels = daysAligned.map((d) => d.date);
+        // Always use total sales for daily view
+        values = daysAligned.map((d) => (d?.metrics?.sales ?? 0));
+        comparisonPoints = compAligned;
+        comparisonValues = compAligned.map((d) => (d?.metrics?.sales ?? 0));
       } else {
         points = Array.isArray(res.points) ? res.points : [];
         labels = points.map((p) => formatHourLabel(p.hour));
@@ -356,18 +360,26 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                       backgroundColor: renderConfig.color,
                       borderColor: renderConfig.color,
                       borderWidth: 1,
+                      stack: 'compare',
                     },
+                    ...(state.comparisonValues.length ? [{
+                      label: comparisonLabel,
+                      data: state.comparisonValues,
+                      backgroundColor: 'rgba(11,107,203,0.25)',
+                      borderColor: renderConfig.color,
+                      borderWidth: 1,
+                      stack: 'compare',
+                    }] : []),
                   ],
                 }}
                 options={{
                   responsive: true,
                   maintainAspectRatio: false,
-                  indexAxis: 'y',
-                  plugins: { ...options.plugins, legend: { display: false } },
+                  plugins: options.plugins,
                   layout: options.layout,
                   scales: {
-                    x: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: (v) => renderConfig.formatter(v) } },
-                    y: { grid: { display: false } },
+                    x: { stacked: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: (v) => renderConfig.formatter(v) } },
+                    y: { stacked: true, grid: { display: false } },
                   },
                 }}
               />
