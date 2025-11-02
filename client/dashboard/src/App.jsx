@@ -165,11 +165,11 @@ export default function App() {
               </Grid>
             </Grid>
             <KPIs query={query} selectedMetric={selectedMetric} onSelectMetric={handleSelectMetric} />
+            <HourlySalesCompare query={query} metric={selectedMetric} />
             <Divider textAlign="left">Funnel</Divider>
             <FunnelChart query={query} />
             <OrderSplit query={query} />
             <PaymentSalesSplit query={query} />
-            <HourlySalesCompare query={query} metric={selectedMetric} />
             <Alert severity="info" sx={{ display: { xs: 'flex', sm: 'none' } }}>
               Tip: Tap a KPI card to switch the hourly trend metric.
             </Alert>
