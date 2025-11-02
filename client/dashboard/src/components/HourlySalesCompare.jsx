@@ -14,6 +14,8 @@ import { getHourlyTrend } from '../lib/api.js';
 
 ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend);
 
+const defaultLegendLabels = ChartJS.defaults.plugins.legend.labels.generateLabels;
+
 const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
@@ -222,6 +224,13 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           boxHeight: 10,
           padding: 18,
           font: { size: 10 },
+          generateLabels: (chart) => {
+            const labels = defaultLegendLabels(chart);
+            return labels.map((item) => ({
+              ...item,
+              text: `  ${item.text}`,
+            }));
+          },
         },
       },
       tooltip: {
