@@ -244,7 +244,14 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             const total = state.labels.length || 1;
             const maxTicks = 8;
             const step = Math.max(1, Math.ceil(total / maxTicks));
-            if (index % step === 0 || index === total - 1) {
+            if (index === total - 1) {
+              return state.labels[index] || value;
+            }
+            if (index % step === 0) {
+              const distanceToEnd = (total - 1) - index;
+              if (distanceToEnd <= step / 2) {
+                return '';
+              }
               return state.labels[index] || value;
             }
             return '';
