@@ -127,7 +127,23 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       }
     },
     scales: {
-      x: { grid: { display: false }, ticks: { maxRotation: 0, minRotation: 0, autoSkip: false } },
+      x: {
+        grid: { display: false },
+        ticks: {
+          maxRotation: 0,
+          minRotation: 0,
+          autoSkip: false,
+          callback: (value, index) => {
+            const total = state.labels.length || 1;
+            const maxTicks = 8;
+            const step = Math.max(1, Math.ceil(total / maxTicks));
+            if (index % step === 0 || index === total - 1) {
+              return value;
+            }
+            return '';
+          },
+        }
+      },
       y: {
         grid: { color: 'rgba(0,0,0,0.05)' },
         ticks: {
