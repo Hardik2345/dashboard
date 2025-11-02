@@ -307,17 +307,30 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           <Typography variant="caption" color="text.secondary">
             Timezone: {state.timezone}
           </Typography>
-          <FormControl size="small" sx={{ minWidth: 140 }}>
-            <InputLabel id="trend-view-mode-label">View</InputLabel>
+          <FormControl size="small" sx={{ minWidth: 136 }} variant="outlined">
+            <InputLabel id="trend-view-mode-label" sx={{ fontSize: 12 }}>View</InputLabel>
             <Select
               labelId="trend-view-mode-label"
               id="trend-view-mode"
               value={viewMode}
               label="View"
               onChange={(e) => setViewMode(e.target.value)}
+              MenuProps={{
+                PaperProps: { sx: { borderRadius: 2, mt: 0.5 } },
+                disableScrollLock: true,
+              }}
+              sx={{
+                borderRadius: 999,
+                height: 32,
+                '& .MuiOutlinedInput-notchedOutline': { borderColor: 'divider' },
+                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'text.secondary' },
+                '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'primary.main' },
+                '& .MuiSelect-select': { py: 0.25, px: 1.25, fontSize: 12 },
+                '& .MuiSelect-icon': { fontSize: 18 },
+              }}
             >
-              <MenuItem value="hourly">Hourly</MenuItem>
-              <MenuItem value="daily">Day wise</MenuItem>
+              <MenuItem value="hourly" sx={{ fontSize: 12, py: 0.5 }}>Hourly</MenuItem>
+              <MenuItem value="daily" sx={{ fontSize: 12, py: 0.5 }}>Day wise</MenuItem>
             </Select>
           </FormControl>
         </Box>
