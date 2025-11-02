@@ -231,6 +231,13 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     datasets,
   };
 
+  function formatDay(dateStr) {
+    if (!dateStr) return '';
+    const dt = new Date(`${dateStr}T00:00:00Z`);
+    if (Number.isNaN(dt.getTime())) return dateStr;
+    return `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
+  }
+
   const options = {
     responsive: true,
     maintainAspectRatio: false,
@@ -257,15 +264,24 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       tooltip: {
         callbacks: {
           title: (items) => {
-            const idx = items?.[0]?.dataIndex;
+            if (!items || !items.length) return '';
+            const idx = items[0].dataIndex;
+            if (viewMode === 'daily') {
+              const ds = items[0].datasetIndex;
+              const dateStr = ds === 0 ? state.points[idx]?.date : state.comparisonPoints[idx]?.date;
+              return formatDay(dateStr);
+            }
             const point = typeof idx === 'number' ? state.points[idx] : null;
             return point?.label || '';
           },
           label: (ctx) => {
-            const idx = ctx.dataIndex;
-            const label = state.labels[idx] || '';
             const value = renderConfig.formatter(ctx.parsed.y || 0);
             const datasetLabel = ctx.dataset?.label || renderConfig.label;
+            if (viewMode === 'daily') {
+              return `${datasetLabel}: ${value}`;
+            }
+            const idx = ctx.dataIndex;
+            const label = state.labels[idx] || '';
             return label ? `${datasetLabel}: ${value} · ${label}` : `${datasetLabel}: ${value}`;
           },
         }
@@ -360,9 +376,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                       backgroundColor: renderConfig.color,
                       borderColor: renderConfig.color,
                       borderWidth: 1,
-                      barPercentage: 0.5,
-                      categoryPercentage: 0.6,
-                      borderRadius: 3,
+                      barPercentage: 0.9,
+                      categoryPercentage: 0.8,
+                      borderRadius: 2,
                     },
                     ...(state.comparisonValues.length ? [{
                       label: comparisonLabel,
@@ -370,9 +386,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                       backgroundColor: 'rgba(11,107,203,0.25)',
                       borderColor: renderConfig.color,
                       borderWidth: 1,
-                      barPercentage: 0.5,
-                      categoryPercentage: 0.6,
-                      borderRadius: 3,
+                      barPercentage: 0.9,
+                      categoryPercentage: 0.8,
+                      borderRadius: 2,
                     }] : []),
                   ],
                 }}
