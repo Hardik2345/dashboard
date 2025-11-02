@@ -316,7 +316,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
               label="View"
               onChange={(e) => setViewMode(e.target.value)}
               MenuProps={{
-                PaperProps: { sx: { borderRadius: 2, mt: 0.5 } },
+                PaperProps: { sx: { borderRadius: 0, mt: 0.5 } },
                 disableScrollLock: true,
               }}
               sx={{
