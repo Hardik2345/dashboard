@@ -26,6 +26,20 @@ function hexToRgba(hex, alpha) {
 ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, BarElement);
 const defaultLegendLabels = ChartJS.defaults.plugins.legend.labels.generateLabels;
 
+// Plugin to add extra padding below legend when options.padding isn't respected
+const legendPadPlugin = {
+  id: 'legendPadPlugin',
+  beforeInit(chart) {
+    const legend = chart.legend;
+    if (!legend || typeof legend.fit !== 'function') return;
+    const originalFit = legend.fit;
+    legend.fit = function fit() {
+      originalFit.bind(legend)();
+      this.height += 15; // extra pixels below legend
+    };
+  }
+};
+
 const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
@@ -411,9 +425,10 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     y: { stacked: false, grid: { display: false }, ticks: { callback: (v) => config.formatter(v) } },
                   },
                 }}
+                plugins={[legendPadPlugin]}
               />
             ) : (
-              <Line data={data} options={options} />
+              <Line data={data} options={options} plugins={[legendPadPlugin]} />
             )}
           </div>
         )}
