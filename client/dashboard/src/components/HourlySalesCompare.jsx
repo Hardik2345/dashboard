@@ -214,7 +214,15 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       legend: {
         display: Boolean(state.comparisonValues.length),
         align: 'start',
-        labels: { usePointStyle: true, boxWidth: 6 },
+        position: 'top',
+        labels: {
+          usePointStyle: true,
+          pointStyle: 'rectRounded',
+          boxWidth: 10,
+          boxHeight: 10,
+          padding: 12,
+          font: { size: 10 },
+        },
       },
       tooltip: {
         callbacks: {
@@ -240,6 +248,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           maxRotation: 0,
           minRotation: 0,
           autoSkip: false,
+          padding: 4,
           callback: (value, index) => {
             const total = state.labels.length || 1;
             const maxTicks = 8;
@@ -261,6 +270,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       y: {
         grid: { color: 'rgba(0,0,0,0.05)' },
         ticks: {
+          padding: 4,
           callback: (v) => config.formatter(v),
         }
       }
