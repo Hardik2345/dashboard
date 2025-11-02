@@ -342,16 +342,12 @@ app.post('/auth/logout', (req, res) => {
   });
 });
 
-app.get('/auth/me', (req, res) => {
-  if (req.isAuthenticated && req.isAuthenticated()) return res.json({ user: req.user });
-  return res.status(401).json({ error: 'Unauthorized' });
-});
-
-// Author info endpoint
-app.get('/author/me', requireAuth, (req, res) => {
-  if (!req.user?.isAuthor) return res.status(403).json({ error: 'Forbidden' });
-  return res.json({ user: { email: req.user.email, role: 'author', isAuthor: true } });
-});
+// Mount new routers for auth and author (Phase 1)
+const { createAuthRouter, createAuthorRouter } = require('./routes');
+const AuthController = require('./controllers/auth.controller');
+const AuthorController = require('./controllers/author.controller');
+app.use('/auth', createAuthRouter({ controllers: { AuthController } }));
+app.use('/author', createAuthorRouter({ requireAuth, controllers: { AuthorController } }));
 
 // List brands (author only)
 app.get('/author/brands', requireAuth, (req, res) => {
