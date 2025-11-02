@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, Typography, Skeleton } from '@mui/material';
 import { Line } from 'react-chartjs-2';
 import {
@@ -49,16 +49,38 @@ const METRIC_CONFIG = {
   },
 };
 
+function formatLabels(points) {
+  if (!Array.isArray(points) || !points.length) return [];
+  const timeFormatter = new Intl.DateTimeFormat('en-IN', {
+    hour: 'numeric',
+    hour12: true,
+  });
+  const dayFormatter = new Intl.DateTimeFormat('en-IN', {
+    month: 'short',
+    day: 'numeric',
+  });
+  return points.map((point, idx) => {
+    const [year, month, day] = (point.date || '').split('-').map(Number);
+    const hour = typeof point.hour === 'number' ? point.hour : Number(point.hour || 0);
+    const utcDate = new Date(Date.UTC(year || 0, (month || 1) - 1, day || 1, hour || 0, 0, 0, 0));
+    const base = timeFormatter.format(utcDate);
+    if (idx === 0 || points[idx - 1]?.date !== point.date) {
+      return `${dayFormatter.format(utcDate)} ${base}`;
+    }
+    return base;
+  });
+}
+
 export default function HourlySalesCompare({ query, metric = 'sales' }) {
   const [loading, setLoading] = useState(true);
-  const [state, setState] = useState({ labels: [], values: [], timezone: 'IST', error: null });
+  const [state, setState] = useState({ points: [], timezone: 'IST', error: null });
   const start = query?.start;
   const end = query?.end;
 
   useEffect(() => {
     let cancelled = false;
     if (!start || !end) {
-      setState({ labels: [], values: [], timezone: 'IST', error: null });
+      setState({ points: [], timezone: 'IST', error: null });
       setLoading(false);
       return () => { cancelled = true; };
     }
@@ -66,46 +88,50 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     getHourlyTrend({ start, end }).then((res) => {
       if (cancelled) return;
       if (res?.error) {
-        setState({ labels: [], values: [], timezone: 'IST', error: true });
+        setState({ points: [], timezone: 'IST', error: true });
         setLoading(false);
         return;
       }
-      const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
-      const labels = res.points.map((p) => p.label);
-      const values = res.points.map((p) => config.accessor(p.metrics || {}));
-      setState({ labels, values, timezone: res.timezone || 'IST', error: null });
+      setState({ points: Array.isArray(res.points) ? res.points : [], timezone: res.timezone || 'IST', error: null });
       setLoading(false);
     }).catch(() => {
       if (!cancelled) {
-        setState({ labels: [], values: [], timezone: 'IST', error: true });
+        setState({ points: [], timezone: 'IST', error: true });
         setLoading(false);
       }
     });
     return () => { cancelled = true; };
-  }, [start, end, metric]);
+  }, [start, end]);
 
   const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+  const labels = useMemo(() => formatLabels(state.points), [state.points]);
+  const values = useMemo(
+    () => state.points.map((p) => config.accessor(p.metrics || {})),
+    [state.points, config]
+  );
 
-  const data = {
-    labels: state.labels,
+  const data = useMemo(() => ({
+    labels,
     datasets: [
       {
         label: config.label,
-        data: state.values,
+        data: values,
         borderColor: config.color,
         backgroundColor: config.bg,
         borderWidth: 2,
-        pointRadius: 2,
-        pointHoverRadius: 4,
-        tension: 0.25,
+        pointRadius: 0,
+        pointHoverRadius: 0,
+        cubicInterpolationMode: 'monotone',
+        tension: 0.4,
       },
     ],
-  };
+  }), [labels, values, config]);
 
-  const options = {
+  const options = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
+    elements: { point: { radius: 0, hoverRadius: 0 } },
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -115,7 +141,15 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       }
     },
     scales: {
-      x: { grid: { display: false }, ticks: { maxRotation: 0, minRotation: 0 } },
+      x: {
+        grid: { display: false },
+        ticks: {
+          maxRotation: 0,
+          minRotation: 0,
+          autoSkip: false,
+          callback: (value, index) => (index % 2 === 0 ? labels[index] : ''),
+        },
+      },
       y: {
         grid: { color: 'rgba(0,0,0,0.05)' },
         ticks: {
@@ -123,7 +157,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         }
       }
     }
-  };
+  }), [config, labels]);
 
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
@@ -138,7 +172,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           <Skeleton variant="rounded" width="100%" height={240} />
         ) : state.error ? (
           <Typography variant="body2" color="error.main">Failed to load hourly trend.</Typography>
-        ) : state.labels.length === 0 ? (
+        ) : state.points.length === 0 ? (
           <Typography variant="body2" color="text.secondary">No data available.</Typography>
         ) : (
           <div style={{ position: 'relative', flexGrow: 1 }}>
