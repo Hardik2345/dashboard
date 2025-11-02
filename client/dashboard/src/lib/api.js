@@ -200,11 +200,18 @@ export async function getHourlySalesCompare({ hours = 6 } = {}) {
 
 export async function getHourlyTrend({ start, end }) {
   const json = await getJSON('/metrics/hourly-trend', { start, end });
+  const comparison = json?.comparison;
   return {
     points: Array.isArray(json?.points) ? json.points : [],
     range: json?.range || null,
     timezone: json?.timezone || 'IST',
     alignHour: typeof json?.alignHour === 'number' ? json.alignHour : null,
+    comparison: comparison ? {
+      points: Array.isArray(comparison.points) ? comparison.points : [],
+      range: comparison.range || null,
+      alignHour: typeof comparison.alignHour === 'number' ? comparison.alignHour : null,
+      hourSampleCount: Array.isArray(comparison.hourSampleCount) ? comparison.hourSampleCount : null,
+    } : null,
     error: json?.__error,
   };
 }

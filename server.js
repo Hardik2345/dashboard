@@ -1309,11 +1309,119 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
       };
     });
 
+    const prevWin = previousWindow(start, end);
+    let comparison = null;
+    if (prevWin?.prevStart && prevWin?.prevEnd) {
+      const comparisonAlignHour = end === todayIst ? alignHour : 23;
+      const comparisonRows = await req.brandDb.sequelize.query(
+        `SELECT date, hour, total_sales, number_of_orders, number_of_sessions, number_of_atc_sessions
+         FROM hour_wise_sales
+         WHERE date >= ? AND date <= ?`,
+        { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] }
+      );
+
+      const comparisonRowMap = new Map();
+      for (const row of comparisonRows) {
+        if (!row?.date) continue;
+        const hourVal = typeof row.hour === 'number' ? row.hour : Number(row.hour);
+        if (!Number.isFinite(hourVal) || hourVal < 0 || hourVal > 23) continue;
+        const key = `${row.date}#${hourVal}`;
+        comparisonRowMap.set(key, {
+          sales: Number(row.total_sales || 0),
+          sessions: Number(row.number_of_sessions || 0),
+          orders: Number(row.number_of_orders || 0),
+          atc: Number(row.number_of_atc_sessions || 0),
+        });
+      }
+
+      const comparisonBuckets = [];
+      for (let ts = parseIsoDate(prevWin.prevStart).getTime(); ts <= parseIsoDate(prevWin.prevEnd).getTime(); ts += DAY_MS) {
+        const dt = new Date(ts);
+        const yyyy = dt.getUTCFullYear();
+        const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(dt.getUTCDate()).padStart(2, '0');
+        const dateStr = `${yyyy}-${mm}-${dd}`;
+        const maxHour = dateStr === prevWin.prevEnd ? comparisonAlignHour : 23;
+        for (let hour = 0; hour <= maxHour; hour += 1) {
+          comparisonBuckets.push({ date: dateStr, hour });
+        }
+      }
+
+      const hourAcc = Array.from({ length: 24 }, () => ({
+        count: 0,
+        sales: 0,
+        sessions: 0,
+        orders: 0,
+        atc: 0,
+      }));
+
+      for (const { date: bucketDate, hour } of comparisonBuckets) {
+        const metrics = comparisonRowMap.get(`${bucketDate}#${hour}`) || { sales: 0, sessions: 0, orders: 0, atc: 0 };
+        const acc = hourAcc[hour];
+        acc.count += 1;
+        acc.sales += metrics.sales;
+        acc.sessions += metrics.sessions;
+        acc.orders += metrics.orders;
+        acc.atc += metrics.atc;
+      }
+
+      const avgByHour = hourAcc.map((acc) => {
+        if (!acc.count || acc.sessions <= 0) {
+          const base = acc.count ? acc : { sales: 0, sessions: 0, orders: 0, atc: 0 };
+          return {
+            sales: acc.count ? base.sales / acc.count : 0,
+            sessions: acc.count ? base.sessions / acc.count : 0,
+            orders: acc.count ? base.orders / acc.count : 0,
+            atc: acc.count ? base.atc / acc.count : 0,
+            cvr_ratio: 0,
+            cvr_percent: 0,
+          };
+        }
+        const avgSales = acc.sales / acc.count;
+        const avgSessions = acc.sessions / acc.count;
+        const avgOrders = acc.orders / acc.count;
+        const avgAtc = acc.atc / acc.count;
+        const cvrRatio = acc.sessions > 0 ? acc.orders / acc.sessions : 0;
+        return {
+          sales: avgSales,
+          sessions: avgSessions,
+          orders: avgOrders,
+          atc: avgAtc,
+          cvr_ratio: cvrRatio,
+          cvr_percent: cvrRatio * 100,
+        };
+      });
+
+      const comparisonPoints = points.map((point) => {
+        const avg = avgByHour[point.hour] || {
+          sales: 0,
+          sessions: 0,
+          orders: 0,
+          atc: 0,
+          cvr_ratio: 0,
+          cvr_percent: 0,
+        };
+        return {
+          hour: point.hour,
+          label: point.label,
+          metrics: avg,
+        };
+      });
+
+      comparison = {
+        range: { start: prevWin.prevStart, end: prevWin.prevEnd },
+        alignHour: comparisonAlignHour,
+        points: comparisonPoints,
+        hourSampleCount: hourAcc.map((acc) => acc.count),
+      };
+    }
+
     return res.json({
       range: { start, end },
       timezone: 'IST',
       alignHour,
       points,
+      comparison,
     });
   } catch (e) {
     console.error('[hourly-trend] failed', e);
