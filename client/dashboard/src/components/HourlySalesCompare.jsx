@@ -78,7 +78,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       }
       const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
       const points = Array.isArray(res.points) ? res.points : [];
-      const labels = points.map((p) => formatHourLabel(p.hour));
+  const labels = points.map((p) => formatHourLabel(p.hour));
       const values = points.map((p) => config.accessor(p.metrics || {}));
       setState({ labels, values, points, timezone: res.timezone || 'IST', error: null });
       setLoading(false);
@@ -122,7 +122,12 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             const point = typeof idx === 'number' ? state.points[idx] : null;
             return point?.label || '';
           },
-          label: (ctx) => `${config.label}: ${config.formatter(ctx.parsed.y || 0)}`,
+          label: (ctx) => {
+            const idx = ctx.dataIndex;
+            const suffix = state.labels[idx] ? state.labels[idx].replace(/^[^ ]+ /, '') : '';
+            const value = config.formatter(ctx.parsed.y || 0);
+            return `${config.label}: ${value} · ${suffix}`.trim();
+          },
         }
       }
     },
