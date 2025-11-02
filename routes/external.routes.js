@@ -1,12 +1,21 @@
 const express = require('express');
 
-// Factory to create the external router with injected dependencies later in Phase 2
-// deps: { requireAuth, brandContext }
-function createExternalRouter(/* deps */) {
+// Factory to create the external router.
+// deps: { requireAuth, brandContext, controllers: { ExternalController } }
+function createExternalRouter(deps = {}) {
   const router = express.Router();
+  const { requireAuth, brandContext, controllers = {} } = deps;
+  const { ExternalController } = controllers;
 
-  // Per-brand last updated
-  router.get('/last-updated/pts', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
+  if (ExternalController && typeof ExternalController.lastUpdatedPTS === 'function') {
+    if (typeof requireAuth === 'function' && typeof brandContext === 'function') {
+      router.get('/last-updated/pts', requireAuth, brandContext, (req, res) => ExternalController.lastUpdatedPTS(req, res));
+    } else {
+      router.get('/last-updated/pts', (req, res) => ExternalController.lastUpdatedPTS(req, res));
+    }
+  } else {
+    router.get('/last-updated/pts', (_req, res) => res.status(500).json({ error: 'ExternalController.lastUpdatedPTS not available' }));
+  }
 
   return router;
 }

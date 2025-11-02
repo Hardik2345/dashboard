@@ -7,6 +7,16 @@ function createAuthRouter(deps = {}) {
   const { controllers = {} } = deps;
   const { AuthController } = controllers;
 
+  // POST /auth/login
+  if (AuthController && typeof AuthController.login === 'function') {
+    router.post('/login', (req, res, next) => AuthController.login(req, res, next));
+  }
+
+  // POST /auth/logout
+  if (AuthController && typeof AuthController.logout === 'function') {
+    router.post('/logout', (req, res) => AuthController.logout(req, res));
+  }
+
   // Only wire GET /auth/me for now to avoid conflicts with existing login/logout
   if (!AuthController || typeof AuthController.me !== 'function') {
     router.get('/me', (_req, res) => res.status(500).json({ error: 'AuthController.me not available' }));

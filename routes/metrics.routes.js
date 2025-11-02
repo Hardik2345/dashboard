@@ -1,31 +1,36 @@
 const express = require('express');
 
-// Factory to create the metrics router with injected dependencies later in Phase 2
-// deps: { requireAuth, brandContext, controllers }
-function createMetricsRouter(/* deps */) {
+// Factory to create the metrics router
+// deps: { requireAuth, brandContext, controllers: { MetricsController } }
+function createMetricsRouter(deps = {}) {
   const router = express.Router();
+  const { requireAuth, brandContext, controllers = {} } = deps;
+  const { MetricsController } = controllers;
+
+  const guard = (h) => (typeof requireAuth === 'function' && typeof brandContext === 'function')
+    ? [requireAuth, brandContext, h] : [h];
 
   // Core metric totals
-  router.get('/aov', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
-  router.get('/cvr', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
-  router.get('/total-sales', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
-  router.get('/total-orders', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
-  router.get('/funnel-stats', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
+  if (MetricsController?.aov) router.get('/aov', ...guard((req, res) => MetricsController.aov(req, res)));
+  if (MetricsController?.cvr) router.get('/cvr', ...guard((req, res) => MetricsController.cvr(req, res)));
+  if (MetricsController?.totalSales) router.get('/total-sales', ...guard((req, res) => MetricsController.totalSales(req, res)));
+  if (MetricsController?.totalOrders) router.get('/total-orders', ...guard((req, res) => MetricsController.totalOrders(req, res)));
+  if (MetricsController?.funnelStats) router.get('/funnel-stats', ...guard((req, res) => MetricsController.funnelStats(req, res)));
 
   // Deltas
-  router.get('/cvr-delta', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
-  router.get('/total-orders-delta', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
-  router.get('/total-sales-delta', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
-  router.get('/total-sessions-delta', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
-  router.get('/atc-sessions-delta', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
-  router.get('/aov-delta', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
+  if (MetricsController?.cvrDelta) router.get('/cvr-delta', ...guard((req, res) => MetricsController.cvrDelta(req, res)));
+  if (MetricsController?.totalOrdersDelta) router.get('/total-orders-delta', ...guard((req, res) => MetricsController.totalOrdersDelta(req, res)));
+  if (MetricsController?.totalSalesDelta) router.get('/total-sales-delta', ...guard((req, res) => MetricsController.totalSalesDelta(req, res)));
+  if (MetricsController?.totalSessionsDelta) router.get('/total-sessions-delta', ...guard((req, res) => MetricsController.totalSessionsDelta(req, res)));
+  if (MetricsController?.atcSessionsDelta) router.get('/atc-sessions-delta', ...guard((req, res) => MetricsController.atcSessionsDelta(req, res)));
+  if (MetricsController?.aovDelta) router.get('/aov-delta', ...guard((req, res) => MetricsController.aovDelta(req, res)));
 
   // Splits
-  router.get('/order-split', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
-  router.get('/payment-sales-split', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
+  if (MetricsController?.orderSplit) router.get('/order-split', ...guard((req, res) => MetricsController.orderSplit(req, res)));
+  if (MetricsController?.paymentSalesSplit) router.get('/payment-sales-split', ...guard((req, res) => MetricsController.paymentSalesSplit(req, res)));
 
   // Diagnose (under /metrics)
-  router.get('/diagnose/total-orders', (req, res) => res.status(501).json({ error: 'Not implemented (Phase 2 wiring pending)' }));
+  if (MetricsController?.diagnoseTotalOrders) router.get('/diagnose/total-orders', ...guard((req, res) => MetricsController.diagnoseTotalOrders(req, res)));
 
   return router;
 }

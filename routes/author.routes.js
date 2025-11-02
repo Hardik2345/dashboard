@@ -16,6 +16,22 @@ function createAuthorRouter(deps = {}) {
     router.get('/me', (req, res) => AuthorController.me(req, res));
   }
 
+  // Wire /author/brands GET and POST here to migrate from server.js
+  if (AuthorController && typeof AuthorController.listBrands === 'function') {
+    if (typeof requireAuth === 'function') {
+      router.get('/brands', requireAuth, (req, res) => AuthorController.listBrands(req, res));
+    } else {
+      router.get('/brands', (req, res) => AuthorController.listBrands(req, res));
+    }
+  }
+  if (AuthorController && typeof AuthorController.createBrand === 'function') {
+    if (typeof requireAuth === 'function') {
+      router.post('/brands', requireAuth, (req, res) => AuthorController.createBrand(req, res));
+    } else {
+      router.post('/brands', (req, res) => AuthorController.createBrand(req, res));
+    }
+  }
+
   return router;
 }
 
