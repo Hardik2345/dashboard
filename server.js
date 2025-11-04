@@ -77,7 +77,7 @@ const SequelizeStore = SequelizeStoreFactory(session.Store);
 const sessionStore = new SequelizeStore({ db: sequelize, tableName: 'sessions' });
 
 const isProd = process.env.NODE_ENV === 'production';
-const crossSite = process.env.CROSS_SITE === 'true';
+const crossSite = process.env.CROSS_SITE === 'false';
 app.use(session({
   secret: process.env.SESSION_SECRET || 'change_me_dev_secret',
   resave: false,
