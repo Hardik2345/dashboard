@@ -14,6 +14,7 @@ ChartJS.register(ArcElement, ChartTooltip, Legend);
 const nfInt = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 const nfPct1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+const nfCurrencyCompact = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', notation: 'compact', maximumFractionDigits: 1 });
 
 export default function PaymentSalesSplit({ query }) {
   const [loading, setLoading] = useState(true);
@@ -35,7 +36,8 @@ export default function PaymentSalesSplit({ query }) {
     datasets: [
       {
         data: [data.cod_sales, data.prepaid_sales, data.partial_sales],
-        backgroundColor: ['#f59e0b', '#10b981', '#a7f3d0'], // lighter green for partial
+        // Darken partial slice slightly for better contrast (emerald-300)
+        backgroundColor: ['#f59e0b', '#10b981', '#6ee7b7'],
         borderWidth: 0,
       },
     ],
@@ -76,24 +78,26 @@ export default function PaymentSalesSplit({ query }) {
           <>
             <Stack
               direction={{ xs: 'column', sm: 'row' }}
-              spacing={1}
-              sx={{ mb: 1 }}
+              spacing={0.75}
+              sx={{ mb: 1, flexWrap: 'wrap', rowGap: 0.75, columnGap: 0.75 }}
               alignItems={{ xs: 'flex-start', sm: 'center' }}
             >
               <Chip
                 size="small"
-                label={`COD ${nfPct1.format(data.cod_percent)}% (${nfCurrency0.format(data.cod_sales)})`}
+                label={`COD ${nfPct1.format(data.cod_percent)}% (${nfCurrencyCompact.format(data.cod_sales)})`}
                 sx={{ bgcolor: '#fff7ed', color: '#92400e', maxWidth: '100%' }}
               />
               <Chip
                 size="small"
-                label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfCurrency0.format(data.prepaid_sales)})`}
+                label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfCurrencyCompact.format(data.prepaid_sales)})`}
                 sx={{ bgcolor: '#ecfdf5', color: '#065f46', maxWidth: '100%' }}
               />
               <Chip
                 size="small"
-                label={`Partially paid ${nfPct1.format(data.partial_percent)}% (${nfCurrency0.format(data.partial_sales)})`}
-                sx={{ bgcolor: '#f0fdf4', color: '#047857', maxWidth: '100%' }}
+                // Use shorter label to improve compactness
+                label={`Partial ${nfPct1.format(data.partial_percent)}% (${nfCurrencyCompact.format(data.partial_sales)})`}
+                // Slightly darker green background for visibility
+                sx={{ bgcolor: '#dcfce7', color: '#047857', maxWidth: '100%' }}
               />
             </Stack>
             <div style={{ position: 'relative', height: 180 }}>
