@@ -78,7 +78,8 @@ const METRIC_CONFIG = {
 function formatHourLabel(hour) {
   const normalized = hour % 12 === 0 ? 12 : hour % 12;
   const suffix = hour >= 12 ? 'pm' : 'am';
-  return `${normalized} ${suffix}`;
+  // Render without a space to reduce visual gap (e.g. '9pm')
+  return `${normalized}${suffix}`;
 }
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -318,20 +319,10 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         ticks: {
           maxRotation: 0,
           minRotation: 0,
-          autoSkip: false,
-          padding: 4,
-          callback: (value, index) => {
-            const total = state.labels.length || 1;
-            const maxTicks = 8;
-            const step = Math.max(1, Math.ceil(total / maxTicks));
-            if (index === total - 1) return state.labels[index] || value;
-            if (index % step === 0) {
-              const distanceToEnd = (total - 1) - index;
-              if (distanceToEnd <= step / 2) return '';
-              return state.labels[index] || value;
-            }
-            return '';
-          },
+          autoSkip: true,
+          maxTicksLimit: 12,
+          padding: 2,
+          font: { size: 11 },
         }
       },
       y: {

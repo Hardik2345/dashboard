@@ -155,8 +155,8 @@ export default function App() {
       <CssBaseline />
       <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
   <Header user={user} onLogout={handleLogout} />
-  <Container maxWidth="sm" sx={{ py: { xs: 1.25, sm: 2 } }}>
-          <Stack spacing={{ xs: 1.5, sm: 2 }}>
+  <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
+    <Stack spacing={{ xs: 1, sm: 1.25 }}>
             {/* Unified compact chips bar for all breakpoints */}
             <Box>
               <MobileTopBar value={range} onChange={setRange} />

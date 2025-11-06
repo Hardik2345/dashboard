@@ -76,17 +76,17 @@ export default function MobileTopBar({ value, onChange }) {
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.75, py: 0.25 }}>
       {last.loading ? (
-        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 1, height: 28, display: 'flex', alignItems: 'center', bgcolor: 'grey.50', fontSize: 13, lineHeight: 1 }}>
+        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 0.75, height: 32, display: 'flex', alignItems: 'center', bgcolor: 'grey.50', fontSize: 13 }}>
           Updating…
         </Card>
       ) : last.ts ? (
         <Tooltip title={last.ts.format('YYYY-MM-DD HH:mm:ss')} arrow>
-          <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 1, height: 28, display: 'flex', alignItems: 'center', fontSize: 13, lineHeight: 1 }}>
+          <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 0.75, height: 32, display: 'flex', alignItems: 'center', fontSize: 13 }}>
             Updated {last.ts.fromNow()}
           </Card>
         </Tooltip>
       ) : (
-        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 1, height: 28, display: 'flex', alignItems: 'center', fontSize: 13, lineHeight: 1 }}>
+        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 0.75, height: 32, display: 'flex', alignItems: 'center', fontSize: 13 }}>
           Updated: unavailable
         </Card>
       )}
@@ -106,20 +106,19 @@ export default function MobileTopBar({ value, onChange }) {
               }
             }}
             sx={{
-              px: 1.25,
-              height: 28,
+              px: 1,
+              height: 32,
               display: 'flex',
               alignItems: 'center',
               cursor: 'pointer',
               bgcolor: 'primary.main',
               color: 'primary.contrastText',
               width: 'auto',
-              maxWidth: { xs: 220, sm: 260 },
+              maxWidth: { xs: 140, sm: 200 },
               textAlign: 'center',
               userSelect: 'none',
-              '&:hover': { filter: 'brightness(0.98)' },
               fontSize: 13,
-              lineHeight: 1
+              '&:hover': { filter: 'brightness(0.98)' }
             }}
           >
             <span style={{ display: 'inline-block', maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

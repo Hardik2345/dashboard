@@ -30,7 +30,7 @@ export default function Header({ user, onLogout }) {
             decoding="async"
             sx={{
               display: 'block',
-                height: { xs: 60, sm: 80, md: 96 },
+                height: { xs: 72, sm: 96, md: 112 },
               width: 'auto',
               mt: { xs: 0.5, sm: 0 },
               filter: 'none',
