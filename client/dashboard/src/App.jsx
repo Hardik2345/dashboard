@@ -27,7 +27,7 @@ function defaultRangeYesterdayToday() {
 const RANGE_KEY = 'pts_date_range_v2';
 const TTL_MS = 30 * 60 * 1000; // 30 minutes
 const DEFAULT_TREND_METRIC = 'sales';
-const TREND_METRICS = new Set(['sales', 'orders', 'sessions', 'cvr', 'atc']);
+const TREND_METRICS = new Set(['sales', 'orders', 'sessions', 'cvr', 'atc', 'aov']);
 
 function loadInitialRange() {
   try {

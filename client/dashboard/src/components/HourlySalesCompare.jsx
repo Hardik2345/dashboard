@@ -41,10 +41,22 @@ const legendPadPlugin = {
 };
 
 const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+const nfCurrency2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
 
 const METRIC_CONFIG = {
+  aov: {
+    label: 'Avg Order Value',
+    color: '#f59e0b',
+    bg: 'rgba(245,158,11,0.14)',
+    accessor: (metrics) => {
+      const sales = Number(metrics?.sales || 0);
+      const orders = Number(metrics?.orders || 0);
+      return orders > 0 ? sales / orders : 0;
+    },
+    formatter: (value) => nfCurrency2.format(value || 0),
+  },
   orders: {
     label: 'Total Orders',
     color: '#0ea5e9',

@@ -81,6 +81,8 @@ export default function KPIs({ query, selectedMetric, onSelectMetric }) {
           loading={loading}
           formatter={(v) => nfMoney2.format(v)}
           delta={data.aovDelta ? { value: data.aovDelta.diff_pct, direction: data.aovDelta.direction } : undefined}
+          onSelect={onSelectMetric ? () => onSelectMetric('aov') : undefined}
+          selected={selectedMetric === 'aov'}
         />
       </Grid>
       <Grid size={{ xs: 1, sm: 2 }}>
