@@ -69,7 +69,7 @@ export default function App() {
     palette: {
       mode: 'light',
       primary: { main: '#0b6bcb' },
-      background: { default: '#f9fafb', paper: '#ffffff' }
+      background: { default: '#FDFDFD', paper: '#ffffff' }
     },
     shape: { borderRadius: 12 },
   }), []);
