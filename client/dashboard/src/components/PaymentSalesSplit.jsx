@@ -90,14 +90,15 @@ export default function PaymentSalesSplit({ query }) {
               <Chip
                 size="small"
                 label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfCurrencyCompact.format(data.prepaid_sales)})`}
-                sx={{ bgcolor: '#ecfdf5', color: '#065f46', maxWidth: '100%' }}
+                // Use a slightly deeper green tint to match the darker Prepaid slice
+                sx={{ bgcolor: '#d1fae5', color: '#065f46', maxWidth: '100%' }}
               />
               <Chip
                 size="small"
                 // Use shorter label to improve compactness
                 label={`Partial ${nfPct1.format(data.partial_percent)}% (${nfCurrencyCompact.format(data.partial_sales)})`}
-                // Slightly darker green background for visibility
-                sx={{ bgcolor: '#dcfce7', color: '#047857', maxWidth: '100%' }}
+                // Use a lighter tint to match the lighter Partial slice
+                sx={{ bgcolor: '#ecfdf5', color: '#047857', maxWidth: '100%' }}
               />
             </Stack>
             <div style={{ position: 'relative', height: 180 }}>

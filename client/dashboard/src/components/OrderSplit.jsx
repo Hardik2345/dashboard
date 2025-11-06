@@ -112,8 +112,8 @@ export default function OrderSplit({ query }) {
           <>
             <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap', rowGap: 0.5, columnGap: 0.5 }}>
               <Chip size="small" label={`COD ${nfPct1.format(data.cod_percent)}% (${nfInt.format(data.cod_orders)})`} sx={{ bgcolor: '#fff7ed', color: '#92400e' }} />
-              <Chip size="small" label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfInt.format(data.prepaid_orders)})`} sx={{ bgcolor: '#ecfdf5', color: '#065f46' }} />
-              <Chip size="small" label={`Partially paid ${nfPct1.format(data.partially_paid_percent)}% (${nfInt.format(data.partially_paid_orders)})`} sx={{ bgcolor: '#dcfce7', color: '#047857' }} />
+              <Chip size="small" label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfInt.format(data.prepaid_orders)})`} sx={{ bgcolor: '#d1fae5', color: '#065f46' }} />
+              <Chip size="small" label={`Partially paid ${nfPct1.format(data.partially_paid_percent)}% (${nfInt.format(data.partially_paid_orders)})`} sx={{ bgcolor: '#ecfdf5', color: '#047857' }} />
             </Stack>
             <div style={{ position: 'relative', height: 120 }}>
               <Bar data={chartData} options={options} />
