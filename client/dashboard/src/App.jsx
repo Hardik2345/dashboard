@@ -3,6 +3,7 @@ import dayjs from 'dayjs';
 import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert } from '@mui/material';
 import Grid from '@mui/material/Grid2';
 import Header from './components/Header.jsx';
+import MobileTopBar from './components/MobileTopBar.jsx';
 import AuthorBrandForm from './components/AuthorBrandForm.jsx';
 import AuthorBrandList from './components/AuthorBrandList.jsx';
 import DateRangeFilter from './components/DateRangeFilter.jsx';
@@ -156,14 +157,21 @@ export default function App() {
   <Header user={user} onLogout={handleLogout} />
   <Container maxWidth="sm" sx={{ py: 2 }}>
           <Stack spacing={2}>
-            <Grid container spacing={1.5} columns={{ xs: 2, sm: 6 }} alignItems="stretch">
-              <Grid size={{ xs: 1, sm: 3 }}>
-                <LastUpdated />
+            {/* Mobile compact bar */}
+            <Box sx={{ display: { xs: 'block', sm: 'none' } }}>
+              <MobileTopBar value={range} onChange={setRange} />
+            </Box>
+            {/* Desktop/tablet cards */}
+            <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
+              <Grid container spacing={1.5} columns={{ xs: 2, sm: 6 }} alignItems="stretch">
+                <Grid size={{ xs: 1, sm: 3 }}>
+                  <LastUpdated />
+                </Grid>
+                <Grid size={{ xs: 1, sm: 3 }}>
+                  <DateRangeFilter value={range} onChange={setRange} />
+                </Grid>
               </Grid>
-              <Grid size={{ xs: 1, sm: 3 }}>
-                <DateRangeFilter value={range} onChange={setRange} />
-              </Grid>
-            </Grid>
+            </Box>
             <KPIs query={query} selectedMetric={selectedMetric} onSelectMetric={handleSelectMetric} />
             <HourlySalesCompare query={query} metric={selectedMetric} />
             <Divider textAlign="left">Funnel</Divider>
