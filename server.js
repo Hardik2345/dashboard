@@ -1251,6 +1251,11 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
       return res.status(400).json({ error: 'Start date must be on or before end date' });
     }
 
+    // Optional aggregation mode: when aggregate=avg-by-hour (aliases: avg-hour, avg)
+    // we will return the average metrics for each hour-of-day across the selected range
+    // instead of a continuous hour series for every day.
+    const aggregate = (req.query.aggregate || '').toString().toLowerCase();
+
     const IST_OFFSET_MIN = 330;
     const offsetMs = IST_OFFSET_MIN * 60 * 1000;
     const nowIst = new Date(Date.now() + offsetMs);
@@ -1287,40 +1292,93 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
     }
 
     const DAY_MS = 24 * 3600_000;
-    const buckets = [];
-    for (let ts = startDate.getTime(); ts <= endDate.getTime(); ts += DAY_MS) {
-      const dt = new Date(ts);
-      const yyyy = dt.getUTCFullYear();
-      const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
-      const dd = String(dt.getUTCDate()).padStart(2, '0');
-      const dateStr = `${yyyy}-${mm}-${dd}`;
-      const maxHour = dateStr === end ? alignHour : 23;
-      for (let hour = 0; hour <= maxHour; hour += 1) {
-        buckets.push({ date: dateStr, hour });
-      }
-    }
+    let points = [];
 
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const points = buckets.map(({ date: bucketDate, hour }) => {
-      const metrics = rowMap.get(`${bucketDate}#${hour}`) || { sales: 0, sessions: 0, orders: 0, atc: 0 };
-      const cvrRatio = metrics.sessions > 0 ? metrics.orders / metrics.sessions : 0;
-      const monthIndex = Math.max(0, Math.min(11, Number(bucketDate.slice(5, 7)) - 1));
-      const dayNum = Number(bucketDate.slice(8, 10));
-      const label = `${String(dayNum).padStart(2, '0')} ${monthNames[monthIndex]} ${String(hour).padStart(2, '0')}:00`;
-      return {
-        date: bucketDate,
-        hour,
-        label,
-        metrics: {
-          sales: metrics.sales,
-          sessions: metrics.sessions,
-          orders: metrics.orders,
-          atc: metrics.atc,
-          cvr_ratio: cvrRatio,
-          cvr_percent: cvrRatio * 100,
+
+    if (aggregate === 'avg-by-hour' || aggregate === 'avg-hour' || aggregate === 'avg') {
+      // Build bucket list respecting alignHour for the last (possibly partial) day
+      const buckets = [];
+      for (let ts = startDate.getTime(); ts <= endDate.getTime(); ts += DAY_MS) {
+        const dt = new Date(ts);
+        const yyyy = dt.getUTCFullYear();
+        const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(dt.getUTCDate()).padStart(2, '0');
+        const dateStr = `${yyyy}-${mm}-${dd}`;
+        const maxHour = dateStr === end ? alignHour : 23;
+        for (let hour = 0; hour <= maxHour; hour += 1) buckets.push({ date: dateStr, hour });
+      }
+
+      // Accumulate by hour-of-day
+      const hourAcc = Array.from({ length: 24 }, () => ({ count: 0, sales: 0, sessions: 0, orders: 0, atc: 0 }));
+      for (const { date: d, hour } of buckets) {
+        const metrics = rowMap.get(`${d}#${hour}`) || { sales: 0, sessions: 0, orders: 0, atc: 0 };
+        const acc = hourAcc[hour];
+        acc.count += 1;
+        acc.sales += metrics.sales;
+        acc.sessions += metrics.sessions;
+        acc.orders += metrics.orders;
+        acc.atc += metrics.atc;
+      }
+
+      const maxHourForSeries = end === todayIst ? alignHour : 23;
+      points = Array.from({ length: maxHourForSeries + 1 }, (_, hour) => {
+        const acc = hourAcc[hour];
+        const avgSales = acc.count ? acc.sales / acc.count : 0;
+        const avgSessions = acc.count ? acc.sessions / acc.count : 0;
+        const avgOrders = acc.count ? acc.orders / acc.count : 0;
+        const avgAtc = acc.count ? acc.atc / acc.count : 0;
+        const cvrRatio = acc.sessions > 0 ? acc.orders / acc.sessions : 0;
+        const label = `${String(hour).padStart(2, '0')}:00`;
+        return {
+          hour,
+          label,
+          metrics: {
+            sales: avgSales,
+            sessions: avgSessions,
+            orders: avgOrders,
+            atc: avgAtc,
+            cvr_ratio: cvrRatio,
+            cvr_percent: cvrRatio * 100,
+          }
+        };
+      });
+    } else {
+      // Default behavior: continuous series per hour per day
+      const buckets = [];
+      for (let ts = startDate.getTime(); ts <= endDate.getTime(); ts += DAY_MS) {
+        const dt = new Date(ts);
+        const yyyy = dt.getUTCFullYear();
+        const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(dt.getUTCDate()).padStart(2, '0');
+        const dateStr = `${yyyy}-${mm}-${dd}`;
+        const maxHour = dateStr === end ? alignHour : 23;
+        for (let hour = 0; hour <= maxHour; hour += 1) {
+          buckets.push({ date: dateStr, hour });
         }
-      };
-    });
+      }
+
+      points = buckets.map(({ date: bucketDate, hour }) => {
+        const metrics = rowMap.get(`${bucketDate}#${hour}`) || { sales: 0, sessions: 0, orders: 0, atc: 0 };
+        const cvrRatio = metrics.sessions > 0 ? metrics.orders / metrics.sessions : 0;
+        const monthIndex = Math.max(0, Math.min(11, Number(bucketDate.slice(5, 7)) - 1));
+        const dayNum = Number(bucketDate.slice(8, 10));
+        const label = `${String(dayNum).padStart(2, '0')} ${monthNames[monthIndex]} ${String(hour).padStart(2, '0')}:00`;
+        return {
+          date: bucketDate,
+          hour,
+          label,
+          metrics: {
+            sales: metrics.sales,
+            sessions: metrics.sessions,
+            orders: metrics.orders,
+            atc: metrics.atc,
+            cvr_ratio: cvrRatio,
+            cvr_percent: cvrRatio * 100,
+          }
+        };
+      });
+    }
 
     const prevWin = previousWindow(start, end);
     let comparison = null;
@@ -1347,6 +1405,7 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
         });
       }
 
+      // For comparison, always compute avg-by-hour to create the dotted series aligned by hour
       const comparisonBuckets = [];
       for (let ts = parseIsoDate(prevWin.prevStart).getTime(); ts <= parseIsoDate(prevWin.prevEnd).getTime(); ts += DAY_MS) {
         const dt = new Date(ts);
@@ -1355,19 +1414,10 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
         const dd = String(dt.getUTCDate()).padStart(2, '0');
         const dateStr = `${yyyy}-${mm}-${dd}`;
         const maxHour = dateStr === prevWin.prevEnd ? comparisonAlignHour : 23;
-        for (let hour = 0; hour <= maxHour; hour += 1) {
-          comparisonBuckets.push({ date: dateStr, hour });
-        }
+        for (let hour = 0; hour <= maxHour; hour += 1) comparisonBuckets.push({ date: dateStr, hour });
       }
 
-      const hourAcc = Array.from({ length: 24 }, () => ({
-        count: 0,
-        sales: 0,
-        sessions: 0,
-        orders: 0,
-        atc: 0,
-      }));
-
+      const hourAcc = Array.from({ length: 24 }, () => ({ count: 0, sales: 0, sessions: 0, orders: 0, atc: 0 }));
       for (const { date: bucketDate, hour } of comparisonBuckets) {
         const metrics = comparisonRowMap.get(`${bucketDate}#${hour}`) || { sales: 0, sessions: 0, orders: 0, atc: 0 };
         const acc = hourAcc[hour];
@@ -1379,21 +1429,10 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
       }
 
       const avgByHour = hourAcc.map((acc) => {
-        if (!acc.count || acc.sessions <= 0) {
-          const base = acc.count ? acc : { sales: 0, sessions: 0, orders: 0, atc: 0 };
-          return {
-            sales: acc.count ? base.sales / acc.count : 0,
-            sessions: acc.count ? base.sessions / acc.count : 0,
-            orders: acc.count ? base.orders / acc.count : 0,
-            atc: acc.count ? base.atc / acc.count : 0,
-            cvr_ratio: 0,
-            cvr_percent: 0,
-          };
-        }
-        const avgSales = acc.sales / acc.count;
-        const avgSessions = acc.sessions / acc.count;
-        const avgOrders = acc.orders / acc.count;
-        const avgAtc = acc.atc / acc.count;
+        const avgSales = acc.count ? acc.sales / acc.count : 0;
+        const avgSessions = acc.count ? acc.sessions / acc.count : 0;
+        const avgOrders = acc.count ? acc.orders / acc.count : 0;
+        const avgAtc = acc.count ? acc.atc / acc.count : 0;
         const cvrRatio = acc.sessions > 0 ? acc.orders / acc.sessions : 0;
         return {
           sales: avgSales,
@@ -1405,20 +1444,11 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
         };
       });
 
-      const comparisonPoints = points.map((point) => {
-        const avg = avgByHour[point.hour] || {
-          sales: 0,
-          sessions: 0,
-          orders: 0,
-          atc: 0,
-          cvr_ratio: 0,
-          cvr_percent: 0,
-        };
-        return {
-          hour: point.hour,
-          label: point.label,
-          metrics: avg,
-        };
+      // Align comparison points to current points' hours
+      const baseHours = points.map(p => p.hour);
+      const comparisonPoints = baseHours.map((hour) => {
+        const avg = avgByHour[hour] || { sales: 0, sessions: 0, orders: 0, atc: 0, cvr_ratio: 0, cvr_percent: 0 };
+        return { hour, label: `${String(hour).padStart(2,'0')}:00`, metrics: avg };
       });
 
       comparison = {

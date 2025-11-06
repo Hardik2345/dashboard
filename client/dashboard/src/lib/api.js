@@ -203,8 +203,8 @@ export async function getHourlySalesCompare({ hours = 6 } = {}) {
   };
 }
 
-export async function getHourlyTrend({ start, end }) {
-  const json = await getJSON('/metrics/hourly-trend', { start, end });
+export async function getHourlyTrend({ start, end, aggregate }) {
+  const json = await getJSON('/metrics/hourly-trend', { start, end, aggregate });
   const comparison = json?.comparison;
   return {
     points: Array.isArray(json?.points) ? json.points : [],

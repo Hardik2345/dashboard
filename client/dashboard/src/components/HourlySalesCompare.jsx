@@ -141,8 +141,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       return () => { cancelled = true; };
     }
     setLoading(true);
-    const fetcher = viewMode === 'daily' ? getDailyTrend : getHourlyTrend;
-    fetcher({ start, end }).then((res) => {
+  const fetcher = viewMode === 'daily' ? getDailyTrend : getHourlyTrend;
+  const params = viewMode === 'daily' ? { start, end } : { start, end, aggregate: 'avg-by-hour' };
+  fetcher(params).then((res) => {
       if (cancelled) return;
       if (res?.error) {
         setState({
