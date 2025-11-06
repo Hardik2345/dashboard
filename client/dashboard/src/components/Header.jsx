@@ -20,28 +20,23 @@ export default function Header({ user, onLogout }) {
           />
         </Box>
 
-        {/* Center: Dynamic brand title */}
-        {brandName && (
-          <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none' }}>
-            <Typography
-              variant="h6"
-              component="div"
-              sx={{
-                paddingTop: 3,
-                fontWeight: 900,
-                letterSpacing: { xs: '.08em', sm: '.22em' },
-                textTransform: 'uppercase',
-                color: 'text.primary',
-                // Larger size on desktop while keeping mobile balanced
-                fontSize: { xs: 'clamp(1.25rem, 6vw, 1.6rem)', sm: '2.1rem', md: '2.4rem' },
-                lineHeight: 1.05,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {brandName}
-            </Typography>
-          </Box>
-        )}
+        {/* Center: Brand image (replaces typography) */}
+        <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none' }}>
+          <Box
+            component="img"
+            src="/image.png"
+            alt="Brand"
+            loading="eager"
+            decoding="async"
+            sx={{
+              display: 'block',
+              height: { xs: 40, sm: 56, md: 64 },
+              width: 'auto',
+              mt: { xs: 0.5, sm: 0 },
+              filter: 'none',
+            }}
+          />
+        </Box>
 
         {/* Right: User info and actions */}
         {user && (
