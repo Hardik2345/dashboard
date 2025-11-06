@@ -74,19 +74,19 @@ export default function MobileTopBar({ value, onChange }) {
   }, [onChange]);
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, py: 0.5 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.75, py: 0.25 }}>
       {last.loading ? (
-        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 1.25, height: 40, display: 'flex', alignItems: 'center', bgcolor: 'grey.50' }}>
+        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 1, height: 28, display: 'flex', alignItems: 'center', bgcolor: 'grey.50', fontSize: 13, lineHeight: 1 }}>
           Updating…
         </Card>
       ) : last.ts ? (
         <Tooltip title={last.ts.format('YYYY-MM-DD HH:mm:ss')} arrow>
-          <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 1.25, height: 40, display: 'flex', alignItems: 'center' }}>
+          <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 1, height: 28, display: 'flex', alignItems: 'center', fontSize: 13, lineHeight: 1 }}>
             Updated {last.ts.fromNow()}
           </Card>
         </Tooltip>
       ) : (
-        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 1.25, height: 40, display: 'flex', alignItems: 'center' }}>
+        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 1, height: 28, display: 'flex', alignItems: 'center', fontSize: 13, lineHeight: 1 }}>
           Updated: unavailable
         </Card>
       )}
@@ -106,17 +106,20 @@ export default function MobileTopBar({ value, onChange }) {
               }
             }}
             sx={{
-              px: 1.5,
-              height: 40,
+              px: 1.25,
+              height: 28,
               display: 'flex',
               alignItems: 'center',
               cursor: 'pointer',
               bgcolor: 'primary.main',
               color: 'primary.contrastText',
-              width: { xs: 220, sm: 260 },
+              width: 'auto',
+              maxWidth: { xs: 220, sm: 260 },
               textAlign: 'center',
               userSelect: 'none',
-              '&:hover': { filter: 'brightness(0.98)' }
+              '&:hover': { filter: 'brightness(0.98)' },
+              fontSize: 13,
+              lineHeight: 1
             }}
           >
             <span style={{ display: 'inline-block', maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
