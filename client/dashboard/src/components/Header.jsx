@@ -9,7 +9,7 @@ export default function Header({ user, onLogout }) {
     <AppBar position="static" color="transparent" elevation={0} sx={{ py: 1 }}>
       <Toolbar sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 'unset', py: 0 }}>
         {/* Left: Brand logo linking to home (hidden on xs for compact header) */}
-        <Box component="a" href="/" aria-label="Home" sx={{ display: { xs: 'none', sm: 'inline-flex' }, alignItems: 'center' }}>
+          <Box component="a" href="/" aria-label="Home" sx={{ display: { xs: 'none', sm: 'inline-flex' }, alignItems: 'center' }}>
           <Box
             component="img"
             src="/brand-logo.jpg"
@@ -30,7 +30,7 @@ export default function Header({ user, onLogout }) {
             decoding="async"
             sx={{
               display: 'block',
-              height: { xs: 48, sm: 64, md: 80 },
+                height: { xs: 60, sm: 80, md: 96 },
               width: 'auto',
               mt: { xs: 0.5, sm: 0 },
               filter: 'none',

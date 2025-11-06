@@ -155,22 +155,11 @@ export default function App() {
       <CssBaseline />
       <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
   <Header user={user} onLogout={handleLogout} />
-  <Container maxWidth="sm" sx={{ py: 2 }}>
-          <Stack spacing={2}>
-            {/* Mobile compact bar */}
-            <Box sx={{ display: { xs: 'block', sm: 'none' } }}>
+  <Container maxWidth="sm" sx={{ py: { xs: 1.25, sm: 2 } }}>
+          <Stack spacing={{ xs: 1.5, sm: 2 }}>
+            {/* Unified compact chips bar for all breakpoints */}
+            <Box>
               <MobileTopBar value={range} onChange={setRange} />
-            </Box>
-            {/* Desktop/tablet cards */}
-            <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-              <Grid container spacing={1.5} columns={{ xs: 2, sm: 6 }} alignItems="stretch">
-                <Grid size={{ xs: 1, sm: 3 }}>
-                  <LastUpdated />
-                </Grid>
-                <Grid size={{ xs: 1, sm: 3 }}>
-                  <DateRangeFilter value={range} onChange={setRange} />
-                </Grid>
-              </Grid>
             </Box>
             <KPIs query={query} selectedMetric={selectedMetric} onSelectMetric={handleSelectMetric} />
             <HourlySalesCompare query={query} metric={selectedMetric} />
