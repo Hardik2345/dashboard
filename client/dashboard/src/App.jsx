@@ -21,12 +21,12 @@ function formatDate(dt) {
 }
 
 function defaultRangeYesterdayToday() {
-  const end = dayjs();
-  const start = dayjs().subtract(1, 'day');
-  return [start, end];
+  // Default to today only
+  const today = dayjs();
+  return [today, today];
 }
 
-const RANGE_KEY = 'pts_date_range_v1';
+const RANGE_KEY = 'pts_date_range_v2';
 const TTL_MS = 30 * 60 * 1000; // 30 minutes
 const DEFAULT_TREND_METRIC = 'sales';
 const TREND_METRICS = new Set(['sales', 'sessions', 'cvr', 'atc']);
