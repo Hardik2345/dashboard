@@ -167,9 +167,6 @@ export default function App() {
             <FunnelChart query={query} />
             <OrderSplit query={query} />
             <PaymentSalesSplit query={query} />
-            <Alert severity="info" sx={{ display: { xs: 'flex', sm: 'none' } }}>
-              Tip: Tap a KPI card to switch the hourly trend metric.
-            </Alert>
           </Stack>
         </Container>
   <Footer />
