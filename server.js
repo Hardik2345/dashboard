@@ -1176,7 +1176,7 @@ app.get('/metrics/payment-sales-split', requireAuth, brandContext, async (req, r
         SELECT 
           CASE 
             WHEN payment_gateway_names LIKE '%Gokwik PPCOD%' THEN 'Partial'
-            WHEN payment_gateway_names LIKE '%Cash on Delivery (COD)%' OR payment_gateway_names LIKE '%cash_on_delivery%' OR payment_gateway_names LIKE '' THEN 'COD'
+            WHEN payment_gateway_names LIKE '%Cash on Delivery (COD)%' OR payment_gateway_names LIKE '%cash_on_delivery%' OR payment_gateway_names LIKE '%cash_on_delivery%' THEN 'COD'
             ELSE 'Prepaid'
           END AS payment_type,
           order_name,
