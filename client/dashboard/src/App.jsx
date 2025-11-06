@@ -1,18 +1,15 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import dayjs from 'dayjs';
 import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert } from '@mui/material';
-import Grid from '@mui/material/Grid2';
 import Header from './components/Header.jsx';
 import MobileTopBar from './components/MobileTopBar.jsx';
 import AuthorBrandForm from './components/AuthorBrandForm.jsx';
 import AuthorBrandList from './components/AuthorBrandList.jsx';
-import DateRangeFilter from './components/DateRangeFilter.jsx';
 import KPIs from './components/KPIs.jsx';
 import FunnelChart from './components/FunnelChart.jsx';
 import OrderSplit from './components/OrderSplit.jsx';
 import PaymentSalesSplit from './components/PaymentSalesSplit.jsx';
 import HourlySalesCompare from './components/HourlySalesCompare.jsx';
-import LastUpdated from './components/LastUpdated.jsx';
 import Footer from './components/Footer.jsx';
 import { me, login, logout } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
@@ -30,7 +27,7 @@ function defaultRangeYesterdayToday() {
 const RANGE_KEY = 'pts_date_range_v2';
 const TTL_MS = 30 * 60 * 1000; // 30 minutes
 const DEFAULT_TREND_METRIC = 'sales';
-const TREND_METRICS = new Set(['sales', 'sessions', 'cvr', 'atc']);
+const TREND_METRICS = new Set(['sales', 'orders', 'sessions', 'cvr', 'atc']);
 
 function loadInitialRange() {
   try {

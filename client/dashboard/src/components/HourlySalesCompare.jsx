@@ -45,6 +45,13 @@ const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
 
 const METRIC_CONFIG = {
+  orders: {
+    label: 'Total Orders',
+    color: '#0ea5e9',
+    bg: 'rgba(14,165,233,0.14)',
+    accessor: (metrics) => metrics?.orders ?? 0,
+    formatter: (value) => nfInt0.format(value || 0),
+  },
   sales: {
     label: 'Total Sales',
     color: '#0b6bcb',

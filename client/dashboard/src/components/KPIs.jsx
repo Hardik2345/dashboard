@@ -59,6 +59,8 @@ export default function KPIs({ query, selectedMetric, onSelectMetric }) {
           value={data.orders?.value ?? 0}
           loading={loading}
           formatter={(v) => nfInt.format(v)}
+          onSelect={onSelectMetric ? () => onSelectMetric('orders') : undefined}
+          selected={selectedMetric === 'orders'}
         />
       </Grid>
       <Grid size={{ xs: 1, sm: 2 }}>
