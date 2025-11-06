@@ -17,7 +17,7 @@ const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency
 
 export default function PaymentSalesSplit({ query }) {
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState({ cod_sales: 0, prepaid_sales: 0, total: 0, cod_percent: 0, prepaid_percent: 0 });
+  const [data, setData] = useState({ cod_sales: 0, prepaid_sales: 0, partial_sales: 0, total: 0, cod_percent: 0, prepaid_percent: 0, partial_percent: 0 });
 
   useEffect(() => {
     let cancelled = false;
@@ -31,11 +31,11 @@ export default function PaymentSalesSplit({ query }) {
   const empty = data.total === 0;
 
   const chartData = {
-    labels: ['COD', 'Prepaid'],
+    labels: ['COD', 'Prepaid', 'Partially paid'],
     datasets: [
       {
-        data: [data.cod_sales, data.prepaid_sales],
-        backgroundColor: ['#f59e0b', '#10b981'],
+        data: [data.cod_sales, data.prepaid_sales, data.partial_sales],
+        backgroundColor: ['#f59e0b', '#10b981', '#a7f3d0'], // lighter green for partial
         borderWidth: 0,
       },
     ],
@@ -89,6 +89,11 @@ export default function PaymentSalesSplit({ query }) {
                 size="small"
                 label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfCurrency0.format(data.prepaid_sales)})`}
                 sx={{ bgcolor: '#ecfdf5', color: '#065f46', maxWidth: '100%' }}
+              />
+              <Chip
+                size="small"
+                label={`Partially paid ${nfPct1.format(data.partial_percent)}% (${nfCurrency0.format(data.partial_sales)})`}
+                sx={{ bgcolor: '#f0fdf4', color: '#047857', maxWidth: '100%' }}
               />
             </Stack>
             <div style={{ position: 'relative', height: 180 }}>

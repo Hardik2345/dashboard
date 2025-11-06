@@ -182,10 +182,13 @@ export async function getPaymentSalesSplit({ start, end }) {
   const json = await getJSON('/metrics/payment-sales-split', { start, end });
   const cod_sales = Number(json?.cod_sales || 0);
   const prepaid_sales = Number(json?.prepaid_sales || 0);
-  const total = Number(json?.total_sales_from_split || (cod_sales + prepaid_sales));
+  const partial_sales = Number(json?.partial_sales || 0);
+  const total = Number(json?.total_sales_from_split || (cod_sales + prepaid_sales + partial_sales));
   const cod_percent = Number(json?.cod_percent || 0);
   const prepaid_percent = Number(json?.prepaid_percent || 0);
-  return { cod_sales, prepaid_sales, total, cod_percent, prepaid_percent, error: json?.__error };
+  const partial_percent = Number(json?.partial_percent || (total > 0 ? (partial_sales / total) * 100 : 0));
+  // Backward-compatible return shape with new fields appended
+  return { cod_sales, prepaid_sales, partial_sales, total, cod_percent, prepaid_percent, partial_percent, error: json?.__error };
 }
 
 export async function getHourlySalesCompare({ hours = 6 } = {}) {

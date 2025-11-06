@@ -1134,7 +1134,7 @@ app.get("/metrics/order-split", requireAuth, brandContext, async (req, res) => {
 });
 
 // --- NEW: GET /metrics/payment-sales-split?start=YYYY-MM-DD&end=YYYY-MM-DD
-// Returns COD vs Prepaid sales (sum of order max total_price) and percentages.
+// Returns COD vs Prepaid vs Partially-paid (Gokwik PPCOD) sales (sum of order max total_price) and percentages.
 app.get('/metrics/payment-sales-split', requireAuth, brandContext, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
@@ -1151,9 +1151,11 @@ app.get('/metrics/payment-sales-split', requireAuth, brandContext, async (req, r
         range: { start: null, end: null },
         cod_sales: 0,
         prepaid_sales: 0,
+        partial_sales: 0,
         total_sales_from_split: 0,
         cod_percent: 0,
         prepaid_percent: 0,
+        partial_percent: 0,
       });
     }
     const effectiveStart = start || end; // if only end provided
@@ -1169,6 +1171,7 @@ app.get('/metrics/payment-sales-split', requireAuth, brandContext, async (req, r
       FROM (
         SELECT 
           CASE 
+            WHEN payment_gateway_names LIKE '%Gokwik PPCOD%' THEN 'Partial'
             WHEN payment_gateway_names LIKE '%Cash on Delivery (COD)%' OR payment_gateway_names LIKE '%cash_on_delivery%' THEN 'COD'
             ELSE 'Prepaid'
           END AS payment_type,
@@ -1191,30 +1194,36 @@ app.get('/metrics/payment-sales-split', requireAuth, brandContext, async (req, r
         range: { start: effectiveStart, end: effectiveEnd },
         cod_sales: 0,
         prepaid_sales: 0,
+        partial_sales: 0,
         total_sales_from_split: 0,
         cod_percent: 0,
         prepaid_percent: 0,
+        partial_percent: 0,
         warning: 'Query failed'
       });
     }
 
-    let cod_sales = 0; let prepaid_sales = 0;
+    let cod_sales = 0; let prepaid_sales = 0; let partial_sales = 0;
     for (const r of rows) {
       if (r.payment_type === 'COD') cod_sales = Number(r.sales || 0);
       else if (r.payment_type === 'Prepaid') prepaid_sales = Number(r.sales || 0);
+      else if (r.payment_type === 'Partial') partial_sales = Number(r.sales || 0);
     }
-    const total = cod_sales + prepaid_sales;
+    const total = cod_sales + prepaid_sales + partial_sales;
     const cod_percent = total > 0 ? (cod_sales / total) * 100 : 0;
     const prepaid_percent = total > 0 ? (prepaid_sales / total) * 100 : 0;
+    const partial_percent = total > 0 ? (partial_sales / total) * 100 : 0;
 
     return res.json({
       metric: 'PAYMENT_SPLIT_SALES',
       range: { start: effectiveStart, end: effectiveEnd },
       cod_sales,
       prepaid_sales,
+      partial_sales,
       total_sales_from_split: total,
       cod_percent,
       prepaid_percent,
+      partial_percent,
       sql_used: process.env.NODE_ENV === 'production' ? undefined : sql
     });
   } catch (e) {
