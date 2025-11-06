@@ -18,7 +18,7 @@ const nfPct1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
 export default function OrderSplit({ query }) {
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState({ cod_orders: 0, prepaid_orders: 0, total: 0, cod_percent: 0, prepaid_percent: 0 });
+  const [data, setData] = useState({ cod_orders: 0, prepaid_orders: 0, partially_paid_orders: 0, total: 0, cod_percent: 0, prepaid_percent: 0, partially_paid_percent: 0 });
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +54,14 @@ export default function OrderSplit({ query }) {
         barThickness: 28,
         stack: 'percent',
       },
+      {
+        label: 'Partially paid',
+        data: [data.partially_paid_percent],
+        backgroundColor: '#6ee7b7',
+        borderRadius: 8,
+        barThickness: 28,
+        stack: 'percent',
+      },
     ],
   };
 
@@ -67,8 +75,10 @@ export default function OrderSplit({ query }) {
         callbacks: {
           label: (ctx) => {
             const label = ctx.dataset.label || '';
-            const isCod = label === 'COD';
-            const count = isCod ? data.cod_orders : data.prepaid_orders;
+            let count = 0;
+            if (label === 'COD') count = data.cod_orders;
+            else if (label === 'Prepaid') count = data.prepaid_orders;
+            else if (label === 'Partially paid') count = data.partially_paid_orders;
             const pct = ctx.parsed.x;
             return `${label}: ${nfInt.format(count)} (${nfPct1.format(pct)}%)`;
           }
@@ -100,9 +110,10 @@ export default function OrderSplit({ query }) {
           <Typography variant="body2" color="text.secondary">No orders in selected range.</Typography>
         ) : (
           <>
-            <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+            <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap', rowGap: 0.5, columnGap: 0.5 }}>
               <Chip size="small" label={`COD ${nfPct1.format(data.cod_percent)}% (${nfInt.format(data.cod_orders)})`} sx={{ bgcolor: '#fff7ed', color: '#92400e' }} />
               <Chip size="small" label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfInt.format(data.prepaid_orders)})`} sx={{ bgcolor: '#ecfdf5', color: '#065f46' }} />
+              <Chip size="small" label={`Partially paid ${nfPct1.format(data.partially_paid_percent)}% (${nfInt.format(data.partially_paid_orders)})`} sx={{ bgcolor: '#dcfce7', color: '#047857' }} />
             </Stack>
             <div style={{ position: 'relative', height: 120 }}>
               <Bar data={chartData} options={options} />

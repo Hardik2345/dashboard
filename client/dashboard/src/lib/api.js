@@ -172,10 +172,12 @@ export async function getOrderSplit({ start, end }) {
   const json = await getJSON('/metrics/order-split', { start, end });
   const cod_orders = Number(json?.cod_orders || 0);
   const prepaid_orders = Number(json?.prepaid_orders || 0);
-  const total = Number(json?.total_orders_from_split || (cod_orders + prepaid_orders));
+  const partially_paid_orders = Number(json?.partially_paid_orders || 0);
+  const total = Number(json?.total_orders_from_split || (cod_orders + prepaid_orders + partially_paid_orders));
   const cod_percent = Number(json?.cod_percent || 0);
   const prepaid_percent = Number(json?.prepaid_percent || 0);
-  return { cod_orders, prepaid_orders, total, cod_percent, prepaid_percent, error: json?.__error };
+  const partially_paid_percent = Number(json?.partially_paid_percent || (total > 0 ? (partially_paid_orders / total) * 100 : 0));
+  return { cod_orders, prepaid_orders, partially_paid_orders, total, cod_percent, prepaid_percent, partially_paid_percent, error: json?.__error };
 }
 
 export async function getPaymentSalesSplit({ start, end }) {

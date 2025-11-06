@@ -1097,7 +1097,7 @@ app.get('/external/last-updated/pts', requireAuth, brandContext, async (req, res
 
 
 // --- NEW: GET /metrics/order-split?start=YYYY-MM-DD&end=YYYY-MM-DD
-// Returns COD vs Prepaid split (counts and percentages) over the date range.
+// Returns COD vs Prepaid vs Partially paid split (counts and percentages) over the date range.
 app.get("/metrics/order-split", requireAuth, brandContext, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({
@@ -1109,23 +1109,27 @@ app.get("/metrics/order-split", requireAuth, brandContext, async (req, res) => {
     }
     const { start, end } = parsed.data;
 
-    const [cod_orders, prepaid_orders] = await Promise.all([
-  rawSum("cod_orders", { start, end, conn: req.brandDb.sequelize }),
-  rawSum("prepaid_orders", { start, end, conn: req.brandDb.sequelize }),
+    const [cod_orders, prepaid_orders, partially_paid_orders] = await Promise.all([
+      rawSum("cod_orders", { start, end, conn: req.brandDb.sequelize }),
+      rawSum("prepaid_orders", { start, end, conn: req.brandDb.sequelize }),
+      rawSum("partially_paid_orders", { start, end, conn: req.brandDb.sequelize }),
     ]);
 
-    const total = cod_orders + prepaid_orders;
+    const total = cod_orders + prepaid_orders + partially_paid_orders;
     const cod_percent = total > 0 ? (cod_orders / total) * 100 : 0;
     const prepaid_percent = total > 0 ? (prepaid_orders / total) * 100 : 0;
+    const partially_paid_percent = total > 0 ? (partially_paid_orders / total) * 100 : 0;
 
     return res.json({
       metric: "ORDER_SPLIT",
       range: { start: start || null, end: end || null },
       cod_orders,
       prepaid_orders,
+      partially_paid_orders,
       total_orders_from_split: total,
       cod_percent,
       prepaid_percent,
+      partially_paid_percent,
     });
   } catch (err) {
     console.error(err);
