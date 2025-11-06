@@ -7,7 +7,7 @@ export default function Header({ user, onLogout }) {
   const brandName = user?.activeBrand?.name || user?.brandName || brand;
   return (
     <AppBar position="static" color="transparent" elevation={0} sx={{ py: 1 }}>
-      <Toolbar sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 'unset', mb:10, py: 0 }}>
+      <Toolbar sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 'unset', mb:2, py: 0 }}>
         {/* Left: Brand logo linking to home (hidden on xs for compact header) */}
           <Box component="a" href="/" aria-label="Home" sx={{ display: { xs: 'none', sm: 'inline-flex' }, alignItems: 'center' }}>
           <Box
