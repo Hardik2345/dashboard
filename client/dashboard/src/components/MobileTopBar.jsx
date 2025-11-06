@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Box, Chip, Tooltip } from '@mui/material';
+import { Box, Card, Tooltip } from '@mui/material';
 import { Popover, DatePicker } from '@shopify/polaris';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -76,26 +76,53 @@ export default function MobileTopBar({ value, onChange }) {
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, py: 0.5 }}>
       {last.loading ? (
-        <Chip size="small" label="Updating…" sx={{ bgcolor: 'grey.100' }} />
+        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 1.25, height: 40, display: 'flex', alignItems: 'center', bgcolor: 'grey.50' }}>
+          Updating…
+        </Card>
       ) : last.ts ? (
         <Tooltip title={last.ts.format('YYYY-MM-DD HH:mm:ss')} arrow>
-          <Chip size="small" variant="outlined" label={`Updated ${last.ts.fromNow()}`} sx={{ borderRadius: 1 }} />
+          <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 1.25, height: 40, display: 'flex', alignItems: 'center' }}>
+            Updated {last.ts.fromNow()}
+          </Card>
         </Tooltip>
       ) : (
-        <Chip size="small" variant="outlined" label="Updated: unavailable" />
+        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 1.25, height: 40, display: 'flex', alignItems: 'center' }}>
+          Updated: unavailable
+        </Card>
       )}
 
       <Popover
         active={popoverActive}
         activator={
-          <Chip
-            size="small"
-            color="primary"
-            clickable
+          <Card
+            elevation={0}
             onClick={togglePopover}
-            label={dateLabel}
-            sx={{ color: 'white', borderRadius: 1 }}
-          />
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                togglePopover();
+              }
+            }}
+            sx={{
+              px: 1.5,
+              height: 40,
+              display: 'flex',
+              alignItems: 'center',
+              cursor: 'pointer',
+              bgcolor: 'primary.main',
+              color: 'primary.contrastText',
+              width: { xs: 220, sm: 260 },
+              textAlign: 'center',
+              userSelect: 'none',
+              '&:hover': { filter: 'brightness(0.98)' }
+            }}
+          >
+            <span style={{ display: 'inline-block', maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {dateLabel}
+            </span>
+          </Card>
         }
         onClose={handleClose}
         fullWidth={false}
