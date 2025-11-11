@@ -13,6 +13,7 @@ import HourlySalesCompare from './components/HourlySalesCompare.jsx';
 import Footer from './components/Footer.jsx';
 import { me, login, logout } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
+import AuthorAdjustments from './components/AuthorAdjustments.jsx';
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -139,6 +140,8 @@ export default function App() {
               <Divider textAlign="left">Author Panel</Divider>
               <AuthorBrandForm />
               <AuthorBrandList />
+              <Divider textAlign="left">Session adjustments</Divider>
+              <AuthorAdjustments />
             </Stack>
           </Container>
           <Footer />

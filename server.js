@@ -59,6 +59,8 @@ const OverallSummary = sequelize.define(
     total_orders: { type: DataTypes.DECIMAL(43, 0), allowNull: false, defaultValue: 0 },
     total_sessions: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     total_atc_sessions: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    // Newly added adjusted column (DDL already applied). We still define it here so Sequelize metadata queries work.
+    adjusted_total_sessions: { type: DataTypes.BIGINT, allowNull: true },
   },
   { tableName: "overall_summary", timestamps: false }
 );
@@ -70,6 +72,35 @@ const User = sequelize.define('user', {
   role: { type: DataTypes.STRING },
   is_active: { type: DataTypes.BOOLEAN }
 }, { tableName: 'users', timestamps: true });
+
+// Author session adjustment bucket & audit models (tables created via manual DDL already).
+// Bucket schema (global, not per-brand):
+// lower_bound_sessions / upper_bound_sessions define an inclusive range. If daily sessions fall inside a range
+// and the bucket is active and (effective_from/effective_to) match, we apply offset_pct (+/- percentage) when previewing/applying.
+// Priority: lower numeric value wins among overlapping buckets.
+const SessionAdjustmentBucket = sequelize.define('session_adjustment_buckets', {
+  id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
+  lower_bound_sessions: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
+  upper_bound_sessions: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
+  offset_pct: { type: DataTypes.DECIMAL(5,2), allowNull: false }, // e.g. -8.00 to +12.50
+  active: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 1 },
+  priority: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 100 },
+  effective_from: { type: DataTypes.DATEONLY, allowNull: true },
+  effective_to: { type: DataTypes.DATEONLY, allowNull: true },
+  notes: { type: DataTypes.STRING(255), allowNull: true },
+  created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+  updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP') }
+}, { tableName: 'session_adjustment_buckets', timestamps: false });
+
+const SessionAdjustmentAudit = sequelize.define('session_adjustment_audit', {
+  id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
+  bucket_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
+  action: { type: DataTypes.ENUM('CREATE','UPDATE','DEACTIVATE','DELETE'), allowNull: false },
+  before_json: { type: DataTypes.JSON, allowNull: true },
+  after_json: { type: DataTypes.JSON, allowNull: true },
+  author_user_id: { type: DataTypes.BIGINT, allowNull: true },
+  changed_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
+}, { tableName: 'session_adjustment_audit', timestamps: false });
 const { resolveBrandFromEmail, addBrandRuntime, getBrands } = require('./config/brands');
 const { getBrandConnection } = require('./lib/brandConnectionManager');
 
@@ -187,7 +218,12 @@ function buildWhereClause(start, end) {
 // raw SUM helper to avoid ORM coercion issues
 async function rawSum(column, { start, end, conn }) {
   const { where, params } = buildWhereClause(start, end);
-  const sql = `SELECT COALESCE(SUM(${column}), 0) AS total FROM overall_summary ${where}`;
+  // Prefer adjusted_total_sessions when requesting total_sessions.
+  let selectExpr = column;
+  if (column === 'total_sessions') {
+    selectExpr = 'COALESCE(adjusted_total_sessions, total_sessions)';
+  }
+  const sql = `SELECT COALESCE(SUM(${selectExpr}), 0) AS total FROM overall_summary ${where}`;
   const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements: params });
   return Number(rows[0]?.total || 0);
 }
@@ -207,7 +243,7 @@ async function computeAOV({ start, end, conn }) {
 // CVR = SUM(total_orders) / SUM(total_sessions)
 async function computeCVR({ start, end, conn }) {
   const total_orders = await rawSum("total_orders", { start, end, conn });
-  const total_sessions = await rawSum("total_sessions", { start, end, conn });
+  const total_sessions = await rawSum("total_sessions", { start, end, conn }); // already prefers adjusted column
   const cvr = total_sessions > 0 ? total_orders / total_sessions : 0;
   return { total_orders, total_sessions, cvr, cvr_percent: cvr * 100 };
 }
@@ -222,7 +258,7 @@ async function computeTotalSales({ start, end, conn }) { return rawSum("total_sa
 async function computeTotalOrders({ start, end, conn }) { return rawSum("total_orders", { start, end, conn }); }
 async function computeFunnelStats({ start, end, conn }) {
   const [total_sessions, total_atc_sessions, total_orders] = await Promise.all([
-    rawSum("total_sessions", { start, end, conn }),
+    rawSum("total_sessions", { start, end, conn }), // adjusted-aware
     rawSum("total_atc_sessions", { start, end, conn }),
     rawSum("total_orders", { start, end, conn }),
   ]);
@@ -351,6 +387,225 @@ app.get('/auth/me', (req, res) => {
 app.get('/author/me', requireAuth, (req, res) => {
   if (!req.user?.isAuthor) return res.status(403).json({ error: 'Forbidden' });
   return res.json({ user: { email: req.user.email, role: 'author', isAuthor: true } });
+});
+
+// ----------------------------- AUTHOR: ADJUSTMENT BUCKET CRUD -----------------------------
+// Validation schemas (Zod) for bucket operations
+const BucketSchema = z.object({
+  lower_bound_sessions: z.number().int().nonnegative(),
+  upper_bound_sessions: z.number().int().nonnegative(),
+  offset_pct: z.number().min(-100).max(100),
+  active: z.boolean().optional(),
+  priority: z.number().int().min(0).max(10000).optional(),
+  effective_from: isoDate.nullable().optional(),
+  effective_to: isoDate.nullable().optional(),
+  notes: z.string().max(255).optional().nullable()
+}).refine(d => d.lower_bound_sessions <= d.upper_bound_sessions, { message: 'lower_bound_sessions must be <= upper_bound_sessions' });
+
+// List buckets (with optional filters)
+app.get('/author/adjustment-buckets', requireAuthor, async (req, res) => {
+  try {
+    const { active } = req.query;
+    const where = {};
+    if (active === '1' || active === '0') where.active = active === '1' ? 1 : 0;
+    const buckets = await SessionAdjustmentBucket.findAll({ where, order: [['priority','ASC'], ['id','ASC']] });
+    return res.json({ buckets });
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to list buckets' }); }
+});
+
+// Create bucket
+app.post('/author/adjustment-buckets', requireAuthor, async (req, res) => {
+  try {
+    const parsed = BucketSchema.safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid input', details: parsed.error.flatten() });
+    const data = parsed.data;
+    // Optional effective date ordering check
+    if (data.effective_from && data.effective_to && data.effective_from > data.effective_to) {
+      return res.status(400).json({ error: 'effective_from must be <= effective_to' });
+    }
+    const bucket = await SessionAdjustmentBucket.create({
+      lower_bound_sessions: data.lower_bound_sessions,
+      upper_bound_sessions: data.upper_bound_sessions,
+      offset_pct: data.offset_pct,
+      active: data.active === undefined ? 1 : (data.active ? 1 : 0),
+      priority: data.priority ?? 100,
+      effective_from: data.effective_from || null,
+      effective_to: data.effective_to || null,
+      notes: data.notes || null
+    });
+    await SessionAdjustmentAudit.create({
+      bucket_id: bucket.id,
+      action: 'CREATE',
+      before_json: null,
+      after_json: bucket.toJSON(),
+      author_user_id: req.user.id
+    });
+    return res.status(201).json({ bucket });
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to create bucket' }); }
+});
+
+// Update bucket
+app.put('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid id' });
+    const existing = await SessionAdjustmentBucket.findByPk(id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const parsed = BucketSchema.partial().safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid input', details: parsed.error.flatten() });
+    const before = existing.toJSON();
+    const data = parsed.data;
+    if (data.effective_from && data.effective_to && data.effective_from > data.effective_to) {
+      return res.status(400).json({ error: 'effective_from must be <= effective_to' });
+    }
+    Object.assign(existing, {
+      lower_bound_sessions: data.lower_bound_sessions ?? existing.lower_bound_sessions,
+      upper_bound_sessions: data.upper_bound_sessions ?? existing.upper_bound_sessions,
+      offset_pct: data.offset_pct ?? existing.offset_pct,
+      active: data.active === undefined ? existing.active : (data.active ? 1 : 0),
+      priority: data.priority ?? existing.priority,
+      effective_from: data.effective_from === undefined ? existing.effective_from : data.effective_from,
+      effective_to: data.effective_to === undefined ? existing.effective_to : data.effective_to,
+      notes: data.notes === undefined ? existing.notes : data.notes
+    });
+    await existing.save();
+    await SessionAdjustmentAudit.create({
+      bucket_id: existing.id,
+      action: 'UPDATE',
+      before_json: before,
+      after_json: existing.toJSON(),
+      author_user_id: req.user.id
+    });
+    return res.json({ bucket: existing });
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to update bucket' }); }
+});
+
+// Deactivate (soft delete) bucket
+app.delete('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid id' });
+    const existing = await SessionAdjustmentBucket.findByPk(id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const before = existing.toJSON();
+    existing.active = 0;
+    await existing.save();
+    await SessionAdjustmentAudit.create({
+      bucket_id: existing.id,
+      action: 'DEACTIVATE',
+      before_json: before,
+      after_json: existing.toJSON(),
+      author_user_id: req.user.id
+    });
+    return res.status(204).end();
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to deactivate bucket' }); }
+});
+
+// Preview adjustments over a date range (does NOT persist). Applies first matching bucket by priority.
+app.get('/author/adjustments/preview', requireAuthor, async (req, res) => {
+  try {
+    const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid range', details: parsed.error.flatten() });
+    const { start, end } = parsed.data;
+    if (!start || !end) return res.status(400).json({ error: 'start and end required' });
+    if (start > end) return res.status(400).json({ error: 'start must be <= end' });
+
+    // Fetch active buckets once
+    const buckets = await SessionAdjustmentBucket.findAll({ where: { active: 1 }, order: [['priority','ASC'], ['id','ASC']] });
+
+    // Build day list
+    const days = [];
+    const DAY_MS = 86400000;
+    const startTs = Date.parse(`${start}T00:00:00Z`);
+    const endTs = Date.parse(`${end}T00:00:00Z`);
+    for (let t = startTs; t <= endTs; t += DAY_MS) {
+      const d = new Date(t);
+      const iso = d.toISOString().slice(0,10);
+      days.push(iso);
+    }
+
+    // Query raw (might already have adjusted; we treat total_sessions as raw base)
+    const rows = await sequelize.query(
+      'SELECT date, total_sessions, adjusted_total_sessions FROM overall_summary WHERE date >= ? AND date <= ? ORDER BY date',
+      { type: QueryTypes.SELECT, replacements: [start, end] }
+    );
+    const rowMap = new Map(rows.map(r => [r.date, r]));
+
+    const resultDays = [];
+    for (const d of days) {
+      const r = rowMap.get(d) || { total_sessions: 0, adjusted_total_sessions: null };
+      const rawSessions = Number(r.total_sessions || 0);
+      // Find first bucket whose range matches and date inside effective window (if set)
+      let applied = null;
+      for (const b of buckets) {
+        const efFromOk = !b.effective_from || d >= b.effective_from;
+        const efToOk = !b.effective_to || d <= b.effective_to;
+        if (!efFromOk || !efToOk) continue;
+        if (rawSessions >= b.lower_bound_sessions && rawSessions <= b.upper_bound_sessions) {
+          applied = b; break;
+        }
+      }
+      let adjusted = rawSessions;
+      if (applied) {
+        adjusted = Math.round(rawSessions * (1 + Number(applied.offset_pct) / 100));
+      }
+      const delta = adjusted - rawSessions;
+      const deltaPct = rawSessions > 0 ? (delta / rawSessions) * 100 : (adjusted > 0 ? 100 : 0);
+      resultDays.push({ date: d, raw_sessions: rawSessions, preview_adjusted_sessions: adjusted, bucket_applied: applied ? applied.id : null, offset_pct: applied ? applied.offset_pct : null, delta, delta_pct: deltaPct });
+    }
+
+    const totalRaw = resultDays.reduce((a,b) => a + b.raw_sessions, 0);
+    const totalAdj = resultDays.reduce((a,b) => a + b.preview_adjusted_sessions, 0);
+    const totalDelta = totalAdj - totalRaw;
+    const totalDeltaPct = totalRaw > 0 ? (totalDelta / totalRaw) * 100 : (totalAdj > 0 ? 100 : 0);
+
+    return res.json({ range: { start, end }, days: resultDays, totals: { raw: totalRaw, adjusted: totalAdj, delta: totalDelta, delta_pct: totalDeltaPct } });
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'Preview failed' }); }
+});
+
+// Apply adjustments persistently (writes adjusted_total_sessions). Idempotent re-application allowed.
+app.post('/author/adjustments/apply', requireAuthor, async (req, res) => {
+  try {
+    const parsed = RangeSchema.safeParse({ start: req.body.start, end: req.body.end });
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid range', details: parsed.error.flatten() });
+    const { start, end } = parsed.data;
+    if (!start || !end) return res.status(400).json({ error: 'start and end required' });
+    if (start > end) return res.status(400).json({ error: 'start must be <= end' });
+
+    const buckets = await SessionAdjustmentBucket.findAll({ where: { active: 1 }, order: [['priority','ASC'], ['id','ASC']] });
+    const rows = await sequelize.query(
+      'SELECT date, total_sessions FROM overall_summary WHERE date >= ? AND date <= ? ORDER BY date',
+      { type: QueryTypes.SELECT, replacements: [start, end] }
+    );
+    const updates = [];
+    for (const r of rows) {
+      const d = r.date;
+      const rawSessions = Number(r.total_sessions || 0);
+      let applied = null;
+      for (const b of buckets) {
+        const efFromOk = !b.effective_from || d >= b.effective_from;
+        const efToOk = !b.effective_to || d <= b.effective_to;
+        if (!efFromOk || !efToOk) continue;
+        if (rawSessions >= b.lower_bound_sessions && rawSessions <= b.upper_bound_sessions) { applied = b; break; }
+      }
+      const adjusted = applied ? Math.round(rawSessions * (1 + Number(applied.offset_pct) / 100)) : rawSessions;
+      updates.push({ date: d, adjusted });
+    }
+    // Bulk update using one big CASE statement (avoids per-row updates)
+    if (updates.length) {
+      const caseParts = updates.map(u => `WHEN date='${u.date}' THEN ${u.adjusted}`);
+      const sql = `UPDATE overall_summary SET adjusted_total_sessions = CASE ${caseParts.join(' ')} END WHERE date BETWEEN ? AND ?`;
+      await sequelize.query(sql, { type: QueryTypes.UPDATE, replacements: [start, end] });
+    }
+    await SessionAdjustmentAudit.create({
+      bucket_id: 0,
+      action: 'UPDATE',
+      before_json: null,
+      after_json: { applied_range: { start, end }, rows: updates.length },
+      author_user_id: req.user.id
+    });
+    return res.json({ applied: updates.length, range: { start, end } });
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'Apply failed' }); }
 });
 
 // List brands (author only)

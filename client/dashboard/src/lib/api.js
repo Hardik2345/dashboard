@@ -248,3 +248,62 @@ export async function getLastUpdatedPTS() {
     return { raw: null, timezone: null, error: true };
   }
 }
+
+// ---------------- Author: Session adjustments ----------------
+export async function listAdjustmentBuckets({ active } = {}) {
+  return getJSON('/author/adjustment-buckets', active == null ? undefined : { active: active ? '1' : '0' });
+}
+
+export async function createAdjustmentBucket(payload) {
+  try {
+    const res = await fetch(`${API_BASE}/author/adjustment-buckets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json().catch(()=>({}));
+    if (!res.ok) return { error: true, data: json };
+    return { error: false, data: json };
+  } catch (e) { return { error: true }; }
+}
+
+export async function updateAdjustmentBucket(id, payload) {
+  try {
+    const res = await fetch(`${API_BASE}/author/adjustment-buckets/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json().catch(()=>({}));
+    if (!res.ok) return { error: true, data: json };
+    return { error: false, data: json };
+  } catch (e) { return { error: true }; }
+}
+
+export async function deactivateAdjustmentBucket(id) {
+  try {
+    const res = await fetch(`${API_BASE}/author/adjustment-buckets/${id}`, { method: 'DELETE', credentials: 'include' });
+    if (!res.ok && res.status !== 204) return { error: true };
+    return { error: false };
+  } catch (e) { return { error: true }; }
+}
+
+export async function previewAdjustments({ start, end }) {
+  return getJSON('/author/adjustments/preview', { start, end });
+}
+
+export async function applyAdjustments({ start, end }) {
+  try {
+    const res = await fetch(`${API_BASE}/author/adjustments/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ start, end })
+    });
+    const json = await res.json().catch(()=>({}));
+    if (!res.ok) return { error: true, data: json };
+    return { error: false, data: json };
+  } catch (e) { return { error: true }; }
+}
