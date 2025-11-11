@@ -45,23 +45,6 @@ const nfCurrency2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
 
-// Compact Indian number formatting with L/Cr suffix, optional ₹ prefix
-function formatCompactIndian(value, { money = false } = {}) {
-  const n = Number(value || 0);
-  const abs = Math.abs(n);
-  let out = '';
-  if (abs >= 1e7) {
-    out = (n / 1e7).toFixed((n / 1e7) >= 100 ? 0 : 1) + 'Cr';
-  } else if (abs >= 1e5) {
-    out = (n / 1e5).toFixed((n / 1e5) >= 100 ? 0 : 1) + 'L';
-  } else if (abs >= 1e3) {
-    out = (n / 1e3).toFixed((n / 1e3) >= 100 ? 0 : 1) + 'K';
-  } else {
-    out = money ? nfCurrency0.format(n).replace('₹','') : nfInt0.format(n);
-  }
-  return money ? `₹${out}` : out;
-}
-
 const METRIC_CONFIG = {
   aov: {
     label: 'Avg Order Value',
@@ -368,66 +351,14 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     }
   };
 
-  // Plugin: compact value labels for daily bars with dynamic thinning (primary dataset only)
-  const barValuePlugin = {
-    id: 'dailyBarValueLabels',
-    afterDatasetsDraw(chart) {
-      const meta0 = chart.getDatasetMeta(0);
-      if (!meta0 || meta0.type !== 'bar') return;
-      const ds0 = chart.data.datasets?.[0];
-      if (!ds0) return;
-      const { ctx } = chart;
-      const bars = meta0.data || [];
-      const total = bars.length;
-      if (!total) return;
-      // Determine thinning step based on available width
-      const area = chart.chartArea || { left: 0, right: 0 };
-      const available = Math.max(0, area.right - area.left);
-      const target = Math.max(6, Math.min(12, Math.floor(available / 70))); // aim ~70px per label
-      const step = Math.max(1, Math.ceil(total / target));
-      ctx.save();
-      ctx.textAlign = 'center';
-      ctx.font = '600 10px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-      bars.forEach((bar, i) => {
-        const raw = ds0.data?.[i];
-        if (raw == null) return;
-        const always = (i === 0 || i === total - 1); // always label first & last
-        if (!always && (i % step !== 0)) return;
-        let formatted;
-        if (metric === 'sales' || metric === 'aov') {
-          formatted = formatCompactIndian(raw, { money: true });
-        } else if (metric === 'sessions' || metric === 'orders' || metric === 'atc') {
-          formatted = formatCompactIndian(raw, { money: false });
-        } else {
-          formatted = (config && typeof config.formatter === 'function') ? config.formatter(raw) : String(raw);
-        }
-        const { x, y } = bar.tooltipPosition();
-        // If bar is tall enough, draw inside; else above
-        const barTop = bar.y; // pixel position
-        const chartTop = chart.scales?.y?.top || 0;
-        const height = barTop - chartTop;
-        if (height > 26) {
-          ctx.fillStyle = '#ffffff';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(formatted, x, y + 12);
-        } else {
-          ctx.fillStyle = '#0b6bcb';
-          ctx.textBaseline = 'bottom';
-          ctx.fillText(formatted, x, y - 4);
-        }
-      });
-      ctx.restore();
-    }
-  };
-
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
       <CardContent sx={{ minHeight: 320, display: 'flex', flexDirection: 'column' }}>
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 1 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
-                {viewMode === 'daily' ? 'Day-wise trend' : 'Hour-wise trend'} · {config.label}
-              </Typography>
+            <Typography variant="subtitle2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
+              Hour-wise trend · {config.label}
+            </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
               Timezone: {state.timezone}
             </Typography>
@@ -502,13 +433,13 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   responsive: true,
                   maintainAspectRatio: false,
                   plugins: options.plugins,
-                  layout: { padding: { top: 20, bottom: 4 } },
+                  layout: options.layout,
                   scales: {
                     x: { stacked: false, grid: { color: 'rgba(0,0,0,0.05)' } },
                     y: { stacked: false, grid: { display: false }, ticks: { callback: (v) => config.formatter(v) } },
                   },
                 }}
-                plugins={[legendPadPlugin, barValuePlugin]}
+                plugins={[legendPadPlugin]}
               />
             ) : (
               <Line data={data} options={options} plugins={[legendPadPlugin]} />
