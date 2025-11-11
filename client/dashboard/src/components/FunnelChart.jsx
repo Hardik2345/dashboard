@@ -50,7 +50,7 @@ export default function FunnelChart({ query }) {
     ],
   };
 
-  // Custom plugin to render percentage (relative to total sessions) and raw value above each bar
+  // Custom plugin to render a single-line label: "count (pct%)" just above each bar
   const valueLabelPlugin = {
     id: 'valueLabelPlugin',
     afterDatasetsDraw(chart) {
@@ -70,13 +70,10 @@ export default function FunnelChart({ query }) {
         const countText = nfInt.format(raw);
         ctx.textAlign = 'center';
         ctx.fillStyle = '#0d47a1';
-        // Percentage (upper line)
+        // Single line: count (xx%)
         ctx.font = '600 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(pctText, x, y - 22);
-        // Raw count (lower line)
-        ctx.font = '500 11px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-        ctx.fillText(countText, x, y - 8);
+        ctx.fillText(`${countText} (${pctText})`, x, y - 10);
       });
       ctx.restore();
     }
@@ -85,7 +82,7 @@ export default function FunnelChart({ query }) {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
-    layout: { padding: { top: 44 } }, // extra space for two-line labels (percent + count)
+  layout: { padding: { top: 30 } }, // reduced space for single-line labels
     plugins: {
       legend: { display: false },
       tooltip: {
