@@ -45,6 +45,23 @@ const nfCurrency2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
 
+// Compact Indian number formatting with L/Cr suffix, optional ₹ prefix
+function formatCompactIndian(value, { money = false } = {}) {
+  const n = Number(value || 0);
+  const abs = Math.abs(n);
+  let out = '';
+  if (abs >= 1e7) {
+    out = (n / 1e7).toFixed((n / 1e7) >= 100 ? 0 : 1) + 'Cr';
+  } else if (abs >= 1e5) {
+    out = (n / 1e5).toFixed((n / 1e5) >= 100 ? 0 : 1) + 'L';
+  } else if (abs >= 1e3) {
+    out = (n / 1e3).toFixed((n / 1e3) >= 100 ? 0 : 1) + 'K';
+  } else {
+    out = money ? nfCurrency0.format(n).replace('₹','') : nfInt0.format(n);
+  }
+  return money ? `₹${out}` : out;
+}
+
 const METRIC_CONFIG = {
   aov: {
     label: 'Avg Order Value',
@@ -368,7 +385,14 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       meta0.data.forEach((bar, i) => {
         const raw = ds0.data?.[i];
         if (raw == null) return;
-        const formatted = (config && typeof config.formatter === 'function') ? config.formatter(raw) : String(raw);
+        let formatted;
+        if (metric === 'sales' || metric === 'aov') {
+          formatted = formatCompactIndian(raw, { money: true });
+        } else if (metric === 'sessions' || metric === 'orders' || metric === 'atc') {
+          formatted = formatCompactIndian(raw, { money: false });
+        } else {
+          formatted = (config && typeof config.formatter === 'function') ? config.formatter(raw) : String(raw);
+        }
         const { x, y } = bar.tooltipPosition();
         ctx.font = '500 10px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
         ctx.fillText(formatted, x, y - 6);
