@@ -357,7 +357,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 1 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column' }}>
             <Typography variant="subtitle2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
-              Hour-wise trend · {config.label}
+              {viewMode === 'daily' ? 'Day-wise trend' : 'Hour-wise trend'} · {config.label}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
               Timezone: {state.timezone}
