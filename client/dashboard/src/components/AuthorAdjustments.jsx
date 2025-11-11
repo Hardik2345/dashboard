@@ -1,13 +1,15 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, Stack, Typography, Button, TextField, Grid, Chip, Divider, Tooltip } from '@mui/material';
 import dayjs from 'dayjs';
-import { listAdjustmentBuckets, createAdjustmentBucket, updateAdjustmentBucket, deactivateAdjustmentBucket, previewAdjustments, applyAdjustments } from '../lib/api.js';
+import { listAdjustmentBuckets, createAdjustmentBucket, updateAdjustmentBucket, deactivateAdjustmentBucket, previewAdjustments, applyAdjustments, listAuthorBrands } from '../lib/api.js';
 
 function pct(v) { return `${(Number(v)||0).toFixed(2)}%`; }
 
 export default function AuthorAdjustments() {
   const [buckets, setBuckets] = useState([]);
   const [loadingBuckets, setLoadingBuckets] = useState(false);
+  const [brands, setBrands] = useState([]);
+  const [brandKey, setBrandKey] = useState('');
   const [form, setForm] = useState({ lower_bound_sessions:'', upper_bound_sessions:'', offset_pct:'', priority:'100', effective_from:'', effective_to:'', notes:'' });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
@@ -17,16 +19,30 @@ export default function AuthorAdjustments() {
 
   const loadBuckets = useCallback(async () => {
     setLoadingBuckets(true); setError(null);
-    const json = await listAdjustmentBuckets();
+    if (!brandKey) { setBuckets([]); setLoadingBuckets(false); return; }
+    const json = await listAdjustmentBuckets({ brandKey });
     if (json.__error) setError('Failed to load buckets'); else setBuckets(json.buckets || []);
     setLoadingBuckets(false);
-  }, []);
+  }, [brandKey]);
 
   useEffect(() => { loadBuckets(); }, [loadBuckets]);
+
+  // Load brands on mount
+  useEffect(() => {
+    (async () => {
+      const json = await listAuthorBrands();
+      if (!json.__error) {
+        const arr = Array.isArray(json.brands) ? json.brands : [];
+        setBrands(arr);
+        if (arr.length && !brandKey) setBrandKey(arr[0].key);
+      }
+    })();
+  }, []);
 
   async function handleCreate(e) {
     e.preventDefault(); setCreating(true); setError(null);
     const payload = {
+      brand_key: brandKey,
       lower_bound_sessions: Number(form.lower_bound_sessions),
       upper_bound_sessions: Number(form.upper_bound_sessions),
       offset_pct: Number(form.offset_pct),
@@ -43,21 +59,21 @@ export default function AuthorAdjustments() {
   }
 
   async function handleDeactivate(id) {
-    const r = await deactivateAdjustmentBucket(id);
+    const r = await deactivateAdjustmentBucket(id, { brandKey });
     if (r.error) setError('Deactivate failed');
     loadBuckets();
   }
 
   async function handlePreview() {
     setPreview(null); setError(null);
-    const json = await previewAdjustments(previewRange);
+    const json = await previewAdjustments({ brandKey, ...previewRange });
     if (json.__error) { setError('Preview failed'); return; }
     setPreview(json);
   }
 
   async function handleApply() {
     setApplying(true); setError(null);
-    const r = await applyAdjustments(previewRange);
+    const r = await applyAdjustments({ brandKey, ...previewRange });
     setApplying(false);
     if (r.error) { setError(r.data?.error || 'Apply failed'); return; }
     // Refresh preview & buckets to show new adjusted values in subsequent metrics
@@ -69,6 +85,28 @@ export default function AuthorAdjustments() {
 
   return (
     <Stack spacing={3}>
+      <Card variant="outlined">
+        <CardContent>
+          <Stack spacing={1.5}>
+            <Typography variant="h6">Select Brand</Typography>
+            <TextField
+              size="small"
+              select
+              SelectProps={{ native: true }}
+              label="Brand"
+              value={brandKey}
+              onChange={(e)=>{ setBrandKey(e.target.value); setPreview(null); }}
+            >
+              {brands.map(b => (
+                <option key={b.key} value={b.key}>{b.key}</option>
+              ))}
+            </TextField>
+            {!brands.length && (
+              <Typography variant="body2" color="text.secondary">No brands configured. Add a brand above first.</Typography>
+            )}
+          </Stack>
+        </CardContent>
+      </Card>
       <Card variant="outlined">
         <CardContent>
           <Stack spacing={2} component="form" onSubmit={handleCreate}>

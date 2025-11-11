@@ -250,8 +250,10 @@ export async function getLastUpdatedPTS() {
 }
 
 // ---------------- Author: Session adjustments ----------------
-export async function listAdjustmentBuckets({ active } = {}) {
-  return getJSON('/author/adjustment-buckets', active == null ? undefined : { active: active ? '1' : '0' });
+export async function listAdjustmentBuckets({ brandKey, active } = {}) {
+  const params = { brand_key: brandKey };
+  if (active != null) params.active = active ? '1' : '0';
+  return getJSON('/author/adjustment-buckets', params);
 }
 
 export async function createAdjustmentBucket(payload) {
@@ -282,28 +284,34 @@ export async function updateAdjustmentBucket(id, payload) {
   } catch (e) { return { error: true }; }
 }
 
-export async function deactivateAdjustmentBucket(id) {
+export async function deactivateAdjustmentBucket(id, { brandKey }) {
   try {
-    const res = await fetch(`${API_BASE}/author/adjustment-buckets/${id}`, { method: 'DELETE', credentials: 'include' });
+    const url = `${API_BASE}/author/adjustment-buckets/${id}?brand_key=${encodeURIComponent(brandKey)}`;
+    const res = await fetch(url, { method: 'DELETE', credentials: 'include' });
     if (!res.ok && res.status !== 204) return { error: true };
     return { error: false };
   } catch (e) { return { error: true }; }
 }
 
-export async function previewAdjustments({ start, end }) {
-  return getJSON('/author/adjustments/preview', { start, end });
+export async function previewAdjustments({ brandKey, start, end }) {
+  return getJSON('/author/adjustments/preview', { brand_key: brandKey, start, end });
 }
 
-export async function applyAdjustments({ start, end }) {
+export async function applyAdjustments({ brandKey, start, end }) {
   try {
     const res = await fetch(`${API_BASE}/author/adjustments/apply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ start, end })
+      body: JSON.stringify({ brand_key: brandKey, start, end })
     });
     const json = await res.json().catch(()=>({}));
     if (!res.ok) return { error: true, data: json };
     return { error: false, data: json };
   } catch (e) { return { error: true }; }
+}
+
+// Author brands helper (list)
+export async function listAuthorBrands() {
+  return getJSON('/author/brands');
 }
