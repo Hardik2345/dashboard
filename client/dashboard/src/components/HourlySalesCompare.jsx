@@ -351,6 +351,32 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     }
   };
 
+  // Plugin to draw value labels above bars in daily view (primary dataset only)
+  const barValuePlugin = {
+    id: 'dailyBarValueLabels',
+    afterDatasetsDraw(chart) {
+      // Only apply when the first dataset is a bar chart (daily view)
+      const meta0 = chart.getDatasetMeta(0);
+      if (!meta0 || meta0.type !== 'bar') return;
+      const ds0 = chart.data.datasets?.[0];
+      if (!ds0) return;
+      const { ctx } = chart;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillStyle = '#1f2937';
+      meta0.data.forEach((bar, i) => {
+        const raw = ds0.data?.[i];
+        if (raw == null) return;
+        const formatted = (config && typeof config.formatter === 'function') ? config.formatter(raw) : String(raw);
+        const { x, y } = bar.tooltipPosition();
+        ctx.font = '500 10px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+        ctx.fillText(formatted, x, y - 6);
+      });
+      ctx.restore();
+    }
+  };
+
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
       <CardContent sx={{ minHeight: 320, display: 'flex', flexDirection: 'column' }}>
@@ -433,13 +459,13 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   responsive: true,
                   maintainAspectRatio: false,
                   plugins: options.plugins,
-                  layout: options.layout,
+                  layout: { padding: { top: 20, bottom: 4 } },
                   scales: {
                     x: { stacked: false, grid: { color: 'rgba(0,0,0,0.05)' } },
                     y: { stacked: false, grid: { display: false }, ticks: { callback: (v) => config.formatter(v) } },
                   },
                 }}
-                plugins={[legendPadPlugin]}
+                plugins={[legendPadPlugin, barValuePlugin]}
               />
             ) : (
               <Line data={data} options={options} plugins={[legendPadPlugin]} />
