@@ -50,26 +50,33 @@ export default function FunnelChart({ query }) {
     ],
   };
 
-  // Custom plugin to render value labels above each bar
+  // Custom plugin to render percentage (relative to total sessions) and raw value above each bar
   const valueLabelPlugin = {
     id: 'valueLabelPlugin',
-    afterDatasetsDraw(chart, args, pluginOptions) {
+    afterDatasetsDraw(chart) {
       const { ctx } = chart;
       const dataset = chart.data.datasets[0];
       if (!dataset) return;
       const meta = chart.getDatasetMeta(0);
+      const totalSessions = stats.total_sessions || 0;
       ctx.save();
       meta.data.forEach((bar, idx) => {
         const raw = dataset.data[idx];
         if (raw == null) return;
         const { x, y } = bar.tooltipPosition();
-        const text = nfInt.format(raw);
-        ctx.font = '500 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-        ctx.fillStyle = '#0d47a1';
+        // Percentage relative to sessions (first bar always 100%)
+        const pct = idx === 0 ? 100 : (totalSessions > 0 ? (raw / totalSessions) * 100 : 0);
+        const pctText = `${pct.toFixed(pct >= 99.95 || pct === 0 ? 0 : 1)}%`;
+        const countText = nfInt.format(raw);
         ctx.textAlign = 'center';
+        ctx.fillStyle = '#0d47a1';
+        // Percentage (upper line)
+        ctx.font = '600 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
         ctx.textBaseline = 'bottom';
-        // Leave at least 8px from top edge; chart padding ensures space
-        ctx.fillText(text, x, y - 8); // 8px above bar top for clarity
+        ctx.fillText(pctText, x, y - 22);
+        // Raw count (lower line)
+        ctx.font = '500 11px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+        ctx.fillText(countText, x, y - 8);
       });
       ctx.restore();
     }
@@ -78,11 +85,7 @@ export default function FunnelChart({ query }) {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
-    layout: {
-      padding: {
-        top: 28, // reserve space so tallest label never clips
-      },
-    },
+    layout: { padding: { top: 44 } }, // extra space for two-line labels (percent + count)
     plugins: {
       legend: { display: false },
       tooltip: {

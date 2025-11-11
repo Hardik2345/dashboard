@@ -356,9 +356,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       <CardContent sx={{ minHeight: 320, display: 'flex', flexDirection: 'column' }}>
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 1 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-            <Typography variant="subtitle2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
-              Hour-wise trend · {config.label}
-            </Typography>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
+                {viewMode === 'daily' ? 'Day-wise trend' : 'Hour-wise trend'} · {config.label}
+              </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
               Timezone: {state.timezone}
             </Typography>
