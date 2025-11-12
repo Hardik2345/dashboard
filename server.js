@@ -527,10 +527,17 @@ app.delete('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => 
       author_user_id: req.user.id
     });
     // Optional recompute of adjusted_total_sessions over a provided range after deactivation.
-    const start = (req.query.start || '').toString();
-    const end = (req.query.end || '').toString();
+    let start = (req.query.start || '').toString();
+    let end = (req.query.end || '').toString();
+    const scope = (req.query.scope || '').toString(); // 'bucket-window' | 'all'
+
+    // If caller asked for bucket-window or didn't pass a valid range, infer from bucket effective dates
+    if ((!start || !end || start > end) && (scope === 'bucket-window')) {
+      start = existing.effective_from || '';
+      end = existing.effective_to || '';
+    }
     let recomputedRows = 0;
-    if (start && end && start <= end) {
+  if (start && end && start <= end) {
       const brandCheck = requireBrandKey(brandKey);
       if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
       const brandConn = await getBrandConnection(brandCheck.cfg);
@@ -568,7 +575,45 @@ app.delete('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => 
         author_user_id: req.user.id
       });
     }
-    return res.json({ deactivated: true, recomputed_rows: recomputedRows });
+
+    // Optional: recompute across ALL available dates when scope=all and nothing was recomputed yet
+    if ((!recomputedRows) && scope === 'all') {
+      const brandCheck = requireBrandKey(brandKey);
+      if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
+      const brandConn = await getBrandConnection(brandCheck.cfg);
+      const [minMax] = await brandConn.sequelize.query(
+        'SELECT MIN(date) AS min_d, MAX(date) AS max_d FROM overall_summary',
+        { type: QueryTypes.SELECT }
+      );
+      if (minMax?.min_d && minMax?.max_d) {
+        const remainingBuckets = await SessionAdjustmentBucket.findAll({ where: { brand_key: brandKey, active: 1 }, order: [['priority','ASC'], ['id','ASC']] });
+        const rows = await brandConn.sequelize.query(
+          'SELECT date, total_sessions FROM overall_summary WHERE date >= ? AND date <= ? ORDER BY date',
+          { type: QueryTypes.SELECT, replacements: [minMax.min_d, minMax.max_d] }
+        );
+        const updates = [];
+        for (const r of rows) {
+          const d = r.date;
+          const rawSessions = Number(r.total_sessions || 0);
+          const appliedList = [];
+          for (const b of remainingBuckets) {
+            const efFromOk = !b.effective_from || d >= b.effective_from;
+            const efToOk = !b.effective_to || d <= b.effective_to;
+            if (!efFromOk || !efToOk) continue;
+            if (rawSessions >= b.lower_bound_sessions && rawSessions <= b.upper_bound_sessions) appliedList.push(b);
+          }
+          const adjusted = appliedList.length ? Math.round(rawSessions * appliedList.reduce((f,b)=>f*(1+Number(b.offset_pct)/100),1)) : rawSessions;
+          updates.push({ date: d, adjusted });
+        }
+        if (updates.length) {
+          const caseParts = updates.map(u => `WHEN date='${u.date}' THEN ${u.adjusted}`);
+          const sql = `UPDATE overall_summary SET adjusted_total_sessions = CASE ${caseParts.join(' ')} END WHERE date BETWEEN ? AND ?`;
+          await brandConn.sequelize.query(sql, { type: QueryTypes.UPDATE, replacements: [minMax.min_d, minMax.max_d] });
+          recomputedRows = updates.length;
+        }
+      }
+    }
+    return res.json({ deactivated: true, recomputed_rows: recomputedRows, scope_used: scope || (start && end ? 'range' : null) });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to deactivate bucket' }); }
 });
 
