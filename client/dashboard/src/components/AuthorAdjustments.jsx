@@ -25,20 +25,17 @@ export default function AuthorAdjustments() {
     if (json.__error) setError('Failed to load buckets'); else {
       const list = json.buckets || [];
       setBuckets(list);
-      // Default selection to active buckets if nothing chosen yet
-      if (!selectedBucketIds.length) {
-        const actives = list.filter(b=>b.active).map(b=>b.id);
-        setSelectedBucketIds(actives);
-      } else {
-        // remove ids that no longer exist
-        const setIds = new Set(list.map(b=>b.id));
-        setSelectedBucketIds(prev => prev.filter(id => setIds.has(id)));
-      }
     }
     setLoadingBuckets(false);
-  }, [brandKey, selectedBucketIds.length]);
+  }, [brandKey]);
 
   useEffect(() => { loadBuckets(); }, [loadBuckets]);
+
+  // Reset selection and preview when brand changes
+  useEffect(() => {
+    setSelectedBucketIds([]);
+    setPreview(null);
+  }, [brandKey]);
 
   // Load brands on mount
   useEffect(() => {
@@ -79,14 +76,20 @@ export default function AuthorAdjustments() {
 
   async function handlePreview() {
     setPreview(null); setError(null);
-    const json = await previewAdjustments({ brandKey, ...previewRange, bucketIds: selectedBucketIds });
+    const payload = selectedBucketIds.length
+      ? { brandKey, ...previewRange, bucketIds: selectedBucketIds }
+      : { brandKey, ...previewRange };
+    const json = await previewAdjustments(payload);
     if (json.__error) { setError('Preview failed'); return; }
     setPreview(json);
   }
 
   async function handleApply() {
     setApplying(true); setError(null);
-    const r = await applyAdjustments({ brandKey, ...previewRange, bucketIds: selectedBucketIds });
+    const payload = selectedBucketIds.length
+      ? { brandKey, ...previewRange, bucketIds: selectedBucketIds }
+      : { brandKey, ...previewRange };
+    const r = await applyAdjustments(payload);
     setApplying(false);
     if (r.error) { setError(r.data?.error || 'Apply failed'); return; }
     // Refresh preview & buckets to show new adjusted values in subsequent metrics
@@ -159,13 +162,6 @@ export default function AuthorAdjustments() {
                       <Chip size="small" label={b.active ? 'Active' : 'Inactive'} color={b.active ? 'primary' : 'default'} />
                       {b.effective_from && <Chip size="small" label={`From ${b.effective_from}`} />}
                       {b.effective_to && <Chip size="small" label={`To ${b.effective_to}`} />}
-                      <Chip
-                        size="small"
-                        clickable
-                        color={selectedBucketIds.includes(b.id) ? 'primary' : 'default'}
-                        onClick={() => setSelectedBucketIds(prev => prev.includes(b.id) ? prev.filter(x=>x!==b.id) : [...prev, b.id])}
-                        label={selectedBucketIds.includes(b.id) ? 'Selected' : 'Select'}
-                      />
                     </Stack>
                     <Stack direction="row" spacing={1}>
                       {b.active ? <Button size="small" onClick={()=>handleDeactivate(b.id)}>Deactivate</Button> : null}
@@ -175,13 +171,6 @@ export default function AuthorAdjustments() {
                 </Card>
               ))}
             </Stack>
-            {buckets.length > 0 && (
-              <Stack direction="row" spacing={1}>
-                <Button size="small" onClick={()=>setSelectedBucketIds(buckets.map(b=>b.id))}>Select all</Button>
-                <Button size="small" onClick={()=>setSelectedBucketIds(buckets.filter(b=>b.active).map(b=>b.id))}>Only active</Button>
-                <Button size="small" onClick={()=>setSelectedBucketIds([])}>Clear</Button>
-              </Stack>
-            )}
           </Stack>
         </CardContent>
       </Card>
@@ -196,6 +185,61 @@ export default function AuthorAdjustments() {
               <Button variant="outlined" size="small" onClick={handlePreview}>Preview</Button>
               <Button variant="contained" size="small" disabled={!preview || applying} onClick={handleApply}>{applying ? 'Applying...' : 'Apply adjustments'}</Button>
             </Stack>
+            {/* Bucket selection for preview/apply */}
+            <Stack spacing={1}>
+              <Typography variant="subtitle2">Buckets in selected date range</Typography>
+              <Stack direction="row" spacing={1}>
+                <Button size="small" onClick={()=>{
+                  const list = buckets.filter(b=>{
+                    const s = previewRange.start; const e = previewRange.end;
+                    const fromOk = !b.effective_from || b.effective_from <= e;
+                    const toOk = !b.effective_to || b.effective_to >= s;
+                    return fromOk && toOk;
+                  });
+                  setSelectedBucketIds(list.map(b=>b.id));
+                }}>Select all</Button>
+                <Button size="small" onClick={()=>{
+                  const list = buckets.filter(b=>{
+                    const s = previewRange.start; const e = previewRange.end;
+                    const fromOk = !b.effective_from || b.effective_from <= e;
+                    const toOk = !b.effective_to || b.effective_to >= s;
+                    return fromOk && toOk && b.active;
+                  });
+                  setSelectedBucketIds(list.map(b=>b.id));
+                }}>Only active</Button>
+                <Button size="small" onClick={()=>setSelectedBucketIds([])}>Clear</Button>
+              </Stack>
+              <Stack spacing={0.75} sx={{ maxHeight: 180, overflowY: 'auto' }}>
+                {buckets.filter(b=>{
+                  const s = previewRange.start; const e = previewRange.end;
+                  const fromOk = !b.effective_from || b.effective_from <= e;
+                  const toOk = !b.effective_to || b.effective_to >= s;
+                  return fromOk && toOk;
+                }).map(b => (
+                  <Stack key={b.id} direction={{ xs:'column', sm:'row' }} spacing={1} alignItems={{ sm:'center' }}>
+                    <Chip size="small" label={`ID ${b.id}`} />
+                    <Chip size="small" label={`Priority ${b.priority}`} />
+                    <Chip size="small" label={`Offset ${pct(b.offset_pct)}`} color={b.offset_pct >= 0 ? 'success' : 'error'} />
+                    <Chip size="small" label={b.active ? 'Active' : 'Inactive'} color={b.active ? 'primary' : 'default'} />
+                    <Chip size="small" label={`Range ${b.lower_bound_sessions}–${b.upper_bound_sessions}`} />
+                    {b.effective_from && <Chip size="small" label={`From ${b.effective_from}`} />}
+                    {b.effective_to && <Chip size="small" label={`To ${b.effective_to}`} />}
+                    <Button size="small" variant={selectedBucketIds.includes(b.id)?'contained':'outlined'} onClick={()=>setSelectedBucketIds(prev=>prev.includes(b.id)?prev.filter(x=>x!==b.id):[...prev,b.id])}>
+                      {selectedBucketIds.includes(b.id)?'Selected':'Select'}
+                    </Button>
+                  </Stack>
+                ))}
+                {buckets.filter(b=>{
+                  const s = previewRange.start; const e = previewRange.end;
+                  const fromOk = !b.effective_from || b.effective_from <= e;
+                  const toOk = !b.effective_to || b.effective_to >= s;
+                  return fromOk && toOk;
+                }).length === 0 && (
+                  <Typography variant="body2" color="text.secondary">No buckets with effective dates intersecting this range.</Typography>
+                )}
+              </Stack>
+            </Stack>
+
             {preview && (
               <Stack spacing={1}>
                 <Divider />
@@ -203,7 +247,7 @@ export default function AuthorAdjustments() {
                 <Typography variant="body2">
                   Raw {totals.raw} → Adjusted {totals.adjusted} ({totals.delta >= 0 ? '+' : ''}{totals.delta} / {totals.delta_pct.toFixed(2)}%)
                 </Typography>
-                <Typography variant="caption" color="text.secondary">Buckets in range (including inactive for transparency): {Array.isArray(preview.buckets) ? preview.buckets.length : 0}</Typography>
+                <Typography variant="caption" color="text.secondary">Buckets in range (including inactive): {buckets.filter(b=>{ const s=previewRange.start; const e=previewRange.end; const fromOk=!b.effective_from||b.effective_from<=e; const toOk=!b.effective_to||b.effective_to>=s; return fromOk&&toOk; }).length}</Typography>
                 <Divider />
                 <Typography variant="subtitle2">Daily breakdown</Typography>
                 <Stack spacing={0.5} sx={{ maxHeight:300, overflowY:'auto' }}>
