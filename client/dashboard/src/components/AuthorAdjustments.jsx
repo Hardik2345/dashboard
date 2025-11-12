@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Card, CardContent, Stack, Typography, Button, TextField, Grid, Chip, Divider, Tooltip } from '@mui/material';
+import { Card, CardContent, Stack, Typography, Button, TextField, Grid, Chip, Divider, Tooltip, Snackbar, Alert } from '@mui/material';
 import dayjs from 'dayjs';
 import { listAdjustmentBuckets, createAdjustmentBucket, updateAdjustmentBucket, deactivateAdjustmentBucket, activateAdjustmentBucket, previewAdjustments, applyAdjustments, listAuthorBrands } from '../lib/api.js';
 
@@ -17,6 +17,9 @@ export default function AuthorAdjustments() {
   const [previewRange, setPreviewRange] = useState({ start: dayjs().format('YYYY-MM-DD'), end: dayjs().format('YYYY-MM-DD') });
   const [preview, setPreview] = useState(null);
   const [applying, setApplying] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [activatingId, setActivatingId] = useState(null);
+  const [deactivatingId, setDeactivatingId] = useState(null);
 
   const loadBuckets = useCallback(async () => {
     setLoadingBuckets(true); setError(null);
@@ -69,18 +72,23 @@ export default function AuthorAdjustments() {
   }
 
   async function handleDeactivate(id) {
+    setDeactivatingId(id);
     const r = await deactivateAdjustmentBucket(id, { brandKey, start: previewRange.start, end: previewRange.end });
     if (r.error) setError(r.data?.error || 'Deactivate failed');
-    else setError(null);
+    else { setError(null); setNotice(`Deactivated and recomputed ${Number(r.data?.recomputed_rows||0)} day(s).`); }
+    setDeactivatingId(null);
     await loadBuckets();
     handlePreview();
   }
 
   async function handleActivate(id) {
     setError(null);
+    setActivatingId(id);
     // Ask server to activate and auto-apply for current range; limit to just this bucket to avoid surprises
     const r = await activateAdjustmentBucket(id, { brandKey, start: previewRange.start, end: previewRange.end, onlyThisBucket: true });
     if (r.error) { setError('Activate failed'); return; }
+    setNotice(`Activated and applied to ${Number(r.data?.auto_applied_rows||0)} day(s).`);
+    setActivatingId(null);
     // Refresh buckets and preview to reflect persisted values
     await loadBuckets();
     handlePreview();
@@ -177,9 +185,13 @@ export default function AuthorAdjustments() {
                     </Stack>
                     <Stack direction="row" spacing={1}>
                       {b.active ? (
-                        <Button size="small" onClick={()=>handleDeactivate(b.id)}>Deactivate</Button>
+                        <Button size="small" disabled={deactivatingId===b.id} onClick={()=>handleDeactivate(b.id)}>
+                          {deactivatingId===b.id? 'Deactivating…' : 'Deactivate'}
+                        </Button>
                       ) : (
-                        <Button size="small" variant="outlined" onClick={()=>handleActivate(b.id)}>Activate</Button>
+                        <Button size="small" variant="outlined" disabled={activatingId===b.id} onClick={()=>handleActivate(b.id)}>
+                          {activatingId===b.id? 'Activating…' : 'Activate'}
+                        </Button>
                       )}
                     </Stack>
                   </Stack>
@@ -190,6 +202,13 @@ export default function AuthorAdjustments() {
           </Stack>
         </CardContent>
       </Card>
+
+      {/* Global notices */}
+      <Snackbar open={!!notice} autoHideDuration={3000} onClose={() => setNotice(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert onClose={() => setNotice(null)} severity="success" variant="filled" sx={{ width: '100%' }}>
+          {notice}
+        </Alert>
+      </Snackbar>
 
       <Card variant="outlined">
         <CardContent>
