@@ -433,6 +433,16 @@ app.post('/auth/logout', (req, res) => {
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   const successRedirect = process.env.LOGIN_SUCCESS_REDIRECT || '/';
   const failureRedirect = process.env.LOGIN_FAILURE_REDIRECT || '/login?error=google_oauth_failed';
+  // Quick introspection endpoint to verify what callback URL the server is using in this environment
+  app.get('/auth/google/debug', (req, res) => {
+    return res.json({
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3000/auth/google/callback',
+      successRedirect,
+      failureRedirect,
+      nodeEnv: process.env.NODE_ENV,
+    });
+  });
   app.get('/auth/google', passport.authenticate('google', { scope: ['profile','email'] }));
   app.get('/auth/google/callback',
     passport.authenticate('google', { failureRedirect, session: true }),
