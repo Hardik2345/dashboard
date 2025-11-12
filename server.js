@@ -209,7 +209,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   }));
 }
 
-passport.serializeUser((user, done) => done(null, { id: user.id, email: user.email, brandKey: user.brandKey, isAuthor: !!user.isAuthor }));
+passport.serializeUser((user, done) => done(null, { id: user.id, email: user.email, brandKey: user.brandKey, isAuthor: !!user.isAuthor, sso: user.sso }));
 passport.deserializeUser(async (obj, done) => {
   try {
     if (obj.isAuthor) {
@@ -223,9 +223,9 @@ passport.deserializeUser(async (obj, done) => {
       const domainPart = email.includes('@') ? normalizeDomain(email.split('@')[1]) : '';
 
       const authorDomain = normalizeDomain(process.env.AUTHOR_GOOGLE_DOMAIN);
-      const isSsoAuthor = obj.sso === 'google' && authorDomain && domainMatches(domainPart, authorDomain);
+      const domainOk = authorDomain && domainMatches(domainPart, authorDomain);
 
-      if (isSsoAuthor) {
+      if (domainOk) {
         // Trust the session and return a minimal author identity; no DB lookup needed
         return done(null, { id: obj.id, email, role: 'author', brandKey: null, isAuthor: true });
       }
