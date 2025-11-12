@@ -530,6 +530,32 @@ app.delete('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => 
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to deactivate bucket' }); }
 });
 
+// Activate bucket (make active again)
+app.post('/author/adjustment-buckets/:id/activate', requireAuthor, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid id' });
+    const existing = await SessionAdjustmentBucket.findByPk(id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const brandKey = (req.query?.brand_key || req.body?.brand_key || '').toString().toUpperCase();
+    if (!brandKey) return res.status(400).json({ error: 'brand_key required' });
+    if (existing.brand_key !== brandKey) return res.status(403).json({ error: 'Bucket does not belong to brand_key' });
+    const before = existing.toJSON();
+    existing.active = 1;
+    await existing.save();
+    // Use UPDATE action to avoid altering DB ENUM for audit.action
+    await SessionAdjustmentAudit.create({
+      brand_key: brandKey,
+      bucket_id: existing.id,
+      action: 'UPDATE',
+      before_json: before,
+      after_json: existing.toJSON(),
+      author_user_id: req.user.id
+    });
+    return res.json({ bucket: existing });
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to activate bucket' }); }
+});
+
 // Preview adjustments over a date range (does NOT persist). Applies first matching bucket by priority.
 app.get('/author/adjustments/preview', requireAuthor, async (req, res) => {
   try {
@@ -541,9 +567,15 @@ app.get('/author/adjustments/preview', requireAuthor, async (req, res) => {
     const brandCheck = requireBrandKey(req.query.brand_key);
     if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
 
-  // Fetch all buckets for visibility and active ones for application
-  const allBuckets = await SessionAdjustmentBucket.findAll({ where: { brand_key: brandCheck.key }, order: [['priority','ASC'], ['id','ASC']] });
-  const buckets = allBuckets.filter(b => Number(b.active) === 1);
+    // Optional selection: bucket_ids (comma-separated). If present, use only those (ignore active flag).
+    const idsParam = (req.query.bucket_ids || '').toString().trim();
+    const selectedIds = idsParam ? idsParam.split(',').map(s=>Number(s)).filter(n=>Number.isInteger(n) && n>0) : [];
+
+    // Fetch all buckets for visibility
+    const allBuckets = await SessionAdjustmentBucket.findAll({ where: { brand_key: brandCheck.key }, order: [['priority','ASC'], ['id','ASC']] });
+    const buckets = selectedIds.length
+      ? allBuckets.filter(b => selectedIds.includes(Number(b.id)))
+      : allBuckets.filter(b => Number(b.active) === 1);
 
     const brandConn = await getBrandConnection(brandCheck.cfg);
 
@@ -606,7 +638,7 @@ app.get('/author/adjustments/preview', requireAuthor, async (req, res) => {
     const totalDelta = totalAdj - totalRaw;
     const totalDeltaPct = totalRaw > 0 ? (totalDelta / totalRaw) * 100 : (totalAdj > 0 ? 100 : 0);
 
-    return res.json({ range: { start, end }, days: resultDays, totals: { raw: totalRaw, adjusted: totalAdj, delta: totalDelta, delta_pct: totalDeltaPct }, buckets: allBuckets });
+    return res.json({ range: { start, end }, days: resultDays, totals: { raw: totalRaw, adjusted: totalAdj, delta: totalDelta, delta_pct: totalDeltaPct }, buckets: allBuckets, selected_bucket_ids: selectedIds });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Preview failed' }); }
 });
 
@@ -622,8 +654,13 @@ app.post('/author/adjustments/apply', requireAuthor, async (req, res) => {
     if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
     const brandConn = await getBrandConnection(brandCheck.cfg);
 
-  const allBuckets = await SessionAdjustmentBucket.findAll({ where: { brand_key: brandCheck.key }, order: [['priority','ASC'], ['id','ASC']] });
-  const buckets = allBuckets.filter(b => Number(b.active) === 1);
+    // Optional explicit selection of buckets to apply (even if inactive)
+    const rawIds = req.body?.bucket_ids;
+    let selectedIds = Array.isArray(rawIds) ? rawIds.map(n=>Number(n)).filter(n=>Number.isInteger(n)&&n>0) : [];
+    const allBuckets = await SessionAdjustmentBucket.findAll({ where: { brand_key: brandCheck.key }, order: [['priority','ASC'], ['id','ASC']] });
+    const buckets = selectedIds.length
+      ? allBuckets.filter(b => selectedIds.includes(Number(b.id)))
+      : allBuckets.filter(b => Number(b.active) === 1);
     const rows = await brandConn.sequelize.query(
       'SELECT date, total_sessions FROM overall_summary WHERE date >= ? AND date <= ? ORDER BY date',
       { type: QueryTypes.SELECT, replacements: [start, end] }
@@ -653,7 +690,7 @@ app.post('/author/adjustments/apply', requireAuthor, async (req, res) => {
       bucket_id: 0,
       action: 'UPDATE',
       before_json: null,
-      after_json: { applied_range: { start, end }, rows: updates.length },
+      after_json: { applied_range: { start, end }, rows: updates.length, selected_bucket_ids: selectedIds.length ? selectedIds : 'active-only' },
       author_user_id: req.user.id
     });
     return res.json({ applied: updates.length, range: { start, end } });
