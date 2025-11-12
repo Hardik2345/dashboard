@@ -10,6 +10,7 @@ export default function AuthorAdjustments() {
   const [loadingBuckets, setLoadingBuckets] = useState(false);
   const [brands, setBrands] = useState([]);
   const [brandKey, setBrandKey] = useState('');
+  const [selectedBucketIds, setSelectedBucketIds] = useState([]);
   const [form, setForm] = useState({ lower_bound_sessions:'', upper_bound_sessions:'', offset_pct:'', priority:'100', effective_from:'', effective_to:'', notes:'' });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
@@ -21,9 +22,21 @@ export default function AuthorAdjustments() {
     setLoadingBuckets(true); setError(null);
     if (!brandKey) { setBuckets([]); setLoadingBuckets(false); return; }
     const json = await listAdjustmentBuckets({ brandKey });
-    if (json.__error) setError('Failed to load buckets'); else setBuckets(json.buckets || []);
+    if (json.__error) setError('Failed to load buckets'); else {
+      const list = json.buckets || [];
+      setBuckets(list);
+      // Default selection to active buckets if nothing chosen yet
+      if (!selectedBucketIds.length) {
+        const actives = list.filter(b=>b.active).map(b=>b.id);
+        setSelectedBucketIds(actives);
+      } else {
+        // remove ids that no longer exist
+        const setIds = new Set(list.map(b=>b.id));
+        setSelectedBucketIds(prev => prev.filter(id => setIds.has(id)));
+      }
+    }
     setLoadingBuckets(false);
-  }, [brandKey]);
+  }, [brandKey, selectedBucketIds.length]);
 
   useEffect(() => { loadBuckets(); }, [loadBuckets]);
 
@@ -66,14 +79,14 @@ export default function AuthorAdjustments() {
 
   async function handlePreview() {
     setPreview(null); setError(null);
-    const json = await previewAdjustments({ brandKey, ...previewRange });
+    const json = await previewAdjustments({ brandKey, ...previewRange, bucketIds: selectedBucketIds });
     if (json.__error) { setError('Preview failed'); return; }
     setPreview(json);
   }
 
   async function handleApply() {
     setApplying(true); setError(null);
-    const r = await applyAdjustments({ brandKey, ...previewRange });
+    const r = await applyAdjustments({ brandKey, ...previewRange, bucketIds: selectedBucketIds });
     setApplying(false);
     if (r.error) { setError(r.data?.error || 'Apply failed'); return; }
     // Refresh preview & buckets to show new adjusted values in subsequent metrics
@@ -146,6 +159,13 @@ export default function AuthorAdjustments() {
                       <Chip size="small" label={b.active ? 'Active' : 'Inactive'} color={b.active ? 'primary' : 'default'} />
                       {b.effective_from && <Chip size="small" label={`From ${b.effective_from}`} />}
                       {b.effective_to && <Chip size="small" label={`To ${b.effective_to}`} />}
+                      <Chip
+                        size="small"
+                        clickable
+                        color={selectedBucketIds.includes(b.id) ? 'primary' : 'default'}
+                        onClick={() => setSelectedBucketIds(prev => prev.includes(b.id) ? prev.filter(x=>x!==b.id) : [...prev, b.id])}
+                        label={selectedBucketIds.includes(b.id) ? 'Selected' : 'Select'}
+                      />
                     </Stack>
                     <Stack direction="row" spacing={1}>
                       {b.active ? <Button size="small" onClick={()=>handleDeactivate(b.id)}>Deactivate</Button> : null}
@@ -155,6 +175,13 @@ export default function AuthorAdjustments() {
                 </Card>
               ))}
             </Stack>
+            {buckets.length > 0 && (
+              <Stack direction="row" spacing={1}>
+                <Button size="small" onClick={()=>setSelectedBucketIds(buckets.map(b=>b.id))}>Select all</Button>
+                <Button size="small" onClick={()=>setSelectedBucketIds(buckets.filter(b=>b.active).map(b=>b.id))}>Only active</Button>
+                <Button size="small" onClick={()=>setSelectedBucketIds([])}>Clear</Button>
+              </Stack>
+            )}
           </Stack>
         </CardContent>
       </Card>

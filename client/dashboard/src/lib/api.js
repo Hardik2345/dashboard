@@ -293,17 +293,19 @@ export async function deactivateAdjustmentBucket(id, { brandKey }) {
   } catch (e) { return { error: true }; }
 }
 
-export async function previewAdjustments({ brandKey, start, end }) {
-  return getJSON('/author/adjustments/preview', { brand_key: brandKey, start, end });
+export async function previewAdjustments({ brandKey, start, end, bucketIds }) {
+  const params = { brand_key: brandKey, start, end };
+  if (Array.isArray(bucketIds) && bucketIds.length) params.bucket_ids = bucketIds.join(',');
+  return getJSON('/author/adjustments/preview', params);
 }
 
-export async function applyAdjustments({ brandKey, start, end }) {
+export async function applyAdjustments({ brandKey, start, end, bucketIds }) {
   try {
     const res = await fetch(`${API_BASE}/author/adjustments/apply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ brand_key: brandKey, start, end })
+      body: JSON.stringify({ brand_key: brandKey, start, end, bucket_ids: Array.isArray(bucketIds) && bucketIds.length ? bucketIds : undefined })
     });
     const json = await res.json().catch(()=>({}));
     if (!res.ok) return { error: true, data: json };
