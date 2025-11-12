@@ -69,16 +69,21 @@ export default function AuthorAdjustments() {
   }
 
   async function handleDeactivate(id) {
-    const r = await deactivateAdjustmentBucket(id, { brandKey });
-    if (r.error) setError('Deactivate failed');
+    const r = await deactivateAdjustmentBucket(id, { brandKey, start: previewRange.start, end: previewRange.end });
+    if (r.error) setError(r.data?.error || 'Deactivate failed');
     else setError(null);
-    loadBuckets();
+    await loadBuckets();
+    handlePreview();
   }
 
   async function handleActivate(id) {
-    const r = await activateAdjustmentBucket(id, { brandKey });
-    if (r.error) setError('Activate failed'); else setError(null);
-    loadBuckets();
+    setError(null);
+    // Ask server to activate and auto-apply for current range; limit to just this bucket to avoid surprises
+    const r = await activateAdjustmentBucket(id, { brandKey, start: previewRange.start, end: previewRange.end, onlyThisBucket: true });
+    if (r.error) { setError('Activate failed'); return; }
+    // Refresh buckets and preview to reflect persisted values
+    await loadBuckets();
+    handlePreview();
   }
 
   async function handlePreview() {

@@ -284,18 +284,26 @@ export async function updateAdjustmentBucket(id, payload) {
   } catch (e) { return { error: true }; }
 }
 
-export async function deactivateAdjustmentBucket(id, { brandKey }) {
+export async function deactivateAdjustmentBucket(id, { brandKey, start, end }) {
   try {
-    const url = `${API_BASE}/author/adjustment-buckets/${id}?brand_key=${encodeURIComponent(brandKey)}`;
+    const params = new URLSearchParams({ brand_key: brandKey });
+    if (start) params.set('start', start);
+    if (end) params.set('end', end);
+    const url = `${API_BASE}/author/adjustment-buckets/${id}?${params.toString()}`;
     const res = await fetch(url, { method: 'DELETE', credentials: 'include' });
-    if (!res.ok && res.status !== 204) return { error: true };
-    return { error: false };
+    const json = await res.json().catch(()=>({}));
+    if (!res.ok) return { error: true, data: json };
+    return { error: false, data: json };
   } catch (e) { return { error: true }; }
 }
 
-export async function activateAdjustmentBucket(id, { brandKey }) {
+export async function activateAdjustmentBucket(id, { brandKey, start, end, onlyThisBucket = false }) {
   try {
-    const url = `${API_BASE}/author/adjustment-buckets/${id}/activate?brand_key=${encodeURIComponent(brandKey)}`;
+    const params = new URLSearchParams({ brand_key: brandKey });
+    if (start) params.set('start', start);
+    if (end) params.set('end', end);
+    if (onlyThisBucket) params.set('only_this_bucket', '1');
+    const url = `${API_BASE}/author/adjustment-buckets/${id}/activate?${params.toString()}`;
     const res = await fetch(url, { method: 'POST', credentials: 'include' });
     const json = await res.json().catch(()=>({}));
     if (!res.ok) return { error: true, data: json };
