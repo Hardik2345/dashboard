@@ -176,6 +176,7 @@ export default function AuthorAdjustments() {
                 <Typography variant="body2">
                   Raw {totals.raw} → Adjusted {totals.adjusted} ({totals.delta >= 0 ? '+' : ''}{totals.delta} / {totals.delta_pct.toFixed(2)}%)
                 </Typography>
+                <Typography variant="caption" color="text.secondary">Buckets in range (including inactive for transparency): {Array.isArray(preview.buckets) ? preview.buckets.length : 0}</Typography>
                 <Divider />
                 <Typography variant="subtitle2">Daily breakdown</Typography>
                 <Stack spacing={0.5} sx={{ maxHeight:300, overflowY:'auto' }}>
@@ -184,9 +185,13 @@ export default function AuthorAdjustments() {
                       <Typography variant="caption" sx={{ width:90 }}>{d.date}</Typography>
                       <Typography variant="caption" sx={{ flex:1 }}>Raw {d.raw_sessions}</Typography>
                       <Typography variant="caption" sx={{ flex:1, color: deltaColor(d.delta) }}>Adj {d.preview_adjusted_sessions} ({d.delta >=0?'+':''}{d.delta})</Typography>
-                      <Tooltip title={d.bucket_applied ? `Bucket ${d.bucket_applied} offset ${pct(d.offset_pct)}` : 'No bucket applied'}>
-                        <Chip size="small" label={d.bucket_applied ? `B${d.bucket_applied}` : '—'} />
-                      </Tooltip>
+                      {d.buckets_applied && d.buckets_applied.length ? (
+                        <Tooltip title={`Buckets ${d.buckets_applied.join(', ')} combined offset ${(d.combined_offset_pct||0).toFixed(2)}%`}>
+                          <Chip size="small" label={`B${d.buckets_applied.join('+')}`} />
+                        </Tooltip>
+                      ) : (
+                        <Chip size="small" label="—" />
+                      )}
                     </Stack>
                   ))}
                 </Stack>

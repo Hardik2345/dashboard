@@ -541,8 +541,9 @@ app.get('/author/adjustments/preview', requireAuthor, async (req, res) => {
     const brandCheck = requireBrandKey(req.query.brand_key);
     if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
 
-    // Fetch active buckets once
-    const buckets = await SessionAdjustmentBucket.findAll({ where: { active: 1, brand_key: brandCheck.key }, order: [['priority','ASC'], ['id','ASC']] });
+  // Fetch all buckets for visibility and active ones for application
+  const allBuckets = await SessionAdjustmentBucket.findAll({ where: { brand_key: brandCheck.key }, order: [['priority','ASC'], ['id','ASC']] });
+  const buckets = allBuckets.filter(b => Number(b.active) === 1);
 
     const brandConn = await getBrandConnection(brandCheck.cfg);
 
@@ -568,23 +569,36 @@ app.get('/author/adjustments/preview', requireAuthor, async (req, res) => {
     for (const d of days) {
       const r = rowMap.get(d) || { total_sessions: 0, adjusted_total_sessions: null };
       const rawSessions = Number(r.total_sessions || 0);
-      // Find first bucket whose range matches and date inside effective window (if set)
-      let applied = null;
+      // Collect all matching active buckets (by priority order)
+      const appliedList = [];
       for (const b of buckets) {
         const efFromOk = !b.effective_from || d >= b.effective_from;
         const efToOk = !b.effective_to || d <= b.effective_to;
         if (!efFromOk || !efToOk) continue;
         if (rawSessions >= b.lower_bound_sessions && rawSessions <= b.upper_bound_sessions) {
-          applied = b; break;
+          appliedList.push(b);
         }
       }
       let adjusted = rawSessions;
-      if (applied) {
-        adjusted = Math.round(rawSessions * (1 + Number(applied.offset_pct) / 100));
+      if (appliedList.length) {
+        // Compound multiplicatively in priority order; round only at the end
+        let factor = 1;
+        for (const b of appliedList) factor *= (1 + Number(b.offset_pct) / 100);
+        adjusted = Math.round(rawSessions * factor);
       }
       const delta = adjusted - rawSessions;
       const deltaPct = rawSessions > 0 ? (delta / rawSessions) * 100 : (adjusted > 0 ? 100 : 0);
-      resultDays.push({ date: d, raw_sessions: rawSessions, preview_adjusted_sessions: adjusted, bucket_applied: applied ? applied.id : null, offset_pct: applied ? applied.offset_pct : null, delta, delta_pct: deltaPct });
+      const appliedIds = appliedList.map(b => b.id);
+      const combinedPct = appliedList.length ? ((appliedList.reduce((acc,b)=>acc*(1+Number(b.offset_pct)/100),1) - 1) * 100) : 0;
+      resultDays.push({ 
+        date: d,
+        raw_sessions: rawSessions,
+        preview_adjusted_sessions: adjusted,
+        buckets_applied: appliedIds,
+        combined_offset_pct: appliedList.length ? combinedPct : null,
+        delta,
+        delta_pct: deltaPct
+      });
     }
 
     const totalRaw = resultDays.reduce((a,b) => a + b.raw_sessions, 0);
@@ -592,7 +606,7 @@ app.get('/author/adjustments/preview', requireAuthor, async (req, res) => {
     const totalDelta = totalAdj - totalRaw;
     const totalDeltaPct = totalRaw > 0 ? (totalDelta / totalRaw) * 100 : (totalAdj > 0 ? 100 : 0);
 
-    return res.json({ range: { start, end }, days: resultDays, totals: { raw: totalRaw, adjusted: totalAdj, delta: totalDelta, delta_pct: totalDeltaPct } });
+    return res.json({ range: { start, end }, days: resultDays, totals: { raw: totalRaw, adjusted: totalAdj, delta: totalDelta, delta_pct: totalDeltaPct }, buckets: allBuckets });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Preview failed' }); }
 });
 
@@ -608,7 +622,8 @@ app.post('/author/adjustments/apply', requireAuthor, async (req, res) => {
     if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
     const brandConn = await getBrandConnection(brandCheck.cfg);
 
-    const buckets = await SessionAdjustmentBucket.findAll({ where: { active: 1, brand_key: brandCheck.key }, order: [['priority','ASC'], ['id','ASC']] });
+  const allBuckets = await SessionAdjustmentBucket.findAll({ where: { brand_key: brandCheck.key }, order: [['priority','ASC'], ['id','ASC']] });
+  const buckets = allBuckets.filter(b => Number(b.active) === 1);
     const rows = await brandConn.sequelize.query(
       'SELECT date, total_sessions FROM overall_summary WHERE date >= ? AND date <= ? ORDER BY date',
       { type: QueryTypes.SELECT, replacements: [start, end] }
@@ -617,14 +632,14 @@ app.post('/author/adjustments/apply', requireAuthor, async (req, res) => {
     for (const r of rows) {
       const d = r.date;
       const rawSessions = Number(r.total_sessions || 0);
-      let applied = null;
+      const appliedList = [];
       for (const b of buckets) {
         const efFromOk = !b.effective_from || d >= b.effective_from;
         const efToOk = !b.effective_to || d <= b.effective_to;
         if (!efFromOk || !efToOk) continue;
-        if (rawSessions >= b.lower_bound_sessions && rawSessions <= b.upper_bound_sessions) { applied = b; break; }
+        if (rawSessions >= b.lower_bound_sessions && rawSessions <= b.upper_bound_sessions) { appliedList.push(b); }
       }
-      const adjusted = applied ? Math.round(rawSessions * (1 + Number(applied.offset_pct) / 100)) : rawSessions;
+      const adjusted = appliedList.length ? Math.round(rawSessions * appliedList.reduce((f,b)=>f*(1+Number(b.offset_pct)/100),1)) : rawSessions;
       updates.push({ date: d, adjusted });
     }
     // Bulk update using one big CASE statement (avoids per-row updates)
