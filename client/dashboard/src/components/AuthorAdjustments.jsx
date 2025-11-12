@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, Stack, Typography, Button, TextField, Grid, Chip, Divider, Tooltip } from '@mui/material';
 import dayjs from 'dayjs';
-import { listAdjustmentBuckets, createAdjustmentBucket, updateAdjustmentBucket, deactivateAdjustmentBucket, previewAdjustments, applyAdjustments, listAuthorBrands } from '../lib/api.js';
+import { listAdjustmentBuckets, createAdjustmentBucket, updateAdjustmentBucket, deactivateAdjustmentBucket, activateAdjustmentBucket, previewAdjustments, applyAdjustments, listAuthorBrands } from '../lib/api.js';
 
 function pct(v) { return `${(Number(v)||0).toFixed(2)}%`; }
 
@@ -71,6 +71,13 @@ export default function AuthorAdjustments() {
   async function handleDeactivate(id) {
     const r = await deactivateAdjustmentBucket(id, { brandKey });
     if (r.error) setError('Deactivate failed');
+    else setError(null);
+    loadBuckets();
+  }
+
+  async function handleActivate(id) {
+    const r = await activateAdjustmentBucket(id, { brandKey });
+    if (r.error) setError('Activate failed'); else setError(null);
     loadBuckets();
   }
 
@@ -164,7 +171,11 @@ export default function AuthorAdjustments() {
                       {b.effective_to && <Chip size="small" label={`To ${b.effective_to}`} />}
                     </Stack>
                     <Stack direction="row" spacing={1}>
-                      {b.active ? <Button size="small" onClick={()=>handleDeactivate(b.id)}>Deactivate</Button> : null}
+                      {b.active ? (
+                        <Button size="small" onClick={()=>handleDeactivate(b.id)}>Deactivate</Button>
+                      ) : (
+                        <Button size="small" variant="outlined" onClick={()=>handleActivate(b.id)}>Activate</Button>
+                      )}
                     </Stack>
                   </Stack>
                   {b.notes && <Typography variant="caption" sx={{ mt:0.5 }}>{b.notes}</Typography>}
@@ -188,6 +199,9 @@ export default function AuthorAdjustments() {
             {/* Bucket selection for preview/apply */}
             <Stack spacing={1}>
               <Typography variant="subtitle2">Buckets in selected date range</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Selected: {selectedBucketIds.length} • If none selected, only active buckets are considered.
+              </Typography>
               <Stack direction="row" spacing={1}>
                 <Button size="small" onClick={()=>{
                   const list = buckets.filter(b=>{

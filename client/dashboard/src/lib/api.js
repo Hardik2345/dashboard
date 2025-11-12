@@ -293,6 +293,16 @@ export async function deactivateAdjustmentBucket(id, { brandKey }) {
   } catch (e) { return { error: true }; }
 }
 
+export async function activateAdjustmentBucket(id, { brandKey }) {
+  try {
+    const url = `${API_BASE}/author/adjustment-buckets/${id}/activate?brand_key=${encodeURIComponent(brandKey)}`;
+    const res = await fetch(url, { method: 'POST', credentials: 'include' });
+    const json = await res.json().catch(()=>({}));
+    if (!res.ok) return { error: true, data: json };
+    return { error: false, data: json };
+  } catch (e) { return { error: true }; }
+}
+
 export async function previewAdjustments({ brandKey, start, end, bucketIds }) {
   const params = { brand_key: brandKey, start, end };
   if (Array.isArray(bucketIds) && bucketIds.length) params.bucket_ids = bucketIds.join(',');
