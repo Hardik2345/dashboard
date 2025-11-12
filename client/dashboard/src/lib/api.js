@@ -284,11 +284,12 @@ export async function updateAdjustmentBucket(id, payload) {
   } catch (e) { return { error: true }; }
 }
 
-export async function deactivateAdjustmentBucket(id, { brandKey, start, end }) {
+export async function deactivateAdjustmentBucket(id, { brandKey, start, end, scope }) {
   try {
     const params = new URLSearchParams({ brand_key: brandKey });
     if (start) params.set('start', start);
     if (end) params.set('end', end);
+    if (scope) params.set('scope', scope);
     const url = `${API_BASE}/author/adjustment-buckets/${id}?${params.toString()}`;
     const res = await fetch(url, { method: 'DELETE', credentials: 'include' });
     const json = await res.json().catch(()=>({}));
