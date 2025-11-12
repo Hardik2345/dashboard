@@ -526,7 +526,49 @@ app.delete('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => 
       after_json: existing.toJSON(),
       author_user_id: req.user.id
     });
-    return res.status(204).end();
+    // Optional recompute of adjusted_total_sessions over a provided range after deactivation.
+    const start = (req.query.start || '').toString();
+    const end = (req.query.end || '').toString();
+    let recomputedRows = 0;
+    if (start && end && start <= end) {
+      const brandCheck = requireBrandKey(brandKey);
+      if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
+      const brandConn = await getBrandConnection(brandCheck.cfg);
+      const remainingBuckets = await SessionAdjustmentBucket.findAll({ where: { brand_key: brandKey, active: 1 }, order: [['priority','ASC'], ['id','ASC']] });
+      const rows = await brandConn.sequelize.query(
+        'SELECT date, total_sessions FROM overall_summary WHERE date >= ? AND date <= ? ORDER BY date',
+        { type: QueryTypes.SELECT, replacements: [start, end] }
+      );
+      const updates = [];
+      for (const r of rows) {
+        const d = r.date;
+        const rawSessions = Number(r.total_sessions || 0);
+        const appliedList = [];
+        for (const b of remainingBuckets) {
+          const efFromOk = !b.effective_from || d >= b.effective_from;
+          const efToOk = !b.effective_to || d <= b.effective_to;
+          if (!efFromOk || !efToOk) continue;
+          if (rawSessions >= b.lower_bound_sessions && rawSessions <= b.upper_bound_sessions) appliedList.push(b);
+        }
+        const adjusted = appliedList.length ? Math.round(rawSessions * appliedList.reduce((f,b)=>f*(1+Number(b.offset_pct)/100),1)) : rawSessions;
+        updates.push({ date: d, adjusted });
+      }
+      if (updates.length) {
+        const caseParts = updates.map(u => `WHEN date='${u.date}' THEN ${u.adjusted}`);
+        const sql = `UPDATE overall_summary SET adjusted_total_sessions = CASE ${caseParts.join(' ')} END WHERE date BETWEEN ? AND ?`;
+        await brandConn.sequelize.query(sql, { type: QueryTypes.UPDATE, replacements: [start, end] });
+        recomputedRows = updates.length;
+      }
+      await SessionAdjustmentAudit.create({
+        brand_key: brandKey,
+        bucket_id: existing.id,
+        action: 'UPDATE',
+        before_json: null,
+        after_json: { auto_recompute_after_deactivation: true, range: { start, end }, rows: recomputedRows },
+        author_user_id: req.user.id
+      });
+    }
+    return res.json({ deactivated: true, recomputed_rows: recomputedRows });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to deactivate bucket' }); }
 });
 
@@ -552,7 +594,52 @@ app.post('/author/adjustment-buckets/:id/activate', requireAuthor, async (req, r
       after_json: existing.toJSON(),
       author_user_id: req.user.id
     });
-    return res.json({ bucket: existing });
+    // Optional auto-apply over a date range if start/end provided.
+    const start = (req.query.start || req.body?.start || '').toString();
+    const end = (req.query.end || req.body?.end || '').toString();
+    const onlyThisBucket = (req.query.only_this_bucket || req.body?.only_this_bucket || '') === '1';
+    let applied = 0;
+    if (start && end && start <= end) {
+      // Auto apply adjustments for this range; similar logic to /author/adjustments/apply but optionally scoping to just this bucket.
+      const brandCheck = requireBrandKey(brandKey);
+      if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
+      const brandConn = await getBrandConnection(brandCheck.cfg);
+      const allBuckets = await SessionAdjustmentBucket.findAll({ where: { brand_key: brandKey }, order: [['priority','ASC'], ['id','ASC']] });
+      const buckets = onlyThisBucket ? allBuckets.filter(b => b.id === existing.id) : allBuckets.filter(b => Number(b.active) === 1);
+      const rows = await brandConn.sequelize.query(
+        'SELECT date, total_sessions FROM overall_summary WHERE date >= ? AND date <= ? ORDER BY date',
+        { type: QueryTypes.SELECT, replacements: [start, end] }
+      );
+      const updates = [];
+      for (const r of rows) {
+        const d = r.date;
+        const rawSessions = Number(r.total_sessions || 0);
+        const appliedList = [];
+        for (const b of buckets) {
+          const efFromOk = !b.effective_from || d >= b.effective_from;
+          const efToOk = !b.effective_to || d <= b.effective_to;
+          if (!efFromOk || !efToOk) continue;
+          if (rawSessions >= b.lower_bound_sessions && rawSessions <= b.upper_bound_sessions) appliedList.push(b);
+        }
+        const adjusted = appliedList.length ? Math.round(rawSessions * appliedList.reduce((f,b)=>f*(1+Number(b.offset_pct)/100),1)) : rawSessions;
+        updates.push({ date: d, adjusted });
+      }
+      if (updates.length) {
+        const caseParts = updates.map(u => `WHEN date='${u.date}' THEN ${u.adjusted}`);
+        const sql = `UPDATE overall_summary SET adjusted_total_sessions = CASE ${caseParts.join(' ')} END WHERE date BETWEEN ? AND ?`;
+        await brandConn.sequelize.query(sql, { type: QueryTypes.UPDATE, replacements: [start, end] });
+        applied = updates.length;
+      }
+      await SessionAdjustmentAudit.create({
+        brand_key: brandKey,
+        bucket_id: existing.id,
+        action: 'UPDATE',
+        before_json: null,
+        after_json: { auto_apply_after_activation: true, range: { start, end }, rows: applied, only_this_bucket: onlyThisBucket },
+        author_user_id: req.user.id
+      });
+    }
+    return res.json({ bucket: existing, auto_applied_rows: applied });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to activate bucket' }); }
 });
 
