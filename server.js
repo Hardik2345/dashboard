@@ -181,6 +181,14 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         const enforceVerified = String(process.env.ENFORCE_GOOGLE_EMAIL_VERIFIED || 'false').toLowerCase() === 'true';
         if (enforceVerified) return done(null, false, { message: 'Google email not verified' });
       }
+      // Author-by-domain: if email domain matches AUTHOR_GOOGLE_DOMAIN, elevate to author
+      function normalizeDomain(d){ return (d||'').toString().trim().toLowerCase(); }
+      function domainMatches(host, rule){ const h=normalizeDomain(host); const r=normalizeDomain(rule); if(!h||!r) return false; return h===r || h.endsWith('.'+r); }
+      const authorDomain = normalizeDomain(process.env.AUTHOR_GOOGLE_DOMAIN);
+      const domainPart = email.includes('@') ? normalizeDomain(email.split('@')[1]) : '';
+      if (authorDomain && domainMatches(domainPart, authorDomain)) {
+        return done(null, { id: email, email, role: 'author', brandKey: null, isAuthor: true, sso: 'google' });
+      }
       const brandCfg = resolveBrandFromEmail(email);
       if (!brandCfg) return done(null, false, { message: 'Your email domain is not authorized' });
       if (requireBrandDbUser) {
