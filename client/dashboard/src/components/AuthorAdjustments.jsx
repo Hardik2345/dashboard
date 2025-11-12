@@ -74,7 +74,7 @@ export default function AuthorAdjustments() {
   async function handleDeactivate(id) {
     setDeactivatingId(id);
     // Use bucket-window scope so even if current range doesn't intersect, we still clear its effects
-    const r = await deactivateAdjustmentBucket(id, { brandKey, start: previewRange.start, end: previewRange.end, scope: 'bucket-window' });
+    const r = await deactivateAdjustmentBucket(id, { brandKey, scope: 'bucket-window' });
     if (r.error) setError(r.data?.error || 'Deactivate failed');
     else { setError(null); setNotice(`Deactivated and recomputed ${Number(r.data?.recomputed_rows||0)} day(s).`); }
     setDeactivatingId(null);
@@ -86,7 +86,7 @@ export default function AuthorAdjustments() {
     setError(null);
     setActivatingId(id);
     // Ask server to activate and auto-apply for current range; limit to just this bucket to avoid surprises
-    const r = await activateAdjustmentBucket(id, { brandKey, start: previewRange.start, end: previewRange.end, onlyThisBucket: true });
+    const r = await activateAdjustmentBucket(id, { brandKey, onlyThisBucket: true });
     if (r.error) { setError('Activate failed'); return; }
     setNotice(`Activated and applied to ${Number(r.data?.auto_applied_rows||0)} day(s).`);
     setActivatingId(null);

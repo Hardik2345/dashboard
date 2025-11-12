@@ -639,16 +639,20 @@ app.post('/author/adjustment-buckets/:id/activate', requireAuthor, async (req, r
       after_json: existing.toJSON(),
       author_user_id: req.user.id
     });
-    // Optional auto-apply over a date range if start/end provided.
-    const start = (req.query.start || req.body?.start || '').toString();
-    const end = (req.query.end || req.body?.end || '').toString();
+    // Auto-apply over a date range. If not provided, default to full dataset (min..max dates).
+    let start = (req.query.start || req.body?.start || '').toString();
+    let end = (req.query.end || req.body?.end || '').toString();
     const onlyThisBucket = (req.query.only_this_bucket || req.body?.only_this_bucket || '') === '1';
     let applied = 0;
+    const brandCheck = requireBrandKey(brandKey);
+    if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
+    const brandConn = await getBrandConnection(brandCheck.cfg);
+    if (!start || !end || start > end) {
+      const row = await brandConn.sequelize.query('SELECT MIN(date) AS min_d, MAX(date) AS max_d FROM overall_summary', { type: QueryTypes.SELECT });
+      const mm = Array.isArray(row) ? row[0] : row;
+      if (mm?.min_d && mm?.max_d) { start = mm.min_d; end = mm.max_d; }
+    }
     if (start && end && start <= end) {
-      // Auto apply adjustments for this range; similar logic to /author/adjustments/apply but optionally scoping to just this bucket.
-      const brandCheck = requireBrandKey(brandKey);
-      if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
-      const brandConn = await getBrandConnection(brandCheck.cfg);
       const allBuckets = await SessionAdjustmentBucket.findAll({ where: { brand_key: brandKey }, order: [['priority','ASC'], ['id','ASC']] });
       const buckets = onlyThisBucket ? allBuckets.filter(b => b.id === existing.id) : allBuckets.filter(b => Number(b.active) === 1);
       const rows = await brandConn.sequelize.query(
