@@ -536,7 +536,8 @@ app.delete('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => 
       start = existing.effective_from || '';
       end = existing.effective_to || '';
     }
-    let recomputedRows = 0;
+  let recomputedRows = 0;
+  let matchedDays = 0; // days where the deactivated bucket previously matched
   if (start && end && start <= end) {
       const brandCheck = requireBrandKey(brandKey);
       if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
@@ -550,6 +551,12 @@ app.delete('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => 
       for (const r of rows) {
         const d = r.date;
         const rawSessions = Number(r.total_sessions || 0);
+        // Count days where the deactivated bucket would have matched
+        const efFromOkX = !existing.effective_from || d >= existing.effective_from;
+        const efToOkX = !existing.effective_to || d <= existing.effective_to;
+        if (efFromOkX && efToOkX && rawSessions >= existing.lower_bound_sessions && rawSessions <= existing.upper_bound_sessions) {
+          matchedDays += 1;
+        }
         const appliedList = [];
         for (const b of remainingBuckets) {
           const efFromOk = !b.effective_from || d >= b.effective_from;
@@ -571,13 +578,13 @@ app.delete('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => 
         bucket_id: existing.id,
         action: 'UPDATE',
         before_json: null,
-        after_json: { auto_recompute_after_deactivation: true, range: { start, end }, rows: recomputedRows },
+        after_json: { auto_recompute_after_deactivation: true, range: { start, end }, rows: recomputedRows, matches: matchedDays },
         author_user_id: req.user.id
       });
     }
 
     // Optional: recompute across ALL available dates when scope=all and nothing was recomputed yet
-    if ((!recomputedRows) && scope === 'all') {
+  if ((!recomputedRows) && scope === 'all') {
       const brandCheck = requireBrandKey(brandKey);
       if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
       const brandConn = await getBrandConnection(brandCheck.cfg);
@@ -595,6 +602,12 @@ app.delete('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => 
         for (const r of rows) {
           const d = r.date;
           const rawSessions = Number(r.total_sessions || 0);
+          // Count days where the deactivated bucket would have matched
+          const efFromOkX = !existing.effective_from || d >= existing.effective_from;
+          const efToOkX = !existing.effective_to || d <= existing.effective_to;
+          if (efFromOkX && efToOkX && rawSessions >= existing.lower_bound_sessions && rawSessions <= existing.upper_bound_sessions) {
+            matchedDays += 1;
+          }
           const appliedList = [];
           for (const b of remainingBuckets) {
             const efFromOk = !b.effective_from || d >= b.effective_from;
@@ -613,7 +626,7 @@ app.delete('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => 
         }
       }
     }
-    return res.json({ deactivated: true, recomputed_rows: recomputedRows, scope_used: scope || (start && end ? 'range' : null) });
+    return res.json({ deactivated: true, recomputed_rows: recomputedRows, recomputed_matches: matchedDays, scope_used: scope || (start && end ? 'range' : null) });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to deactivate bucket' }); }
 });
 
@@ -643,7 +656,8 @@ app.post('/author/adjustment-buckets/:id/activate', requireAuthor, async (req, r
     let start = (req.query.start || req.body?.start || '').toString();
     let end = (req.query.end || req.body?.end || '').toString();
     const onlyThisBucket = (req.query.only_this_bucket || req.body?.only_this_bucket || '') === '1';
-    let applied = 0;
+  let applied = 0;
+  let matchedDays = 0; // days where the activated bucket actually matched
     const brandCheck = requireBrandKey(brandKey);
     if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
     const brandConn = await getBrandConnection(brandCheck.cfg);
@@ -670,6 +684,8 @@ app.post('/author/adjustment-buckets/:id/activate', requireAuthor, async (req, r
           if (!efFromOk || !efToOk) continue;
           if (rawSessions >= b.lower_bound_sessions && rawSessions <= b.upper_bound_sessions) appliedList.push(b);
         }
+        // Count only if the activated bucket itself matched (not just any active bucket)
+        if (appliedList.some(b => Number(b.id) === Number(existing.id))) matchedDays += 1;
         const adjusted = appliedList.length ? Math.round(rawSessions * appliedList.reduce((f,b)=>f*(1+Number(b.offset_pct)/100),1)) : rawSessions;
         updates.push({ date: d, adjusted });
       }
@@ -684,11 +700,11 @@ app.post('/author/adjustment-buckets/:id/activate', requireAuthor, async (req, r
         bucket_id: existing.id,
         action: 'UPDATE',
         before_json: null,
-        after_json: { auto_apply_after_activation: true, range: { start, end }, rows: applied, only_this_bucket: onlyThisBucket },
+        after_json: { auto_apply_after_activation: true, range: { start, end }, rows: applied, matches: matchedDays, only_this_bucket: onlyThisBucket },
         author_user_id: req.user.id
       });
     }
-    return res.json({ bucket: existing, auto_applied_rows: applied });
+    return res.json({ bucket: existing, auto_applied_rows: applied, auto_applied_matches: matchedDays });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to activate bucket' }); }
 });
 

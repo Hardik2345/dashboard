@@ -76,7 +76,11 @@ export default function AuthorAdjustments() {
     // Use bucket-window scope so even if current range doesn't intersect, we still clear its effects
     const r = await deactivateAdjustmentBucket(id, { brandKey, scope: 'bucket-window' });
     if (r.error) setError(r.data?.error || 'Deactivate failed');
-    else { setError(null); setNotice(`Deactivated and recomputed ${Number(r.data?.recomputed_rows||0)} day(s).`); }
+    else {
+      setError(null);
+      const matched = Number(r.data?.recomputed_matches ?? r.data?.recomputed_rows ?? 0);
+      setNotice(`Deactivated and recomputed ${matched} day(s).`);
+    }
     setDeactivatingId(null);
     await loadBuckets();
     handlePreview();
@@ -88,7 +92,8 @@ export default function AuthorAdjustments() {
     // Ask server to activate and auto-apply for current range; limit to just this bucket to avoid surprises
     const r = await activateAdjustmentBucket(id, { brandKey, onlyThisBucket: true });
     if (r.error) { setError('Activate failed'); return; }
-    setNotice(`Activated and applied to ${Number(r.data?.auto_applied_rows||0)} day(s).`);
+    const matched = Number(r.data?.auto_applied_matches ?? r.data?.auto_applied_rows ?? 0);
+    setNotice(`Activated and applied to ${matched} day(s).`);
     setActivatingId(null);
     // Refresh buckets and preview to reflect persisted values
     await loadBuckets();
