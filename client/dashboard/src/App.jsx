@@ -120,6 +120,11 @@ export default function App() {
                 <TextField size="small" label="Password" type="password" required value={loginForm.password} onChange={e=>setLoginForm(f=>({ ...f, password: e.target.value }))} />
                 {loginError && <Alert severity="error">{loginError}</Alert>}
                 <Button variant="contained" type="submit" disabled={loggingIn}>{loggingIn ? 'Logging in...' : 'Login'}</Button>
+                <Divider>or</Divider>
+                <Button variant="outlined" onClick={()=>{
+                  const base = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+                  window.location.href = `${base}/auth/google`;
+                }}>Sign in with Google</Button>
               </Stack>
             </Paper>
           </Container>

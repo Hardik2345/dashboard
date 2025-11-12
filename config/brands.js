@@ -7,6 +7,17 @@
 
 const REQUIRED_SUFFIXES = ['DB_HOST','DB_USER','DB_PASS'];
 
+function normalizeDomain(d) {
+  return String(d || '').trim().toLowerCase();
+}
+
+function domainMatches(host, rule) {
+  const h = normalizeDomain(host);
+  const r = normalizeDomain(rule);
+  if (!h || !r) return false;
+  return h === r || h.endsWith('.' + r);
+}
+
 function loadBrands() {
   const map = {};
   if (process.env.BRANDS_CONFIG) {
@@ -23,6 +34,7 @@ function loadBrands() {
             dbUser: item.dbUser,
             dbPass: item.dbPass,
             dbName: item.dbName || upper,
+            domains: Array.isArray(item.domains) ? item.domains.map(normalizeDomain).filter(Boolean) : [],
           };
         }
       }
@@ -47,6 +59,7 @@ function loadBrands() {
         dbUser: process.env[`${upper}_DB_USER`],
         dbPass: process.env[`${upper}_DB_PASS`],
         dbName: process.env[`${upper}_DB_NAME`] || upper,
+        domains: [],
       };
     }
   }
@@ -72,11 +85,32 @@ function addBrandRuntime(cfg) {
 
 function getBrands() { return { ...brands }; }
 
+// Optional external mapping: BRAND_DOMAIN_MAP = JSON array [{ domain, brandKey }]
+let externalDomainMap = [];
+try {
+  if (process.env.BRAND_DOMAIN_MAP) {
+    const parsed = JSON.parse(process.env.BRAND_DOMAIN_MAP);
+    if (Array.isArray(parsed)) externalDomainMap = parsed
+      .map(e => ({ domain: normalizeDomain(e.domain), brandKey: String(e.brandKey || '').toUpperCase() }))
+      .filter(e => e.domain && e.brandKey);
+  }
+} catch (e) {
+  console.error('Failed to parse BRAND_DOMAIN_MAP JSON:', e.message);
+}
+
 function resolveBrandFromEmail(email) {
-  if (!email) return null;
-  const prefix = email.split('@')[0];
-  if (!prefix) return null;
-  const key = prefix.toUpperCase();
+  if (!email || !email.includes('@')) return null;
+  const [local, domain] = email.split('@');
+  const d = normalizeDomain(domain);
+  // 1) Try BRANDS_CONFIG domains
+  for (const b of Object.values(brands)) {
+    if (Array.isArray(b.domains) && b.domains.some(rule => domainMatches(d, rule))) return b;
+  }
+  // 2) Try BRAND_DOMAIN_MAP
+  const hit = externalDomainMap.find(e => domainMatches(d, e.domain));
+  if (hit && brands[hit.brandKey]) return brands[hit.brandKey];
+  // 3) Fallback: local-part equals brand key
+  const key = String(local || '').toUpperCase();
   return brands[key] || null;
 }
 

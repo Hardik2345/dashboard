@@ -1,4 +1,4 @@
-const { resolveBrandFromEmail } = require('../config/brands');
+const { resolveBrandFromEmail, getBrands } = require('../config/brands');
 const { getBrandConnection } = require('../lib/brandConnectionManager');
 
 async function brandContext(req, res, next) {
@@ -9,7 +9,15 @@ async function brandContext(req, res, next) {
     // Author has no brand context; block brand-protected routes explicitly.
     return res.status(400).json({ error: 'Brand context not available for author user' });
   }
-  const brandCfg = resolveBrandFromEmail(req.user.email);
+  // Prefer brandKey set at login time (e.g., via Google SSO)
+  let brandCfg = null;
+  if (req.user.brandKey) {
+    const map = getBrands();
+    brandCfg = map[req.user.brandKey];
+  }
+  if (!brandCfg) {
+    brandCfg = resolveBrandFromEmail(req.user.email);
+  }
   if (!brandCfg) {
     return res.status(403).json({ error: 'Unknown brand for user email' });
   }

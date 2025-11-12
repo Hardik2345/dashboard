@@ -4,6 +4,7 @@ const cors = require("cors");
 const session = require('express-session');
 const SequelizeStoreFactory = require('connect-session-sequelize');
 const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const LocalStrategy = require('passport-local').Strategy;
 const bcrypt = require('bcrypt');
 const helmet = require('helmet');
@@ -161,6 +162,44 @@ passport.use(new LocalStrategy({ usernameField: 'email', passwordField: 'passwor
     return done(e);
   }
 }));
+
+// Google OAuth (optional; enabled when GOOGLE_CLIENT_ID is set)
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  const callbackURL = process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3000/auth/google/callback';
+  const requireBrandDbUser = String(process.env.REQUIRE_BRAND_DB_USER || 'false').toLowerCase() === 'true';
+  passport.use(new GoogleStrategy({
+    clientID: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    callbackURL,
+  }, async (accessToken, refreshToken, profile, done) => {
+    try {
+      const email = Array.isArray(profile?.emails) && profile.emails[0]?.value ? profile.emails[0].value : null;
+      const verified = Array.isArray(profile?.emails) && (profile.emails[0]?.verified || profile.emails[0]?.verified === true);
+      if (!email) return done(null, false, { message: 'Email not available from Google profile' });
+      if (!verified) {
+        // Allow if Google didn't send 'verified' flag; otherwise enforce
+        const enforceVerified = String(process.env.ENFORCE_GOOGLE_EMAIL_VERIFIED || 'false').toLowerCase() === 'true';
+        if (enforceVerified) return done(null, false, { message: 'Google email not verified' });
+      }
+      const brandCfg = resolveBrandFromEmail(email);
+      if (!brandCfg) return done(null, false, { message: 'Your email domain is not authorized' });
+      if (requireBrandDbUser) {
+        try {
+          const { getBrandConnection } = require('./lib/brandConnectionManager');
+          const conn = await getBrandConnection(brandCfg);
+          const BrandUser = conn.models.User;
+          const userRow = await BrandUser.findOne({ where: { email, is_active: true } });
+          if (!userRow) return done(null, false, { message: 'User not provisioned for this brand' });
+        } catch (e) {
+          return done(null, false, { message: 'Brand user validation failed' });
+        }
+      }
+      return done(null, { id: email, email, role: 'user', brandKey: brandCfg.key, isAuthor: false, sso: 'google' });
+    } catch (e) {
+      return done(e);
+    }
+  }));
+}
 
 passport.serializeUser((user, done) => done(null, { id: user.id, email: user.email, brandKey: user.brandKey, isAuthor: !!user.isAuthor }));
 passport.deserializeUser(async (obj, done) => {
@@ -381,6 +420,17 @@ app.post('/auth/logout', (req, res) => {
     res.status(204).end();
   });
 });
+
+// Google OAuth routes
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  const successRedirect = process.env.LOGIN_SUCCESS_REDIRECT || '/';
+  const failureRedirect = process.env.LOGIN_FAILURE_REDIRECT || '/login?error=google_oauth_failed';
+  app.get('/auth/google', passport.authenticate('google', { scope: ['profile','email'] }));
+  app.get('/auth/google/callback',
+    passport.authenticate('google', { failureRedirect, session: true }),
+    (req, res) => { res.redirect(successRedirect); }
+  );
+}
 
 app.get('/auth/me', (req, res) => {
   if (req.isAuthenticated && req.isAuthenticated()) return res.json({ user: req.user });
