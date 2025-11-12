@@ -74,12 +74,13 @@ const User = sequelize.define('user', {
 }, { tableName: 'users', timestamps: true });
 
 // Author session adjustment bucket & audit models (tables created via manual DDL already).
-// Bucket schema (global, not per-brand):
+// Now scoped per-brand via brand_key (user has applied DDL already).
 // lower_bound_sessions / upper_bound_sessions define an inclusive range. If daily sessions fall inside a range
 // and the bucket is active and (effective_from/effective_to) match, we apply offset_pct (+/- percentage) when previewing/applying.
 // Priority: lower numeric value wins among overlapping buckets.
 const SessionAdjustmentBucket = sequelize.define('session_adjustment_buckets', {
   id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
+  brand_key: { type: DataTypes.STRING(32), allowNull: false },
   lower_bound_sessions: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
   upper_bound_sessions: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
   offset_pct: { type: DataTypes.DECIMAL(5,2), allowNull: false }, // e.g. -8.00 to +12.50
@@ -89,11 +90,14 @@ const SessionAdjustmentBucket = sequelize.define('session_adjustment_buckets', {
   effective_to: { type: DataTypes.DATEONLY, allowNull: true },
   notes: { type: DataTypes.STRING(255), allowNull: true },
   created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
-  updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP') }
+  // Important: do NOT use "ON UPDATE CURRENT_TIMESTAMP" inside a VALUES clause; leave that to the column definition.
+  // Here we only provide CURRENT_TIMESTAMP as default so INSERT works across MySQL variants.
+  updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
 }, { tableName: 'session_adjustment_buckets', timestamps: false });
 
 const SessionAdjustmentAudit = sequelize.define('session_adjustment_audit', {
   id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
+  brand_key: { type: DataTypes.STRING(32), allowNull: false },
   bucket_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
   action: { type: DataTypes.ENUM('CREATE','UPDATE','DEACTIVATE','DELETE'), allowNull: false },
   before_json: { type: DataTypes.JSON, allowNull: true },
@@ -392,6 +396,7 @@ app.get('/author/me', requireAuth, (req, res) => {
 // ----------------------------- AUTHOR: ADJUSTMENT BUCKET CRUD -----------------------------
 // Validation schemas (Zod) for bucket operations
 const BucketSchema = z.object({
+  brand_key: z.string().min(2).max(32).transform(s => s.toUpperCase()),
   lower_bound_sessions: z.number().int().nonnegative(),
   upper_bound_sessions: z.number().int().nonnegative(),
   offset_pct: z.number().min(-100).max(100),
@@ -402,11 +407,22 @@ const BucketSchema = z.object({
   notes: z.string().max(255).optional().nullable()
 }).refine(d => d.lower_bound_sessions <= d.upper_bound_sessions, { message: 'lower_bound_sessions must be <= upper_bound_sessions' });
 
+function requireBrandKey(keyRaw) {
+  const key = (keyRaw || '').toString().trim().toUpperCase();
+  if (!key) return { error: 'brand_key required' };
+  const map = getBrands();
+  const cfg = map[key];
+  if (!cfg) return { error: `Unknown brand_key ${key}` };
+  return { key, cfg };
+}
+
 // List buckets (with optional filters)
 app.get('/author/adjustment-buckets', requireAuthor, async (req, res) => {
   try {
-    const { active } = req.query;
-    const where = {};
+    const { active, brand_key: brandKeyParam } = req.query;
+    const brandCheck = requireBrandKey(brandKeyParam);
+    if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
+    const where = { brand_key: brandCheck.key };
     if (active === '1' || active === '0') where.active = active === '1' ? 1 : 0;
     const buckets = await SessionAdjustmentBucket.findAll({ where, order: [['priority','ASC'], ['id','ASC']] });
     return res.json({ buckets });
@@ -424,6 +440,7 @@ app.post('/author/adjustment-buckets', requireAuthor, async (req, res) => {
       return res.status(400).json({ error: 'effective_from must be <= effective_to' });
     }
     const bucket = await SessionAdjustmentBucket.create({
+      brand_key: data.brand_key,
       lower_bound_sessions: data.lower_bound_sessions,
       upper_bound_sessions: data.upper_bound_sessions,
       offset_pct: data.offset_pct,
@@ -432,8 +449,12 @@ app.post('/author/adjustment-buckets', requireAuthor, async (req, res) => {
       effective_from: data.effective_from || null,
       effective_to: data.effective_to || null,
       notes: data.notes || null
+    }, {
+      // Avoid inserting created_at/updated_at explicitly; let DB defaults handle them
+      fields: ['brand_key','lower_bound_sessions','upper_bound_sessions','offset_pct','active','priority','effective_from','effective_to','notes']
     });
     await SessionAdjustmentAudit.create({
+      brand_key: data.brand_key,
       bucket_id: bucket.id,
       action: 'CREATE',
       before_json: null,
@@ -451,7 +472,10 @@ app.put('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => {
     if (!id) return res.status(400).json({ error: 'Invalid id' });
     const existing = await SessionAdjustmentBucket.findByPk(id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
-    const parsed = BucketSchema.partial().safeParse(req.body || {});
+    const brandKey = (req.body?.brand_key || req.query?.brand_key || '').toString().toUpperCase();
+    if (!brandKey) return res.status(400).json({ error: 'brand_key required' });
+    if (existing.brand_key !== brandKey) return res.status(403).json({ error: 'Bucket does not belong to brand_key' });
+    const parsed = BucketSchema.omit({ brand_key: true }).partial().safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Invalid input', details: parsed.error.flatten() });
     const before = existing.toJSON();
     const data = parsed.data;
@@ -470,6 +494,7 @@ app.put('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => {
     });
     await existing.save();
     await SessionAdjustmentAudit.create({
+      brand_key: brandKey,
       bucket_id: existing.id,
       action: 'UPDATE',
       before_json: before,
@@ -487,10 +512,14 @@ app.delete('/author/adjustment-buckets/:id', requireAuthor, async (req, res) => 
     if (!id) return res.status(400).json({ error: 'Invalid id' });
     const existing = await SessionAdjustmentBucket.findByPk(id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
+    const brandKey = (req.query?.brand_key || '').toString().toUpperCase();
+    if (!brandKey) return res.status(400).json({ error: 'brand_key required' });
+    if (existing.brand_key !== brandKey) return res.status(403).json({ error: 'Bucket does not belong to brand_key' });
     const before = existing.toJSON();
     existing.active = 0;
     await existing.save();
     await SessionAdjustmentAudit.create({
+      brand_key: brandKey,
       bucket_id: existing.id,
       action: 'DEACTIVATE',
       before_json: before,
@@ -509,9 +538,13 @@ app.get('/author/adjustments/preview', requireAuthor, async (req, res) => {
     const { start, end } = parsed.data;
     if (!start || !end) return res.status(400).json({ error: 'start and end required' });
     if (start > end) return res.status(400).json({ error: 'start must be <= end' });
+    const brandCheck = requireBrandKey(req.query.brand_key);
+    if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
 
     // Fetch active buckets once
-    const buckets = await SessionAdjustmentBucket.findAll({ where: { active: 1 }, order: [['priority','ASC'], ['id','ASC']] });
+    const buckets = await SessionAdjustmentBucket.findAll({ where: { active: 1, brand_key: brandCheck.key }, order: [['priority','ASC'], ['id','ASC']] });
+
+    const brandConn = await getBrandConnection(brandCheck.cfg);
 
     // Build day list
     const days = [];
@@ -525,7 +558,7 @@ app.get('/author/adjustments/preview', requireAuthor, async (req, res) => {
     }
 
     // Query raw (might already have adjusted; we treat total_sessions as raw base)
-    const rows = await sequelize.query(
+    const rows = await brandConn.sequelize.query(
       'SELECT date, total_sessions, adjusted_total_sessions FROM overall_summary WHERE date >= ? AND date <= ? ORDER BY date',
       { type: QueryTypes.SELECT, replacements: [start, end] }
     );
@@ -571,9 +604,12 @@ app.post('/author/adjustments/apply', requireAuthor, async (req, res) => {
     const { start, end } = parsed.data;
     if (!start || !end) return res.status(400).json({ error: 'start and end required' });
     if (start > end) return res.status(400).json({ error: 'start must be <= end' });
+    const brandCheck = requireBrandKey(req.body.brand_key);
+    if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
+    const brandConn = await getBrandConnection(brandCheck.cfg);
 
-    const buckets = await SessionAdjustmentBucket.findAll({ where: { active: 1 }, order: [['priority','ASC'], ['id','ASC']] });
-    const rows = await sequelize.query(
+    const buckets = await SessionAdjustmentBucket.findAll({ where: { active: 1, brand_key: brandCheck.key }, order: [['priority','ASC'], ['id','ASC']] });
+    const rows = await brandConn.sequelize.query(
       'SELECT date, total_sessions FROM overall_summary WHERE date >= ? AND date <= ? ORDER BY date',
       { type: QueryTypes.SELECT, replacements: [start, end] }
     );
@@ -595,9 +631,10 @@ app.post('/author/adjustments/apply', requireAuthor, async (req, res) => {
     if (updates.length) {
       const caseParts = updates.map(u => `WHEN date='${u.date}' THEN ${u.adjusted}`);
       const sql = `UPDATE overall_summary SET adjusted_total_sessions = CASE ${caseParts.join(' ')} END WHERE date BETWEEN ? AND ?`;
-      await sequelize.query(sql, { type: QueryTypes.UPDATE, replacements: [start, end] });
+      await brandConn.sequelize.query(sql, { type: QueryTypes.UPDATE, replacements: [start, end] });
     }
     await SessionAdjustmentAudit.create({
+      brand_key: brandCheck.key,
       bucket_id: 0,
       action: 'UPDATE',
       before_json: null,
@@ -829,7 +866,7 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
         const targetHour = resolveTargetHour(end);
 
         // Sessions cumulative across range
-        const sqlSessRange = `SELECT COALESCE(SUM(number_of_sessions),0) AS total FROM hourly_sessions_summary WHERE date >= ? AND date <= ? AND hour <= ?`;
+  const sqlSessRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date >= ? AND date <= ? AND hour <= ?`;
 
         // Orders cumulative across range, using IST date/hour buckets and counting distinct order_name per bucket
         function istRangeUtcBounds(s, e) {
@@ -894,7 +931,7 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
       const targetHour = resolveTargetHour(target);
 
       // Sessions cumulative from hourly_sessions_summary
-      const sqlSess = `SELECT COALESCE(SUM(number_of_sessions),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
+  const sqlSess = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
 
       // Orders cumulative from shopify_orders counting distinct order_name in IST window [00:00, hour+1)
       function buildIstWindow(dateStr, hour) {
@@ -1081,7 +1118,7 @@ app.get('/metrics/total-sessions-delta', requireAuth, brandContext, async (req, 
       if (start && end) {
         const targetHour = resolveTargetHour(end);
         const prevWin = previousWindow(start, end);
-        const sqlRange = `SELECT COALESCE(SUM(number_of_sessions),0) AS total FROM hourly_sessions_summary WHERE date >= ? AND date <= ? AND hour <= ?`;
+  const sqlRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date >= ? AND date <= ? AND hour <= ?`;
         const [currRow, prevRow] = await Promise.all([
           req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
           req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, targetHour] }),
@@ -1095,7 +1132,7 @@ app.get('/metrics/total-sessions-delta', requireAuth, brandContext, async (req, 
       } else {
         const targetHour = resolveTargetHour(date);
         const prev = prevDayStr(date);
-        const sql = `SELECT COALESCE(SUM(number_of_sessions),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
+  const sql = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
         const [currRow, prevRow] = await Promise.all([
           req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
           req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
@@ -1520,7 +1557,9 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
     const alignHour = Math.max(0, Math.min(23, alignHourRaw));
 
     const rows = await req.brandDb.sequelize.query(
-      `SELECT date, hour, total_sales, number_of_orders, number_of_sessions, number_of_atc_sessions
+      `SELECT date, hour, total_sales, number_of_orders,
+        COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
+        number_of_atc_sessions
        FROM hour_wise_sales
        WHERE date >= ? AND date <= ?`,
       { type: QueryTypes.SELECT, replacements: [start, end] }
@@ -1534,7 +1573,7 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
       const key = `${row.date}#${hourVal}`;
       rowMap.set(key, {
         sales: Number(row.total_sales || 0),
-        sessions: Number(row.number_of_sessions || 0),
+  sessions: Number(row.number_of_sessions || 0),
         orders: Number(row.number_of_orders || 0),
         atc: Number(row.number_of_atc_sessions || 0),
       });
@@ -1640,7 +1679,9 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
     if (prevWin?.prevStart && prevWin?.prevEnd) {
       const comparisonAlignHour = end === todayIst ? alignHour : 23;
       const comparisonRows = await req.brandDb.sequelize.query(
-        `SELECT date, hour, total_sales, number_of_orders, number_of_sessions, number_of_atc_sessions
+  `SELECT date, hour, total_sales, number_of_orders,
+    COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
+    number_of_atc_sessions
          FROM hour_wise_sales
          WHERE date >= ? AND date <= ?`,
         { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] }
@@ -1750,7 +1791,7 @@ app.get('/metrics/daily-trend', requireAuth, brandContext, async (req, res) => {
       SELECT date, 
              SUM(total_sales) AS sales,
              SUM(number_of_orders) AS orders,
-             SUM(number_of_sessions) AS sessions,
+             SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)) AS sessions,
              SUM(number_of_atc_sessions) AS atc
       FROM hour_wise_sales
       WHERE date >= ? AND date <= ?
@@ -1918,6 +1959,9 @@ async function init() {
   await sequelize.authenticate();
   await sessionStore.sync();
   await User.sync(); // optionally use migrations in real app
+  // Ensure author tables exist if not created via manual DDL
+  try { await SessionAdjustmentBucket.sync(); } catch (e) { console.warn('Bucket sync skipped', e?.message); }
+  try { await SessionAdjustmentAudit.sync(); } catch (e) { console.warn('Audit sync skipped', e?.message); }
   // seed admin if none
   if (!(await User.findOne({ where: { email: process.env.ADMIN_EMAIL || 'admin@example.com' } }))) {
     const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'ChangeMe123!', 12);
