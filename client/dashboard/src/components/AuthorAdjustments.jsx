@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Card, CardContent, Stack, Typography, Button, TextField, Grid, Chip, Divider, Tooltip, Snackbar, Alert } from '@mui/material';
+import { useEffect, useState, useCallback } from 'react';
+import { Card, CardContent, Stack, Typography, Button, TextField, Grid, Chip, Snackbar, Alert } from '@mui/material';
 import dayjs from 'dayjs';
-import { listAdjustmentBuckets, createAdjustmentBucket, updateAdjustmentBucket, deactivateAdjustmentBucket, activateAdjustmentBucket, previewAdjustments, applyAdjustments, listAuthorBrands } from '../lib/api.js';
+import { listAdjustmentBuckets, createAdjustmentBucket, updateAdjustmentBucket, deactivateAdjustmentBucket, activateAdjustmentBucket, listAuthorBrands } from '../lib/api.js';
 
 function pct(v) { return `${(Number(v)||0).toFixed(2)}%`; }
 
@@ -10,13 +10,13 @@ export default function AuthorAdjustments() {
   const [loadingBuckets, setLoadingBuckets] = useState(false);
   const [brands, setBrands] = useState([]);
   const [brandKey, setBrandKey] = useState('');
-  const [selectedBucketIds, setSelectedBucketIds] = useState([]);
+  const [selectedBucketIds, setSelectedBucketIds] = useState([]); // kept for future, not used now
   const [form, setForm] = useState({ lower_bound_sessions:'', upper_bound_sessions:'', offset_pct:'', priority:'100', effective_from:'', effective_to:'', notes:'' });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
-  const [previewRange, setPreviewRange] = useState({ start: dayjs().format('YYYY-MM-DD'), end: dayjs().format('YYYY-MM-DD') });
-  const [preview, setPreview] = useState(null);
-  const [applying, setApplying] = useState(false);
+  const [previewRange, setPreviewRange] = useState({ start: dayjs().format('YYYY-MM-DD'), end: dayjs().format('YYYY-MM-DD') }); // legacy, can be removed later
+  const [preview, setPreview] = useState(null); // legacy
+  const [applying, setApplying] = useState(false); // legacy
   const [notice, setNotice] = useState(null);
   const [activatingId, setActivatingId] = useState(null);
   const [deactivatingId, setDeactivatingId] = useState(null);
@@ -34,7 +34,7 @@ export default function AuthorAdjustments() {
 
   useEffect(() => { loadBuckets(); }, [loadBuckets]);
 
-  // Reset selection and preview when brand changes
+  // Reset selection and preview when brand changes (preview is legacy)
   useEffect(() => {
     setSelectedBucketIds([]);
     setPreview(null);
@@ -94,34 +94,10 @@ export default function AuthorAdjustments() {
     if (r.error) { setError('Activate failed'); return; }
     const matched = Number(r.data?.auto_applied_matches ?? r.data?.auto_applied_rows ?? 0);
     setNotice(`Activated and applied to ${matched} day(s).`);
-    setActivatingId(null);
     // Refresh buckets and preview to reflect persisted values
     await loadBuckets();
-    handlePreview();
   }
-
-  async function handlePreview() {
-    setPreview(null); setError(null);
-    const payload = selectedBucketIds.length
-      ? { brandKey, ...previewRange, bucketIds: selectedBucketIds }
-      : { brandKey, ...previewRange };
-    const json = await previewAdjustments(payload);
-    if (json.__error) { setError('Preview failed'); return; }
-    setPreview(json);
-  }
-
-  async function handleApply() {
-    setApplying(true); setError(null);
-    const payload = selectedBucketIds.length
-      ? { brandKey, ...previewRange, bucketIds: selectedBucketIds }
-      : { brandKey, ...previewRange };
-    const r = await applyAdjustments(payload);
-    setApplying(false);
-    if (r.error) { setError(r.data?.error || 'Apply failed'); return; }
-    // Refresh preview & buckets to show new adjusted values in subsequent metrics
-    handlePreview();
-  }
-
+  // Legacy helpers (no longer used after auto-apply). Kept to avoid breaking other screens if imported.
   const totals = preview?.totals;
   const deltaColor = (v) => v > 0 ? 'success.main' : v < 0 ? 'error.main' : 'text.secondary';
 
@@ -216,106 +192,7 @@ export default function AuthorAdjustments() {
         </Alert>
       </Snackbar>
 
-      <Card variant="outlined">
-        <CardContent>
-          <Stack spacing={1.5}>
-            <Typography variant="h6">Preview & Apply</Typography>
-            <Stack direction="row" spacing={1} flexWrap="wrap">
-              <TextField size="small" label="Start" type="text" value={previewRange.start} onChange={e=>setPreviewRange(r=>({...r,start:e.target.value}))} />
-              <TextField size="small" label="End" type="text" value={previewRange.end} onChange={e=>setPreviewRange(r=>({...r,end:e.target.value}))} />
-              <Button variant="outlined" size="small" onClick={handlePreview}>Preview</Button>
-              <Button variant="contained" size="small" disabled={!preview || applying} onClick={handleApply}>{applying ? 'Applying...' : 'Apply adjustments'}</Button>
-            </Stack>
-            {/* Bucket selection for preview/apply */}
-            <Stack spacing={1}>
-              <Typography variant="subtitle2">Buckets in selected date range</Typography>
-              <Typography variant="caption" color="text.secondary">
-                Selected: {selectedBucketIds.length} • If none selected, only active buckets are considered.
-              </Typography>
-              <Stack direction="row" spacing={1}>
-                <Button size="small" onClick={()=>{
-                  const list = buckets.filter(b=>{
-                    const s = previewRange.start; const e = previewRange.end;
-                    const fromOk = !b.effective_from || b.effective_from <= e;
-                    const toOk = !b.effective_to || b.effective_to >= s;
-                    return fromOk && toOk;
-                  });
-                  setSelectedBucketIds(list.map(b=>b.id));
-                }}>Select all</Button>
-                <Button size="small" onClick={()=>{
-                  const list = buckets.filter(b=>{
-                    const s = previewRange.start; const e = previewRange.end;
-                    const fromOk = !b.effective_from || b.effective_from <= e;
-                    const toOk = !b.effective_to || b.effective_to >= s;
-                    return fromOk && toOk && b.active;
-                  });
-                  setSelectedBucketIds(list.map(b=>b.id));
-                }}>Only active</Button>
-                <Button size="small" onClick={()=>setSelectedBucketIds([])}>Clear</Button>
-              </Stack>
-              <Stack spacing={0.75} sx={{ maxHeight: 180, overflowY: 'auto' }}>
-                {buckets.filter(b=>{
-                  const s = previewRange.start; const e = previewRange.end;
-                  const fromOk = !b.effective_from || b.effective_from <= e;
-                  const toOk = !b.effective_to || b.effective_to >= s;
-                  return fromOk && toOk;
-                }).map(b => (
-                  <Stack key={b.id} direction={{ xs:'column', sm:'row' }} spacing={1} alignItems={{ sm:'center' }}>
-                    <Chip size="small" label={`ID ${b.id}`} />
-                    <Chip size="small" label={`Priority ${b.priority}`} />
-                    <Chip size="small" label={`Offset ${pct(b.offset_pct)}`} color={b.offset_pct >= 0 ? 'success' : 'error'} />
-                    <Chip size="small" label={b.active ? 'Active' : 'Inactive'} color={b.active ? 'primary' : 'default'} />
-                    <Chip size="small" label={`Range ${b.lower_bound_sessions}–${b.upper_bound_sessions}`} />
-                    {b.effective_from && <Chip size="small" label={`From ${b.effective_from}`} />}
-                    {b.effective_to && <Chip size="small" label={`To ${b.effective_to}`} />}
-                    <Button size="small" variant={selectedBucketIds.includes(b.id)?'contained':'outlined'} onClick={()=>setSelectedBucketIds(prev=>prev.includes(b.id)?prev.filter(x=>x!==b.id):[...prev,b.id])}>
-                      {selectedBucketIds.includes(b.id)?'Selected':'Select'}
-                    </Button>
-                  </Stack>
-                ))}
-                {buckets.filter(b=>{
-                  const s = previewRange.start; const e = previewRange.end;
-                  const fromOk = !b.effective_from || b.effective_from <= e;
-                  const toOk = !b.effective_to || b.effective_to >= s;
-                  return fromOk && toOk;
-                }).length === 0 && (
-                  <Typography variant="body2" color="text.secondary">No buckets with effective dates intersecting this range.</Typography>
-                )}
-              </Stack>
-            </Stack>
-
-            {preview && (
-              <Stack spacing={1}>
-                <Divider />
-                <Typography variant="subtitle2">Totals</Typography>
-                <Typography variant="body2">
-                  Raw {totals.raw} → Adjusted {totals.adjusted} ({totals.delta >= 0 ? '+' : ''}{totals.delta} / {totals.delta_pct.toFixed(2)}%)
-                </Typography>
-                <Typography variant="caption" color="text.secondary">Buckets in range (including inactive): {buckets.filter(b=>{ const s=previewRange.start; const e=previewRange.end; const fromOk=!b.effective_from||b.effective_from<=e; const toOk=!b.effective_to||b.effective_to>=s; return fromOk&&toOk; }).length}</Typography>
-                <Divider />
-                <Typography variant="subtitle2">Daily breakdown</Typography>
-                <Stack spacing={0.5} sx={{ maxHeight:300, overflowY:'auto' }}>
-                  {preview.days.map(d => (
-                    <Stack key={d.date} direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                      <Typography variant="caption" sx={{ width:90 }}>{d.date}</Typography>
-                      <Typography variant="caption" sx={{ flex:1 }}>Raw {d.raw_sessions}</Typography>
-                      <Typography variant="caption" sx={{ flex:1, color: deltaColor(d.delta) }}>Adj {d.preview_adjusted_sessions} ({d.delta >=0?'+':''}{d.delta})</Typography>
-                      {d.buckets_applied && d.buckets_applied.length ? (
-                        <Tooltip title={`Buckets ${d.buckets_applied.join(', ')} combined offset ${(d.combined_offset_pct||0).toFixed(2)}%`}>
-                          <Chip size="small" label={`B${d.buckets_applied.join('+')}`} />
-                        </Tooltip>
-                      ) : (
-                        <Chip size="small" label="—" />
-                      )}
-                    </Stack>
-                  ))}
-                </Stack>
-              </Stack>
-            )}
-            {error && <Typography variant="body2" color="error">{error}</Typography>}
-          </Stack>
-        </CardContent>
-      </Card>
+      {/* Preview & Apply panel removed per new auto-apply flow. */}
     </Stack>
   );
 }
