@@ -461,7 +461,68 @@ app.post('/author/adjustment-buckets', requireAuthor, async (req, res) => {
       after_json: bucket.toJSON(),
       author_user_id: req.user.id
     });
-    return res.status(201).json({ bucket });
+    // Auto-apply immediately if bucket is active
+    if (Number(bucket.active) === 1) {
+      try {
+        // Range can optionally be provided on creation; else default to full dataset
+        let start = (req.body?.start || req.query?.start || '').toString();
+        let end = (req.body?.end || req.query?.end || '').toString();
+        const onlyThisBucket = ((req.body?.only_this_bucket || req.query?.only_this_bucket || '1').toString()) === '1'; // default true
+        const brandCheck = requireBrandKey(bucket.brand_key);
+        if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
+        const brandConn = await getBrandConnection(brandCheck.cfg);
+        if (!start || !end || start > end) {
+          const row = await brandConn.sequelize.query('SELECT MIN(date) AS min_d, MAX(date) AS max_d FROM overall_summary', { type: QueryTypes.SELECT });
+          const mm = Array.isArray(row) ? row[0] : row;
+          if (mm?.min_d && mm?.max_d) { start = mm.min_d; end = mm.max_d; }
+        }
+        let autoApplied = 0;
+        let matchedDays = 0; // days where this new bucket matched
+        if (start && end && start <= end) {
+          const allBuckets = await SessionAdjustmentBucket.findAll({ where: { brand_key: bucket.brand_key }, order: [['priority','ASC'], ['id','ASC']] });
+          const buckets = onlyThisBucket ? allBuckets.filter(b => Number(b.id) === Number(bucket.id)) : allBuckets.filter(b => Number(b.active) === 1);
+          const rows = await brandConn.sequelize.query(
+            'SELECT date, total_sessions FROM overall_summary WHERE date >= ? AND date <= ? ORDER BY date',
+            { type: QueryTypes.SELECT, replacements: [start, end] }
+          );
+          const updates = [];
+          for (const r of rows) {
+            const d = r.date;
+            const rawSessions = Number(r.total_sessions || 0);
+            const appliedList = [];
+            for (const b of buckets) {
+              const efFromOk = !b.effective_from || d >= b.effective_from;
+              const efToOk = !b.effective_to || d <= b.effective_to;
+              if (!efFromOk || !efToOk) continue;
+              if (rawSessions >= b.lower_bound_sessions && rawSessions <= b.upper_bound_sessions) appliedList.push(b);
+            }
+            if (appliedList.some(b => Number(b.id) === Number(bucket.id))) matchedDays += 1;
+            const adjusted = appliedList.length ? Math.round(rawSessions * appliedList.reduce((f,b)=>f*(1+Number(b.offset_pct)/100),1)) : rawSessions;
+            updates.push({ date: d, adjusted });
+          }
+          if (updates.length) {
+            const caseParts = updates.map(u => `WHEN date='${u.date}' THEN ${u.adjusted}`);
+            const sql = `UPDATE overall_summary SET adjusted_total_sessions = CASE ${caseParts.join(' ')} END WHERE date BETWEEN ? AND ?`;
+            await brandConn.sequelize.query(sql, { type: QueryTypes.UPDATE, replacements: [start, end] });
+            autoApplied = updates.length;
+          }
+          await SessionAdjustmentAudit.create({
+            brand_key: bucket.brand_key,
+            bucket_id: bucket.id,
+            action: 'UPDATE',
+            before_json: null,
+            after_json: { auto_apply_after_creation: true, range: { start, end }, rows: autoApplied, matches: matchedDays, only_this_bucket: onlyThisBucket },
+            author_user_id: req.user.id
+          });
+        }
+        return res.status(201).json({ bucket, auto_applied_rows: autoApplied, auto_applied_matches: matchedDays });
+      } catch (applyErr) {
+        console.error('[bucket-create] auto-apply failed', applyErr);
+        // Still return created bucket; caller can manually trigger activation/apply later
+        return res.status(201).json({ bucket, auto_applied_rows: 0, auto_applied_matches: 0, warning: 'Auto-apply failed' });
+      }
+    }
+    return res.status(201).json({ bucket, auto_applied_rows: 0, auto_applied_matches: 0 });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to create bucket' }); }
 });
 
