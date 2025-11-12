@@ -213,8 +213,26 @@ passport.serializeUser((user, done) => done(null, { id: user.id, email: user.ema
 passport.deserializeUser(async (obj, done) => {
   try {
     if (obj.isAuthor) {
+      // Support two author modes:
+      // 1) Local author (username/password) using AUTHOR_EMAIL and master users table
+      // 2) Google SSO author by domain (AUTHOR_GOOGLE_DOMAIN)
+      function normalizeDomain(d){ return (d||'').toString().trim().toLowerCase(); }
+      function domainMatches(host, rule){ const h=normalizeDomain(host); const r=normalizeDomain(rule); if(!h||!r) return false; return h===r || h.endsWith('.'+r); }
+
+      const email = (obj.email || '').toString();
+      const domainPart = email.includes('@') ? normalizeDomain(email.split('@')[1]) : '';
+
+      const authorDomain = normalizeDomain(process.env.AUTHOR_GOOGLE_DOMAIN);
+      const isSsoAuthor = obj.sso === 'google' && authorDomain && domainMatches(domainPart, authorDomain);
+
+      if (isSsoAuthor) {
+        // Trust the session and return a minimal author identity; no DB lookup needed
+        return done(null, { id: obj.id, email, role: 'author', brandKey: null, isAuthor: true });
+      }
+
+      // Fallback to legacy local author via master DB user
       const authorEmail = (process.env.AUTHOR_EMAIL || '').toLowerCase();
-      if (authorEmail !== obj.email.toLowerCase()) return done(null, false);
+      if (authorEmail !== email.toLowerCase()) return done(null, false);
       const authorUser = await User.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
       if (!authorUser || !authorUser.is_active || authorUser.role !== 'author') return done(null, false);
       return done(null, { id: authorUser.id, email: authorUser.email, role: 'author', brandKey: null, isAuthor: true });
