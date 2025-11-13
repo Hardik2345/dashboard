@@ -323,7 +323,7 @@ export default function App() {
                 hasAuthorBrand ? (
                   <Stack spacing={{ xs: 1.5, md: 2 }}>
                     <Box sx={{ position: 'relative', zIndex: 0 }}>
-                      <MobileTopBar value={range} onChange={setRange} />
+                      <MobileTopBar value={range} onChange={setRange} brandKey={authorBrandKey} />
                     </Box>
                     <KPIs
                       query={metricsQuery}
@@ -392,7 +392,7 @@ export default function App() {
     <Stack spacing={{ xs: 1, sm: 1.25 }}>
             {/* Unified compact chips bar for all breakpoints */}
             <Box>
-              <MobileTopBar value={range} onChange={setRange} />
+              <MobileTopBar value={range} onChange={setRange} brandKey={activeBrandKey} />
             </Box>
             <KPIs query={metricsQuery} selectedMetric={selectedMetric} onSelectMetric={handleSelectMetric} />
             <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />

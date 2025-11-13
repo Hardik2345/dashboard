@@ -336,9 +336,16 @@ export async function getDailyTrend(args) {
 }
 
 // Fetch last updated timestamp from external service (not using API_BASE)
-export async function getLastUpdatedPTS() {
+export async function getLastUpdatedPTS(arg = undefined) {
   const base = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
-  const url = `${base}/external/last-updated/pts`;
+  let brandKey = '';
+  if (typeof arg === 'string') {
+    brandKey = normalizeBrandKey(arg);
+  } else if (arg && typeof arg === 'object') {
+    brandKey = normalizeBrandKey(arg.brandKey);
+  }
+  const search = brandKey ? `?brand_key=${encodeURIComponent(brandKey)}` : '';
+  const url = `${base}/external/last-updated/pts${search}`;
   try {
   const res = await fetch(url, { cache: 'no-store', credentials: 'include' });
     if (!res.ok) throw new Error('Failed');

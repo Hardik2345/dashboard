@@ -74,7 +74,7 @@ export default function AuthorBrandSelector({
           <Stack
             direction={{ xs: 'column', sm: 'row' }}
             spacing={{ xs: 1, sm: 1.25 }}
-            alignItems={{ xs: 'stretch', sm: 'center' }}
+            alignItems="stretch"
             sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { sm: 280, md: 320 } }}
           >
             <Autocomplete
@@ -111,10 +111,18 @@ export default function AuthorBrandSelector({
             />
             <Button
               variant="outlined"
+              size="small"
               startIcon={<RefreshIcon fontSize="small" />}
               onClick={() => { if (typeof onRefresh === 'function') onRefresh(); }}
               disabled={loading || !selected}
-              sx={{ width: { xs: '100%', sm: 'auto' }, whiteSpace: 'nowrap' }}
+              sx={{
+                width: { xs: '100%', sm: 'auto' },
+                whiteSpace: 'nowrap',
+                minHeight: 40,
+                px: { xs: 1.75, sm: 2 },
+                borderRadius: 3,
+                fontWeight: 600,
+              }}
             >
               Reload data
             </Button>

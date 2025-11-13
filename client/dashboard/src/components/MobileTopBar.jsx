@@ -11,7 +11,7 @@ dayjs.extend(relativeTime);
 dayjs.extend(utc);
 dayjs.extend(customParseFormat);
 
-export default function MobileTopBar({ value, onChange }) {
+export default function MobileTopBar({ value, onChange, brandKey }) {
   const [start, end] = value || [];
   const [popoverActive, setPopoverActive] = useState(false);
   const [month, setMonth] = useState((end || start || dayjs()).month());
@@ -20,21 +20,40 @@ export default function MobileTopBar({ value, onChange }) {
 
   useEffect(() => {
     let cancelled = false;
-    getLastUpdatedPTS().then(r => {
+    const normalizedKey = (brandKey || '').toString().trim().toUpperCase();
+    setLast({ loading: true, ts: null, tz: null });
+    getLastUpdatedPTS(normalizedKey ? { brandKey: normalizedKey } : undefined).then(r => {
       if (cancelled) return;
       let parsed = null;
-      if (r.raw) {
-        const cleaned = r.raw.replace(/ IST$/,'').trim();
-        const formats = ['YYYY-MM-DD hh:mm:ss A','YYYY-MM-DD HH:mm:ss','YYYY-MM-DD hh:mm A'];
-        for (const f of formats) {
-          const d = dayjs(cleaned, f, true);
-          if (d.isValid()) { parsed = d; break; }
+      const sources = [];
+      if (r.iso) sources.push(r.iso);
+      if (r.raw) sources.push(r.raw);
+      for (const src of sources) {
+        if (parsed) break;
+        const cleaned = typeof src === 'string' ? src.replace(/ IST$/,'').trim() : src;
+        if (!cleaned) continue;
+        if (typeof cleaned === 'string') {
+          const formats = ['YYYY-MM-DDTHH:mm:ss.SSSZ','YYYY-MM-DDTHH:mm:ssZ','YYYY-MM-DD hh:mm:ss A','YYYY-MM-DD HH:mm:ss','YYYY-MM-DD hh:mm A'];
+          for (const f of formats) {
+            const d = dayjs(cleaned, f, true);
+            if (d.isValid()) { parsed = d; break; }
+          }
+          if (!parsed) {
+            const auto = dayjs(cleaned);
+            if (auto.isValid()) parsed = auto;
+          }
+        } else if (cleaned instanceof Date) {
+          const auto = dayjs(cleaned);
+          if (auto.isValid()) parsed = auto;
         }
       }
-      setLast({ loading: false, ts: parsed, tz: r.timezone || null });
+      setLast(prev => ({ loading: false, ts: parsed || prev.ts, tz: r.timezone || prev.tz || null }));
+    }).catch(() => {
+      if (cancelled) return;
+      setLast(prev => ({ loading: false, ts: prev.ts, tz: prev.tz }));
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [brandKey]);
 
   useEffect(() => {
     const focus = end || start;
@@ -80,7 +99,7 @@ export default function MobileTopBar({ value, onChange }) {
           Updating…
         </Card>
       ) : last.ts ? (
-        <Tooltip title={last.ts.format('YYYY-MM-DD HH:mm:ss')} arrow>
+        <Tooltip title={`${last.ts.format('YYYY-MM-DD HH:mm:ss')}${last.tz ? ` ${last.tz}` : ''}`} arrow>
           <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 0.75, height: 32, display: 'flex', alignItems: 'center', fontSize: 13 }}>
             Updated {last.ts.fromNow()}
           </Card>
