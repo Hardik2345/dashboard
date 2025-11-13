@@ -142,6 +142,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   const [viewMode, setViewMode] = useState('hourly'); // 'hourly' | 'daily'
   const start = query?.start;
   const end = query?.end;
+  const brandKey = query?.brand_key;
+  const refreshKey = query?.refreshKey;
 
   useEffect(() => {
     let cancelled = false;
@@ -161,8 +163,11 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       return () => { cancelled = true; };
     }
     setLoading(true);
-  const fetcher = viewMode === 'daily' ? getDailyTrend : getHourlyTrend;
-  const params = viewMode === 'daily' ? { start, end } : { start, end, aggregate: 'avg-by-hour' };
+    const fetcher = viewMode === 'daily' ? getDailyTrend : getHourlyTrend;
+    const base = viewMode === 'daily'
+      ? { start, end }
+      : { start, end, aggregate: 'avg-by-hour' };
+    const params = brandKey ? { ...base, brand_key: brandKey } : base;
   fetcher(params).then((res) => {
       if (cancelled) return;
       if (res?.error) {
@@ -235,7 +240,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       }
     });
     return () => { cancelled = true; };
-  }, [start, end, metric, viewMode]);
+  }, [start, end, metric, viewMode, brandKey, refreshKey]);
 
   const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
 

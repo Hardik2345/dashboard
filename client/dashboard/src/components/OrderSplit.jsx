@@ -19,11 +19,21 @@ const nfPct1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 export default function OrderSplit({ query }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ cod_orders: 0, prepaid_orders: 0, partially_paid_orders: 0, total: 0, cod_percent: 0, prepaid_percent: 0, partially_paid_percent: 0 });
+  const brandKey = query?.brand_key;
+  const refreshKey = query?.refreshKey;
 
   useEffect(() => {
     let cancelled = false;
+    if (!query?.start || !query?.end) {
+      setData({ cod_orders: 0, prepaid_orders: 0, partially_paid_orders: 0, total: 0, cod_percent: 0, prepaid_percent: 0, partially_paid_percent: 0 });
+      setLoading(false);
+      return () => { cancelled = true; };
+    }
     setLoading(true);
-    getOrderSplit(query)
+    const params = brandKey
+      ? { start: query.start, end: query.end, brand_key: brandKey }
+      : { start: query.start, end: query.end };
+    getOrderSplit(params)
       .then((res) => {
         if (cancelled) return;
         setData(res);
@@ -31,7 +41,7 @@ export default function OrderSplit({ query }) {
       })
       .catch(() => setLoading(false));
     return () => { cancelled = true; };
-  }, [query.start, query.end]);
+  }, [query.start, query.end, brandKey, refreshKey]);
 
   const empty = data.total === 0;
 

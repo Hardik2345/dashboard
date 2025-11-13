@@ -18,12 +18,20 @@ const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 export default function FunnelChart({ query }) {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total_sessions: 0, total_atc_sessions: 0, total_orders: 0 });
+  const brandKey = query?.brand_key;
+  const refreshKey = query?.refreshKey;
 
   useEffect(() => {
     let cancelled = false;
+    if (!query?.start || !query?.end) {
+      setStats({ total_sessions: 0, total_atc_sessions: 0, total_orders: 0 });
+      setLoading(false);
+      return () => { cancelled = true; };
+    }
     setLoading(true);
     (async () => {
-      const j = await getFunnelStats({ start: query.start, end: query.end });
+      const params = brandKey ? { start: query.start, end: query.end, brand_key: brandKey } : { start: query.start, end: query.end };
+      const j = await getFunnelStats(params);
       if (cancelled) return;
       if (!j.error) {
         setStats({
@@ -35,7 +43,7 @@ export default function FunnelChart({ query }) {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [query.start, query.end]);
+  }, [query.start, query.end, brandKey, refreshKey]);
 
   const data = {
     labels: ['Sessions', 'Add to Cart', 'Orders'],

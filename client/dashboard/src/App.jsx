@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import dayjs from 'dayjs';
-import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert } from '@mui/material';
+import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, Tabs, Tab } from '@mui/material';
 import Header from './components/Header.jsx';
 import MobileTopBar from './components/MobileTopBar.jsx';
 import AuthorBrandForm from './components/AuthorBrandForm.jsx';
@@ -11,13 +11,14 @@ import OrderSplit from './components/OrderSplit.jsx';
 import PaymentSalesSplit from './components/PaymentSalesSplit.jsx';
 import HourlySalesCompare from './components/HourlySalesCompare.jsx';
 import Footer from './components/Footer.jsx';
-import { me, login, logout } from './lib/api.js';
+import { me, login, logout, listAuthorBrands } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
 import AuthorAdjustments from './components/AuthorAdjustments.jsx';
 import Unauthorized from './components/Unauthorized.jsx';
 import AccessControlCard from './components/AccessControlCard.jsx';
 import WhitelistTable from './components/WhitelistTable.jsx';
 import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
+import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -34,6 +35,7 @@ const TTL_MS = 30 * 60 * 1000; // 30 minutes
 const DEFAULT_TREND_METRIC = 'sales';
 const TREND_METRICS = new Set(['sales', 'orders', 'sessions', 'cvr', 'atc', 'aov']);
 const SESSION_TRACKING_ENABLED = String(import.meta.env.VITE_SESSION_TRACKING || 'false').toLowerCase() === 'true';
+const AUTHOR_BRAND_STORAGE_KEY = 'author_active_brand_v1';
 
 function loadInitialRange() {
   try {
@@ -62,10 +64,113 @@ export default function App() {
   const [loggingIn, setLoggingIn] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState(DEFAULT_TREND_METRIC);
 
+  const isAuthor = !!user?.isAuthor;
   const isBrandUser = !!user && !user.isAuthor;
+
+  const [authorBrands, setAuthorBrands] = useState([]);
+  const [authorBrandsLoading, setAuthorBrandsLoading] = useState(false);
+  const [authorBrandKey, setAuthorBrandKey] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      const stored = localStorage.getItem(AUTHOR_BRAND_STORAGE_KEY);
+      return stored ? stored.toUpperCase() : '';
+    } catch {
+      return '';
+    }
+  });
+  const [authorTab, setAuthorTab] = useState('dashboard');
+  const [authorRefreshKey, setAuthorRefreshKey] = useState(0);
+  const [authorLastLoadedAt, setAuthorLastLoadedAt] = useState(null);
+
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
 
-  const query = useMemo(() => ({ start: formatDate(start), end: formatDate(end) }), [start, end]);
+  const activeBrandKey = isAuthor ? (authorBrandKey || '') : (user?.brandKey || '');
+
+  const metricsQuery = useMemo(() => {
+    const base = { start: formatDate(start), end: formatDate(end) };
+    const key = (activeBrandKey || '').toString().trim().toUpperCase();
+    if (key) base.brand_key = key;
+    if (isAuthor) base.refreshKey = authorRefreshKey;
+    return base;
+  }, [start, end, activeBrandKey, isAuthor, authorRefreshKey]);
+
+  const handleAuthorBrandChange = useCallback((nextKeyRaw) => {
+    const normalized = (nextKeyRaw || '').toString().trim().toUpperCase();
+    const changed = normalized !== authorBrandKey;
+    setAuthorBrandKey(normalized);
+    if (typeof window !== 'undefined') {
+      try {
+        if (normalized) {
+          localStorage.setItem(AUTHOR_BRAND_STORAGE_KEY, normalized);
+        } else {
+          localStorage.removeItem(AUTHOR_BRAND_STORAGE_KEY);
+        }
+      } catch {}
+    }
+    if (changed) {
+      setAuthorRefreshKey((prev) => prev + 1);
+      setAuthorLastLoadedAt(null);
+    }
+  }, [authorBrandKey]);
+
+  const handleAuthorRefresh = useCallback(() => {
+    setAuthorRefreshKey((prev) => prev + 1);
+    setAuthorLastLoadedAt(null);
+  }, []);
+
+  const handleAuthorDataLoaded = useCallback((ts) => {
+    if (!isAuthor) return;
+    if (ts instanceof Date && !Number.isNaN(ts.getTime())) {
+      setAuthorLastLoadedAt(ts);
+    }
+  }, [isAuthor]);
+
+  useEffect(() => {
+    if (!isAuthor) {
+      setAuthorBrands([]);
+      setAuthorBrandsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setAuthorBrandsLoading(true);
+    listAuthorBrands().then((json) => {
+      if (cancelled) return;
+      if (json.__error) {
+        setAuthorBrands([]);
+        return;
+      }
+      const arr = Array.isArray(json.brands) ? json.brands.map((b) => ({
+        key: (b.key || '').toString().trim().toUpperCase(),
+        host: b.host,
+        db: b.db,
+      })) : [];
+      setAuthorBrands(arr);
+    }).finally(() => {
+      if (!cancelled) setAuthorBrandsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [isAuthor]);
+
+  useEffect(() => {
+    if (!isAuthor) return;
+    if (!authorBrands.length) {
+      if (authorBrandKey) {
+        handleAuthorBrandChange('');
+      }
+      return;
+    }
+    const normalized = (authorBrandKey || '').toString().trim().toUpperCase();
+    const exists = normalized && authorBrands.some((b) => b.key === normalized);
+    if (!exists) {
+      handleAuthorBrandChange(authorBrands[0].key);
+    }
+  }, [isAuthor, authorBrands, authorBrandKey, handleAuthorBrandChange]);
+
+  useEffect(() => {
+    if (!isAuthor) {
+      setAuthorTab('dashboard');
+    }
+  }, [isAuthor]);
 
   const handleSelectMetric = useCallback((metricKey) => {
     if (!metricKey) return;
@@ -162,23 +267,92 @@ export default function App() {
     );
   }
 
-  // Author placeholder view
-  if (user?.isAuthor) {
+  if (isAuthor) {
+    const hasAuthorBrand = Boolean((authorBrandKey || '').trim());
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
           <Header user={user} onLogout={handleLogout} />
-          <Container maxWidth="md" sx={{ py:4 }}>
+          <Container maxWidth="lg" sx={{ py: 4 }}>
             <Stack spacing={3}>
-              <Divider textAlign="left">Access control</Divider>
-              <AccessControlCard />
-              <WhitelistTable />
-              <Divider textAlign="left">Author Panel</Divider>
-              <AuthorBrandForm />
-              <AuthorBrandList />
-              <Divider textAlign="left">Session adjustments</Divider>
-              <AuthorAdjustments />
+              <AuthorBrandSelector
+                brands={authorBrands}
+                value={authorBrandKey}
+                loading={authorBrandsLoading}
+                lastLoadedAt={authorLastLoadedAt}
+                onChange={handleAuthorBrandChange}
+                onRefresh={handleAuthorRefresh}
+              />
+              <Tabs
+                value={authorTab}
+                onChange={(event, value) => setAuthorTab(value)}
+                variant="scrollable"
+                allowScrollButtonsMobile
+                sx={{ borderBottom: 1, borderColor: 'divider' }}
+              >
+                <Tab label="Dashboard" value="dashboard" />
+                <Tab label="Access Control" value="access" />
+                <Tab label="Session Adjustments" value="adjustments" />
+                <Tab label="Brand Setup" value="brands" />
+              </Tabs>
+
+              {authorTab === 'dashboard' && (
+                hasAuthorBrand ? (
+                  <Stack spacing={1.5}>
+                    <Box>
+                      <MobileTopBar value={range} onChange={setRange} />
+                    </Box>
+                    <KPIs
+                      query={metricsQuery}
+                      selectedMetric={selectedMetric}
+                      onSelectMetric={handleSelectMetric}
+                      onLoaded={handleAuthorDataLoaded}
+                    />
+                    <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+                    <Divider textAlign="left">Funnel</Divider>
+                    <FunnelChart query={metricsQuery} />
+                    <OrderSplit query={metricsQuery} />
+                    <PaymentSalesSplit query={metricsQuery} />
+                  </Stack>
+                ) : (
+                  <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
+                    <Typography variant="body1" color="text.secondary">
+                      Select a brand to load dashboard metrics.
+                    </Typography>
+                  </Paper>
+                )
+              )}
+
+              {authorTab === 'access' && (
+                <Stack spacing={3}>
+                  <AccessControlCard />
+                  <WhitelistTable />
+                </Stack>
+              )}
+
+              {authorTab === 'adjustments' && (
+                hasAuthorBrand ? (
+                  <AuthorAdjustments
+                    brandKey={authorBrandKey}
+                    onBrandKeyChange={handleAuthorBrandChange}
+                    brands={authorBrands}
+                  />
+                ) : (
+                  <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
+                    <Typography variant="body1" color="text.secondary">
+                      Choose a brand to manage session adjustments.
+                    </Typography>
+                  </Paper>
+                )
+              )}
+
+              {authorTab === 'brands' && (
+                <Stack spacing={3}>
+                  <AuthorBrandForm />
+                  <AuthorBrandList />
+                </Stack>
+              )}
             </Stack>
           </Container>
           <Footer />
@@ -198,12 +372,12 @@ export default function App() {
             <Box>
               <MobileTopBar value={range} onChange={setRange} />
             </Box>
-            <KPIs query={query} selectedMetric={selectedMetric} onSelectMetric={handleSelectMetric} />
-            <HourlySalesCompare query={query} metric={selectedMetric} />
+            <KPIs query={metricsQuery} selectedMetric={selectedMetric} onSelectMetric={handleSelectMetric} />
+            <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
             <Divider textAlign="left">Funnel</Divider>
-            <FunnelChart query={query} />
-            <OrderSplit query={query} />
-            <PaymentSalesSplit query={query} />
+            <FunnelChart query={metricsQuery} />
+            <OrderSplit query={metricsQuery} />
+            <PaymentSalesSplit query={metricsQuery} />
           </Stack>
         </Container>
   <Footer />

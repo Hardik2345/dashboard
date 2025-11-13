@@ -5,11 +5,14 @@ import { listAdjustmentBuckets, createAdjustmentBucket, updateAdjustmentBucket, 
 
 function pct(v) { return `${(Number(v)||0).toFixed(2)}%`; }
 
-export default function AuthorAdjustments() {
+export default function AuthorAdjustments({ brandKey: externalBrandKey, onBrandKeyChange, brands: externalBrands }) {
   const [buckets, setBuckets] = useState([]);
   const [loadingBuckets, setLoadingBuckets] = useState(false);
-  const [brands, setBrands] = useState([]);
-  const [brandKey, setBrandKey] = useState('');
+  const isBrandsControlled = Array.isArray(externalBrands);
+  const isBrandControlled = externalBrandKey !== undefined;
+  const [brands, setBrands] = useState(externalBrands || []);
+  const [internalBrandKey, setInternalBrandKey] = useState(externalBrandKey || '');
+  const brandKey = isBrandControlled ? (externalBrandKey || '') : internalBrandKey;
   const [selectedBucketIds, setSelectedBucketIds] = useState([]); // kept for future, not used now
   const [form, setForm] = useState({ lower_bound_sessions:'', upper_bound_sessions:'', offset_pct:'', priority:'100', effective_from:'', effective_to:'', notes:'' });
   const [creating, setCreating] = useState(false);
@@ -20,6 +23,28 @@ export default function AuthorAdjustments() {
   const [notice, setNotice] = useState(null);
   const [activatingId, setActivatingId] = useState(null);
   const [deactivatingId, setDeactivatingId] = useState(null);
+
+  useEffect(() => {
+    if (isBrandsControlled) {
+      setBrands(externalBrands || []);
+    }
+  }, [externalBrands, isBrandsControlled]);
+
+  useEffect(() => {
+    if (isBrandControlled) {
+      setInternalBrandKey(externalBrandKey || '');
+    }
+  }, [externalBrandKey, isBrandControlled]);
+
+  const updateBrandKey = useCallback((nextKey) => {
+    const normalized = (nextKey || '').toString().trim().toUpperCase();
+    if (!isBrandControlled) {
+      setInternalBrandKey(normalized);
+    }
+    if (typeof onBrandKeyChange === 'function') {
+      onBrandKeyChange(normalized);
+    }
+  }, [isBrandControlled, onBrandKeyChange]);
 
   const loadBuckets = useCallback(async () => {
     setLoadingBuckets(true); setError(null);
@@ -40,17 +65,28 @@ export default function AuthorAdjustments() {
     setPreview(null);
   }, [brandKey]);
 
+  useEffect(() => {
+    if (isBrandControlled) return;
+    if (!brands.length) return;
+    if (!brandKey) return;
+    const exists = brands.some((b) => b.key === brandKey);
+    if (!exists) {
+      updateBrandKey(brands[0].key);
+    }
+  }, [brands, brandKey, isBrandControlled, updateBrandKey]);
+
   // Load brands on mount
   useEffect(() => {
+    if (isBrandsControlled) return;
     (async () => {
       const json = await listAuthorBrands();
       if (!json.__error) {
         const arr = Array.isArray(json.brands) ? json.brands : [];
         setBrands(arr);
-        if (arr.length && !brandKey) setBrandKey(arr[0].key);
+        if (arr.length && !brandKey) updateBrandKey(arr[0].key);
       }
     })();
-  }, []);
+  }, [isBrandsControlled, brandKey, updateBrandKey]);
 
   async function handleCreate(e) {
     e.preventDefault(); setCreating(true); setError(null);
@@ -83,7 +119,6 @@ export default function AuthorAdjustments() {
     }
     setDeactivatingId(null);
     await loadBuckets();
-    handlePreview();
   }
 
   async function handleActivate(id) {
@@ -107,13 +142,13 @@ export default function AuthorAdjustments() {
         <CardContent>
           <Stack spacing={1.5}>
             <Typography variant="h6">Select Brand</Typography>
-            <TextField
+              <TextField
               size="small"
               select
               SelectProps={{ native: true }}
               label="Brand"
               value={brandKey}
-              onChange={(e)=>{ setBrandKey(e.target.value); setPreview(null); }}
+              onChange={(e)=>{ updateBrandKey(e.target.value); setPreview(null); }}
             >
               {brands.map(b => (
                 <option key={b.key} value={b.key}>{b.key}</option>

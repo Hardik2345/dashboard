@@ -7,6 +7,17 @@ function qs(params) {
   return parts.length ? `?${parts.join('&')}` : '';
 }
 
+function normalizeBrandKey(src) {
+  if (!src) return '';
+  return src.toString().trim().toUpperCase();
+}
+
+function appendBrandKey(params, source) {
+  const key = normalizeBrandKey(source?.brand_key ?? source?.brandKey);
+  if (key) return { ...params, brand_key: key };
+  return params;
+}
+
 async function getJSON(path, params) {
   const url = `${API_BASE}${path}${qs(params || {})}`;
   try {
@@ -121,13 +132,15 @@ export async function removeWhitelist(id) {
   return doDelete(`/author/access-control/whitelist/${id}`);
 }
 
-export async function getTotalSales({ start, end }) {
-  const json = await getJSON('/metrics/total-sales', { start, end });
+export async function getTotalSales(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const json = await getJSON('/metrics/total-sales', params);
   return { value: Number(json?.total_sales || 0), error: json?.__error };
 }
 
-export async function getTotalSalesDelta({ start, end, align, compare }) {
-  const json = await getJSON('/metrics/total-sales-delta', { start, end, align, compare });
+export async function getTotalSalesDelta(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end, align: args.align, compare: args.compare }, args);
+  const json = await getJSON('/metrics/total-sales-delta', params);
   return {
     date: json?.date || null,
     current: Number(json?.current || 0),
@@ -139,13 +152,15 @@ export async function getTotalSalesDelta({ start, end, align, compare }) {
   };
 }
 
-export async function getTotalOrders({ start, end }) {
-  const json = await getJSON('/metrics/total-orders', { start, end });
+export async function getTotalOrders(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const json = await getJSON('/metrics/total-orders', params);
   return { value: Number(json?.total_orders || 0), error: json?.__error };
 }
 
-export async function getTotalOrdersDelta({ start, end }) {
-  const json = await getJSON('/metrics/total-orders-delta', { start, end });
+export async function getTotalOrdersDelta(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const json = await getJSON('/metrics/total-orders-delta', params);
   return {
     date: json?.date || null,
     current: Number(json?.current || 0),
@@ -156,8 +171,9 @@ export async function getTotalOrdersDelta({ start, end }) {
   };
 }
 
-export async function getAOV({ start, end }) {
-  const json = await getJSON('/metrics/aov', { start, end });
+export async function getAOV(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const json = await getJSON('/metrics/aov', params);
   return {
     aov: Number(json?.aov || 0),
     total_sales: Number(json?.total_sales || 0),
@@ -166,8 +182,9 @@ export async function getAOV({ start, end }) {
   };
 }
 
-export async function getAOVDelta({ start, end, compare }) {
-  const json = await getJSON('/metrics/aov-delta', { start, end, compare });
+export async function getAOVDelta(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end, compare: args.compare }, args);
+  const json = await getJSON('/metrics/aov-delta', params);
   return {
     date: json?.date || null,
     current: Number(json?.current || 0),
@@ -179,8 +196,9 @@ export async function getAOVDelta({ start, end, compare }) {
   };
 }
 
-export async function getCVR({ start, end }) {
-  const json = await getJSON('/metrics/cvr', { start, end });
+export async function getCVR(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const json = await getJSON('/metrics/cvr', params);
   return {
     cvr: Number(json?.cvr || 0),
     cvr_percent: Number(json?.cvr_percent || 0),
@@ -190,8 +208,9 @@ export async function getCVR({ start, end }) {
   };
 }
 
-export async function getCVRDelta({ start, end, align, compare }) {
-  const json = await getJSON('/metrics/cvr-delta', { start, end, align, compare });
+export async function getCVRDelta(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end, align: args.align, compare: args.compare }, args);
+  const json = await getJSON('/metrics/cvr-delta', params);
   return {
     date: json?.date || null,
     current: json?.current || null,
@@ -205,8 +224,9 @@ export async function getCVRDelta({ start, end, align, compare }) {
   };
 }
 
-export async function getFunnelStats({ start, end }) {
-  const json = await getJSON('/metrics/funnel-stats', { start, end });
+export async function getFunnelStats(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const json = await getJSON('/metrics/funnel-stats', params);
   return {
     total_sessions: Number(json?.total_sessions || 0),
     total_atc_sessions: Number(json?.total_atc_sessions || 0),
@@ -215,8 +235,9 @@ export async function getFunnelStats({ start, end }) {
   };
 }
 
-export async function getTotalSessionsDelta({ start, end, align, compare }) {
-  const json = await getJSON('/metrics/total-sessions-delta', { start, end, align, compare });
+export async function getTotalSessionsDelta(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end, align: args.align, compare: args.compare }, args);
+  const json = await getJSON('/metrics/total-sessions-delta', params);
   return {
     date: json?.date || null,
     current: Number(json?.current || 0),
@@ -228,8 +249,9 @@ export async function getTotalSessionsDelta({ start, end, align, compare }) {
   };
 }
 
-export async function getAtcSessionsDelta({ start, end, align, compare }) {
-  const json = await getJSON('/metrics/atc-sessions-delta', { start, end, align, compare });
+export async function getAtcSessionsDelta(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end, align: args.align, compare: args.compare }, args);
+  const json = await getJSON('/metrics/atc-sessions-delta', params);
   return {
     date: json?.date || null,
     current: Number(json?.current || 0),
@@ -241,8 +263,9 @@ export async function getAtcSessionsDelta({ start, end, align, compare }) {
   };
 }
 
-export async function getOrderSplit({ start, end }) {
-  const json = await getJSON('/metrics/order-split', { start, end });
+export async function getOrderSplit(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const json = await getJSON('/metrics/order-split', params);
   const cod_orders = Number(json?.cod_orders || 0);
   const prepaid_orders = Number(json?.prepaid_orders || 0);
   const partially_paid_orders = Number(json?.partially_paid_orders || 0);
@@ -253,8 +276,9 @@ export async function getOrderSplit({ start, end }) {
   return { cod_orders, prepaid_orders, partially_paid_orders, total, cod_percent, prepaid_percent, partially_paid_percent, error: json?.__error };
 }
 
-export async function getPaymentSalesSplit({ start, end }) {
-  const json = await getJSON('/metrics/payment-sales-split', { start, end });
+export async function getPaymentSalesSplit(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const json = await getJSON('/metrics/payment-sales-split', params);
   const cod_sales = Number(json?.cod_sales || 0);
   const prepaid_sales = Number(json?.prepaid_sales || 0);
   const partial_sales = Number(json?.partial_sales || 0);
@@ -266,8 +290,10 @@ export async function getPaymentSalesSplit({ start, end }) {
   return { cod_sales, prepaid_sales, partial_sales, total, cod_percent, prepaid_percent, partial_percent, error: json?.__error };
 }
 
-export async function getHourlySalesCompare({ hours = 6 } = {}) {
-  const json = await getJSON('/metrics/hourly-sales-compare', { hours });
+export async function getHourlySalesCompare(args = {}) {
+  const base = { hours: args.hours ?? 6 };
+  const params = appendBrandKey(base, args);
+  const json = await getJSON('/metrics/hourly-sales-compare', params);
   return {
     labels: Array.isArray(json?.labels) ? json.labels : [],
     current: json?.series?.current || [],
@@ -276,8 +302,9 @@ export async function getHourlySalesCompare({ hours = 6 } = {}) {
   };
 }
 
-export async function getHourlyTrend({ start, end, aggregate }) {
-  const json = await getJSON('/metrics/hourly-trend', { start, end, aggregate });
+export async function getHourlyTrend(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end, aggregate: args.aggregate }, args);
+  const json = await getJSON('/metrics/hourly-trend', params);
   const comparison = json?.comparison;
   return {
     points: Array.isArray(json?.points) ? json.points : [],
@@ -294,8 +321,9 @@ export async function getHourlyTrend({ start, end, aggregate }) {
   };
 }
 
-export async function getDailyTrend({ start, end }) {
-  const json = await getJSON('/metrics/daily-trend', { start, end });
+export async function getDailyTrend(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const json = await getJSON('/metrics/daily-trend', params);
   return {
     days: Array.isArray(json?.days) ? json.days : [],
     comparison: json?.comparison && Array.isArray(json?.comparison?.days)

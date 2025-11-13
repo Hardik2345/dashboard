@@ -19,15 +19,25 @@ const nfCurrencyCompact = new Intl.NumberFormat('en-IN', { style: 'currency', cu
 export default function PaymentSalesSplit({ query }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ cod_sales: 0, prepaid_sales: 0, partial_sales: 0, total: 0, cod_percent: 0, prepaid_percent: 0, partial_percent: 0 });
+  const brandKey = query?.brand_key;
+  const refreshKey = query?.refreshKey;
 
   useEffect(() => {
     let cancelled = false;
+    if (!query?.start || !query?.end) {
+      setData({ cod_sales: 0, prepaid_sales: 0, partial_sales: 0, total: 0, cod_percent: 0, prepaid_percent: 0, partial_percent: 0 });
+      setLoading(false);
+      return () => { cancelled = true; };
+    }
     setLoading(true);
-    getPaymentSalesSplit(query)
+    const params = brandKey
+      ? { start: query.start, end: query.end, brand_key: brandKey }
+      : { start: query.start, end: query.end };
+    getPaymentSalesSplit(params)
       .then(res => { if (!cancelled) { setData(res); setLoading(false); } })
       .catch(() => setLoading(false));
     return () => { cancelled = true; };
-  }, [query.start, query.end]);
+  }, [query.start, query.end, brandKey, refreshKey]);
 
   const empty = data.total === 0;
 

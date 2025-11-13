@@ -256,7 +256,7 @@ app.use(session({
 
 // Ensure access control tables exist and defaults are seeded
 ensureAccessControlTables();
-ensureSessionActivityTable();
+if (sessionTrackingEnabled) ensureSessionActivityTable();
 
 passport.use(new LocalStrategy({ usernameField: 'email', passwordField: 'password' }, async (email, password, done) => {
   try {
@@ -346,7 +346,6 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
           let userRow = await BrandUser.findOne({ where: { email } });
           if (!userRow) {
             if (settings.autoProvision) {
-              const crypto = require('crypto');
               const secret = crypto.randomBytes(32).toString('hex');
               const hash = await bcrypt.hash(secret, 10);
               try {
