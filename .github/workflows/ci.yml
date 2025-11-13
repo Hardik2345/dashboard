@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - 'feature/**'
+      - development
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  backend:
+    name: Backend quality checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine run mode
+        id: mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "mode=pr" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/heads/development ]]; then
+            echo "mode=development" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/heads/feature/* ]]; then
+            echo "mode=feature" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=skip" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Short-circuit for unsupported branches
+        if: steps.mode.outputs.mode == 'skip'
+        run: echo "Branch not covered by backend workflow."
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        if: steps.mode.outputs.mode != 'skip'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install backend dependencies
+        if: steps.mode.outputs.mode != 'skip'
+        run: npm ci
+
+      - name: Backend fast checks (feature)
+        if: steps.mode.outputs.mode == 'feature'
+        run: npm run ci:feature
+
+      - name: Backend development checks
+        if: steps.mode.outputs.mode == 'development'
+        run: npm run ci:development
+
+      - name: Backend full PR validation
+        if: steps.mode.outputs.mode == 'pr'
+        run: npm run ci:pr
+
+      - name: Upload backend coverage artefacts
+        if: steps.mode.outputs.mode == 'pr'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: |
+            coverage
+          if-no-files-found: warn
+
+  frontend:
+    name: Frontend quality checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client/dashboard
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine run mode
+        id: mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "mode=pr" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/heads/development ]]; then
+            echo "mode=development" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/heads/feature/* ]]; then
+            echo "mode=feature" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=skip" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Short-circuit for unsupported branches
+        if: steps.mode.outputs.mode == 'skip'
+        run: echo "Branch not covered by frontend workflow."
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        if: steps.mode.outputs.mode != 'skip'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: client/dashboard/package-lock.json
+
+      - name: Install frontend dependencies
+        if: steps.mode.outputs.mode != 'skip'
+        run: npm ci
+
+      - name: Frontend fast checks (feature)
+        if: steps.mode.outputs.mode == 'feature'
+        run: npm run ci:feature
+
+      - name: Frontend development checks
+        if: steps.mode.outputs.mode == 'development'
+        run: npm run ci:development
+
+      - name: Install Playwright browsers
+        if: steps.mode.outputs.mode == 'pr'
+        run: npx playwright install --with-deps
+
+      - name: Frontend full PR validation
+        if: steps.mode.outputs.mode == 'pr'
+        run: npm run ci:pr
+
+      - name: Upload frontend coverage artefacts
+        if: steps.mode.outputs.mode == 'pr'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: |
+            coverage
+          if-no-files-found: warn
