@@ -58,14 +58,23 @@ jobs:
       - name: Build frontend bundle
         run: npm run build
 
+      - name: Write Vercel project metadata
+        working-directory: client/dashboard
+        run: |
+          mkdir -p .vercel
+          cat <<EOF > .vercel/project.json
+          {
+            "projectId": "${VERCEL_PROJECT_ID}",
+            "orgId": "${VERCEL_ORG_ID}"
+          }
+          EOF
+
       - name: Deploy to Vercel production
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ env.VERCEL_TOKEN }}
-          vercel-org-id: ${{ env.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ env.VERCEL_PROJECT_ID }}
-          working-directory: client/dashboard
-          vercel-args: '--prod'
+        working-directory: client/dashboard
+        env:
+          VERCEL_TOKEN: ${{ env.VERCEL_TOKEN }}
+        run: |
+          npx --yes vercel@25.1.0 deploy --prod --confirm --token "$VERCEL_TOKEN"
 
   backend:
     name: Deploy backend to Render (production)
