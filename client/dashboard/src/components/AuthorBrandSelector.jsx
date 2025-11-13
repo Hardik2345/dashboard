@@ -1,9 +1,26 @@
-import { useMemo } from 'react';
-import { Card, CardContent, Stack, Typography, Autocomplete, TextField, Button, Chip, Box } from '@mui/material';
+import { useMemo, useState } from 'react';
+import {
+  Autocomplete,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Collapse,
+  IconButton,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import StorefrontIcon from '@mui/icons-material/Storefront';
 
-const dtFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const dtFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
 
 export default function AuthorBrandSelector({
   brands,
@@ -13,63 +30,104 @@ export default function AuthorBrandSelector({
   lastLoadedAt = null,
   onRefresh,
 }) {
-  const options = useMemo(() => (Array.isArray(brands) ? brands : []).map((b) => ({
-    label: b.key,
-    value: b.key,
-    host: b.host,
-    db: b.db,
-  })), [brands]);
+  const options = useMemo(
+    () =>
+      (Array.isArray(brands) ? brands : []).map((b) => ({
+        label: b.key,
+        value: b.key,
+        host: b.host,
+        db: b.db,
+      })),
+    [brands]
+  );
 
   const selected = value ? options.find((opt) => opt.value === value) || null : null;
 
-  const infoLines = selected ? [
-    selected.host ? `DB host: ${selected.host}` : null,
-    selected.db ? `Database: ${selected.db}` : null,
-  ].filter(Boolean) : [];
+  const infoLines = selected
+    ? [
+        selected.host ? `DB host: ${selected.host}` : null,
+        selected.db ? `Database: ${selected.db}` : null,
+      ].filter(Boolean)
+    : [];
+
+  const [detailsOpen, setDetailsOpen] = useState(true);
 
   return (
-    <Card variant="outlined">
+    <Card
+      variant="outlined"
+      sx={{
+        position: 'sticky',
+        top: { xs: 8, md: 16 },
+        zIndex: 5,
+        bgcolor: 'background.paper',
+        backdropFilter: 'blur(4px)',
+      }}
+    >
       <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 1.75, md: 2.5 }} alignItems={{ xs: 'flex-start', md: 'center' }}>
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          spacing={{ xs: 1.75, md: 2.5 }}
+          alignItems={{ xs: 'flex-start', md: 'center' }}
+        >
           <Stack spacing={0.75} flex={1} minWidth={0}>
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <StorefrontIcon fontSize="small" color="primary" />
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: { xs: '1rem', md: '1.1rem' } }}>
-                {selected ? selected.label : 'Select a brand to explore data'}
-              </Typography>
-            </Stack>
-            {selected ? (
-              <Stack spacing={0.75} sx={{ pl: { xs: 0.5, md: 3 } }}>
-                {infoLines.length ? (
-                  <Stack direction="row" spacing={0.5} flexWrap="wrap" rowGap={0.5}>
-                    {infoLines.map((line) => (
-                      <Chip
-                        key={line}
-                        size="small"
-                        label={line}
-                        sx={{
-                          bgcolor: 'action.hover',
-                          fontSize: '0.7rem',
-                          height: 24,
-                          '& .MuiChip-label': { px: 1 },
-                        }}
-                      />
-                    ))}
-                  </Stack>
-                ) : (
-                  <Typography variant="body2" color="text.secondary" sx={{ pl: 0.5 }}>
-                    No connection metadata available.
-                  </Typography>
-                )}
-                <Typography variant="caption" color="text.secondary" sx={{ pl: 0.5 }}>
-                  Last refreshed: {lastLoadedAt ? dtFormatter.format(lastLoadedAt) : 'Not loaded yet'}
+            <Box
+              display="flex"
+              alignItems="center"
+              justifyContent="space-between"
+              width="100%"
+              gap={1}
+            >
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <StorefrontIcon fontSize="small" color="primary" />
+                <Typography
+                  variant="subtitle1"
+                  sx={{ fontWeight: 600, fontSize: { xs: '1rem', md: '1.1rem' } }}
+                >
+                  {selected ? selected.label : 'Select a brand to explore data'}
                 </Typography>
               </Stack>
-            ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ pl: { xs: 0.5, md: 3 } }}>
-                Pick a brand to load KPIs and sales trends. Your selection is remembered for next time.
-              </Typography>
-            )}
+              <IconButton
+                size="small"
+                onClick={() => setDetailsOpen((prev) => !prev)}
+                aria-label={detailsOpen ? 'Collapse brand details' : 'Expand brand details'}
+              >
+                {detailsOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+              </IconButton>
+            </Box>
+            <Collapse in={detailsOpen} timeout="auto" unmountOnExit>
+              {selected ? (
+                <Stack spacing={0.75} sx={{ pl: { xs: 0.5, md: 3 } }}>
+                  {infoLines.length ? (
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap" rowGap={0.5}>
+                      {infoLines.map((line) => (
+                        <Chip
+                          key={line}
+                          size="small"
+                          label={line}
+                          sx={{
+                            bgcolor: 'action.hover',
+                            fontSize: '0.7rem',
+                            height: 24,
+                            '& .MuiChip-label': { px: 1 },
+                          }}
+                        />
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary" sx={{ pl: 0.5 }}>
+                      No connection metadata available.
+                    </Typography>
+                  )}
+                  <Typography variant="caption" color="text.secondary" sx={{ pl: 0.5 }}>
+                    Last refreshed: {lastLoadedAt ? dtFormatter.format(lastLoadedAt) : 'Not loaded yet'}
+                  </Typography>
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary" sx={{ pl: { xs: 0.5, md: 3 } }}>
+                  Pick a brand to load KPIs and sales trends. Your selection is remembered for next time.
+                </Typography>
+              )}
+            </Collapse>
           </Stack>
           <Stack
             direction={{ xs: 'column', sm: 'row' }}
@@ -123,7 +181,9 @@ export default function AuthorBrandSelector({
               color="primary"
               disableElevation
               startIcon={<RefreshIcon fontSize="small" />}
-              onClick={() => { if (typeof onRefresh === 'function') onRefresh(); }}
+              onClick={() => {
+                if (typeof onRefresh === 'function') onRefresh();
+              }}
               disabled={loading || !selected}
               sx={{
                 width: { xs: '100%', sm: 'auto' },
