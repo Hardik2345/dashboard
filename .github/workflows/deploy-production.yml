@@ -57,10 +57,13 @@ jobs:
         run: npm run build
 
       - name: Deploy to Vercel production
-        uses: vercel/actions/cli@v2
+        uses: amondnet/vercel-action@v25
         with:
-          vercel-args: deploy --prod --yes
+          vercel-token: ${{ env.VERCEL_TOKEN }}
+          vercel-org-id: ${{ env.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ env.VERCEL_PROJECT_ID }}
           working-directory: client/dashboard
+          vercel-args: '--prod'
 
   backend:
     name: Deploy backend to Render (production)
