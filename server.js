@@ -10,10 +10,8 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const helmet = require('helmet');
 const { z } = require("zod");
-const { Sequelize, DataTypes, Op, QueryTypes } = require("sequelize");
+const { Sequelize, DataTypes, QueryTypes } = require("sequelize");
 const { brandContext } = require('./middleware/brandContext');
-// Provide a fetch polyfill for Node versions <18
-const fetch = global.fetch || ((...args) => import('node-fetch').then(m => m.default(...args)));
 
 const app = express();
 app.use(helmet());
@@ -53,7 +51,7 @@ const sequelize = new Sequelize(
 
 // ---- Models ------------------------------------------------------------------
 // Important: use DATEONLY for a DATE column
-const OverallSummary = sequelize.define(
+sequelize.define(
   "overall_summary",
   {
     date: { type: DataTypes.DATEONLY }, // <- changed from DATE to DATEONLY
@@ -110,7 +108,7 @@ const SessionAdjustmentAudit = sequelize.define('session_adjustment_audit', {
 
 // --- Access control (master DB) ---------------------------------------------
 // Tables are created idempotently on startup (MySQL CREATE TABLE IF NOT EXISTS)
-const AccessControlSettings = sequelize.define('access_control_settings', {
+sequelize.define('access_control_settings', {
   id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
   mode: { type: DataTypes.ENUM('domain','whitelist'), allowNull: false, defaultValue: 'domain' },
   auto_provision_brand_user: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 0 },
@@ -118,7 +116,7 @@ const AccessControlSettings = sequelize.define('access_control_settings', {
   updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP') }
 }, { tableName: 'access_control_settings', timestamps: false });
 
-const AccessWhitelistEmail = sequelize.define('access_whitelist_emails', {
+sequelize.define('access_whitelist_emails', {
   id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
   email: { type: DataTypes.STRING(255), allowNull: false, unique: true },
   brand_key: { type: DataTypes.STRING(32), allowNull: true },
@@ -127,7 +125,7 @@ const AccessWhitelistEmail = sequelize.define('access_whitelist_emails', {
   created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
 }, { tableName: 'access_whitelist_emails', timestamps: false });
 
-const SessionActivity = sequelize.define('session_activity', {
+sequelize.define('session_activity', {
   id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
   brand_key: { type: DataTypes.STRING(32), allowNull: false },
   user_email: { type: DataTypes.STRING(255), allowNull: false },
@@ -311,8 +309,13 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         if (enforceVerified) return done(null, false, { message: 'Google email not verified' });
       }
       // Author-by-domain: if email domain matches AUTHOR_GOOGLE_DOMAIN, elevate to author
-      function normalizeDomain(d){ return (d||'').toString().trim().toLowerCase(); }
-      function domainMatches(host, rule){ const h=normalizeDomain(host); const r=normalizeDomain(rule); if(!h||!r) return false; return h===r || h.endsWith('.'+r); }
+      const normalizeDomain = (d) => (d || '').toString().trim().toLowerCase();
+      const domainMatches = (host, rule) => {
+        const h = normalizeDomain(host);
+        const r = normalizeDomain(rule);
+        if (!h || !r) return false;
+        return h === r || h.endsWith(`.${r}`);
+      };
       const authorDomain = normalizeDomain(process.env.AUTHOR_GOOGLE_DOMAIN);
       const domainPart = email.includes('@') ? normalizeDomain(email.split('@')[1]) : '';
       if (authorDomain && domainMatches(domainPart, authorDomain)) {
@@ -377,8 +380,13 @@ passport.deserializeUser(async (obj, done) => {
       // Support two author modes:
       // 1) Local author (username/password) using AUTHOR_EMAIL and master users table
       // 2) Google SSO author by domain (AUTHOR_GOOGLE_DOMAIN)
-      function normalizeDomain(d){ return (d||'').toString().trim().toLowerCase(); }
-      function domainMatches(host, rule){ const h=normalizeDomain(host); const r=normalizeDomain(rule); if(!h||!r) return false; return h===r || h.endsWith('.'+r); }
+      const normalizeDomain = (d) => (d || '').toString().trim().toLowerCase();
+      const domainMatches = (host, rule) => {
+        const h = normalizeDomain(host);
+        const r = normalizeDomain(rule);
+        if (!h || !r) return false;
+        return h === r || h.endsWith(`.${r}`);
+      };
 
       const email = (obj.email || '').toString();
       const domainPart = email.includes('@') ? normalizeDomain(email.split('@')[1]) : '';
@@ -452,7 +460,10 @@ if (sessionTrackingEnabled) {
           meta,
         });
       });
-    } catch {}
+    } catch (err) {
+      // Swallow session tracking errors so requests continue unaffected
+      console.warn('Session tracking middleware skipped', err?.message || err);
+    }
     return next();
   });
 }
@@ -489,7 +500,9 @@ app.post('/activity/heartbeat', requireAuth, async (req, res) => {
       ip: req.ip,
       meta,
     });
-  } catch {}
+  } catch (err) {
+    console.warn('Session heartbeat tracking failed', err?.message || err);
+  }
 
   return res.status(204).end();
 });
@@ -1585,19 +1598,19 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
   const sqlSessRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date >= ? AND date <= ? AND hour <= ?`;
 
         // Orders cumulative across range, using IST date/hour buckets and counting distinct order_name per bucket
-        function istRangeUtcBounds(s, e) {
-          const y1 = Number(s.slice(0,4));
-          const m1 = Number(s.slice(5,7));
-          const d1 = Number(s.slice(8,10));
-          const y2 = Number(e.slice(0,4));
-          const m2 = Number(e.slice(5,7));
-          const d2 = Number(e.slice(8,10));
+        const istRangeUtcBounds = (s, e) => {
+          const y1 = Number(s.slice(0, 4));
+          const m1 = Number(s.slice(5, 7));
+          const d1 = Number(s.slice(8, 10));
+          const y2 = Number(e.slice(0, 4));
+          const m2 = Number(e.slice(5, 7));
+          const d2 = Number(e.slice(8, 10));
           const startUtcMs = Date.UTC(y1, m1 - 1, d1, 0, 0, 0) - offsetMs; // IST midnight -> UTC
           const endUtcMs = Date.UTC(y2, m2 - 1, d2 + 1, 0, 0, 0) - offsetMs; // end date + 1 day IST midnight -> UTC
-          const startStr = new Date(startUtcMs).toISOString().slice(0,19).replace('T',' ');
-          const endStr = new Date(endUtcMs).toISOString().slice(0,19).replace('T',' ');
+          const startStr = new Date(startUtcMs).toISOString().slice(0, 19).replace('T', ' ');
+          const endStr = new Date(endUtcMs).toISOString().slice(0, 19).replace('T', ' ');
           return { startStr, endStr };
-        }
+        };
         const sqlOrdersRange = `
           SELECT COALESCE(SUM(cnt),0) AS total FROM (
             SELECT DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) AS d,
@@ -1650,16 +1663,16 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
   const sqlSess = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
 
       // Orders cumulative from shopify_orders counting distinct order_name in IST window [00:00, hour+1)
-      function buildIstWindow(dateStr, hour) {
+      const buildIstWindow = (dateStr, hour) => {
         const y = Number(dateStr.slice(0, 4));
         const m = Number(dateStr.slice(5, 7));
         const d0 = Number(dateStr.slice(8, 10));
         const startUtcMs = Date.UTC(y, m - 1, d0, 0, 0, 0) - offsetMs; // IST midnight -> UTC
         const endUtcMs = startUtcMs + (hour + 1) * 3600_000; // exclusive end at next hour
-        const startStr = new Date(startUtcMs).toISOString().slice(0,19).replace('T',' ');
-        const endStr = new Date(endUtcMs).toISOString().slice(0,19).replace('T',' ');
+        const startStr = new Date(startUtcMs).toISOString().slice(0, 19).replace('T', ' ');
+        const endStr = new Date(endUtcMs).toISOString().slice(0, 19).replace('T', ' ');
         return { startStr, endStr };
-      }
+      };
       const sqlOrders = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_at >= ? AND created_at < ?`;
 
       const [sessCurRows, sessPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
@@ -2596,8 +2609,7 @@ app.get('/metrics/hourly-sales-compare', requireAuth, brandContext, async (req, 
       return { date: `${yyyy}-${mm}-${dd}`, hour: prev.getUTCHours() };
     });
 
-    function buildWherePairs(num) { return Array(num).fill('(date = ? AND hour = ?)').join(' OR '); }
-    const where = buildWherePairs(N);
+  const where = Array(N).fill('(date = ? AND hour = ?)').join(' OR ');
     const paramsCurrent = bucketsIst.flatMap(b => [b.date, b.hour]);
     const paramsY = yBucketsIst.flatMap(b => [b.date, b.hour]);
 
