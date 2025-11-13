@@ -136,7 +136,7 @@ export default function App() {
             <Paper elevation={3} sx={{ p:3, borderRadius:3 }} component="form" onSubmit={handleLogin}>
               <Stack spacing={2}>
                 <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                  <Box component="img" src="/image.png" alt="Datum" sx={{ height: 40, objectFit: 'contain' }} />
+                  <Box component="img" src="/image.png" alt="Datum" sx={{ height: 64, objectFit: 'contain' }} />
                 </Box>
                 <TextField size="small" label="Email" type="email" required value={loginForm.email} onChange={e=>setLoginForm(f=>({ ...f, email: e.target.value }))} />
                 <TextField size="small" label="Password" type="password" required value={loginForm.password} onChange={e=>setLoginForm(f=>({ ...f, password: e.target.value }))} />
