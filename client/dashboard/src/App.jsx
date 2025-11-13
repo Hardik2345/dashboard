@@ -14,6 +14,7 @@ import Footer from './components/Footer.jsx';
 import { me, login, logout } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
 import AuthorAdjustments from './components/AuthorAdjustments.jsx';
+import Unauthorized from './components/Unauthorized.jsx';
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -108,6 +109,25 @@ export default function App() {
   if (!authChecked) return null;
 
   if (!user) {
+    const params = new URLSearchParams(window.location.search);
+    const path = window.location.pathname || '/';
+    const error = params.get('error') || '';
+    const reason = params.get('reason') || '';
+    const isUnauthorized = (path.startsWith('/login') || path.startsWith('/unauthorized')) && (
+      error === 'google_oauth_failed' ||
+      error === 'not_authorized' ||
+      reason === 'not_authorized_domain'
+    );
+
+    if (isUnauthorized) {
+      return (
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <Unauthorized />
+        </ThemeProvider>
+      );
+    }
+
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
