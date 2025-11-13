@@ -31,6 +31,8 @@ jobs:
     name: Deploy frontend to Vercel (production)
     needs: approval
     runs-on: ubuntu-latest
+    environment:
+      name: production
     env:
       NODE_VERSION: '20'
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -69,6 +71,8 @@ jobs:
     name: Deploy backend to Render (production)
     needs: approval
     runs-on: ubuntu-latest
+    environment:
+      name: production
     env:
       NODE_VERSION: '20'
       RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
