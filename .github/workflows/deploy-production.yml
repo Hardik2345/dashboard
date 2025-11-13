@@ -1,0 +1,100 @@
+name: Deploy Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Optional context for this production deployment'
+        required: false
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  deployments: write
+
+jobs:
+  approval:
+    name: Await production approval
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Await manual approval in the production environment
+        run: echo "A repository administrator must approve this deployment via the production environment gate."
+
+  frontend:
+    name: Deploy frontend to Vercel (production)
+    needs: approval
+    runs-on: ubuntu-latest
+    env:
+      NODE_VERSION: '20'
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    defaults:
+      run:
+        working-directory: client/dashboard
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: client/dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend bundle
+        run: npm run build
+
+      - name: Deploy to Vercel production
+        uses: vercel/action@v3
+        with:
+          vercel-token: ${{ env.VERCEL_TOKEN }}
+          vercel-org-id: ${{ env.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ env.VERCEL_PROJECT_ID }}
+          working-directory: client/dashboard
+          prod: true
+
+  backend:
+    name: Deploy backend to Render (production)
+    needs: approval
+    runs-on: ubuntu-latest
+    env:
+      NODE_VERSION: '20'
+      RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Run backend smoke tests before production deployment
+        run: npm run test:unit
+
+      - name: Trigger Render production deploy hook
+        if: env.RENDER_DEPLOY_HOOK != ''
+        run: |
+          curl -f -X POST "$RENDER_DEPLOY_HOOK"
+
+      - name: Fail when production deploy hook is missing
+        if: env.RENDER_DEPLOY_HOOK == ''
+        run: |
+          echo "RENDER_DEPLOY_HOOK secret is not configured; backend production deploy skipped." && exit 1
