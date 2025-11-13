@@ -273,7 +273,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       if (settings.mode === 'whitelist') {
         const [rows] = await sequelize.query('SELECT id, email, brand_key FROM access_whitelist_emails WHERE email = ? LIMIT 1', { replacements: [email] });
         wlHit = rows && rows[0] ? rows[0] : null;
-        if (!wlHit) return done(null, false, { message: 'Not whitelisted' });
+        if (!wlHit) return done(null, false, { message: 'Not whitelisted', reason: 'not_whitelisted' });
       }
 
       // Resolve brand
@@ -285,7 +285,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         brandCfg = map[key] || null;
       }
       if (!brandCfg) brandCfg = resolveBrandFromEmail(email);
-      if (!brandCfg) return done(null, false, { message: settings.mode === 'whitelist' ? 'Brand not resolved for whitelisted email' : 'Your email domain is not authorized' });
+  if (!brandCfg) return done(null, false, { message: settings.mode === 'whitelist' ? 'Brand not resolved for whitelisted email' : 'Your email domain is not authorized', reason: settings.mode === 'whitelist' ? 'brand_unknown' : 'not_authorized_domain' });
 
       // Enforce or auto-provision brand user as configured
       if (requireBrandDbUser || settings.autoProvision) {
@@ -306,12 +306,12 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
                 userRow = await BrandUser.findOne({ where: { email } });
               }
             } else {
-              return done(null, false, { message: 'User not provisioned for this brand' });
+              return done(null, false, { message: 'User not provisioned for this brand', reason: 'user_not_provisioned' });
             }
           }
-          if (!userRow || userRow.is_active === false) return done(null, false, { message: 'User inactive' });
+          if (!userRow || userRow.is_active === false) return done(null, false, { message: 'User inactive', reason: 'user_inactive' });
         } catch (e) {
-          return done(null, false, { message: 'Brand user validation failed' });
+          return done(null, false, { message: 'Brand user validation failed', reason: 'validation_failed' });
         }
       }
       return done(null, { id: email, email, role: 'user', brandKey: brandCfg.key, isAuthor: false, sso: 'google' });
@@ -656,10 +656,21 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     });
   });
   app.get('/auth/google', passport.authenticate('google', { scope: ['profile','email'] }));
-  app.get('/auth/google/callback',
-    passport.authenticate('google', { failureRedirect, session: true }),
-    (req, res) => { res.redirect(successRedirect); }
-  );
+  app.get('/auth/google/callback', (req, res, next) => {
+    passport.authenticate('google', (err, user, info) => {
+      if (err) return next(err);
+      if (!user) {
+        const reason = encodeURIComponent(info?.reason || 'google_oauth_failed');
+        const msg = encodeURIComponent(info?.message || 'Login failed');
+        const sep = failureRedirect.includes('?') ? '&' : '?';
+        return res.redirect(`${failureRedirect}${sep}reason=${reason}&msg=${msg}`);
+      }
+      req.login(user, (err2) => {
+        if (err2) return next(err2);
+        return res.redirect(successRedirect);
+      });
+    })(req, res, next);
+  });
 }
 
 app.get('/auth/me', (req, res) => {
