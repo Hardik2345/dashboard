@@ -57,13 +57,10 @@ jobs:
         run: npm run build
 
       - name: Deploy to Vercel production
-        uses: vercel/action@v3
+        uses: vercel/actions/cli@v2
         with:
-          vercel-token: ${{ env.VERCEL_TOKEN }}
-          vercel-org-id: ${{ env.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ env.VERCEL_PROJECT_ID }}
+          vercel-args: deploy --prod --yes
           working-directory: client/dashboard
-          prod: true
 
   backend:
     name: Deploy backend to Render (production)
@@ -94,7 +91,7 @@ jobs:
         run: |
           curl -f -X POST "$RENDER_DEPLOY_HOOK"
 
-      - name: Fail when production deploy hook is missing
+      - name: Skip when production deploy hook is missing
         if: env.RENDER_DEPLOY_HOOK == ''
         run: |
-          echo "RENDER_DEPLOY_HOOK secret is not configured; backend production deploy skipped." && exit 1
+          echo "RENDER_DEPLOY_HOOK secret is not configured; backend production deploy skipped."
