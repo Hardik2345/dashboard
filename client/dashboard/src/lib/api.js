@@ -19,6 +19,44 @@ async function getJSON(path, params) {
   }
 }
 
+// Generic helpers returning { error, data, status }
+async function doGet(path, params) {
+  const url = `${API_BASE}${path}${qs(params || {})}`;
+  try {
+    const res = await fetch(url, { credentials: 'include' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: true, status: res.status, data: json };
+    return { error: false, data: json };
+  } catch (e) { return { error: true }; }
+}
+
+async function doPost(path, body) {
+  const url = `${API_BASE}${path}`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body || {})
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: true, status: res.status, data: json };
+    return { error: false, data: json };
+  } catch (e) { return { error: true }; }
+}
+
+async function doDelete(path) {
+  const url = `${API_BASE}${path}`;
+  try {
+    const res = await fetch(url, { method: 'DELETE', credentials: 'include' });
+    // Some deletes return 204 with no JSON
+    let json = {};
+    try { json = await res.json(); } catch {}
+    if (!res.ok) return { error: true, status: res.status, data: json };
+    return { error: false, data: json };
+  } catch (e) { return { error: true }; }
+}
+
 // ---- Auth helpers -----------------------------------------------------------
 export async function login(email, password) {
   try {
