@@ -48,6 +48,26 @@ export async function me() {
   } catch { return { authenticated: false }; }
 }
 
+// ---- Author Access Control APIs -------------------------------------------
+export async function getAccessControl() {
+  return doGet('/author/access-control');
+}
+export async function setAccessMode(mode) {
+  return doPost('/author/access-control/mode', { mode });
+}
+export async function setAccessSettings({ autoProvision }) {
+  return doPost('/author/access-control/settings', { autoProvision });
+}
+export async function listWhitelist() {
+  return doGet('/author/access-control/whitelist');
+}
+export async function addWhitelist(email, brand_key, notes) {
+  return doPost('/author/access-control/whitelist', { email, brand_key, notes });
+}
+export async function removeWhitelist(id) {
+  return doDelete(`/author/access-control/whitelist/${id}`);
+}
+
 export async function getTotalSales({ start, end }) {
   const json = await getJSON('/metrics/total-sales', { start, end });
   return { value: Number(json?.total_sales || 0), error: json?.__error };

@@ -15,6 +15,8 @@ import { me, login, logout } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
 import AuthorAdjustments from './components/AuthorAdjustments.jsx';
 import Unauthorized from './components/Unauthorized.jsx';
+import AccessControlCard from './components/AccessControlCard.jsx';
+import WhitelistTable from './components/WhitelistTable.jsx';
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -164,6 +166,9 @@ export default function App() {
           <Header user={user} onLogout={handleLogout} />
           <Container maxWidth="md" sx={{ py:4 }}>
             <Stack spacing={3}>
+              <Divider textAlign="left">Access control</Divider>
+              <AccessControlCard />
+              <WhitelistTable />
               <Divider textAlign="left">Author Panel</Divider>
               <AuthorBrandForm />
               <AuthorBrandList />

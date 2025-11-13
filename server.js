@@ -106,6 +106,82 @@ const SessionAdjustmentAudit = sequelize.define('session_adjustment_audit', {
   author_user_id: { type: DataTypes.BIGINT, allowNull: true },
   changed_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
 }, { tableName: 'session_adjustment_audit', timestamps: false });
+
+// --- Access control (master DB) ---------------------------------------------
+// Tables are created idempotently on startup (MySQL CREATE TABLE IF NOT EXISTS)
+const AccessControlSettings = sequelize.define('access_control_settings', {
+  id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
+  mode: { type: DataTypes.ENUM('domain','whitelist'), allowNull: false, defaultValue: 'domain' },
+  auto_provision_brand_user: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 0 },
+  updated_by: { type: DataTypes.BIGINT, allowNull: true },
+  updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP') }
+}, { tableName: 'access_control_settings', timestamps: false });
+
+const AccessWhitelistEmail = sequelize.define('access_whitelist_emails', {
+  id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
+  email: { type: DataTypes.STRING(255), allowNull: false, unique: true },
+  brand_key: { type: DataTypes.STRING(32), allowNull: true },
+  notes: { type: DataTypes.STRING(255), allowNull: true },
+  added_by: { type: DataTypes.BIGINT, allowNull: true },
+  created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
+}, { tableName: 'access_whitelist_emails', timestamps: false });
+
+async function ensureAccessControlTables() {
+  // Create tables if missing and seed defaults
+  try {
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS access_control_settings (
+        id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        mode ENUM('domain','whitelist') NOT NULL DEFAULT 'domain',
+        auto_provision_brand_user TINYINT(1) NOT NULL DEFAULT 0,
+        updated_by BIGINT NULL,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS access_whitelist_emails (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        email VARCHAR(255) NOT NULL,
+        brand_key VARCHAR(32) NULL,
+        notes VARCHAR(255) NULL,
+        added_by BIGINT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY uq_email (email)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    // Seed a single settings row if none
+    const [rows] = await sequelize.query('SELECT id FROM access_control_settings LIMIT 1');
+    if (!rows || rows.length === 0) {
+      await sequelize.query("INSERT INTO access_control_settings (mode, auto_provision_brand_user) VALUES ('domain', 0)");
+    }
+  } catch (e) {
+    console.error('[access-control] ensure tables failed', e);
+  }
+}
+
+// Tiny cache for access settings to avoid a read per login
+const accessCache = { data: null, fetchedAt: 0 };
+async function getAccessSettings(force = false) {
+  try {
+    const TTL = 60_000; // 60s
+    const now = Date.now();
+    if (!force && accessCache.data && (now - accessCache.fetchedAt < TTL)) return accessCache.data;
+    const [rows] = await sequelize.query('SELECT mode, auto_provision_brand_user FROM access_control_settings LIMIT 1');
+    const mode = rows?.[0]?.mode || 'domain';
+    const autoProvision = rows?.[0]?.auto_provision_brand_user ? true : false;
+    const [wl] = await sequelize.query('SELECT COUNT(1) AS cnt FROM access_whitelist_emails');
+    const whitelistCount = Number(wl?.[0]?.cnt || 0);
+    accessCache.data = { mode, autoProvision, whitelistCount };
+    accessCache.fetchedAt = now;
+    return accessCache.data;
+  } catch (e) {
+    // Fail open to current behavior
+    return { mode: 'domain', autoProvision: false, whitelistCount: 0 };
+  }
+}
+function bustAccessCache() { accessCache.data = null; accessCache.fetchedAt = 0; }
 const { resolveBrandFromEmail, addBrandRuntime, getBrands } = require('./config/brands');
 const { getBrandConnection } = require('./lib/brandConnectionManager');
 
@@ -128,6 +204,9 @@ app.use(session({
     maxAge: 1000 * 60 * 60 * 8,
   }
 }));
+
+// Ensure access control tables exist and defaults are seeded
+ensureAccessControlTables();
 
 passport.use(new LocalStrategy({ usernameField: 'email', passwordField: 'password' }, async (email, password, done) => {
   try {
@@ -189,15 +268,48 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       if (authorDomain && domainMatches(domainPart, authorDomain)) {
         return done(null, { id: email, email, role: 'author', brandKey: null, isAuthor: true, sso: 'google' });
       }
-      const brandCfg = resolveBrandFromEmail(email);
-      if (!brandCfg) return done(null, false, { message: 'Your email domain is not authorized' });
-      if (requireBrandDbUser) {
+      const settings = await getAccessSettings();
+      let wlHit = null;
+      if (settings.mode === 'whitelist') {
+        const [rows] = await sequelize.query('SELECT id, email, brand_key FROM access_whitelist_emails WHERE email = ? LIMIT 1', { replacements: [email] });
+        wlHit = rows && rows[0] ? rows[0] : null;
+        if (!wlHit) return done(null, false, { message: 'Not whitelisted' });
+      }
+
+      // Resolve brand
+      let brandCfg = null;
+      if (wlHit && wlHit.brand_key) {
+        const { getBrands } = require('./config/brands');
+        const map = getBrands();
+        const key = String(wlHit.brand_key || '').toUpperCase();
+        brandCfg = map[key] || null;
+      }
+      if (!brandCfg) brandCfg = resolveBrandFromEmail(email);
+      if (!brandCfg) return done(null, false, { message: settings.mode === 'whitelist' ? 'Brand not resolved for whitelisted email' : 'Your email domain is not authorized' });
+
+      // Enforce or auto-provision brand user as configured
+      if (requireBrandDbUser || settings.autoProvision) {
         try {
           const { getBrandConnection } = require('./lib/brandConnectionManager');
           const conn = await getBrandConnection(brandCfg);
           const BrandUser = conn.models.User;
-          const userRow = await BrandUser.findOne({ where: { email, is_active: true } });
-          if (!userRow) return done(null, false, { message: 'User not provisioned for this brand' });
+          let userRow = await BrandUser.findOne({ where: { email } });
+          if (!userRow) {
+            if (settings.autoProvision) {
+              const crypto = require('crypto');
+              const secret = crypto.randomBytes(32).toString('hex');
+              const hash = await bcrypt.hash(secret, 10);
+              try {
+                userRow = await BrandUser.create({ email, password_hash: hash, role: 'user', is_active: true });
+              } catch (ce) {
+                // Unique race -> re-fetch
+                userRow = await BrandUser.findOne({ where: { email } });
+              }
+            } else {
+              return done(null, false, { message: 'User not provisioned for this brand' });
+            }
+          }
+          if (!userRow || userRow.is_active === false) return done(null, false, { message: 'User inactive' });
         } catch (e) {
           return done(null, false, { message: 'Brand user validation failed' });
         }
@@ -274,6 +386,72 @@ function requireAuthor(req, res, next) {
   if (req.isAuthenticated && req.isAuthenticated() && req.user?.isAuthor) return next();
   return res.status(403).json({ error: 'Forbidden' });
 }
+
+// ---- Author: Access Control APIs -------------------------------------------
+app.get('/author/access-control', requireAuthor, async (req, res) => {
+  try {
+    const settings = await getAccessSettings(true);
+    return res.json({ mode: settings.mode, autoProvision: settings.autoProvision, whitelistCount: settings.whitelistCount });
+  } catch (e) { return res.status(500).json({ error: 'Failed' }); }
+});
+
+app.post('/author/access-control/mode', requireAuthor, async (req, res) => {
+  try {
+    const modeRaw = (req.body?.mode || '').toString();
+    const mode = modeRaw === 'whitelist' ? 'whitelist' : 'domain';
+    await sequelize.query('UPDATE access_control_settings SET mode = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP LIMIT 1', { replacements: [mode, req.user?.id || null] });
+    bustAccessCache();
+    return res.status(204).end();
+  } catch (e) { return res.status(500).json({ error: 'Failed to update mode' }); }
+});
+
+app.post('/author/access-control/settings', requireAuthor, async (req, res) => {
+  try {
+    const ap = String(req.body?.autoProvision ?? '').toLowerCase();
+    const val = ap === '1' || ap === 'true';
+    await sequelize.query('UPDATE access_control_settings SET auto_provision_brand_user = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP LIMIT 1', { replacements: [val ? 1 : 0, req.user?.id || null] });
+    bustAccessCache();
+    return res.status(204).end();
+  } catch (e) { return res.status(500).json({ error: 'Failed to update settings' }); }
+});
+
+app.get('/author/access-control/whitelist', requireAuthor, async (req, res) => {
+  try {
+    const [rows] = await sequelize.query('SELECT id, email, brand_key, notes, added_by, created_at FROM access_whitelist_emails ORDER BY id DESC LIMIT 500');
+    return res.json({ emails: rows || [] });
+  } catch (e) { return res.status(500).json({ error: 'Failed to fetch whitelist' }); }
+});
+
+app.post('/author/access-control/whitelist', requireAuthor, async (req, res) => {
+  try {
+    const email = (req.body?.email || '').toString().trim().toLowerCase();
+    const brandKey = (req.body?.brand_key || '').toString().trim().toUpperCase() || null;
+    const notes = (req.body?.notes || '').toString().trim() || null;
+    if (!/^.+@.+\..+$/.test(email)) return res.status(400).json({ error: 'Invalid email' });
+    if (brandKey) {
+      const map = getBrands();
+      if (!map[brandKey]) return res.status(400).json({ error: 'Unknown brand_key' });
+    }
+    try {
+      await sequelize.query('INSERT INTO access_whitelist_emails (email, brand_key, notes, added_by) VALUES (?, ?, ?, ?)', { replacements: [email, brandKey, notes, req.user?.id || null] });
+    } catch (e) {
+      // duplicate
+      return res.status(409).json({ error: 'Email already whitelisted' });
+    }
+    bustAccessCache();
+    return res.status(201).json({ email, brand_key: brandKey, notes });
+  } catch (e) { return res.status(500).json({ error: 'Failed to add whitelist' }); }
+});
+
+app.delete('/author/access-control/whitelist/:id', requireAuthor, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid id' });
+    await sequelize.query('DELETE FROM access_whitelist_emails WHERE id = ? LIMIT 1', { replacements: [id] });
+    bustAccessCache();
+    return res.status(204).end();
+  } catch (e) { return res.status(500).json({ error: 'Failed to remove' }); }
+});
 
 // ---- Validation --------------------------------------------------------------
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
@@ -474,6 +652,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       successRedirect,
       failureRedirect,
       nodeEnv: process.env.NODE_ENV,
+      access: accessCache.data || null
     });
   });
   app.get('/auth/google', passport.authenticate('google', { scope: ['profile','email'] }));
