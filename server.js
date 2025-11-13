@@ -349,7 +349,13 @@ passport.deserializeUser(async (obj, done) => {
       if (!authorUser || !authorUser.is_active || authorUser.role !== 'author') return done(null, false);
       return done(null, { id: authorUser.id, email: authorUser.email, role: 'author', brandKey: null, isAuthor: true });
     }
-    const brandCfg = resolveBrandFromEmail(obj.email);
+    let brandCfg = null;
+    const storedKey = (obj.brandKey || '').toString().trim().toUpperCase();
+    if (storedKey) {
+      const map = getBrands();
+      brandCfg = map[storedKey] || null;
+    }
+    if (!brandCfg) brandCfg = resolveBrandFromEmail(obj.email);
     if (!brandCfg) return done(null, false);
 
     // If this is a Google SSO brand user and we don't require a brand DB user row,
