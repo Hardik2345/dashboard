@@ -7,7 +7,9 @@
     {
       "source": "/api/(.*)",
       "destination": "https://dashboard-imn0.onrender.com/$1"
-    }
+    },
+    { "source": "/login", "destination": "/" },
+    { "source": "/unauthorized", "destination": "/" }
   ],
 
   "headers": [
