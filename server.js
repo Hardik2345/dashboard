@@ -239,11 +239,26 @@ passport.deserializeUser(async (obj, done) => {
     }
     const brandCfg = resolveBrandFromEmail(obj.email);
     if (!brandCfg) return done(null, false);
+
+    // If this is a Google SSO brand user and we don't require a brand DB user row,
+    // trust the session and avoid DB lookup (supports just-in-time access by domain).
+    const requireBrandDbUser = String(process.env.REQUIRE_BRAND_DB_USER || 'false').toLowerCase() === 'true';
+    if (obj.sso === 'google' && !requireBrandDbUser) {
+      return done(null, { id: obj.id, email: obj.email, role: obj.role || 'user', brandKey: brandCfg.key, isAuthor: false });
+    }
+
+    // Otherwise, look up the brand user in the brand DB. Prefer email lookup for SSO users
+    // (since SSO sessions may not have a numeric PK), and PK lookup for local-auth users.
     const brandConn = await getBrandConnection(brandCfg);
     const BrandUser = brandConn.models.User;
-    const user = await BrandUser.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
+    let user = null;
+    if (obj.sso === 'google') {
+      user = await BrandUser.findOne({ where: { email: obj.email, is_active: true }, attributes: ['id','email','role','is_active'] });
+    } else {
+      user = await BrandUser.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
+    }
     if (!user || !user.is_active) return done(null, false);
-    done(null, { id: user.id, email: user.email, role: user.role, brandKey: brandCfg.key, isAuthor: false });
+    return done(null, { id: user.id, email: user.email, role: user.role || 'user', brandKey: brandCfg.key, isAuthor: false });
   } catch (e) { done(e); }
 });
 
