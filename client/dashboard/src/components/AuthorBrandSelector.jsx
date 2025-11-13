@@ -75,7 +75,7 @@ export default function AuthorBrandSelector({
             direction={{ xs: 'column', sm: 'row' }}
             spacing={{ xs: 1, sm: 1.25 }}
             alignItems="stretch"
-            sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { sm: 280, md: 320 } }}
+            sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { sm: 320, md: 360 } }}
           >
             <Autocomplete
               fullWidth
@@ -96,6 +96,15 @@ export default function AuthorBrandSelector({
                   label="Switch brand"
                   placeholder={loading ? 'Loading…' : 'Search brand key'}
                   InputLabelProps={{ shrink: true }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2,
+                      height: { xs: 40, sm: 42 },
+                      '& .MuiAutocomplete-input': {
+                        py: 0,
+                      },
+                    },
+                  }}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
@@ -110,18 +119,24 @@ export default function AuthorBrandSelector({
               disabled={loading || !options.length}
             />
             <Button
-              variant="outlined"
-              size="small"
+              variant="contained"
+              color="primary"
+              disableElevation
               startIcon={<RefreshIcon fontSize="small" />}
               onClick={() => { if (typeof onRefresh === 'function') onRefresh(); }}
               disabled={loading || !selected}
               sx={{
                 width: { xs: '100%', sm: 'auto' },
                 whiteSpace: 'nowrap',
-                minHeight: 40,
-                px: { xs: 1.75, sm: 2 },
-                borderRadius: 3,
+                px: { xs: 2, sm: 2.5 },
+                borderRadius: 2,
                 fontWeight: 600,
+                height: { xs: 40, sm: 42 },
+                minWidth: { sm: 150 },
+                alignSelf: { xs: 'stretch', sm: 'center' },
+                '& .MuiButton-startIcon': {
+                  marginRight: 1,
+                },
               }}
             >
               Reload data
