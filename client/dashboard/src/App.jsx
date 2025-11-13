@@ -274,8 +274,8 @@ export default function App() {
         <CssBaseline />
         <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
           <Header user={user} onLogout={handleLogout} />
-          <Container maxWidth="lg" sx={{ py: 4 }}>
-            <Stack spacing={3}>
+          <Box component="main" sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: { xs: 1.5, sm: 2.5, md: 4 }, py: { xs: 2, md: 4 } }}>
+            <Stack spacing={{ xs: 2, md: 3 }}>
               <AuthorBrandSelector
                 brands={authorBrands}
                 value={authorBrandKey}
@@ -284,23 +284,45 @@ export default function App() {
                 onChange={handleAuthorBrandChange}
                 onRefresh={handleAuthorRefresh}
               />
-              <Tabs
-                value={authorTab}
-                onChange={(event, value) => setAuthorTab(value)}
-                variant="scrollable"
-                allowScrollButtonsMobile
-                sx={{ borderBottom: 1, borderColor: 'divider' }}
+              <Box
+                sx={{
+                  position: { xs: 'sticky', md: 'static' },
+                  top: { xs: 64, sm: 72 },
+                  zIndex: (theme) => theme.zIndex.appBar - 1,
+                  bgcolor: 'background.paper',
+                  pt: { xs: 1, md: 0 },
+                  borderBottom: 1,
+                  borderColor: 'divider',
+                }}
               >
-                <Tab label="Dashboard" value="dashboard" />
-                <Tab label="Access Control" value="access" />
-                <Tab label="Session Adjustments" value="adjustments" />
-                <Tab label="Brand Setup" value="brands" />
-              </Tabs>
+                <Tabs
+                  value={authorTab}
+                  onChange={(event, value) => setAuthorTab(value)}
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  allowScrollButtonsMobile
+                  textColor="primary"
+                  indicatorColor="primary"
+                  sx={{
+                    '& .MuiTabs-indicator': { height: 3, borderRadius: 1.5 },
+                    '& .MuiTab-root': {
+                      minWidth: { xs: 120, sm: 140 },
+                      fontSize: { xs: '0.8rem', sm: '0.9rem' },
+                      textTransform: 'none',
+                    },
+                  }}
+                >
+                  <Tab label="Dashboard" value="dashboard" />
+                  <Tab label="Access Control" value="access" />
+                  <Tab label="Session Adjustments" value="adjustments" />
+                  <Tab label="Brand Setup" value="brands" />
+                </Tabs>
+              </Box>
 
               {authorTab === 'dashboard' && (
                 hasAuthorBrand ? (
-                  <Stack spacing={1.5}>
-                    <Box>
+                  <Stack spacing={{ xs: 1.5, md: 2 }}>
+                    <Box sx={{ position: 'relative', zIndex: 0 }}>
                       <MobileTopBar value={range} onChange={setRange} />
                     </Box>
                     <KPIs
@@ -316,8 +338,8 @@ export default function App() {
                     <PaymentSalesSplit query={metricsQuery} />
                   </Stack>
                 ) : (
-                  <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
-                    <Typography variant="body1" color="text.secondary">
+                  <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                    <Typography variant="body2" color="text.secondary">
                       Select a brand to load dashboard metrics.
                     </Typography>
                   </Paper>
@@ -325,7 +347,7 @@ export default function App() {
               )}
 
               {authorTab === 'access' && (
-                <Stack spacing={3}>
+                <Stack spacing={{ xs: 2, md: 3 }}>
                   <AccessControlCard />
                   <WhitelistTable />
                 </Stack>
@@ -339,8 +361,8 @@ export default function App() {
                     brands={authorBrands}
                   />
                 ) : (
-                  <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
-                    <Typography variant="body1" color="text.secondary">
+                  <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                    <Typography variant="body2" color="text.secondary">
                       Choose a brand to manage session adjustments.
                     </Typography>
                   </Paper>
@@ -348,13 +370,13 @@ export default function App() {
               )}
 
               {authorTab === 'brands' && (
-                <Stack spacing={3}>
+                <Stack spacing={{ xs: 2, md: 3 }}>
                   <AuthorBrandForm />
                   <AuthorBrandList />
                 </Stack>
               )}
             </Stack>
-          </Container>
+          </Box>
           <Footer />
         </Box>
       </ThemeProvider>

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Card, CardContent, Stack, Typography, Autocomplete, TextField, Button, Chip } from '@mui/material';
+import { Card, CardContent, Stack, Typography, Autocomplete, TextField, Button, Chip, Box } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import StorefrontIcon from '@mui/icons-material/Storefront';
 
@@ -29,21 +29,31 @@ export default function AuthorBrandSelector({
 
   return (
     <Card variant="outlined">
-      <CardContent>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', md: 'center' }}>
+      <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 1.75, md: 2.5 }} alignItems={{ xs: 'flex-start', md: 'center' }}>
           <Stack spacing={0.75} flex={1} minWidth={0}>
             <Stack direction="row" alignItems="center" spacing={1}>
               <StorefrontIcon fontSize="small" color="primary" />
-              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: { xs: '1rem', md: '1.1rem' } }}>
                 {selected ? selected.label : 'Select a brand to explore data'}
               </Typography>
             </Stack>
             {selected ? (
-              <Stack spacing={0.5} sx={{ pl: 3 }}>
+              <Stack spacing={0.75} sx={{ pl: { xs: 0.5, md: 3 } }}>
                 {infoLines.length ? (
-                  <Stack direction="row" spacing={0.75} flexWrap="wrap" rowGap={0.5}>
+                  <Stack direction="row" spacing={0.5} flexWrap="wrap" rowGap={0.5}>
                     {infoLines.map((line) => (
-                      <Chip key={line} size="small" label={line} sx={{ bgcolor: 'action.hover' }} />
+                      <Chip
+                        key={line}
+                        size="small"
+                        label={line}
+                        sx={{
+                          bgcolor: 'action.hover',
+                          fontSize: '0.7rem',
+                          height: 24,
+                          '& .MuiChip-label': { px: 1 },
+                        }}
+                      />
                     ))}
                   </Stack>
                 ) : (
@@ -56,12 +66,17 @@ export default function AuthorBrandSelector({
                 </Typography>
               </Stack>
             ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ pl: 3 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ pl: { xs: 0.5, md: 3 } }}>
                 Pick a brand to load KPIs and sales trends. Your selection is remembered for next time.
               </Typography>
             )}
           </Stack>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ minWidth: { sm: 280, md: 320 } }}>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={{ xs: 1, sm: 1.25 }}
+            alignItems={{ xs: 'stretch', sm: 'center' }}
+            sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { sm: 280, md: 320 } }}
+          >
             <Autocomplete
               fullWidth
               size="small"
@@ -80,9 +95,14 @@ export default function AuthorBrandSelector({
                   {...params}
                   label="Switch brand"
                   placeholder={loading ? 'Loading…' : 'Search brand key'}
+                  InputLabelProps={{ shrink: true }}
                   InputProps={{
                     ...params.InputProps,
-                    endAdornment: params.InputProps.endAdornment,
+                    endAdornment: (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        {params.InputProps.endAdornment}
+                      </Box>
+                    ),
                   }}
                 />
               )}
@@ -94,6 +114,7 @@ export default function AuthorBrandSelector({
               startIcon={<RefreshIcon fontSize="small" />}
               onClick={() => { if (typeof onRefresh === 'function') onRefresh(); }}
               disabled={loading || !selected}
+              sx={{ width: { xs: '100%', sm: 'auto' }, whiteSpace: 'nowrap' }}
             >
               Reload data
             </Button>
