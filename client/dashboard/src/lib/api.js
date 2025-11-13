@@ -86,6 +86,21 @@ export async function me() {
   } catch { return { authenticated: false }; }
 }
 
+export async function sendHeartbeat(meta = null) {
+  try {
+    const res = await fetch(`${API_BASE}/activity/heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      keepalive: true,
+      body: JSON.stringify({ meta }),
+    });
+    return { error: !res.ok };
+  } catch {
+    return { error: true };
+  }
+}
+
 // ---- Author Access Control APIs -------------------------------------------
 export async function getAccessControl() {
   return doGet('/author/access-control');

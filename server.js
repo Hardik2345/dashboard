@@ -7,6 +7,7 @@ const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const LocalStrategy = require('passport-local').Strategy;
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const helmet = require('helmet');
 const { z } = require("zod");
 const { Sequelize, DataTypes, Op, QueryTypes } = require("sequelize");
@@ -126,6 +127,27 @@ const AccessWhitelistEmail = sequelize.define('access_whitelist_emails', {
   created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
 }, { tableName: 'access_whitelist_emails', timestamps: false });
 
+const SessionActivity = sequelize.define('session_activity', {
+  id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
+  brand_key: { type: DataTypes.STRING(32), allowNull: false },
+  user_email: { type: DataTypes.STRING(255), allowNull: false },
+  bucket_start: { type: DataTypes.DATE, allowNull: false },
+  hit_count: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
+  first_seen: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+  last_seen: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+  user_agent: { type: DataTypes.STRING(255), allowNull: true },
+  ip_hash: { type: DataTypes.CHAR(64), allowNull: true },
+  meta_json: { type: DataTypes.JSON, allowNull: true }
+}, {
+  tableName: 'session_activity',
+  timestamps: false,
+  indexes: [
+    { unique: true, fields: ['brand_key', 'user_email', 'bucket_start'], name: 'uq_brand_user_bucket' },
+    { fields: ['brand_key', 'bucket_start'], name: 'idx_brand_bucket' },
+    { fields: ['brand_key', 'last_seen'], name: 'idx_brand_last_seen' }
+  ]
+});
+
 async function ensureAccessControlTables() {
   // Create tables if missing and seed defaults
   try {
@@ -161,6 +183,31 @@ async function ensureAccessControlTables() {
   }
 }
 
+async function ensureSessionActivityTable() {
+  try {
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS session_activity (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        brand_key VARCHAR(32) NOT NULL,
+        user_email VARCHAR(255) NOT NULL,
+        bucket_start DATETIME NOT NULL,
+        hit_count INT UNSIGNED NOT NULL DEFAULT 1,
+        first_seen DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_seen DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        user_agent VARCHAR(255) NULL,
+        ip_hash CHAR(64) NULL,
+        meta_json JSON NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY uq_brand_user_bucket (brand_key, user_email, bucket_start),
+        KEY idx_brand_bucket (brand_key, bucket_start),
+        KEY idx_brand_last_seen (brand_key, last_seen)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+  } catch (e) {
+    console.error('[session-activity] ensure table failed', e);
+  }
+}
+
 // Tiny cache for access settings to avoid a read per login
 const accessCache = { data: null, fetchedAt: 0 };
 async function getAccessSettings(force = false) {
@@ -191,6 +238,8 @@ const sessionStore = new SequelizeStore({ db: sequelize, tableName: 'sessions' }
 
 const isProd = process.env.NODE_ENV === 'production';
 const crossSite = process.env.CROSS_SITE === 'true';
+const sessionTrackingEnabled = String(process.env.SESSION_TRACKING_ENABLED || 'false').toLowerCase() === 'true';
+const SESSION_BUCKET_MS = 10 * 60 * 1000; // 10 minutes
 app.use(session({
   secret: process.env.SESSION_SECRET || 'change_me_dev_secret',
   resave: false,
@@ -207,6 +256,7 @@ app.use(session({
 
 // Ensure access control tables exist and defaults are seeded
 ensureAccessControlTables();
+ensureSessionActivityTable();
 
 passport.use(new LocalStrategy({ usernameField: 'email', passwordField: 'password' }, async (email, password, done) => {
   try {
@@ -383,6 +433,31 @@ passport.deserializeUser(async (obj, done) => {
 app.use(passport.initialize());
 app.use(passport.session());
 
+if (sessionTrackingEnabled) {
+  app.use((req, res, next) => {
+    try {
+      if (!req.isAuthenticated || !req.isAuthenticated()) return next();
+      const user = req.user || {};
+      if (user.isAuthor || !user.brandKey) return next();
+      if (req.path === '/activity/heartbeat') return next();
+      const meta = {
+        path: (req.originalUrl || '').slice(0, 180),
+        method: req.method,
+      };
+      setImmediate(() => {
+        recordSessionActivity({
+          brandKey: user.brandKey,
+          email: user.email,
+          userAgent: req.get('user-agent'),
+          ip: req.ip,
+          meta,
+        });
+      });
+    } catch {}
+    return next();
+  });
+}
+
 function requireAuth(req, res, next) {
   if (req.isAuthenticated && req.isAuthenticated()) return next();
   return res.status(401).json({ error: 'Unauthorized' });
@@ -392,6 +467,33 @@ function requireAuthor(req, res, next) {
   if (req.isAuthenticated && req.isAuthenticated() && req.user?.isAuthor) return next();
   return res.status(403).json({ error: 'Forbidden' });
 }
+
+app.post('/activity/heartbeat', requireAuth, async (req, res) => {
+  if (!sessionTrackingEnabled) return res.status(204).end();
+  const user = req.user || {};
+  if (user.isAuthor || !user.brandKey) return res.status(204).end();
+
+  const bodyMeta = req.body && typeof req.body === 'object' ? req.body.meta : null;
+  const meta = { source: 'heartbeat' };
+  if (bodyMeta && typeof bodyMeta === 'object') {
+    if (typeof bodyMeta.visibility === 'string') meta.visibility = bodyMeta.visibility.slice(0, 16);
+    if (typeof bodyMeta.path === 'string') meta.path = bodyMeta.path.slice(0, 180);
+    if (typeof bodyMeta.idleMs === 'number' && Number.isFinite(bodyMeta.idleMs)) meta.idleMs = Math.max(0, Math.round(bodyMeta.idleMs));
+    if (typeof bodyMeta.trigger === 'string') meta.trigger = bodyMeta.trigger.slice(0, 32);
+  }
+
+  try {
+    await recordSessionActivity({
+      brandKey: user.brandKey,
+      email: user.email,
+      userAgent: req.get('user-agent'),
+      ip: req.ip,
+      meta,
+    });
+  } catch {}
+
+  return res.status(204).end();
+});
 
 // ---- Author: Access Control APIs -------------------------------------------
 app.get('/author/access-control', requireAuthor, async (req, res) => {
@@ -481,6 +583,59 @@ function buildWhereClause(start, end) {
   }
   const where = parts.length ? `WHERE ${parts.join(" AND ")}` : "";
   return { where, params };
+}
+
+function computeBucketStart(ts = Date.now()) {
+  const bucketTs = Math.floor(ts / SESSION_BUCKET_MS) * SESSION_BUCKET_MS;
+  return new Date(bucketTs);
+}
+
+function formatDateTimeUTC(date) {
+  if (!(date instanceof Date)) return null;
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+async function recordSessionActivity({ brandKey, email, userAgent, ip, meta }) {
+  if (!sessionTrackingEnabled) return;
+  const brand = (brandKey || '').toString().trim().toUpperCase();
+  const mail = (email || '').toString().trim().toLowerCase();
+  if (!brand || !mail) return;
+
+  const bucketStart = formatDateTimeUTC(computeBucketStart());
+  if (!bucketStart) return;
+
+  let ipHash = null;
+  const rawIp = (ip || '').toString().trim();
+  if (rawIp) {
+    try { ipHash = crypto.createHash('sha256').update(rawIp).digest('hex'); }
+    catch { ipHash = null; }
+  }
+
+  const ua = userAgent ? userAgent.toString().slice(0, 255) : null;
+  let metaJson = null;
+  if (meta && typeof meta === 'object') {
+    try { metaJson = JSON.stringify(meta); }
+    catch { metaJson = null; }
+  }
+
+  try {
+    await sequelize.query(`
+      INSERT INTO session_activity (brand_key, user_email, bucket_start, hit_count, first_seen, last_seen, user_agent, ip_hash, meta_json)
+      VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        hit_count = hit_count + 1,
+        last_seen = VALUES(last_seen),
+        user_agent = COALESCE(VALUES(user_agent), user_agent),
+        ip_hash = COALESCE(VALUES(ip_hash), ip_hash),
+        meta_json = COALESCE(VALUES(meta_json), meta_json)
+    `, {
+      replacements: [brand, mail, bucketStart, ua, ipHash, metaJson],
+    });
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[session-activity] failed to record', err?.message || err);
+    }
+  }
 }
 
 // raw SUM helper to avoid ORM coercion issues

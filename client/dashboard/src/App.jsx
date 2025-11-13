@@ -17,6 +17,7 @@ import AuthorAdjustments from './components/AuthorAdjustments.jsx';
 import Unauthorized from './components/Unauthorized.jsx';
 import AccessControlCard from './components/AccessControlCard.jsx';
 import WhitelistTable from './components/WhitelistTable.jsx';
+import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -32,6 +33,7 @@ const RANGE_KEY = 'pts_date_range_v2';
 const TTL_MS = 30 * 60 * 1000; // 30 minutes
 const DEFAULT_TREND_METRIC = 'sales';
 const TREND_METRICS = new Set(['sales', 'orders', 'sessions', 'cvr', 'atc', 'aov']);
+const SESSION_TRACKING_ENABLED = String(import.meta.env.VITE_SESSION_TRACKING || 'false').toLowerCase() === 'true';
 
 function loadInitialRange() {
   try {
@@ -59,6 +61,9 @@ export default function App() {
   const [loginError, setLoginError] = useState(null);
   const [loggingIn, setLoggingIn] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState(DEFAULT_TREND_METRIC);
+
+  const isBrandUser = !!user && !user.isAuthor;
+  useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
 
   const query = useMemo(() => ({ start: formatDate(start), end: formatDate(end) }), [start, end]);
 
