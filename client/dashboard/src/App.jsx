@@ -135,7 +135,9 @@ export default function App() {
           <Container maxWidth="xs">
             <Paper elevation={3} sx={{ p:3, borderRadius:3 }} component="form" onSubmit={handleLogin}>
               <Stack spacing={2}>
-                <Typography variant="h5" sx={{ fontWeight: 700, textAlign: 'center' }}>The Dashboard App</Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                  <Box component="img" src="/image.png" alt="Datum" sx={{ height: 40, objectFit: 'contain' }} />
+                </Box>
                 <TextField size="small" label="Email" type="email" required value={loginForm.email} onChange={e=>setLoginForm(f=>({ ...f, email: e.target.value }))} />
                 <TextField size="small" label="Password" type="password" required value={loginForm.password} onChange={e=>setLoginForm(f=>({ ...f, password: e.target.value }))} />
                 {loginError && <Alert severity="error">{loginError}</Alert>}

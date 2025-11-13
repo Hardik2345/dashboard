@@ -16,14 +16,9 @@ export default function Unauthorized() {
               If you believe this is a mistake, please contact your administrator.
             </Typography>
             <Divider flexItem sx={{ my: 1 }} />
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ width: '100%' }}>
-              <Button fullWidth variant="contained" onClick={() => { window.location.href = `${base}/auth/google`; }}>
-                Try a different Google account
-              </Button>
-              <Button fullWidth variant="outlined" onClick={() => { window.location.href = '/'; }}>
-                Back to login
-              </Button>
-            </Stack>
+            <Button size="medium" variant="contained" onClick={() => { window.location.href = '/'; }} sx={{ minWidth: 200 }}>
+              Back to login
+            </Button>
           </Stack>
         </Paper>
       </Container>
