@@ -287,8 +287,8 @@ export default function App() {
               <Box
                 sx={{
                   position: 'sticky',
-                  top: { xs: 64, sm: 72 },
-                  zIndex: (theme) => theme.zIndex.appBar - 1,
+                  top: 0,
+                  zIndex: (theme) => theme.zIndex.appBar + 1,
                   bgcolor: 'background.paper',
                   pt: { xs: 1, md: 0 },
                   borderBottom: 1,
