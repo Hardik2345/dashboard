@@ -38,9 +38,6 @@ jobs:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-    defaults:
-      run:
-        working-directory: client/dashboard
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -53,27 +50,20 @@ jobs:
           cache-dependency-path: client/dashboard/package-lock.json
 
       - name: Install dependencies
+        working-directory: client/dashboard
         run: npm ci
 
       - name: Build frontend bundle
+        working-directory: client/dashboard
         run: npm run build
 
-      - name: Write Vercel project metadata
-        working-directory: client/dashboard
-        run: |
-          mkdir -p .vercel
-          cat <<EOF > .vercel/project.json
-          {
-            "projectId": "${VERCEL_PROJECT_ID}",
-            "orgId": "${VERCEL_ORG_ID}"
-          }
-          EOF
-
       - name: Deploy to Vercel production
-        working-directory: client/dashboard
         env:
           VERCEL_TOKEN: ${{ env.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ env.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ env.VERCEL_PROJECT_ID }}
         run: |
+          npx --yes vercel@25.1.0 pull --yes --environment=production --token "$VERCEL_TOKEN"
           npx --yes vercel@25.1.0 deploy --prod --confirm --token "$VERCEL_TOKEN"
 
   backend:
