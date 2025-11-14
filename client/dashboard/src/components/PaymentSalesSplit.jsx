@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, Typography, Skeleton, Stack, Chip, Tooltip } from '@mui/material';
+import { useTheme, alpha } from '@mui/material/styles';
 import { Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -17,6 +18,7 @@ const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency
 const nfCurrencyCompact = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', notation: 'compact', maximumFractionDigits: 1 });
 
 export default function PaymentSalesSplit({ query }) {
+  const theme = useTheme();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ cod_sales: 0, prepaid_sales: 0, partial_sales: 0, total: 0, cod_percent: 0, prepaid_percent: 0, partial_percent: 0 });
   const brandKey = query?.brand_key;
@@ -41,13 +43,35 @@ export default function PaymentSalesSplit({ query }) {
 
   const empty = data.total === 0;
 
+  const colors = useMemo(() => {
+    const isDark = theme.palette.mode === 'dark';
+    const cod = isDark ? '#facc15' : '#f59e0b';
+    const prepaid = isDark ? '#34d399' : '#10b981';
+    const partial = isDark ? '#38bdf8' : '#6ee7b7';
+    return { cod, prepaid, partial };
+  }, [theme]);
+
+  const chipStyles = {
+    cod: {
+      bgcolor: alpha(colors.cod, theme.palette.mode === 'dark' ? 0.22 : 0.18),
+      color: theme.palette.mode === 'dark' ? '#fef08a' : '#7c2d12',
+    },
+    prepaid: {
+      bgcolor: alpha(colors.prepaid, theme.palette.mode === 'dark' ? 0.22 : 0.18),
+      color: theme.palette.mode === 'dark' ? '#ecfdf5' : '#065f46',
+    },
+    partial: {
+      bgcolor: alpha(colors.partial, theme.palette.mode === 'dark' ? 0.22 : 0.18),
+      color: theme.palette.mode === 'dark' ? '#e0f2fe' : '#0f766e',
+    },
+  };
+
   const chartData = {
     labels: ['COD', 'Prepaid', 'Partially paid'],
     datasets: [
       {
         data: [data.cod_sales, data.prepaid_sales, data.partial_sales],
-        // Darken partial slice slightly for better contrast (emerald-300)
-        backgroundColor: ['#f59e0b', '#10b981', '#6ee7b7'],
+        backgroundColor: [colors.cod, colors.prepaid, colors.partial],
         borderWidth: 0,
       },
     ],
@@ -57,7 +81,11 @@ export default function PaymentSalesSplit({ query }) {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { display: true, position: 'bottom' },
+      legend: {
+        display: true,
+        position: 'bottom',
+        labels: { color: theme.palette.text.secondary },
+      },
       tooltip: {
         callbacks: {
           label: (ctx) => {
@@ -95,20 +123,17 @@ export default function PaymentSalesSplit({ query }) {
               <Chip
                 size="small"
                 label={`COD ${nfPct1.format(data.cod_percent)}% (${nfCurrencyCompact.format(data.cod_sales)})`}
-                sx={{ bgcolor: '#fff7ed', color: '#92400e', maxWidth: '100%' }}
+                sx={{ ...chipStyles.cod, maxWidth: '100%' }}
               />
               <Chip
                 size="small"
                 label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfCurrencyCompact.format(data.prepaid_sales)})`}
-                // Use a slightly deeper green tint to match the darker Prepaid slice
-                sx={{ bgcolor: '#d1fae5', color: '#065f46', maxWidth: '100%' }}
+                sx={{ ...chipStyles.prepaid, maxWidth: '100%' }}
               />
               <Chip
                 size="small"
-                // Use shorter label to improve compactness
                 label={`Partial ${nfPct1.format(data.partial_percent)}% (${nfCurrencyCompact.format(data.partial_sales)})`}
-                // Use a lighter tint to match the lighter Partial slice
-                sx={{ bgcolor: '#ecfdf5', color: '#047857', maxWidth: '100%' }}
+                sx={{ ...chipStyles.partial, maxWidth: '100%' }}
               />
             </Stack>
             <div style={{ position: 'relative', height: 180 }}>

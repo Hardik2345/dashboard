@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, MenuItem, InputLabel } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { Line, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -12,16 +13,6 @@ import {
   BarElement,
 } from 'chart.js';
 import { getHourlyTrend, getDailyTrend } from '../lib/api.js';
-
-function hexToRgba(hex, alpha) {
-  if (!hex || typeof hex !== 'string') return `rgba(0,0,0,${alpha || 1})`;
-  const clean = hex.replace('#','');
-  const bigint = parseInt(clean.length === 3 ? clean.split('').map(c=>c+c).join('') : clean, 16);
-  const r = (bigint >> 16) & 255;
-  const g = (bigint >> 8) & 255;
-  const b = bigint & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
 
 ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, BarElement);
 const defaultLegendLabels = ChartJS.defaults.plugins.legend.labels.generateLabels;
@@ -45,54 +36,63 @@ const nfCurrency2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
 
-const METRIC_CONFIG = {
-  aov: {
-    label: 'Avg Order Value',
-    color: '#f59e0b',
-    bg: 'rgba(245,158,11,0.14)',
-    accessor: (metrics) => {
-      const sales = Number(metrics?.sales || 0);
-      const orders = Number(metrics?.orders || 0);
-      return orders > 0 ? sales / orders : 0;
+function buildMetricPalette(mode) {
+  const isDark = mode === 'dark';
+  return {
+    aov: {
+      label: 'Avg Order Value',
+      color: isDark ? '#fcd34d' : '#f59e0b',
+      area: isDark ? 'rgba(252,211,77,0.25)' : 'rgba(245,158,11,0.14)',
+      comparison: isDark ? 'rgba(252,211,77,0.32)' : 'rgba(245,158,11,0.18)',
+      accessor: (metrics) => {
+        const sales = Number(metrics?.sales || 0);
+        const orders = Number(metrics?.orders || 0);
+        return orders > 0 ? sales / orders : 0;
+      },
+      formatter: (value) => nfCurrency2.format(value || 0),
     },
-    formatter: (value) => nfCurrency2.format(value || 0),
-  },
-  orders: {
-    label: 'Total Orders',
-    color: '#0ea5e9',
-    bg: 'rgba(14,165,233,0.14)',
-    accessor: (metrics) => metrics?.orders ?? 0,
-    formatter: (value) => nfInt0.format(value || 0),
-  },
-  sales: {
-    label: 'Total Sales',
-    color: '#0b6bcb',
-    bg: 'rgba(11,107,203,0.12)',
-    accessor: (metrics) => metrics?.sales ?? 0,
-    formatter: (value) => nfCurrency0.format(value || 0),
-  },
-  sessions: {
-    label: 'Total Sessions',
-    color: '#2563eb',
-    bg: 'rgba(37,99,235,0.12)',
-    accessor: (metrics) => metrics?.sessions ?? 0,
-    formatter: (value) => nfInt0.format(value || 0),
-  },
-  cvr: {
-    label: 'Conversion Rate',
-    color: '#7c3aed',
-    bg: 'rgba(124,58,237,0.14)',
-    accessor: (metrics) => metrics?.cvr_ratio ?? 0,
-    formatter: (value) => nfPercent1.format(value || 0),
-  },
-  atc: {
-    label: 'ATC Sessions',
-    color: '#16a34a',
-    bg: 'rgba(22,163,74,0.14)',
-    accessor: (metrics) => metrics?.atc ?? 0,
-    formatter: (value) => nfInt0.format(value || 0),
-  },
-};
+    orders: {
+      label: 'Total Orders',
+      color: isDark ? '#93c5fd' : '#0ea5e9',
+      area: isDark ? 'rgba(147,197,253,0.28)' : 'rgba(14,165,233,0.14)',
+      comparison: isDark ? 'rgba(147,197,253,0.34)' : 'rgba(14,165,233,0.18)',
+      accessor: (metrics) => metrics?.orders ?? 0,
+      formatter: (value) => nfInt0.format(value || 0),
+    },
+    sales: {
+      label: 'Total Sales',
+      color: isDark ? '#60a5fa' : '#0b6bcb',
+      area: isDark ? 'rgba(96,165,250,0.28)' : 'rgba(11,107,203,0.12)',
+      comparison: isDark ? 'rgba(96,165,250,0.36)' : 'rgba(11,107,203,0.18)',
+      accessor: (metrics) => metrics?.sales ?? 0,
+      formatter: (value) => nfCurrency0.format(value || 0),
+    },
+    sessions: {
+      label: 'Total Sessions',
+      color: isDark ? '#818cf8' : '#2563eb',
+      area: isDark ? 'rgba(129,140,248,0.28)' : 'rgba(37,99,235,0.12)',
+      comparison: isDark ? 'rgba(129,140,248,0.34)' : 'rgba(37,99,235,0.18)',
+      accessor: (metrics) => metrics?.sessions ?? 0,
+      formatter: (value) => nfInt0.format(value || 0),
+    },
+    cvr: {
+      label: 'Conversion Rate',
+      color: isDark ? '#c084fc' : '#7c3aed',
+      area: isDark ? 'rgba(192,132,252,0.3)' : 'rgba(124,58,237,0.14)',
+      comparison: isDark ? 'rgba(192,132,252,0.36)' : 'rgba(124,58,237,0.2)',
+      accessor: (metrics) => metrics?.cvr_ratio ?? 0,
+      formatter: (value) => nfPercent1.format(value || 0),
+    },
+    atc: {
+      label: 'ATC Sessions',
+      color: isDark ? '#4ade80' : '#16a34a',
+      area: isDark ? 'rgba(74,222,128,0.26)' : 'rgba(22,163,74,0.14)',
+      comparison: isDark ? 'rgba(74,222,128,0.34)' : 'rgba(22,163,74,0.18)',
+      accessor: (metrics) => metrics?.atc ?? 0,
+      formatter: (value) => nfInt0.format(value || 0),
+    },
+  };
+}
 
 function formatHourLabel(hour) {
   const normalized = hour % 12 === 0 ? 12 : hour % 12;
@@ -127,6 +127,8 @@ function formatRangeLabel(range) {
 }
 
 export default function HourlySalesCompare({ query, metric = 'sales' }) {
+  const theme = useTheme();
+  const metricPalette = useMemo(() => buildMetricPalette(theme.palette.mode), [theme.palette.mode]);
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState({
     labels: [],
@@ -185,7 +187,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         setLoading(false);
         return;
       }
-  const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+    const configNext = metricPalette[metric] || metricPalette.sales;
       let labels = [];
       let values = [];
       let comparisonValues = [];
@@ -240,9 +242,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       }
     });
     return () => { cancelled = true; };
-  }, [start, end, metric, viewMode, brandKey, refreshKey]);
+  }, [start, end, metric, viewMode, brandKey, refreshKey, metricPalette]);
 
-  const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+  const config = metricPalette[metric] || metricPalette.sales;
 
   const primaryLabel = state.rangeLabel ? `${config.label} (${state.rangeLabel})` : config.label;
   const comparisonLabel = state.comparisonLabel ? `${config.label} (${state.comparisonLabel})` : `${config.label} · Prev window`;
@@ -251,12 +253,13 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     {
       label: primaryLabel,
       data: state.values,
-  borderColor: config.color,
-  backgroundColor: config.bg,
+      borderColor: config.color,
+      backgroundColor: config.area,
       borderWidth: 2,
       pointRadius: 2,
       pointHoverRadius: 4,
       tension: 0.25,
+      fill: true,
     },
   ];
 
@@ -264,14 +267,15 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     datasets.push({
       label: comparisonLabel,
       data: state.comparisonValues,
-  borderColor: config.color,
-      backgroundColor: 'transparent',
+      borderColor: config.color,
+      backgroundColor: config.comparison,
       borderWidth: 2,
       borderDash: [6, 4],
       pointRadius: 1,
       pointHoverRadius: 3,
       pointHitRadius: 8,
       tension: 0.25,
+      fill: false,
     });
   }
 
@@ -287,6 +291,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     return `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
   }
 
+  const axisColor = theme.palette.text.secondary;
+  const gridColor = theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.2)' : 'rgba(15,23,42,0.08)';
   const options = {
     responsive: true,
     maintainAspectRatio: false,
@@ -308,6 +314,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             const labels = defaultLegendLabels(chart);
             return labels.map((item) => ({ ...item, text: `  ${item.text}` }));
           },
+          color: axisColor,
         },
       },
       tooltip: {
@@ -347,11 +354,12 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           maxTicksLimit: 12,
           padding: 2,
           font: { size: 11 },
+          color: axisColor,
         }
       },
       y: {
-        grid: { color: 'rgba(0,0,0,0.05)' },
-        ticks: { padding: 4, callback: (v) => config.formatter(v) }
+        grid: { color: gridColor },
+        ticks: { padding: 4, callback: (v) => config.formatter(v), color: axisColor }
       }
     }
   };
@@ -415,8 +423,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     {
                       label: primaryLabel,
                       data: state.values,
-                      backgroundColor: config.color,
-                      borderColor: config.color,
+                        backgroundColor: config.color,
+                        borderColor: config.color,
                       borderWidth: 1,
                       barPercentage: 0.9,
                       categoryPercentage: 0.8,
@@ -425,8 +433,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     ...(state.comparisonValues.length ? [{
                       label: comparisonLabel,
                       data: state.comparisonValues,
-                      backgroundColor: hexToRgba(config.color, 0.25),
-                      borderColor: config.color,
+                      backgroundColor: config.comparison,
+                        borderColor: config.color,
                       borderWidth: 1,
                       barPercentage: 0.9,
                       categoryPercentage: 0.8,
@@ -440,8 +448,12 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   plugins: options.plugins,
                   layout: options.layout,
                   scales: {
-                    x: { stacked: false, grid: { color: 'rgba(0,0,0,0.05)' } },
-                    y: { stacked: false, grid: { display: false }, ticks: { callback: (v) => config.formatter(v) } },
+                    x: { stacked: false, grid: { color: gridColor }, ticks: { color: axisColor } },
+                    y: {
+                      stacked: false,
+                      grid: { display: false },
+                      ticks: { callback: (v) => config.formatter(v), color: axisColor },
+                    },
                   },
                 }}
                 plugins={[legendPadPlugin]}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Box, Card, Tooltip } from '@mui/material';
+import { useTheme, alpha } from '@mui/material/styles';
 import { Popover, DatePicker } from '@shopify/polaris';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -12,6 +13,7 @@ dayjs.extend(utc);
 dayjs.extend(customParseFormat);
 
 export default function MobileTopBar({ value, onChange, brandKey }) {
+  const theme = useTheme();
   const [start, end] = value || [];
   const [popoverActive, setPopoverActive] = useState(false);
   const [month, setMonth] = useState((end || start || dayjs()).month());
@@ -95,17 +97,56 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.75, py: 0.25 }}>
       {last.loading ? (
-        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 0.75, height: 32, display: 'flex', alignItems: 'center', bgcolor: 'grey.50', fontSize: 13 }}>
+        <Card
+          elevation={0}
+          sx={{
+            border: '1px solid',
+            borderColor: 'divider',
+            px: 0.75,
+            height: 32,
+            display: 'flex',
+            alignItems: 'center',
+            fontSize: 13,
+            bgcolor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.08 : 0.04),
+            color: 'text.secondary',
+          }}
+        >
           Updating…
         </Card>
       ) : last.ts ? (
         <Tooltip title={`${last.ts.format('YYYY-MM-DD HH:mm:ss')}${last.tz ? ` ${last.tz}` : ''}`} arrow>
-          <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 0.75, height: 32, display: 'flex', alignItems: 'center', fontSize: 13 }}>
+          <Card
+            elevation={0}
+            sx={{
+              border: '1px solid',
+              borderColor: 'divider',
+              px: 0.75,
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              fontSize: 13,
+              bgcolor: alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.16 : 0.1),
+              color: theme.palette.mode === 'dark' ? theme.palette.success.contrastText || '#dcfce7' : theme.palette.success.dark,
+            }}
+          >
             Updated {last.ts.fromNow()}
           </Card>
         </Tooltip>
       ) : (
-        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 0.75, height: 32, display: 'flex', alignItems: 'center', fontSize: 13 }}>
+        <Card
+          elevation={0}
+          sx={{
+            border: '1px solid',
+            borderColor: 'divider',
+            px: 0.75,
+            height: 32,
+            display: 'flex',
+            alignItems: 'center',
+            fontSize: 13,
+            color: 'text.secondary',
+            bgcolor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.16 : 0.08),
+          }}
+        >
           Updated: unavailable
         </Card>
       )}
@@ -130,14 +171,16 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
               display: 'flex',
               alignItems: 'center',
               cursor: 'pointer',
-              bgcolor: 'primary.main',
-              color: 'primary.contrastText',
+              bgcolor: theme.palette.primary.main,
+              color: theme.palette.primary.contrastText,
               width: 'auto',
               maxWidth: { xs: 140, sm: 200 },
               textAlign: 'center',
               userSelect: 'none',
               fontSize: 13,
-              '&:hover': { filter: 'brightness(0.98)' }
+              boxShadow: `0 8px 16px ${alpha(theme.palette.primary.main, 0.22)}`,
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              '&:hover': { transform: 'translateY(-1px)', boxShadow: `0 10px 18px ${alpha(theme.palette.primary.main, 0.28)}` },
             }}
           >
             <span style={{ display: 'inline-block', maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
