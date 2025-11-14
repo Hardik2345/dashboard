@@ -213,11 +213,14 @@ export async function getCVR(args) {
 export async function getCVRDelta(args) {
   const params = appendBrandKey({ start: args.start, end: args.end, align: args.align, compare: args.compare }, args);
   const json = await getJSON('/metrics/cvr-delta', params);
+  const hasDiffPct = json && Object.prototype.hasOwnProperty.call(json, 'diff_pct');
+  const diff_pct = hasDiffPct ? Number(json?.diff_pct || 0) : undefined;
   return {
     date: json?.date || null,
     current: json?.current || null,
     previous: json?.previous || null,
     diff_pp: Number(json?.diff_pp || 0),
+    diff_pct,
     direction: json?.direction || 'flat',
     align: json?.align || undefined,
     hour: typeof json?.hour === 'number' ? json.hour : undefined,
