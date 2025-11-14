@@ -183,7 +183,7 @@ export async function getAOV(args) {
 }
 
 export async function getAOVDelta(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end, compare: args.compare }, args);
+  const params = appendBrandKey({ start: args.start, end: args.end, align: args.align, compare: args.compare }, args);
   const json = await getJSON('/metrics/aov-delta', params);
   return {
     date: json?.date || null,
@@ -191,6 +191,8 @@ export async function getAOVDelta(args) {
     previous: Number(json?.previous || 0),
     diff_pct: Number(json?.diff_pct || 0),
     direction: json?.direction || 'flat',
+    align: json?.align,
+    hour: typeof json?.hour === 'number' ? json.hour : undefined,
     compare: json?.compare,
     error: json?.__error,
   };
