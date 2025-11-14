@@ -10,4 +10,10 @@ module.exports = {
   ignorePatterns: ['node_modules/', 'coverage/', 'dist/', 'client/'],
   rules: {
   },
+  overrides: [
+    {
+      files: ['scripts/producer-firehose.js'],
+      parserOptions: { sourceType: 'module' },
+    },
+  ],
 };

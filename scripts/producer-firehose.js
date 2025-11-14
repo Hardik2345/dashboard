@@ -1,8 +1,10 @@
 // scripts/producer-firehose.js
 // MongoDB Change Streams → Kinesis Data Firehose (DirectPut) → S3 (GZIP NDJSON)
 
-const { MongoClient } = require('mongodb');
-const { FirehoseClient, PutRecordBatchCommand } = require('@aws-sdk/client-firehose');
+import { MongoClient } from 'mongodb';
+import { FirehoseClient, PutRecordBatchCommand } from '@aws-sdk/client-firehose';
+import { Buffer } from 'node:buffer';
+import process from 'node:process';
 
 const {
   SRC_MONGO_URI,
