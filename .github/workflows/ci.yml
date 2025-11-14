@@ -7,6 +7,7 @@ on:
     branches:
       - 'feature/**'
       - development
+      - modular-2
 
 permissions:
   contents: read
