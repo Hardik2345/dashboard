@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import dayjs from 'dayjs';
-import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert } from '@mui/material';
+import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, Tabs, Tab } from '@mui/material';
 import Header from './components/Header.jsx';
 import MobileTopBar from './components/MobileTopBar.jsx';
 import AuthorBrandForm from './components/AuthorBrandForm.jsx';
@@ -18,7 +18,7 @@ import Unauthorized from './components/Unauthorized.jsx';
 import AccessControlCard from './components/AccessControlCard.jsx';
 import WhitelistTable from './components/WhitelistTable.jsx';
 import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
-import AuthorSidebar from './components/AuthorSidebar.jsx';
+import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -36,7 +36,6 @@ const DEFAULT_TREND_METRIC = 'sales';
 const TREND_METRICS = new Set(['sales', 'orders', 'sessions', 'cvr', 'atc', 'aov']);
 const SESSION_TRACKING_ENABLED = String(import.meta.env.VITE_SESSION_TRACKING || 'false').toLowerCase() === 'true';
 const AUTHOR_BRAND_STORAGE_KEY = 'author_active_brand_v1';
-const THEME_MODE_STORAGE_KEY = 'dashboard_theme_mode_v1';
 
 function loadInitialRange() {
   try {
@@ -56,15 +55,6 @@ function loadInitialRange() {
 }
 
 export default function App() {
-  const [themeMode, setThemeMode] = useState(() => {
-    if (typeof window === 'undefined') return 'light';
-    try {
-      const stored = localStorage.getItem(THEME_MODE_STORAGE_KEY);
-      return stored === 'dark' ? 'dark' : 'light';
-    } catch {
-      return 'light';
-    }
-  });
   const [range, setRange] = useState(loadInitialRange);
   const [start, end] = range;
   const [authChecked, setAuthChecked] = useState(false);
@@ -93,10 +83,6 @@ export default function App() {
   const [authorLastLoadedAt, setAuthorLastLoadedAt] = useState(null);
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
-
-  const handleToggleTheme = useCallback(() => {
-    setThemeMode((prev) => (prev === 'light' ? 'dark' : 'light'));
-  }, []);
 
   const activeBrandKey = isAuthor ? (authorBrandKey || '') : (user?.brandKey || '');
 
@@ -191,52 +177,14 @@ export default function App() {
     setSelectedMetric(TREND_METRICS.has(metricKey) ? metricKey : DEFAULT_TREND_METRIC);
   }, []);
 
-  const theme = useMemo(() => {
-    const isDark = themeMode === 'dark';
-    return createTheme({
-      palette: {
-        mode: themeMode,
-        primary: { main: isDark ? '#60a5fa' : '#0b6bcb' },
-        secondary: { main: isDark ? '#f472b6' : '#7c3aed' },
-        background: isDark
-          ? { default: '#0b111a', paper: '#101924' }
-          : { default: '#f5f7fb', paper: '#ffffff' },
-        text: isDark
-          ? { primary: '#e2e8f0', secondary: '#94a3b8' }
-          : { primary: '#1f2937', secondary: '#4b5563' },
-        divider: isDark ? 'rgba(148,163,184,0.25)' : 'rgba(15,23,42,0.12)',
-      },
-      shape: { borderRadius: 14 },
-      typography: {
-        fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif",
-        subtitle2: { fontWeight: 600 },
-        button: { fontWeight: 600 },
-      },
-      components: {
-        MuiCard: {
-          styleOverrides: {
-            root: {
-              backgroundImage: 'none',
-              borderRadius: 16,
-            },
-          },
-        },
-        MuiPaper: {
-          styleOverrides: {
-            root: {
-              backgroundImage: 'none',
-            },
-          },
-        },
-      },
-    });
-  }, [themeMode]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
-    } catch {}
-  }, [themeMode]);
+  const theme = useMemo(() => createTheme({
+    palette: {
+      mode: 'light',
+      primary: { main: '#0b6bcb' },
+      background: { default: '#FDFDFD', paper: '#ffffff' }
+    },
+    shape: { borderRadius: 12 },
+  }), []);
 
   // Persist when range changes
   useEffect(() => {
@@ -321,67 +269,62 @@ export default function App() {
 
   if (isAuthor) {
     const hasAuthorBrand = Boolean((authorBrandKey || '').trim());
-    const headingMap = {
-      dashboard: 'Author Dashboard',
-      access: 'Access Control',
-      adjustments: 'Session Adjustments',
-      brands: 'Brand Setup',
-    };
-    const subtitleMap = {
-      dashboard: hasAuthorBrand
-        ? 'Monitor KPIs, conversion, and sales trends for the selected brand.'
-        : 'Pick a brand from the sidebar to explore author metrics.',
-      access: 'Manage login restrictions, whitelists, and session rules.',
-      adjustments: 'Create and tune adjustment buckets for calibrated sessions.',
-      brands: 'Persist new brand connections and trigger backend deploys.',
-    };
-    const tabHeading = headingMap[authorTab] || 'Author Tools';
-    const tabSubtitle = subtitleMap[authorTab] || 'Select a panel from the sidebar to get started.';
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Box sx={{ minHeight: '100svh', bgcolor: 'background.default', display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
           <Header user={user} onLogout={handleLogout} />
-          <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, maxWidth: '100%', mx: 'auto', width: '100%' }}>
-            <AuthorSidebar
-              brands={authorBrands}
-              brandValue={authorBrandKey}
-              loading={authorBrandsLoading}
-              lastLoadedAt={authorLastLoadedAt}
-              onBrandChange={handleAuthorBrandChange}
-              onRefresh={handleAuthorRefresh}
-              tabValue={authorTab}
-              onTabChange={setAuthorTab}
-              themeMode={themeMode}
-              onToggleTheme={handleToggleTheme}
-            />
-
-            <Box
-              component="main"
-              sx={{
-                flex: 1,
-                minWidth: 0,
-                px: { xs: 1.5, sm: 2.5, lg: 4 },
-                py: { xs: 2, md: 3 },
-                bgcolor: 'transparent',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: { xs: 2, md: 3 },
-              }}
-            >
-              <Stack spacing={0.5}>
-                <Typography variant="h5" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                  {tabHeading}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {tabSubtitle}
-                </Typography>
-              </Stack>
+          <Box component="main" sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: { xs: 1.5, sm: 2.5, md: 4 }, py: { xs: 2, md: 4 } }}>
+            <Stack spacing={{ xs: 2, md: 3 }}>
+              <AuthorBrandSelector
+                brands={authorBrands}
+                value={authorBrandKey}
+                loading={authorBrandsLoading}
+                lastLoadedAt={authorLastLoadedAt}
+                onChange={handleAuthorBrandChange}
+                onRefresh={handleAuthorRefresh}
+              />
+              <Box
+                sx={{
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: (theme) => theme.zIndex.appBar + 1,
+                  bgcolor: 'background.paper',
+                  pt: { xs: 1, md: 0 },
+                  borderBottom: 1,
+                  borderColor: 'divider',
+                }}
+              >
+                <Tabs
+                  value={authorTab}
+                  onChange={(event, value) => setAuthorTab(value)}
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  allowScrollButtonsMobile
+                  textColor="primary"
+                  indicatorColor="primary"
+                  sx={{
+                    '& .MuiTabs-indicator': { height: 3, borderRadius: 1.5 },
+                    '& .MuiTab-root': {
+                      minWidth: { xs: 120, sm: 140 },
+                      fontSize: { xs: '0.8rem', sm: '0.9rem' },
+                      textTransform: 'none',
+                    },
+                  }}
+                >
+                  <Tab label="Dashboard" value="dashboard" />
+                  <Tab label="Access Control" value="access" />
+                  <Tab label="Session Adjustments" value="adjustments" />
+                  <Tab label="Brand Setup" value="brands" />
+                </Tabs>
+              </Box>
 
               {authorTab === 'dashboard' && (
                 hasAuthorBrand ? (
-                  <Stack spacing={{ xs: 1.75, md: 2.5 }}>
-                    <MobileTopBar value={range} onChange={setRange} brandKey={authorBrandKey} />
+                  <Stack spacing={{ xs: 1.5, md: 2 }}>
+                    <Box sx={{ position: 'relative', zIndex: 0 }}>
+                      <MobileTopBar value={range} onChange={setRange} brandKey={authorBrandKey} />
+                    </Box>
                     <KPIs
                       query={metricsQuery}
                       selectedMetric={selectedMetric}
@@ -395,9 +338,9 @@ export default function App() {
                     <PaymentSalesSplit query={metricsQuery} />
                   </Stack>
                 ) : (
-                  <Paper variant="outlined" sx={{ p: { xs: 2.25, md: 3 }, textAlign: 'center' }}>
+                  <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
                     <Typography variant="body2" color="text.secondary">
-                      Select a brand from the sidebar to load dashboard metrics.
+                      Select a brand to load dashboard metrics.
                     </Typography>
                   </Paper>
                 )
@@ -418,7 +361,7 @@ export default function App() {
                     brands={authorBrands}
                   />
                 ) : (
-                  <Paper variant="outlined" sx={{ p: { xs: 2.25, md: 3 }, textAlign: 'center' }}>
+                  <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
                     <Typography variant="body2" color="text.secondary">
                       Choose a brand to manage session adjustments.
                     </Typography>
@@ -432,7 +375,7 @@ export default function App() {
                   <AuthorBrandList />
                 </Stack>
               )}
-            </Box>
+            </Stack>
           </Box>
           <Footer />
         </Box>
