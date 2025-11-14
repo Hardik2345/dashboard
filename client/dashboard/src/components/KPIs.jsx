@@ -60,6 +60,7 @@ export default function KPIs({ query, selectedMetric, onSelectMetric, onLoaded }
 
   const totalSessions = data.cvr?.total_sessions || 0;
   const totalAtcSessions = data.funnel?.total_atc_sessions || 0;
+  const cvrDeltaValue = data.cvrDelta ? (data.cvrDelta.diff_pct ?? data.cvrDelta.diff_pp) : undefined;
 
   return (
     <Grid container spacing={1.5} columns={{ xs: 2, sm: 6 }}>
@@ -101,7 +102,7 @@ export default function KPIs({ query, selectedMetric, onSelectMetric, onLoaded }
           value={data.cvr?.cvr ?? 0}
           loading={loading}
           formatter={(v) => nfPct.format(v)}
-          delta={data.cvrDelta ? { value: data.cvrDelta.diff_pp, direction: data.cvrDelta.direction } : undefined}
+          delta={typeof cvrDeltaValue === 'number' && data.cvrDelta ? { value: cvrDeltaValue, direction: data.cvrDelta.direction } : undefined}
           onSelect={onSelectMetric ? () => onSelectMetric('cvr') : undefined}
           selected={selectedMetric === 'cvr'}
         />
