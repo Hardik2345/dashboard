@@ -1,6 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, Typography, Skeleton } from '@mui/material';
-import { useTheme, alpha } from '@mui/material/styles';
 import { Bar } from 'react-chartjs-2';
 import { getFunnelStats } from '../lib/api.js';
 import {
@@ -17,7 +16,6 @@ ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 export default function FunnelChart({ query }) {
-  const theme = useTheme();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total_sessions: 0, total_atc_sessions: 0, total_orders: 0 });
   const brandKey = query?.brand_key;
@@ -47,22 +45,13 @@ export default function FunnelChart({ query }) {
     return () => { cancelled = true; };
   }, [query.start, query.end, brandKey, refreshKey]);
 
-  const barColors = useMemo(() => {
-    const isDark = theme.palette.mode === 'dark';
-    return [
-      isDark ? alpha(theme.palette.primary.light, 0.9) : alpha(theme.palette.primary.main, 0.85),
-      isDark ? alpha(theme.palette.secondary.main, 0.8) : alpha(theme.palette.secondary.main, 0.75),
-      isDark ? alpha(theme.palette.success.light, 0.85) : alpha(theme.palette.success.main, 0.8),
-    ];
-  }, [theme]);
-
   const data = {
     labels: ['Sessions', 'Add to Cart', 'Orders'],
     datasets: [
       {
         label: 'Count',
         data: [stats.total_sessions, stats.total_atc_sessions, stats.total_orders],
-        backgroundColor: barColors,
+        backgroundColor: ['#90caf9', '#64b5f6', '#42a5f5'],
         borderRadius: 8,
         barThickness: 40,
       },
@@ -88,7 +77,7 @@ export default function FunnelChart({ query }) {
         const pctText = `${pct.toFixed(pct >= 99.95 || pct === 0 ? 0 : 1)}%`;
         const countText = nfInt.format(raw);
         ctx.textAlign = 'center';
-        ctx.fillStyle = theme.palette.mode === 'dark' ? theme.palette.text.primary : theme.palette.primary.dark;
+        ctx.fillStyle = '#0d47a1';
         // Single line: count (xx%)
         ctx.font = '600 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
         ctx.textBaseline = 'bottom';
@@ -98,11 +87,10 @@ export default function FunnelChart({ query }) {
     }
   };
 
-  const gridColor = theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.2)' : 'rgba(15,23,42,0.08)';
   const options = {
     responsive: true,
     maintainAspectRatio: false,
-    layout: { padding: { top: 30 } }, // reduced space for single-line labels
+  layout: { padding: { top: 30 } }, // reduced space for single-line labels
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -112,13 +100,8 @@ export default function FunnelChart({ query }) {
       },
     },
     scales: {
-      x: { grid: { display: false }, ticks: { color: theme.palette.text.secondary } },
-      y: {
-        beginAtZero: true,
-        grid: { color: gridColor },
-        border: { display: false },
-        ticks: { color: theme.palette.text.secondary },
-      },
+      x: { grid: { display: false } },
+      y: { beginAtZero: true, grid: { display: false }, border: { display: false } },
     },
   };
 

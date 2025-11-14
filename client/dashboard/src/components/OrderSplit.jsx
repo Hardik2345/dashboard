@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, Typography, Skeleton, Stack, Chip } from '@mui/material';
-import { useTheme, alpha } from '@mui/material/styles';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -18,7 +17,6 @@ const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPct1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
 export default function OrderSplit({ query }) {
-  const theme = useTheme();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ cod_orders: 0, prepaid_orders: 0, partially_paid_orders: 0, total: 0, cod_percent: 0, prepaid_percent: 0, partially_paid_percent: 0 });
   const brandKey = query?.brand_key;
@@ -47,36 +45,13 @@ export default function OrderSplit({ query }) {
 
   const empty = data.total === 0;
 
-  const colors = useMemo(() => {
-    const isDark = theme.palette.mode === 'dark';
-    const cod = isDark ? '#fbbf24' : '#f59e0b';
-    const prepaid = isDark ? '#34d399' : '#10b981';
-    const partial = isDark ? '#38bdf8' : '#6ee7b7';
-    return { cod, prepaid, partial };
-  }, [theme]);
-
-  const chipStyles = {
-    cod: {
-      bgcolor: alpha(colors.cod, theme.palette.mode === 'dark' ? 0.18 : 0.16),
-      color: theme.palette.mode === 'dark' ? '#fef3c7' : '#7c2d12',
-    },
-    prepaid: {
-      bgcolor: alpha(colors.prepaid, theme.palette.mode === 'dark' ? 0.2 : 0.18),
-      color: theme.palette.mode === 'dark' ? '#ecfdf5' : '#065f46',
-    },
-    partial: {
-      bgcolor: alpha(colors.partial, theme.palette.mode === 'dark' ? 0.2 : 0.18),
-      color: theme.palette.mode === 'dark' ? '#e0f2fe' : '#0f766e',
-    },
-  };
-
   const chartData = {
     labels: ['Payment split'],
     datasets: [
       {
         label: 'COD',
         data: [data.cod_percent],
-        backgroundColor: colors.cod,
+        backgroundColor: '#f59e0b',
         borderRadius: 8,
         barThickness: 28,
         stack: 'percent',
@@ -84,7 +59,7 @@ export default function OrderSplit({ query }) {
       {
         label: 'Prepaid',
         data: [data.prepaid_percent],
-        backgroundColor: colors.prepaid,
+        backgroundColor: '#10b981',
         borderRadius: 8,
         barThickness: 28,
         stack: 'percent',
@@ -92,7 +67,7 @@ export default function OrderSplit({ query }) {
       {
         label: 'Partially paid',
         data: [data.partially_paid_percent],
-        backgroundColor: colors.partial,
+        backgroundColor: '#6ee7b7',
         borderRadius: 8,
         barThickness: 28,
         stack: 'percent',
@@ -105,11 +80,7 @@ export default function OrderSplit({ query }) {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        display: true,
-        position: 'bottom',
-        labels: { color: theme.palette.text.secondary },
-      },
+      legend: { display: true, position: 'bottom' },
       tooltip: {
         callbacks: {
           label: (ctx) => {
@@ -133,12 +104,7 @@ export default function OrderSplit({ query }) {
         grid: { display: false },
         border: { display: false },
       },
-      y: {
-        stacked: true,
-        grid: { display: false },
-        border: { display: false },
-        ticks: { color: theme.palette.text.secondary },
-      },
+      y: { stacked: true, grid: { display: false }, border: { display: false } },
     },
   };
 
@@ -155,9 +121,9 @@ export default function OrderSplit({ query }) {
         ) : (
           <>
             <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap', rowGap: 0.5, columnGap: 0.5 }}>
-              <Chip size="small" label={`COD ${nfPct1.format(data.cod_percent)}% (${nfInt.format(data.cod_orders)})`} sx={chipStyles.cod} />
-              <Chip size="small" label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfInt.format(data.prepaid_orders)})`} sx={chipStyles.prepaid} />
-              <Chip size="small" label={`Partially paid ${nfPct1.format(data.partially_paid_percent)}% (${nfInt.format(data.partially_paid_orders)})`} sx={chipStyles.partial} />
+              <Chip size="small" label={`COD ${nfPct1.format(data.cod_percent)}% (${nfInt.format(data.cod_orders)})`} sx={{ bgcolor: '#fff7ed', color: '#92400e' }} />
+              <Chip size="small" label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfInt.format(data.prepaid_orders)})`} sx={{ bgcolor: '#d1fae5', color: '#065f46' }} />
+              <Chip size="small" label={`Partially paid ${nfPct1.format(data.partially_paid_percent)}% (${nfInt.format(data.partially_paid_orders)})`} sx={{ bgcolor: '#ecfdf5', color: '#047857' }} />
             </Stack>
             <div style={{ position: 'relative', height: 120 }}>
               <Bar data={chartData} options={options} />
