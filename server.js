@@ -742,6 +742,15 @@ async function deltaForAOV(date, conn) {
   return { current: curr, previous: prevVal, diff_pct, direction };
 }
 
+function computePercentDelta(currentValue, previousValue) {
+  const curr = Number(currentValue || 0);
+  const prev = Number(previousValue || 0);
+  const diff_pp = curr - prev;
+  const diff_pct = prev > 0 ? (diff_pp / prev) * 100 : (curr > 0 ? 100 : 0);
+  const direction = diff_pp > 0.0001 ? 'up' : diff_pp < -0.0001 ? 'down' : 'flat';
+  return { diff_pp, diff_pct, direction };
+}
+
 // ---- Range-average helpers --------------------------------------------------
 function parseIsoDate(s) { return new Date(`${s}T00:00:00Z`); }
 function formatIsoDate(d) {
@@ -1550,7 +1559,7 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
     const { start, end } = parsed.data;
     const target = end || start; // pick explicit end, otherwise start
     if (!target) {
-      return res.json({ metric: 'CVR_DELTA', date: null, current: null, previous: null, diff_pp: 0, direction: 'flat' });
+      return res.json({ metric: 'CVR_DELTA', date: null, current: null, previous: null, diff_pp: 0, diff_pct: 0, direction: 'flat' });
     }
     const align = (req.query.align || '').toString().toLowerCase();
     const compare = (req.query.compare || '').toString().toLowerCase();
@@ -1559,15 +1568,15 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
       const curr = await cvrForRange({ start, end, conn: req.brandDb.sequelize });
       const prevWin = previousWindow(start, end);
       const prev = await cvrForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn: req.brandDb.sequelize });
-      const diff_pp = (curr.cvr_percent || 0) - (prev.cvr_percent || 0);
-      const direction = diff_pp > 0.0001 ? 'up' : diff_pp < -0.0001 ? 'down' : 'flat';
+      const delta = computePercentDelta(curr.cvr_percent || 0, prev.cvr_percent || 0);
       return res.json({
         metric: 'CVR_DELTA',
         range: { start, end },
         current: curr,
         previous: prev,
-        diff_pp,
-        direction,
+        diff_pp: delta.diff_pp,
+        diff_pct: delta.diff_pct,
+        direction: delta.direction,
         compare: 'prev-range-avg'
       });
     }
@@ -1642,15 +1651,15 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
 
         const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
         const prevCVR = prevSessions > 0 ? (prevOrders / prevSessions) : 0;
-        const diff_pp = (curCVR - prevCVR) * 100;
-        const direction = diff_pp > 0.0001 ? 'up' : diff_pp < -0.0001 ? 'down' : 'flat';
+        const delta = computePercentDelta(curCVR * 100, prevCVR * 100);
         return res.json({
           metric: 'CVR_DELTA',
           range: { start, end },
           current: { total_orders: curOrders, total_sessions: curSessions, cvr: curCVR, cvr_percent: curCVR * 100 },
           previous: { total_orders: prevOrders, total_sessions: prevSessions, cvr: prevCVR, cvr_percent: prevCVR * 100 },
-          diff_pp,
-          direction,
+          diff_pp: delta.diff_pp,
+          diff_pct: delta.diff_pct,
+          direction: delta.direction,
           align: 'hour',
           hour: targetHour
         });
@@ -1693,17 +1702,17 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
       const curOrders = Number(ordersCurRows?.[0]?.cnt || 0);
       const prevOrders = Number(ordersPrevRows?.[0]?.cnt || 0);
 
-  const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
+      const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
       const prevCVR = prevSessions > 0 ? (prevOrders / prevSessions) : 0;
-      const diff_pp = (curCVR - prevCVR) * 100;
-      const direction = diff_pp > 0.0001 ? 'up' : diff_pp < -0.0001 ? 'down' : 'flat';
+      const delta = computePercentDelta(curCVR * 100, prevCVR * 100);
       return res.json({
         metric: 'CVR_DELTA',
         date: target,
         current: { total_orders: curOrders, total_sessions: curSessions, cvr: curCVR, cvr_percent: curCVR * 100 },
         previous: { total_orders: prevOrders, total_sessions: prevSessions, cvr: prevCVR, cvr_percent: prevCVR * 100 },
-        diff_pp,
-        direction,
+        diff_pp: delta.diff_pp,
+        diff_pct: delta.diff_pct,
+        direction: delta.direction,
         align: 'hour',
         hour: targetHour
       });
@@ -1714,15 +1723,15 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
       computeCVRForDay(target, conn),
       computeCVRForDay(prevStr, conn)
     ]);
-    const diff_pp = (current.cvr_percent || 0) - (previous.cvr_percent || 0);
-    const direction = diff_pp > 0.0001 ? 'up' : diff_pp < -0.0001 ? 'down' : 'flat';
+    const delta = computePercentDelta(current.cvr_percent || 0, previous.cvr_percent || 0);
     return res.json({
       metric: 'CVR_DELTA',
       date: target,
       current,
       previous,
-      diff_pp, // percentage points
-      direction
+      diff_pp: delta.diff_pp,
+      diff_pct: delta.diff_pct,
+      direction: delta.direction
     });
   } catch (err) {
     console.error(err);
@@ -1965,6 +1974,134 @@ app.get('/metrics/aov-delta', requireAuth, brandContext, async (req, res) => {
       const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
       const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
       return res.json({ metric: 'AOV_DELTA', range: { start, end }, current: curr, previous: prev, diff_pct, direction, compare: 'prev-range-avg' });
+    }
+
+    const align = (req.query.align || '').toString().toLowerCase();
+    if (align === 'hour') {
+      const IST_OFFSET_MIN = 330;
+      const offsetMs = IST_OFFSET_MIN * 60 * 1000;
+      const nowUtc = new Date();
+      const nowIst = new Date(nowUtc.getTime() + offsetMs);
+      const todayIst = `${nowIst.getUTCFullYear()}-${String(nowIst.getUTCMonth() + 1).padStart(2, '0')}-${String(nowIst.getUTCDate()).padStart(2, '0')}`;
+      const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
+      const conn = req.brandDb.sequelize;
+
+      const sqlSalesRange = `SELECT COALESCE(SUM(total_sales),0) AS total FROM hour_wise_sales WHERE date >= ? AND date <= ? AND hour <= ?`;
+      const sqlSales = `SELECT COALESCE(SUM(total_sales),0) AS total FROM hour_wise_sales WHERE date = ? AND hour <= ?`;
+
+      const istRangeUtcBounds = (s, e) => {
+        const y1 = Number(s.slice(0, 4));
+        const m1 = Number(s.slice(5, 7));
+        const d1 = Number(s.slice(8, 10));
+        const y2 = Number(e.slice(0, 4));
+        const m2 = Number(e.slice(5, 7));
+        const d2 = Number(e.slice(8, 10));
+        const startUtcMs = Date.UTC(y1, m1 - 1, d1, 0, 0, 0) - offsetMs;
+        const endUtcMs = Date.UTC(y2, m2 - 1, d2 + 1, 0, 0, 0) - offsetMs;
+        const startStr = new Date(startUtcMs).toISOString().slice(0, 19).replace('T', ' ');
+        const endStr = new Date(endUtcMs).toISOString().slice(0, 19).replace('T', ' ');
+        return { startStr, endStr };
+      };
+
+      const sqlOrdersRange = `
+        SELECT COALESCE(SUM(cnt),0) AS total FROM (
+          SELECT DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) AS d,
+                 HOUR(CONVERT_TZ(created_at, '+00:00', '+05:30')) AS h,
+                 COUNT(DISTINCT order_name) AS cnt
+          FROM shopify_orders
+          WHERE created_at >= ? AND created_at < ?
+          GROUP BY d, h
+        ) t
+        WHERE h <= ? AND d >= ? AND d <= ?`;
+
+      const buildIstWindow = (dateStr, hour) => {
+        const y = Number(dateStr.slice(0, 4));
+        const m = Number(dateStr.slice(5, 7));
+        const d0 = Number(dateStr.slice(8, 10));
+        const startUtcMs = Date.UTC(y, m - 1, d0, 0, 0, 0) - offsetMs;
+        const endUtcMs = startUtcMs + (hour + 1) * 3600_000;
+        const startStr = new Date(startUtcMs).toISOString().slice(0, 19).replace('T', ' ');
+        const endStr = new Date(endUtcMs).toISOString().slice(0, 19).replace('T', ' ');
+        return { startStr, endStr };
+      };
+      const sqlOrders = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_at >= ? AND created_at < ?`;
+
+      if (start && end) {
+        const targetHour = resolveTargetHour(end);
+        const prevWin = previousWindow(start, end);
+        const [{ startStr, endStr }, { startStr: prevStartStr, endStr: prevEndStr }] = [
+          istRangeUtcBounds(start, end),
+          istRangeUtcBounds(prevWin.prevStart, prevWin.prevEnd)
+        ];
+
+        const [salesCurRows, salesPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
+          conn.query(sqlSalesRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
+          conn.query(sqlSalesRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, targetHour] }),
+          conn.query(sqlOrdersRange, { type: QueryTypes.SELECT, replacements: [startStr, endStr, targetHour, start, end] }),
+          conn.query(sqlOrdersRange, { type: QueryTypes.SELECT, replacements: [prevStartStr, prevEndStr, targetHour, prevWin.prevStart, prevWin.prevEnd] }),
+        ]);
+
+        const curSales = Number(salesCurRows?.[0]?.total || 0);
+        const prevSales = Number(salesPrevRows?.[0]?.total || 0);
+        const curOrders = Number(ordersCurRows?.[0]?.total || 0);
+        const prevOrders = Number(ordersPrevRows?.[0]?.total || 0);
+
+        const curAov = curOrders > 0 ? curSales / curOrders : 0;
+        const prevAov = prevOrders > 0 ? prevSales / prevOrders : 0;
+        const diff = curAov - prevAov;
+        const diff_pct = prevAov > 0 ? (diff / prevAov) * 100 : (curAov > 0 ? 100 : 0);
+        const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+        return res.json({
+          metric: 'AOV_DELTA',
+          range: { start, end },
+          current: curAov,
+          previous: prevAov,
+          diff_pct,
+          direction,
+          align: 'hour',
+          hour: targetHour,
+        });
+      }
+
+      const targetHour = resolveTargetHour(date);
+      const prev = prevDayStr(date);
+
+      const [salesCurRows, salesPrevRows] = await Promise.all([
+        conn.query(sqlSales, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
+        conn.query(sqlSales, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
+      ]);
+
+      const [ordersCurRows, ordersPrevRows] = await Promise.all([
+        (async () => {
+          const { startStr, endStr } = buildIstWindow(date, targetHour);
+          return conn.query(sqlOrders, { type: QueryTypes.SELECT, replacements: [startStr, endStr] });
+        })(),
+        (async () => {
+          const { startStr, endStr } = buildIstWindow(prev, targetHour);
+          return conn.query(sqlOrders, { type: QueryTypes.SELECT, replacements: [startStr, endStr] });
+        })(),
+      ]);
+
+      const curSales = Number(salesCurRows?.[0]?.total || 0);
+      const prevSales = Number(salesPrevRows?.[0]?.total || 0);
+      const curOrders = Number(ordersCurRows?.[0]?.cnt || 0);
+      const prevOrders = Number(ordersPrevRows?.[0]?.cnt || 0);
+
+      const curAov = curOrders > 0 ? curSales / curOrders : 0;
+      const prevAov = prevOrders > 0 ? prevSales / prevOrders : 0;
+      const diff = curAov - prevAov;
+      const diff_pct = prevAov > 0 ? (diff / prevAov) * 100 : (curAov > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+      return res.json({
+        metric: 'AOV_DELTA',
+        date,
+        current: curAov,
+        previous: prevAov,
+        diff_pct,
+        direction,
+        align: 'hour',
+        hour: targetHour,
+      });
     }
 
     const d = await deltaForAOV(date, req.brandDb.sequelize);
