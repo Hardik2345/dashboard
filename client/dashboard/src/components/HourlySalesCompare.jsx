@@ -78,24 +78,28 @@ const barValueLabelsPlugin = {
       if (label === null || label === undefined || label === '') return;
 
       const position = element.tooltipPosition();
-      // Try to position label above the bar. Use element height when available.
+      // Try to position label above the bar using the element's top coordinate when available.
       const chartTop = chart.chartArea?.top ?? 0;
-      let elementHeight = 0;
+      // Determine the visual "top" of the rectangle element. For bar elements, `element.y` is
+      // typically the top edge (smaller y). Fallback to tooltip position if not available.
+      let elementTop = position.y;
       try {
-        // Rectangle elements may expose height or have a getProps; try common fields.
-        if (typeof element.height === 'number') elementHeight = element.height;
-        else if (typeof element.height === 'function') elementHeight = element.height();
-        else if (typeof element.base === 'number' && typeof element.y === 'number') elementHeight = Math.abs(element.base - element.y);
+        if (typeof element.y === 'number') {
+          elementTop = element.y;
+        } else if (typeof element.getCenter === 'function') {
+          // some element types expose a center; use its y
+          const c = element.getCenter();
+          if (c && typeof c.y === 'number') elementTop = c.y;
+        }
       } catch (err) {
-        elementHeight = 0;
+        elementTop = position.y;
       }
 
-  // Place label very close above the top edge of the bar (small gap)
-  // Prefer a fixed small gap so label sticks to its bar without large whitespace.
-  const smallGap = 4; // px gap between bar top and label baseline
-  const yCandidate = position.y - smallGap;
-  const minY = chartTop + fontSize + 2; // never draw above chart top
-  const y = Math.max(yCandidate, minY);
+      // Place label just above the bar's top edge with a small gap so it doesn't overlap.
+      const smallGap = 6; // px gap between bar top and label baseline (slightly increased)
+      const yCandidate = elementTop - smallGap;
+      const minY = chartTop + fontSize + 2; // never draw above chart top
+      const y = Math.max(yCandidate, minY);
       ctx.fillText(label, position.x, y);
     });
 
