@@ -159,7 +159,12 @@ export async function getTotalOrders(args) {
 }
 
 export async function getTotalOrdersDelta(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const params = appendBrandKey({
+    start: args.start,
+    end: args.end,
+    align: args.align,
+    compare: args.compare,
+  }, args);
   const json = await getJSON('/metrics/total-orders-delta', params);
   return {
     date: json?.date || null,
