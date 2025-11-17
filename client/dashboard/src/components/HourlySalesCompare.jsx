@@ -12,6 +12,7 @@ import {
   Legend,
   BarElement,
 } from 'chart.js';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { getHourlyTrend, getDailyTrend } from '../lib/api.js';
 
 function hexToRgba(hex, alpha) {
@@ -24,7 +25,12 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, BarElement);
+ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, BarElement, ChartDataLabels);
+// Configure datalabels defaults (adapted from StackOverflow suggestion)
+if (!ChartJS.defaults.plugins) ChartJS.defaults.plugins = {};
+ChartJS.defaults.plugins.datalabels = ChartJS.defaults.plugins.datalabels || {};
+ChartJS.defaults.plugins.datalabels.anchor = ChartJS.defaults.plugins.datalabels.anchor || 'end';
+ChartJS.defaults.plugins.datalabels.align = ChartJS.defaults.plugins.datalabels.align || 'end';
 const defaultLegendLabels = ChartJS.defaults.plugins.legend.labels.generateLabels;
 
 // Plugin to add extra padding below legend when options.padding isn't respected
@@ -542,13 +548,13 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   maintainAspectRatio: false,
                   plugins: {
                     ...options.plugins,
-                    barValueLabels: {
-                      enabled: showBarLabels,
+                    datalabels: {
+                      display: showBarLabels,
+                      anchor: 'end',
+                      align: 'end',
                       formatter: (value) => {
                         const v = value || 0;
-                        // For percentage-like metrics keep percent formatting
                         if (metric === 'cvr' || metric === 'aov') return config.formatter(v);
-                        // For large numeric metrics use short labels
                         return shortNumberLabel(v);
                       },
                       color: barLabelColor,
@@ -566,7 +572,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     y: { stacked: false, grid: { display: false }, ticks: { callback: (v) => config.formatter(v) } },
                   },
                 }}
-                plugins={[legendPadPlugin, barValueLabelsPlugin]}
+                plugins={[legendPadPlugin]}
               />
             ) : (
               <Line data={data} options={options} plugins={[legendPadPlugin]} />
