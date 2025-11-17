@@ -551,21 +551,33 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   plugins: {
                     ...options.plugins,
                     datalabels: {
-                      display: showBarLabels,
+                      // Show only for bar charts and only when there's enough horizontal space
+                      display: (ctx) => {
+                        try {
+                          const chartWidth = ctx.chart?.width || 0;
+                          // hide on very small screens where labels will collide
+                          return showBarLabels && chartWidth >= 460;
+                        } catch (e) { return !!showBarLabels; }
+                      },
                       anchor: 'end',
                       align: 'end',
-                      formatter: (value) => {
+                      formatter: (value, ctx) => {
                         const v = value || 0;
                         if (metric === 'cvr' || metric === 'aov') return config.formatter(v);
                         return shortNumberLabel(v);
                       },
-                      color: barLabelColor,
-                      font: {
-                        size: 11,
+                      color: (ctx) => {
+                        // keep configured color, but allow scriptable option to auto-adjust if needed later
+                        return barLabelColor;
+                      },
+                      font: (ctx) => ({
+                        size: ctx.chart && ctx.chart.width < 480 ? 9 : 11,
                         weight: 600,
                         family: theme.typography?.fontFamily || 'sans-serif',
-                      },
-                      padding: 6,
+                      }),
+                      padding: (ctx) => (ctx.chart && ctx.chart.width < 480 ? 4 : 6),
+                      // clamp to chart area to avoid drawing outside
+                      clamp: true,
                     },
                   },
                   layout: options.layout,
