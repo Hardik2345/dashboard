@@ -1847,48 +1847,52 @@ app.get('/metrics/total-sales-delta', requireAuth, brandContext, async (req, res
 
     const align = (req.query.align || '').toString().toLowerCase();
     if (align === 'hour') {
-      const IST_OFFSET_MIN = 330;
-      const nowUtc = new Date();
-      const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
-      const yyyy = nowIst.getUTCFullYear();
-      const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
-      const dd = String(nowIst.getUTCDate()).padStart(2, '0');
-      const todayIst = `${yyyy}-${mm}-${dd}`;
+      const conn = req.brandDb.sequelize;
+      const rangeStart = start || date;
+      const rangeEnd = end || date;
 
-      // For past-only selections, use full-day (23) cutoff; if selection includes today, use current IST hour
-      const resolveTargetHour = (rangeEndOrDate) => (rangeEndOrDate === todayIst ? nowIst.getUTCHours() : 23);
-
-      if (start && end) {
-        // If the range does not include today (end < today), compare full-day vs full-day; else align to current hour
-        const targetHour = resolveTargetHour(end);
-        const prevWin = previousWindow(start, end);
-        const sqlRange = `SELECT COALESCE(SUM(total_sales),0) AS total FROM hour_wise_sales WHERE date >= ? AND date <= ? AND hour <= ?`;
-        const [currRow, prevRow] = await Promise.all([
-          req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
-          req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, targetHour] }),
-        ]);
-        const curr = Number(currRow?.[0]?.total || 0);
-        const prevVal = Number(prevRow?.[0]?.total || 0);
-        const diff = curr - prevVal;
-        const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
-        const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-        return res.json({ metric: 'TOTAL_SALES_DELTA', range: { start, end }, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
-      } else {
-        // Single day selection: if not today, use full-day vs full-day
-        const targetHour = resolveTargetHour(date);
-        const prev = prevDayStr(date);
-        const sql = `SELECT COALESCE(SUM(total_sales),0) AS total FROM hour_wise_sales WHERE date = ? AND hour <= ?`;
-        const [currRow, prevRow] = await Promise.all([
-          req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
-          req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
-        ]);
-        const curr = Number(currRow?.[0]?.total || 0);
-        const prevVal = Number(prevRow?.[0]?.total || 0);
-        const diff = curr - prevVal;
-        const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
-        const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-        return res.json({ metric: 'TOTAL_SALES_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
+      if (!rangeStart || !rangeEnd) {
+        return res.status(400).json({ error: 'Invalid date range' });
       }
+
+      const pad2 = (n) => String(n).padStart(2, '0');
+      const nowUtc = new Date();
+      const nowIst = new Date(nowUtc.getTime() + 330 * 60 * 1000);
+      const todayIst = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
+      const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + nowIst.getUTCSeconds();
+      const fullDaySeconds = 24 * 3600;
+      const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
+      const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
+      const cutoffTime = effectiveSeconds >= fullDaySeconds
+        ? '24:00:00'
+        : `${pad2(Math.floor(effectiveSeconds / 3600))}:${pad2(Math.floor((effectiveSeconds % 3600) / 60))}:${pad2(effectiveSeconds % 60)}`;
+
+      const prevWin = previousWindow(rangeStart, rangeEnd);
+      const salesSql = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+
+      const currentPromise = conn.query(salesSql, {
+        type: QueryTypes.SELECT,
+        replacements: [rangeStart, rangeEnd, cutoffTime],
+      });
+      const previousPromise = prevWin
+        ? conn.query(salesSql, {
+            type: QueryTypes.SELECT,
+            replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime],
+          })
+        : Promise.resolve([{ total: 0 }]);
+
+      const [currRow, prevRow] = await Promise.all([currentPromise, previousPromise]);
+      const curr = Number(currRow?.[0]?.total || 0);
+      const prevVal = Number(prevRow?.[0]?.total || 0);
+      const diff = curr - prevVal;
+      const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+
+      const response = start && end
+        ? { metric: 'TOTAL_SALES_DELTA', range: { start, end }, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', cutoff_time: cutoffTime }
+        : { metric: 'TOTAL_SALES_DELTA', date: rangeEnd, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', cutoff_time: cutoffTime };
+
+      return res.json(response);
     }
 
     const delta = await deltaForSum('total_sales', date, req.brandDb.sequelize);
