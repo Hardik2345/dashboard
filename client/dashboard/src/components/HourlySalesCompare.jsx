@@ -127,10 +127,16 @@ function shortNumberLabel(value) {
   const n = Number(value || 0);
   if (!isFinite(n)) return '';
   const abs = Math.abs(n);
-  if (abs >= 1000000) {
-    // Show in lakhs for millions and above (1,000,000 -> 10.00 lakhs)
+  // Use Indian numbering abbreviations: Cr (crore), L (lakh), k (thousand)
+  if (abs >= 10000000) {
+    // 1 crore = 10,000,000
+    const crores = n / 10000000;
+    return `${crores.toFixed(2)} Cr`;
+  }
+  if (abs >= 100000) {
+    // 1 lakh = 100,000
     const lakhs = n / 100000;
-    return `${lakhs.toFixed(2)} lakhs`;
+    return `${lakhs.toFixed(2)}L`;
   }
   if (abs >= 1000) {
     // Show in thousands (no decimals for clarity)
