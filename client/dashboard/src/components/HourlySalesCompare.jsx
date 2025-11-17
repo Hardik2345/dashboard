@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, MenuItem, InputLabel } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { Line, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -38,6 +39,53 @@ const legendPadPlugin = {
       this.height += 15; // extra pixels below legend
     };
   }
+};
+
+const barValueLabelsPlugin = {
+  id: 'barValueLabels',
+  afterDatasetsDraw(chart, _args, pluginOptions) {
+    const options = pluginOptions || {};
+    if (!options.enabled) return;
+    const datasetIndex = Number.isInteger(options.datasetIndex) ? options.datasetIndex : 0;
+    if (!chart.isDatasetVisible(datasetIndex)) return;
+    const meta = chart.getDatasetMeta(datasetIndex);
+    if (!meta || !meta.data?.length) return;
+    const dataset = chart.data?.datasets?.[datasetIndex];
+    if (!dataset) return;
+
+    const ctx = chart.ctx;
+    ctx.save();
+    const font = options.font || {};
+    const fontWeight = font.weight || 600;
+    const fontSize = font.size || 11;
+    const fontFamily = font.family || ctx.font.split(' ').slice(-1).join(' ') || 'sans-serif';
+    ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+    ctx.fillStyle = options.color || '#111';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.shadowColor = options.shadowColor || 'transparent';
+    ctx.shadowBlur = options.shadowBlur || 0;
+
+    const padding = options.padding ?? 6;
+
+    meta.data.forEach((element, index) => {
+      if (!element || element.skip || element.hidden) return;
+      const rawValue = dataset.data?.[index];
+      if (rawValue === null || rawValue === undefined || Number.isNaN(rawValue)) return;
+      const label = typeof options.formatter === 'function'
+        ? options.formatter(rawValue, index, chart)
+        : `${rawValue}`;
+      if (label === null || label === undefined || label === '') return;
+
+      const position = element.tooltipPosition();
+      const yCandidate = position.y - padding;
+      const chartTop = chart.chartArea?.top ?? 0;
+      const y = Math.max(yCandidate, chartTop + fontSize);
+      ctx.fillText(label, position.x, y);
+    });
+
+    ctx.restore();
+  },
 };
 
 const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
@@ -144,6 +192,17 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   const end = query?.end;
   const brandKey = query?.brand_key;
   const refreshKey = query?.refreshKey;
+  const theme = useTheme();
+
+  const totalDaysSelected = useMemo(() => {
+    if (!start || !end) return 0;
+    const startDate = new Date(`${start}T00:00:00Z`);
+    const endDate = new Date(`${end}T00:00:00Z`);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
+    const diffMs = endDate.getTime() - startDate.getTime();
+    const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+    return diffDays + 1;
+  }, [start, end]);
 
   useEffect(() => {
     let cancelled = false;
@@ -243,6 +302,11 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   }, [start, end, metric, viewMode, brandKey, refreshKey]);
 
   const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+
+  const showBarLabels = viewMode === 'daily' && totalDaysSelected > 0 && totalDaysSelected <= 5;
+  const barLabelColor = theme.palette.mode === 'dark'
+    ? theme.palette.grey[100]
+    : theme.palette.text.primary;
 
   const primaryLabel = state.rangeLabel ? `${config.label} (${state.rangeLabel})` : config.label;
   const comparisonLabel = state.comparisonLabel ? `${config.label} (${state.comparisonLabel})` : `${config.label} · Prev window`;
@@ -437,14 +501,27 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                 options={{
                   responsive: true,
                   maintainAspectRatio: false,
-                  plugins: options.plugins,
+                  plugins: {
+                    ...options.plugins,
+                    barValueLabels: {
+                      enabled: showBarLabels,
+                      formatter: (value) => config.formatter(value || 0),
+                      color: barLabelColor,
+                      font: {
+                        size: 11,
+                        weight: 600,
+                        family: theme.typography?.fontFamily || 'sans-serif',
+                      },
+                      padding: 6,
+                    },
+                  },
                   layout: options.layout,
                   scales: {
                     x: { stacked: false, grid: { color: 'rgba(0,0,0,0.05)' } },
                     y: { stacked: false, grid: { display: false }, ticks: { callback: (v) => config.formatter(v) } },
                   },
                 }}
-                plugins={[legendPadPlugin]}
+                plugins={[legendPadPlugin, barValueLabelsPlugin]}
               />
             ) : (
               <Line data={data} options={options} plugins={[legendPadPlugin]} />
