@@ -90,10 +90,12 @@ const barValueLabelsPlugin = {
         elementHeight = 0;
       }
 
-      // Place label slightly above the top edge of the bar
-      const yAboveBar = position.y - (elementHeight || (fontSize + padding)) - padding;
-      const minY = chartTop + fontSize + 2; // never draw above chart top
-      const y = Math.max(yAboveBar, minY);
+  // Place label very close above the top edge of the bar (small gap)
+  // Prefer a fixed small gap so label sticks to its bar without large whitespace.
+  const smallGap = 4; // px gap between bar top and label baseline
+  const yCandidate = position.y - smallGap;
+  const minY = chartTop + fontSize + 2; // never draw above chart top
+  const y = Math.max(yCandidate, minY);
       ctx.fillText(label, position.x, y);
     });
 
