@@ -1743,12 +1743,93 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
 app.get('/metrics/total-orders-delta', requireAuth, brandContext, async (req, res) => {
   try {
     const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
-    const date = parsed.data.end || parsed.data.start;
-    if (!date) return res.json({ metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+    }
+
+    const { start, end } = parsed.data;
+    const date = end || start;
+    if (!date && !(start && end)) {
+      return res.json({ metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+    }
+
+    const align = (req.query.align || '').toString().toLowerCase();
+    if (align === 'hour') {
+      const conn = req.brandDb.sequelize;
+      const rangeStart = start || date;
+      const rangeEnd = end || date;
+
+      if (!rangeStart || !rangeEnd) {
+        return res.status(400).json({ error: 'Invalid date range' });
+      }
+
+      const IST_OFFSET_MIN = 330;
+      const offsetMs = IST_OFFSET_MIN * 60 * 1000;
+      const pad2 = (n) => String(n).padStart(2, '0');
+      const nowUtc = new Date();
+      const nowIst = new Date(nowUtc.getTime() + offsetMs);
+      const todayIst = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
+      const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + nowIst.getUTCSeconds();
+      const fullDaySeconds = 24 * 3600;
+      const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
+      const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
+
+      const toUtcBounds = (startDateStr, endDateStr, seconds) => {
+        const parseParts = (iso) => ({
+          y: Number(iso.slice(0, 4)),
+          m: Number(iso.slice(5, 7)),
+          d: Number(iso.slice(8, 10)),
+        });
+        const sParts = parseParts(startDateStr);
+        const eParts = parseParts(endDateStr);
+        const startUtcMs = Date.UTC(sParts.y, sParts.m - 1, sParts.d, 0, 0, 0) - offsetMs;
+        const endUtcBase = Date.UTC(eParts.y, eParts.m - 1, eParts.d, 0, 0, 0) - offsetMs;
+        const endUtcMs = endUtcBase + (seconds * 1000);
+        const fmt = (ms) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+        return { start: fmt(startUtcMs), end: fmt(endUtcMs) };
+      };
+
+      const prevWindow = previousWindow(rangeStart, rangeEnd);
+      const boundsCurrent = toUtcBounds(rangeStart, rangeEnd, effectiveSeconds);
+      const boundsPrev = prevWindow ? toUtcBounds(prevWindow.prevStart, prevWindow.prevEnd, effectiveSeconds) : null;
+
+      const countSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_at >= ? AND created_at < ?`;
+      const currentPromise = conn.query(countSql, { type: QueryTypes.SELECT, replacements: [boundsCurrent.start, boundsCurrent.end] });
+      const previousPromise = boundsPrev
+        ? conn.query(countSql, { type: QueryTypes.SELECT, replacements: [boundsPrev.start, boundsPrev.end] })
+        : Promise.resolve([{ cnt: 0 }]);
+      const [currRows, prevRows] = await Promise.all([currentPromise, previousPromise]);
+
+      const current = Number(currRows?.[0]?.cnt || 0);
+      const previous = Number(prevRows?.[0]?.cnt || 0);
+      const diff = current - previous;
+      const diff_pct = previous > 0 ? (diff / previous) * 100 : (current > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+
+      const response = start && end
+        ? { metric: 'TOTAL_ORDERS_DELTA', range: { start, end }, current, previous, diff_pct, direction, align: 'hour' }
+        : { metric: 'TOTAL_ORDERS_DELTA', date: rangeEnd, current, previous, diff_pct, direction, align: 'hour' };
+
+      if (effectiveSeconds < fullDaySeconds) {
+        const hh = Math.floor(effectiveSeconds / 3600);
+        const mm = Math.floor((effectiveSeconds % 3600) / 60);
+        const ss = effectiveSeconds % 60;
+        response.cutoff_time = `${pad2(hh)}:${pad2(mm)}:${pad2(ss)}`;
+      }
+
+      return res.json(response);
+    }
+
+    if (!date) {
+      return res.json({ metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+    }
+
     const delta = await deltaForSum('total_orders', date, req.brandDb.sequelize);
     return res.json({ metric: 'TOTAL_ORDERS_DELTA', date, ...delta });
-  } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Total Sales delta (vs previous day) with optional align=hour

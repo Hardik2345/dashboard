@@ -3,6 +3,7 @@ import Grid from '@mui/material/Grid2';
 import KPIStat from './KPIStat.jsx';
 import {
   getTotalOrders,
+  getTotalOrdersDelta,
   getTotalSales,
   getAOV,
   getCVR,
@@ -38,18 +39,19 @@ export default function KPIs({ query, selectedMetric, onSelectMetric, onLoaded }
     const base = brandKey ? { start, end, brand_key: brandKey } : { start, end };
     Promise.all([
       getTotalOrders(base),
+      getTotalOrdersDelta({ ...base, align: 'hour' }),
       getTotalSales(base),
       getAOV(base),
       getCVR(base),
-  getCVRDelta({ ...base, align: 'hour' }),
+      getCVRDelta({ ...base, align: 'hour' }),
       getFunnelStats(base),
-  getTotalSalesDelta({ ...base, align: 'hour' }),
-  getTotalSessionsDelta({ ...base, align: 'hour' }),
+      getTotalSalesDelta({ ...base, align: 'hour' }),
+      getTotalSessionsDelta({ ...base, align: 'hour' }),
       getAtcSessionsDelta({ ...base, align: 'hour' }),
-  getAOVDelta({ ...base, align: 'hour' }),
-    ]).then(([orders, sales, aov, cvr, cvrDelta, funnel, salesDelta, sessDelta, atcDelta, aovDelta]) => {
+      getAOVDelta({ ...base, align: 'hour' }),
+    ]).then(([orders, ordersDelta, sales, aov, cvr, cvrDelta, funnel, salesDelta, sessDelta, atcDelta, aovDelta]) => {
       if (cancelled) return;
-      setData({ orders, sales, aov, cvr, cvrDelta, funnel, salesDelta, sessDelta, atcDelta, aovDelta });
+      setData({ orders, ordersDelta, sales, aov, cvr, cvrDelta, funnel, salesDelta, sessDelta, atcDelta, aovDelta });
       setLoading(false);
       if (typeof onLoaded === 'function') {
         onLoaded(new Date());
@@ -70,6 +72,7 @@ export default function KPIs({ query, selectedMetric, onSelectMetric, onLoaded }
           value={data.orders?.value ?? 0}
           loading={loading}
           formatter={(v) => nfInt.format(v)}
+          delta={data.ordersDelta ? { value: data.ordersDelta.diff_pct, direction: data.ordersDelta.direction } : undefined}
           onSelect={onSelectMetric ? () => onSelectMetric('orders') : undefined}
           selected={selectedMetric === 'orders'}
         />
