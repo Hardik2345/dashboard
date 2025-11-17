@@ -172,6 +172,7 @@ export async function getTotalOrdersDelta(args) {
     previous: Number(json?.previous || 0),
     diff_pct: Number(json?.diff_pct || 0),
     direction: json?.direction || 'flat',
+    cutoff_time: json?.cutoff_time || null,
     error: json?.__error,
   };
 }
