@@ -80,23 +80,25 @@ const barValueLabelsPlugin = {
       const position = element.tooltipPosition();
       // Try to position label above the bar using the element's top coordinate when available.
       const chartTop = chart.chartArea?.top ?? 0;
-      // Determine the visual "top" of the rectangle element. For bar elements, `element.y` is
-      // typically the top edge (smaller y). Fallback to tooltip position if not available.
-      let elementTop = position.y;
+      // Determine candidate coords. Some Chart.js element implementations expose `y` (top or center)
+      // and `base` (opposite edge). We'll take the minimum (visually top) of available numeric values
+      // including the tooltip position as a safe fallback.
+      const candidates = [];
+      if (position && typeof position.y === 'number') candidates.push(position.y);
       try {
-        if (typeof element.y === 'number') {
-          elementTop = element.y;
-        } else if (typeof element.getCenter === 'function') {
-          // some element types expose a center; use its y
+        if (typeof element.y === 'number') candidates.push(element.y);
+        if (typeof element.base === 'number') candidates.push(element.base);
+        if (typeof element.getCenter === 'function') {
           const c = element.getCenter();
-          if (c && typeof c.y === 'number') elementTop = c.y;
+          if (c && typeof c.y === 'number') candidates.push(c.y);
         }
       } catch (err) {
-        elementTop = position.y;
+        // ignore and rely on position
       }
+      const elementTop = candidates.length ? Math.min(...candidates) : position.y;
 
       // Place label just above the bar's top edge with a small gap so it doesn't overlap.
-      const smallGap = 6; // px gap between bar top and label baseline (slightly increased)
+      const smallGap = 6; // px gap between bar top and label baseline
       const yCandidate = elementTop - smallGap;
       const minY = chartTop + fontSize + 2; // never draw above chart top
       const y = Math.max(yCandidate, minY);
