@@ -31,6 +31,8 @@ if (!ChartJS.defaults.plugins) ChartJS.defaults.plugins = {};
 ChartJS.defaults.plugins.datalabels = ChartJS.defaults.plugins.datalabels || {};
 ChartJS.defaults.plugins.datalabels.anchor = ChartJS.defaults.plugins.datalabels.anchor || 'end';
 ChartJS.defaults.plugins.datalabels.align = ChartJS.defaults.plugins.datalabels.align || 'end';
+// Disable datalabels globally by default — enable only where needed (Bar charts below)
+ChartJS.defaults.plugins.datalabels.display = false;
 const defaultLegendLabels = ChartJS.defaults.plugins.legend.labels.generateLabels;
 
 // Plugin to add extra padding below legend when options.padding isn't respected
