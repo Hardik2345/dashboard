@@ -526,6 +526,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     {
                       label: primaryLabel,
                       data: state.values,
+                      // enable datalabels for primary/current window only
+                      datalabels: { display: showBarLabels },
                       backgroundColor: config.color,
                       borderColor: config.color,
                       borderWidth: 1,
@@ -536,6 +538,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     ...(state.comparisonValues.length ? [{
                       label: comparisonLabel,
                       data: state.comparisonValues,
+                      // explicitly disable datalabels for the previous-window comparison bars
+                      datalabels: { display: false },
                       backgroundColor: hexToRgba(config.color, 0.25),
                       borderColor: config.color,
                       borderWidth: 1,
@@ -551,33 +555,21 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   plugins: {
                     ...options.plugins,
                     datalabels: {
-                      // Show only for bar charts and only when there's enough horizontal space
-                      display: (ctx) => {
-                        try {
-                          const chartWidth = ctx.chart?.width || 0;
-                          // hide on very small screens where labels will collide
-                          return showBarLabels && chartWidth >= 460;
-                        } catch (e) { return !!showBarLabels; }
-                      },
+                      display: showBarLabels,
                       anchor: 'end',
                       align: 'end',
-                      formatter: (value, ctx) => {
+                      formatter: (value) => {
                         const v = value || 0;
                         if (metric === 'cvr' || metric === 'aov') return config.formatter(v);
                         return shortNumberLabel(v);
                       },
-                      color: (ctx) => {
-                        // keep configured color, but allow scriptable option to auto-adjust if needed later
-                        return barLabelColor;
-                      },
-                      font: (ctx) => ({
-                        size: ctx.chart && ctx.chart.width < 480 ? 9 : 11,
+                      color: barLabelColor,
+                      font: {
+                        size: 11,
                         weight: 600,
                         family: theme.typography?.fontFamily || 'sans-serif',
-                      }),
-                      padding: (ctx) => (ctx.chart && ctx.chart.width < 480 ? 4 : 6),
-                      // clamp to chart area to avoid drawing outside
-                      clamp: true,
+                      },
+                      padding: 6,
                     },
                   },
                   layout: options.layout,
