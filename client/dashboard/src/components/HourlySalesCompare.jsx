@@ -78,9 +78,22 @@ const barValueLabelsPlugin = {
       if (label === null || label === undefined || label === '') return;
 
       const position = element.tooltipPosition();
-      const yCandidate = position.y - padding;
+      // Try to position label above the bar. Use element height when available.
       const chartTop = chart.chartArea?.top ?? 0;
-      const y = Math.max(yCandidate, chartTop + fontSize);
+      let elementHeight = 0;
+      try {
+        // Rectangle elements may expose height or have a getProps; try common fields.
+        if (typeof element.height === 'number') elementHeight = element.height;
+        else if (typeof element.height === 'function') elementHeight = element.height();
+        else if (typeof element.base === 'number' && typeof element.y === 'number') elementHeight = Math.abs(element.base - element.y);
+      } catch (err) {
+        elementHeight = 0;
+      }
+
+      // Place label slightly above the top edge of the bar
+      const yAboveBar = position.y - (elementHeight || (fontSize + padding)) - padding;
+      const minY = chartTop + fontSize + 2; // never draw above chart top
+      const y = Math.max(yAboveBar, minY);
       ctx.fillText(label, position.x, y);
     });
 
@@ -92,6 +105,24 @@ const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency
 const nfCurrency2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
+
+// Short formatting for bar labels: prefer compact 'k' for thousands and 'lakhs' for millions
+function shortNumberLabel(value) {
+  const n = Number(value || 0);
+  if (!isFinite(n)) return '';
+  const abs = Math.abs(n);
+  if (abs >= 1000000) {
+    // Show in lakhs for millions and above (1,000,000 -> 10.00 lakhs)
+    const lakhs = n / 100000;
+    return `${lakhs.toFixed(2)} lakhs`;
+  }
+  if (abs >= 1000) {
+    // Show in thousands (no decimals for clarity)
+    const thousands = n / 1000;
+    return `${thousands.toFixed(thousands >= 100 ? 0 : 1)}k`;
+  }
+  return nfInt0.format(n);
+}
 
 const METRIC_CONFIG = {
   aov: {
@@ -505,7 +536,13 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     ...options.plugins,
                     barValueLabels: {
                       enabled: showBarLabels,
-                      formatter: (value) => config.formatter(value || 0),
+                      formatter: (value) => {
+                        const v = value || 0;
+                        // For percentage-like metrics keep percent formatting
+                        if (metric === 'cvr' || metric === 'aov') return config.formatter(v);
+                        // For large numeric metrics use short labels
+                        return shortNumberLabel(v);
+                      },
                       color: barLabelColor,
                       font: {
                         size: 11,
