@@ -1588,66 +1588,52 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
 
     const conn = req.brandDb.sequelize;
     if (align === 'hour') {
-      // Determine target hour (IST now if target is today; else 23)
+      // Align orders to exact time using created_dt + created_time cutoff (same approach as orders-delta)
       const IST_OFFSET_MIN = 330;
       const offsetMs = IST_OFFSET_MIN * 60 * 1000;
+      const pad2 = (n) => String(n).padStart(2, '0');
       const nowUtc = new Date();
       const nowIst = new Date(nowUtc.getTime() + offsetMs);
       const yyyy = nowIst.getUTCFullYear();
       const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
       const dd = String(nowIst.getUTCDate()).padStart(2, '0');
-      const todayIst = `${yyyy}-${mm}-${dd}`;
-      const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
+  const todayIst = `${yyyy}-${mm}-${dd}`;
+  const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
+      const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + nowIst.getUTCSeconds();
+      const fullDaySeconds = 24 * 3600;
+      const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
+      const secondsToTime = (secs) => {
+        const hh = Math.floor(secs / 3600);
+        const mm2 = Math.floor((secs % 3600) / 60);
+        const ss = secs % 60;
+        return `${pad2(hh)}:${pad2(mm2)}:${pad2(ss)}`;
+      };
+
+      const conn = req.brandDb.sequelize;
 
       if (start && end) {
-        // Range: align to current IST hour if includes today; else full-day (23)
-        const targetHour = resolveTargetHour(end);
+        const rangeStart = start;
+        const rangeEnd = end;
+        const targetHour = resolveTargetHour ? resolveTargetHour(end) : (end === todayIst ? nowIst.getUTCHours() : 23);
+        const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
+        const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
 
-        // Sessions cumulative across range
-  const sqlSessRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date >= ? AND date <= ? AND hour <= ?`;
+        const sqlSessRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date >= ? AND date <= ? AND hour <= ?`;
+        const orderRangeSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
 
-        // Orders cumulative across range, using IST date/hour buckets and counting distinct order_name per bucket
-        const istRangeUtcBounds = (s, e) => {
-          const y1 = Number(s.slice(0, 4));
-          const m1 = Number(s.slice(5, 7));
-          const d1 = Number(s.slice(8, 10));
-          const y2 = Number(e.slice(0, 4));
-          const m2 = Number(e.slice(5, 7));
-          const d2 = Number(e.slice(8, 10));
-          const startUtcMs = Date.UTC(y1, m1 - 1, d1, 0, 0, 0) - offsetMs; // IST midnight -> UTC
-          const endUtcMs = Date.UTC(y2, m2 - 1, d2 + 1, 0, 0, 0) - offsetMs; // end date + 1 day IST midnight -> UTC
-          const startStr = new Date(startUtcMs).toISOString().slice(0, 19).replace('T', ' ');
-          const endStr = new Date(endUtcMs).toISOString().slice(0, 19).replace('T', ' ');
-          return { startStr, endStr };
-        };
-        const sqlOrdersRange = `
-          SELECT COALESCE(SUM(cnt),0) AS total FROM (
-            SELECT DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) AS d,
-                   HOUR(CONVERT_TZ(created_at, '+00:00', '+05:30')) AS h,
-                   COUNT(DISTINCT order_name) AS cnt
-            FROM shopify_orders
-            WHERE created_at >= ? AND created_at < ?
-            GROUP BY d, h
-          ) t
-          WHERE h <= ? AND d >= ? AND d <= ?`;
-
-        const prevWin = previousWindow(start, end);
-        const [{ startStr, endStr }, { startStr: pStartStr, endStr: pEndStr }] = [
-          istRangeUtcBounds(start, end),
-          istRangeUtcBounds(prevWin.prevStart, prevWin.prevEnd)
-        ];
+        const prevWin = previousWindow(rangeStart, rangeEnd);
 
         const [sessCurRows, sessPrevRows, ordCurRows, ordPrevRows] = await Promise.all([
-          conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
+          conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, targetHour] }),
           conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, targetHour] }),
-          conn.query(sqlOrdersRange, { type: QueryTypes.SELECT, replacements: [startStr, endStr, targetHour, start, end] }),
-          conn.query(sqlOrdersRange, { type: QueryTypes.SELECT, replacements: [pStartStr, pEndStr, targetHour, prevWin.prevStart, prevWin.prevEnd] }),
+          conn.query(orderRangeSql, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
+          conn.query(orderRangeSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }),
         ]);
 
         const curSessions = Number(sessCurRows?.[0]?.total || 0);
         const prevSessions = Number(sessPrevRows?.[0]?.total || 0);
-        const curOrders = Number(ordCurRows?.[0]?.total || 0);
-        const prevOrders = Number(ordPrevRows?.[0]?.total || 0);
+        const curOrders = Number(ordCurRows?.[0]?.cnt || 0);
+        const prevOrders = Number(ordPrevRows?.[0]?.cnt || 0);
 
         const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
         const prevCVR = prevSessions > 0 ? (prevOrders / prevSessions) : 0;
@@ -1661,40 +1647,24 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
           diff_pct: delta.diff_pct,
           direction: delta.direction,
           align: 'hour',
-          hour: targetHour
+          hour: targetHour,
+          cutoff_time: cutoffTime
         });
       }
 
-      // Single-day align=hour (existing behavior)
-      const targetHour = resolveTargetHour(target);
+      // Single-day align=hour
+      const targetHour = resolveTargetHour ? resolveTargetHour(target) : (target === todayIst ? nowIst.getUTCHours() : 23);
+      const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(target)));
+      const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
 
-      // Sessions cumulative from hourly_sessions_summary
-  const sqlSess = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
-
-      // Orders cumulative from shopify_orders counting distinct order_name in IST window [00:00, hour+1)
-      const buildIstWindow = (dateStr, hour) => {
-        const y = Number(dateStr.slice(0, 4));
-        const m = Number(dateStr.slice(5, 7));
-        const d0 = Number(dateStr.slice(8, 10));
-        const startUtcMs = Date.UTC(y, m - 1, d0, 0, 0, 0) - offsetMs; // IST midnight -> UTC
-        const endUtcMs = startUtcMs + (hour + 1) * 3600_000; // exclusive end at next hour
-        const startStr = new Date(startUtcMs).toISOString().slice(0, 19).replace('T', ' ');
-        const endStr = new Date(endUtcMs).toISOString().slice(0, 19).replace('T', ' ');
-        return { startStr, endStr };
-      };
-      const sqlOrders = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_at >= ? AND created_at < ?`;
+      const sqlSess = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
+      const orderSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
 
       const [sessCurRows, sessPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
         conn.query(sqlSess, { type: QueryTypes.SELECT, replacements: [target, targetHour] }),
         conn.query(sqlSess, { type: QueryTypes.SELECT, replacements: [prevStr, targetHour] }),
-        (async () => {
-          const { startStr, endStr } = buildIstWindow(target, targetHour);
-          return conn.query(sqlOrders, { type: QueryTypes.SELECT, replacements: [startStr, endStr] });
-        })(),
-        (async () => {
-          const { startStr, endStr } = buildIstWindow(prevStr, targetHour);
-          return conn.query(sqlOrders, { type: QueryTypes.SELECT, replacements: [startStr, endStr] });
-        })(),
+        conn.query(orderSql, { type: QueryTypes.SELECT, replacements: [target, target, cutoffTime] }),
+        conn.query(orderSql, { type: QueryTypes.SELECT, replacements: [prevStr, prevStr, cutoffTime] }),
       ]);
 
       const curSessions = Number(sessCurRows?.[0]?.total || 0);
@@ -1714,7 +1684,8 @@ app.get("/metrics/cvr-delta", requireAuth, brandContext, async (req, res) => {
         diff_pct: delta.diff_pct,
         direction: delta.direction,
         align: 'hour',
-        hour: targetHour
+        hour: targetHour,
+        cutoff_time: cutoffTime
       });
     }
 
