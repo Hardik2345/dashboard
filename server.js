@@ -1763,42 +1763,42 @@ app.get('/metrics/total-orders-delta', requireAuth, brandContext, async (req, re
         return res.status(400).json({ error: 'Invalid date range' });
       }
 
-      const IST_OFFSET_MIN = 330;
-      const offsetMs = IST_OFFSET_MIN * 60 * 1000;
       const pad2 = (n) => String(n).padStart(2, '0');
       const nowUtc = new Date();
-      const nowIst = new Date(nowUtc.getTime() + offsetMs);
+      const nowIstMs = nowUtc.getTime() + (330 * 60 * 1000);
+      const nowIst = new Date(nowIstMs);
       const todayIst = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
       const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + nowIst.getUTCSeconds();
       const fullDaySeconds = 24 * 3600;
       const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
       const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
 
-      const toUtcBounds = (startDateStr, endDateStr, seconds) => {
-        const parseParts = (iso) => ({
-          y: Number(iso.slice(0, 4)),
-          m: Number(iso.slice(5, 7)),
-          d: Number(iso.slice(8, 10)),
-        });
-        const sParts = parseParts(startDateStr);
-        const eParts = parseParts(endDateStr);
-        const startUtcMs = Date.UTC(sParts.y, sParts.m - 1, sParts.d, 0, 0, 0) - offsetMs;
-        const endUtcBase = Date.UTC(eParts.y, eParts.m - 1, eParts.d, 0, 0, 0) - offsetMs;
-        const endUtcMs = endUtcBase + (seconds * 1000);
-        const fmt = (ms) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
-        return { start: fmt(startUtcMs), end: fmt(endUtcMs) };
+      const secondsToTime = (secs) => {
+        const hh = Math.floor(secs / 3600);
+        const mm = Math.floor((secs % 3600) / 60);
+        const ss = secs % 60;
+        return `${pad2(hh)}:${pad2(mm)}:${pad2(ss)}`;
       };
 
-      const prevWindow = previousWindow(rangeStart, rangeEnd);
-      const boundsCurrent = toUtcBounds(rangeStart, rangeEnd, effectiveSeconds);
-      const boundsPrev = prevWindow ? toUtcBounds(prevWindow.prevStart, prevWindow.prevEnd, effectiveSeconds) : null;
+  // If effectiveSeconds hits the full day, treat this as end-of-day
+  const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
 
-      const countSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_at >= ? AND created_at < ?`;
-      const currentPromise = conn.query(countSql, { type: QueryTypes.SELECT, replacements: [boundsCurrent.start, boundsCurrent.end] });
-      const previousPromise = boundsPrev
-        ? conn.query(countSql, { type: QueryTypes.SELECT, replacements: [boundsPrev.start, boundsPrev.end] })
+      const rangeFilter = `created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+      const prevWindow = previousWindow(rangeStart, rangeEnd);
+
+      const countSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE ${rangeFilter}`;
+      const currPromise = conn.query(countSql, {
+        type: QueryTypes.SELECT,
+        replacements: [rangeStart, rangeEnd, cutoffTime],
+      });
+      const prevPromise = prevWindow
+        ? conn.query(countSql, {
+            type: QueryTypes.SELECT,
+            replacements: [prevWindow.prevStart, prevWindow.prevEnd, cutoffTime],
+          })
         : Promise.resolve([{ cnt: 0 }]);
-      const [currRows, prevRows] = await Promise.all([currentPromise, previousPromise]);
+
+      const [currRows, prevRows] = await Promise.all([currPromise, prevPromise]);
 
       const current = Number(currRows?.[0]?.cnt || 0);
       const previous = Number(prevRows?.[0]?.cnt || 0);
@@ -1807,15 +1807,8 @@ app.get('/metrics/total-orders-delta', requireAuth, brandContext, async (req, re
       const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
 
       const response = start && end
-        ? { metric: 'TOTAL_ORDERS_DELTA', range: { start, end }, current, previous, diff_pct, direction, align: 'hour' }
-        : { metric: 'TOTAL_ORDERS_DELTA', date: rangeEnd, current, previous, diff_pct, direction, align: 'hour' };
-
-      if (effectiveSeconds < fullDaySeconds) {
-        const hh = Math.floor(effectiveSeconds / 3600);
-        const mm = Math.floor((effectiveSeconds % 3600) / 60);
-        const ss = effectiveSeconds % 60;
-        response.cutoff_time = `${pad2(hh)}:${pad2(mm)}:${pad2(ss)}`;
-      }
+        ? { metric: 'TOTAL_ORDERS_DELTA', range: { start, end }, current, previous, diff_pct, direction, align: 'hour', cutoff_time: cutoffTime }
+        : { metric: 'TOTAL_ORDERS_DELTA', date: rangeEnd, current, previous, diff_pct, direction, align: 'hour', cutoff_time: cutoffTime };
 
       return res.json(response);
     }
