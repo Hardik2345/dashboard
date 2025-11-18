@@ -2070,17 +2070,24 @@ app.get('/metrics/aov-delta', requireAuth, brandContext, async (req, res) => {
         const diff = curAov - prevAov;
         const diff_pct = prevAov > 0 ? (diff / prevAov) * 100 : (curAov > 0 ? 100 : 0);
         const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-        return res.json({
-          metric: 'AOV_DELTA',
-          range: { start, end },
-          current: curAov,
-          previous: prevAov,
-          diff_pct,
-          direction,
-          align: 'hour',
-          hour: targetHour,
-          cutoff_time: cutoffTime
-        });
+        {
+          const resp = {
+            metric: 'AOV_DELTA',
+            range: { start, end },
+            current: curAov,
+            previous: prevAov,
+            diff_pct,
+            direction,
+            align: 'hour',
+            hour: targetHour,
+            cutoff_time: cutoffTime
+          };
+          if ((req.query.debug || '').toString() === '1' || process.env.NODE_ENV !== 'production') {
+            resp.sales = { current: curSales, previous: prevSales };
+            resp.orders = { current: curOrders, previous: prevOrders };
+          }
+          return res.json(resp);
+        }
       }
 
       const targetHour = resolveTargetHour(date);
@@ -2105,17 +2112,24 @@ app.get('/metrics/aov-delta', requireAuth, brandContext, async (req, res) => {
       const diff = curAov - prevAov;
       const diff_pct = prevAov > 0 ? (diff / prevAov) * 100 : (curAov > 0 ? 100 : 0);
       const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-      return res.json({
-        metric: 'AOV_DELTA',
-        date,
-        current: curAov,
-        previous: prevAov,
-        diff_pct,
-        direction,
-        align: 'hour',
-        hour: targetHour,
-        cutoff_time: cutoffTime
-      });
+      {
+        const resp = {
+          metric: 'AOV_DELTA',
+          date,
+          current: curAov,
+          previous: prevAov,
+          diff_pct,
+          direction,
+          align: 'hour',
+          hour: targetHour,
+          cutoff_time: cutoffTime
+        };
+        if ((req.query.debug || '').toString() === '1' || process.env.NODE_ENV !== 'production') {
+          resp.sales = { current: curSales, previous: prevSales };
+          resp.orders = { current: curOrders, previous: prevOrders };
+        }
+        return res.json(resp);
+      }
     }
 
     const d = await deltaForAOV(date, req.brandDb.sequelize);
