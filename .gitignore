@@ -1,3 +1,11 @@
 /node_modules
 /.env
 /infra-firehose
+
+# Ignore specific scripts exports
+# sessions CSV export and export script in scripts/
+/scripts/sessions_2025-11-17.csv
+/scripts/sessions_export.js
+
+# macOS finder artifacts
+.DS_Store
