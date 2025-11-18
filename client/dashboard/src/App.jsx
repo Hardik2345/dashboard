@@ -248,7 +248,7 @@ export default function App() {
             <Paper elevation={3} sx={{ p:3, borderRadius:3 }} component="form" onSubmit={handleLogin}>
               <Stack spacing={2}>
                 <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                  <Box component="img" src="/brand-logo-final.png" alt="Datum" sx={{ height: 64, objectFit: 'contain' }} />
+                  <Box component="img" src="/brand-logo-final.png" alt="Datum" sx={{ height: 80, width: 220, objectFit: 'contain' }} />
                 </Box>
                 <TextField size="small" label="Email" type="email" required value={loginForm.email} onChange={e=>setLoginForm(f=>({ ...f, email: e.target.value }))} />
                 <TextField size="small" label="Password" type="password" required value={loginForm.password} onChange={e=>setLoginForm(f=>({ ...f, password: e.target.value }))} />
@@ -259,7 +259,7 @@ export default function App() {
                   const base = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
                   window.location.href = `${base}/auth/google`;
                 } } sx={{ p: 0, minWidth: 0, border: 'none', boxShadow: 'none', background: 'none', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                  <Box component="img" src="/sign-in-with-google.png" alt="Sign in with Google" sx={{ height: 40, width: 'auto', display: 'block' }} />
+                  <Box component="img" src="/sign-in-with-google.png" alt="Sign in with Google" sx={{ height: 48, width: 220, display: 'block' }} />
                 </Button>
               </Stack>
             </Paper>
