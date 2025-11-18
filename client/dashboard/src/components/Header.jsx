@@ -24,7 +24,7 @@ export default function Header({ user, onLogout }) {
         <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none' }}>
           <Box
             component="img"
-            src="/image.png"
+            src="/brand-logo-final.png"
             alt="Brand"
             loading="eager"
             decoding="async"

@@ -1,4 +1,6 @@
 require("dotenv").config();
+// Force production mode by default when running the server from this codebase.
+process.env.NODE_ENV = 'production';
 const express = require("express");
 const cors = require("cors");
 const session = require('express-session');
