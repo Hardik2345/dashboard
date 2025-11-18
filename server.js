@@ -2031,69 +2031,39 @@ app.get('/metrics/aov-delta', requireAuth, brandContext, async (req, res) => {
       const offsetMs = IST_OFFSET_MIN * 60 * 1000;
       const nowUtc = new Date();
       const nowIst = new Date(nowUtc.getTime() + offsetMs);
-      const todayIst = `${nowIst.getUTCFullYear()}-${String(nowIst.getUTCMonth() + 1).padStart(2, '0')}-${String(nowIst.getUTCDate()).padStart(2, '0')}`;
+      const pad2 = (n) => String(n).padStart(2, '0');
+      const todayIst = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
       const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
+      const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + nowIst.getUTCSeconds();
+      const fullDaySeconds = 24 * 3600;
+      const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
+      const secondsToTime = (secs) => `${pad2(Math.floor(secs / 3600))}:${pad2(Math.floor((secs % 3600) / 60))}:${pad2(secs % 60)}`;
+
       const conn = req.brandDb.sequelize;
 
-      const sqlSalesRange = `SELECT COALESCE(SUM(total_sales),0) AS total FROM hour_wise_sales WHERE date >= ? AND date <= ? AND hour <= ?`;
-      const sqlSales = `SELECT COALESCE(SUM(total_sales),0) AS total FROM hour_wise_sales WHERE date = ? AND hour <= ?`;
-
-      const istRangeUtcBounds = (s, e) => {
-        const y1 = Number(s.slice(0, 4));
-        const m1 = Number(s.slice(5, 7));
-        const d1 = Number(s.slice(8, 10));
-        const y2 = Number(e.slice(0, 4));
-        const m2 = Number(e.slice(5, 7));
-        const d2 = Number(e.slice(8, 10));
-        const startUtcMs = Date.UTC(y1, m1 - 1, d1, 0, 0, 0) - offsetMs;
-        const endUtcMs = Date.UTC(y2, m2 - 1, d2 + 1, 0, 0, 0) - offsetMs;
-        const startStr = new Date(startUtcMs).toISOString().slice(0, 19).replace('T', ' ');
-        const endStr = new Date(endUtcMs).toISOString().slice(0, 19).replace('T', ' ');
-        return { startStr, endStr };
-      };
-
-      const sqlOrdersRange = `
-        SELECT COALESCE(SUM(cnt),0) AS total FROM (
-          SELECT DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) AS d,
-                 HOUR(CONVERT_TZ(created_at, '+00:00', '+05:30')) AS h,
-                 COUNT(DISTINCT order_name) AS cnt
-          FROM shopify_orders
-          WHERE created_at >= ? AND created_at < ?
-          GROUP BY d, h
-        ) t
-        WHERE h <= ? AND d >= ? AND d <= ?`;
-
-      const buildIstWindow = (dateStr, hour) => {
-        const y = Number(dateStr.slice(0, 4));
-        const m = Number(dateStr.slice(5, 7));
-        const d0 = Number(dateStr.slice(8, 10));
-        const startUtcMs = Date.UTC(y, m - 1, d0, 0, 0, 0) - offsetMs;
-        const endUtcMs = startUtcMs + (hour + 1) * 3600_000;
-        const startStr = new Date(startUtcMs).toISOString().slice(0, 19).replace('T', ' ');
-        const endStr = new Date(endUtcMs).toISOString().slice(0, 19).replace('T', ' ');
-        return { startStr, endStr };
-      };
-      const sqlOrders = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_at >= ? AND created_at < ?`;
+      // Use sargable predicates on created_dt + created_time for both sales and orders
+      const salesSqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+      const salesSql = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+      const ordersSqlRange = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+      const ordersSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
 
       if (start && end) {
         const targetHour = resolveTargetHour(end);
+        const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(end)));
+        const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
         const prevWin = previousWindow(start, end);
-        const [{ startStr, endStr }, { startStr: prevStartStr, endStr: prevEndStr }] = [
-          istRangeUtcBounds(start, end),
-          istRangeUtcBounds(prevWin.prevStart, prevWin.prevEnd)
-        ];
 
         const [salesCurRows, salesPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
-          conn.query(sqlSalesRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
-          conn.query(sqlSalesRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, targetHour] }),
-          conn.query(sqlOrdersRange, { type: QueryTypes.SELECT, replacements: [startStr, endStr, targetHour, start, end] }),
-          conn.query(sqlOrdersRange, { type: QueryTypes.SELECT, replacements: [prevStartStr, prevEndStr, targetHour, prevWin.prevStart, prevWin.prevEnd] }),
+          conn.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [start, end, cutoffTime] }),
+          conn.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }),
+          conn.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [start, end, cutoffTime] }),
+          conn.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }),
         ]);
 
         const curSales = Number(salesCurRows?.[0]?.total || 0);
         const prevSales = Number(salesPrevRows?.[0]?.total || 0);
-        const curOrders = Number(ordersCurRows?.[0]?.total || 0);
-        const prevOrders = Number(ordersPrevRows?.[0]?.total || 0);
+        const curOrders = Number(ordersCurRows?.[0]?.cnt || 0);
+        const prevOrders = Number(ordersPrevRows?.[0]?.cnt || 0);
 
         const curAov = curOrders > 0 ? curSales / curOrders : 0;
         const prevAov = prevOrders > 0 ? prevSales / prevOrders : 0;
@@ -2109,26 +2079,20 @@ app.get('/metrics/aov-delta', requireAuth, brandContext, async (req, res) => {
           direction,
           align: 'hour',
           hour: targetHour,
+          cutoff_time: cutoffTime
         });
       }
 
       const targetHour = resolveTargetHour(date);
+      const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(date)));
+      const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
       const prev = prevDayStr(date);
 
-      const [salesCurRows, salesPrevRows] = await Promise.all([
-        conn.query(sqlSales, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
-        conn.query(sqlSales, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
-      ]);
-
-      const [ordersCurRows, ordersPrevRows] = await Promise.all([
-        (async () => {
-          const { startStr, endStr } = buildIstWindow(date, targetHour);
-          return conn.query(sqlOrders, { type: QueryTypes.SELECT, replacements: [startStr, endStr] });
-        })(),
-        (async () => {
-          const { startStr, endStr } = buildIstWindow(prev, targetHour);
-          return conn.query(sqlOrders, { type: QueryTypes.SELECT, replacements: [startStr, endStr] });
-        })(),
+      const [salesCurRows, salesPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
+        conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [date, date, cutoffTime] }),
+        conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [prev, prev, cutoffTime] }),
+        conn.query(ordersSql, { type: QueryTypes.SELECT, replacements: [date, date, cutoffTime] }),
+        conn.query(ordersSql, { type: QueryTypes.SELECT, replacements: [prev, prev, cutoffTime] }),
       ]);
 
       const curSales = Number(salesCurRows?.[0]?.total || 0);
@@ -2150,6 +2114,7 @@ app.get('/metrics/aov-delta', requireAuth, brandContext, async (req, res) => {
         direction,
         align: 'hour',
         hour: targetHour,
+        cutoff_time: cutoffTime
       });
     }
 
