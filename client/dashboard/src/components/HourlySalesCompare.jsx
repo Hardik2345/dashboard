@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, MenuItem, InputLabel } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { Line, Bar } from 'react-chartjs-2';
+import { useRef } from 'react';
 import {
   Chart as ChartJS,
   LineElement,
@@ -485,39 +486,32 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   };
 
   // ...existing code...
-  // Custom legend container
+
+  // Chart ref for legend generation
+  const chartRef = useRef(null);
   const [legendHtml, setLegendHtml] = useState('');
   useEffect(() => {
-    if (!loading && !state.error && state.labels.length > 0) {
-      // Use ChartJS instance to generate legend
-      // Wait for chart to mount
-      setTimeout(() => {
-        const chartEl = document.querySelector('.chartjs-render-monitor');
-        if (chartEl && chartEl._chart) {
-          setLegendHtml(chartEl._chart.generateLegend());
-        }
-      }, 100);
+    if (!loading && !state.error && state.labels.length > 0 && chartRef.current) {
+      setLegendHtml(chartRef.current.generateLegend());
     }
   }, [loading, state, viewMode, metric]);
 
   // Legend toggle click handler
   useEffect(() => {
     const handler = (e) => {
-      if (e.target.classList.contains('legend-toggle')) {
+      if (e.target.classList.contains('legend-toggle') && chartRef.current) {
         const idx = +e.target.getAttribute('data-index');
-        const chartEl = document.querySelector('.chartjs-render-monitor');
-        if (chartEl && chartEl._chart) {
-          const chart = chartEl._chart;
-          const meta = chart.getDatasetMeta(idx);
-          meta.hidden = meta.hidden === null ? !chart.data.datasets[idx].hidden : null;
-          chart.update();
-          setLegendHtml(chart.generateLegend());
-        }
+        const chart = chartRef.current;
+        const meta = chart.getDatasetMeta(idx);
+        meta.hidden = meta.hidden === null ? !chart.data.datasets[idx].hidden : null;
+        chart.update();
+        setLegendHtml(chart.generateLegend());
       }
     };
-    document.getElementById('custom-legend-container')?.addEventListener('click', handler);
+    const legendEl = document.getElementById('custom-legend-container');
+    legendEl?.addEventListener('click', handler);
     return () => {
-      document.getElementById('custom-legend-container')?.removeEventListener('click', handler);
+      legendEl?.removeEventListener('click', handler);
     };
   }, [legendHtml]);
 
@@ -572,6 +566,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           <div style={{ position: 'relative', flexGrow: 1 }}>
             {viewMode === 'daily' ? (
               <Bar
+                ref={chartRef}
                 data={{
                   labels: state.labels.map(d => {
                     const dt = new Date(`${d}T00:00:00Z`);
@@ -636,7 +631,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                 plugins={[legendPadPlugin]}
               />
             ) : (
-              <Line data={data} options={options} plugins={[legendPadPlugin]} />
+              <Line ref={chartRef} data={data} options={options} plugins={[legendPadPlugin]} />
             )}
           </div>
         )}
