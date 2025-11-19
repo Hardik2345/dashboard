@@ -492,15 +492,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
 
   // Debug: log chartRef and data when loading or data changes
   useEffect(() => {
-    try {
-      const chartInstance = resolveChart(chartRef);
-      console.log('HourlySalesCompare: chartRef.current ->', chartRef.current);
-      console.log('HourlySalesCompare: chartInstance ->', chartInstance);
-      console.log('HourlySalesCompare: datasets count ->', chartInstance?.data?.datasets?.length ?? 0);
-      console.log('HourlySalesCompare: labels length ->', state.labels.length);
-    } catch (err) {
-      console.log('HourlySalesCompare: error reading chartRef', err);
-    }
+    // no-op — retained to trigger updates when data changes
+    void resolveChart(chartRef);
   }, [loading, state.labels, state.values, state.comparisonValues]);
 
   // React-rendered custom legend component using MUI Checkbox controls
@@ -517,11 +510,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
 
       const tryBuild = () => {
         const chart = getChart();
-        console.log('CustomLegend: tryBuild - chart ->', chart);
         if (!chart) return false;
         const build = () => {
           const datasets = chart.data?.datasets || [];
-          console.log('CustomLegend: build items, dataset count=', datasets.length);
           const arr = datasets.map((ds, i) => {
               const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
               const metaHidden = chart.getDatasetMeta?.(i)?.hidden;
@@ -535,7 +526,6 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                 visible,
               };
             });
-          console.log('CustomLegend: built items ->', arr.map(a => ({ i: a.index, label: a.label, visible: a.visible })));
           if (mounted) setItems(arr);
         };
 
@@ -543,13 +533,12 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         // Monkey-patch chart.update to also refresh items (safe restore on unmount)
           const originalUpdate = chart.update.bind(chart);
           chart.update = function() {
-            console.log('CustomLegend: chart.update called');
             const ret = originalUpdate(...arguments);
-            try { build(); } catch (e) { console.log('CustomLegend: build after update failed', e); }
+            try { build(); } catch (e) { /* ignore */ }
             return ret;
           };
         return () => {
-          try { chart.update = originalUpdate; } catch (e) { console.log('CustomLegend: restore update failed', e); }
+          try { chart.update = originalUpdate; } catch (e) { /* ignore */ }
         };
       };
 
@@ -576,11 +565,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     const toggle = (idx) => {
       const chart = resolveChart(chartRef);
       if (!chart) return;
-      console.log('CustomLegend: toggle idx=', idx);
       // Explicitly set dataset.hidden and meta.hidden so the dataset is hidden
       const currentHidden = chart.data?.datasets?.[idx]?.hidden === true;
       const newHidden = !currentHidden;
-      console.log('CustomLegend: setting dataset.hidden=', newHidden);
       if (chart.data && chart.data.datasets && chart.data.datasets[idx]) {
         chart.data.datasets[idx].hidden = newHidden;
       }
@@ -588,24 +575,22 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         const meta = chart.getDatasetMeta(idx);
         if (meta) meta.hidden = newHidden;
       } catch (e) {
-        console.log('CustomLegend: unable to set meta.hidden', e);
+        // ignore
       }
       // Force update and redraw
-      try { chart.update(); } catch (e) { console.log('CustomLegend: chart.update error', e); }
+      try { chart.update(); } catch (e) { /* ignore */ }
       // reflect new state and log details for debugging
       const datasets2 = chart.data?.datasets || [];
       const arr = datasets2.map((ds, i) => {
         const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
         const metaHidden = chart.getDatasetMeta?.(i)?.hidden;
         const isVisible = typeof chart.isDatasetVisible === 'function' ? chart.isDatasetVisible(i) : !(dsHidden === true || metaHidden === true);
-        console.log('CustomLegend: post-toggle dataset', i, { dsHidden, metaHidden, isVisible });
         return { label: ds.label, color: ds.borderColor || ds.backgroundColor || '#1976d2', index: i, visible: isVisible };
       });
       setItems(arr);
     };
 
     if (!items.length) {
-      console.log('CustomLegend: no items to render');
       return null;
     }
     return (
