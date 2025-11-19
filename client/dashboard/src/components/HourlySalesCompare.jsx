@@ -524,7 +524,10 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           console.log('CustomLegend: build items, dataset count=', datasets.length);
           const arr = datasets.map((ds, i) => {
               const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
-              const visible = !dsHidden;
+              const metaHidden = chart.getDatasetMeta?.(i)?.hidden;
+              const visible = typeof chart.isDatasetVisible === 'function'
+                ? chart.isDatasetVisible(i)
+                : !(dsHidden === true || metaHidden === true);
               return {
                 label: ds.label,
                 color: ds.borderColor || ds.backgroundColor || '#1976d2',
@@ -574,32 +577,29 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       const chart = resolveChart(chartRef);
       if (!chart) return;
       console.log('CustomLegend: toggle idx=', idx);
-      if (typeof chart.toggleDataVisibility === 'function') {
-        console.log('CustomLegend: using toggleDataVisibility');
-        chart.toggleDataVisibility(idx);
-      } else {
-        const currentHidden = chart.data?.datasets?.[idx]?.hidden === true;
-        const newHidden = !currentHidden;
-        console.log('CustomLegend: setting dataset.hidden=', newHidden);
-        if (chart.data && chart.data.datasets && chart.data.datasets[idx]) {
-          chart.data.datasets[idx].hidden = newHidden;
-        }
-        try {
-          const meta = chart.getDatasetMeta(idx);
-          if (meta) meta.hidden = newHidden;
-        } catch (e) {
-          console.log('CustomLegend: unable to set meta.hidden', e);
-        }
+      // Explicitly set dataset.hidden and meta.hidden so the dataset is hidden
+      const currentHidden = chart.data?.datasets?.[idx]?.hidden === true;
+      const newHidden = !currentHidden;
+      console.log('CustomLegend: setting dataset.hidden=', newHidden);
+      if (chart.data && chart.data.datasets && chart.data.datasets[idx]) {
+        chart.data.datasets[idx].hidden = newHidden;
+      }
+      try {
+        const meta = chart.getDatasetMeta(idx);
+        if (meta) meta.hidden = newHidden;
+      } catch (e) {
+        console.log('CustomLegend: unable to set meta.hidden', e);
       }
       // Force update and redraw
       try { chart.update(); } catch (e) { console.log('CustomLegend: chart.update error', e); }
-      // reflect new state
-      const datasets = chart.data?.datasets || [];
-      const arr = datasets.map((ds, i) => {
+      // reflect new state and log details for debugging
+      const datasets2 = chart.data?.datasets || [];
+      const arr = datasets2.map((ds, i) => {
         const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
         const metaHidden = chart.getDatasetMeta?.(i)?.hidden;
-        const visible = !(dsHidden === true || metaHidden === true);
-        return { label: ds.label, color: ds.borderColor || ds.backgroundColor || '#1976d2', index: i, visible };
+        const isVisible = typeof chart.isDatasetVisible === 'function' ? chart.isDatasetVisible(i) : !(dsHidden === true || metaHidden === true);
+        console.log('CustomLegend: post-toggle dataset', i, { dsHidden, metaHidden, isVisible });
+        return { label: ds.label, color: ds.borderColor || ds.backgroundColor || '#1976d2', index: i, visible: isVisible };
       });
       setItems(arr);
     };
