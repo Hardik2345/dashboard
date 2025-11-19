@@ -411,7 +411,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     interaction: { mode: 'index', intersect: false },
     plugins: {
       legend: {
-        display: Boolean(state.comparisonValues.length),
+        display: false,
         align: 'start',
         position: 'top',
         padding: 16,
@@ -483,12 +483,12 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   useEffect(() => {
     try {
       const chartInstance = chartRef.current?.chart || chartRef.current?.getChart?.();
-      console.debug('HourlySalesCompare: chartRef.current ->', chartRef.current);
-      console.debug('HourlySalesCompare: chartInstance ->', chartInstance);
-      console.debug('HourlySalesCompare: datasets count ->', chartInstance?.data?.datasets?.length ?? 0);
-      console.debug('HourlySalesCompare: labels length ->', state.labels.length);
+      console.log('HourlySalesCompare: chartRef.current ->', chartRef.current);
+      console.log('HourlySalesCompare: chartInstance ->', chartInstance);
+      console.log('HourlySalesCompare: datasets count ->', chartInstance?.data?.datasets?.length ?? 0);
+      console.log('HourlySalesCompare: labels length ->', state.labels.length);
     } catch (err) {
-      console.debug('HourlySalesCompare: error reading chartRef', err);
+      console.log('HourlySalesCompare: error reading chartRef', err);
     }
   }, [loading, state.labels, state.values, state.comparisonValues]);
 
@@ -497,42 +497,68 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     const [items, setItems] = useState([]);
 
     useEffect(() => {
-      const chart = chartRef.current?.chart || chartRef.current?.getChart?.();
-      console.debug('CustomLegend: init - chart ->', chart);
-      if (!chart) {
-        console.debug('CustomLegend: no chart instance available yet');
-        return;
+      // Rebuild whenever incoming data changes. If the chart instance isn't
+      // available yet we poll briefly until it exists (useful when ref is set
+      // after the component mounts).
+      let intervalId = null;
+      let mounted = true;
+      const getChart = () => chartRef.current?.chart || chartRef.current?.getChart?.();
+
+      const tryBuild = () => {
+        const chart = getChart();
+        console.log('CustomLegend: tryBuild - chart ->', chart);
+        if (!chart) return false;
+        const build = () => {
+          const datasets = chart.data?.datasets || [];
+          console.log('CustomLegend: build items, dataset count=', datasets.length);
+          const arr = datasets.map((ds, i) => {
+            const meta = chart.getDatasetMeta(i);
+            const hidden = meta?.hidden;
+            const visible = hidden === null ? chart.isDatasetVisible(i) : !hidden;
+            return {
+              label: ds.label,
+              color: ds.borderColor || ds.backgroundColor || '#1976d2',
+              index: i,
+              visible,
+            };
+          });
+          console.log('CustomLegend: built items ->', arr.map(a => ({ i: a.index, label: a.label, visible: a.visible })));
+          if (mounted) setItems(arr);
+        };
+
+        build();
+        // Monkey-patch chart.update to also refresh items (safe restore on unmount)
+        const originalUpdate = chart.update.bind(chart);
+        chart.update = function() {
+          console.log('CustomLegend: chart.update called');
+          const ret = originalUpdate(...arguments);
+          try { build(); } catch (e) { console.log('CustomLegend: build after update failed', e); }
+          return ret;
+        };
+        return () => {
+          try { chart.update = originalUpdate; } catch (e) { console.log('CustomLegend: restore update failed', e); }
+        };
+      };
+
+      // First immediate attempt
+      const cleanupPatch = tryBuild();
+      if (!cleanupPatch) {
+        // Poll for up to ~2 seconds
+        let attempts = 0;
+        intervalId = setInterval(() => {
+          attempts += 1;
+          const cleanup = tryBuild();
+          if (cleanup || attempts > 20) {
+            if (intervalId) clearInterval(intervalId);
+          }
+        }, 100);
       }
-      const build = () => {
-        const datasets = chart.data?.datasets || [];
-        console.debug('CustomLegend: build items, dataset count=', datasets.length);
-        const arr = datasets.map((ds, i) => {
-          const meta = chart.getDatasetMeta(i);
-          const hidden = meta?.hidden;
-          const visible = hidden === null ? chart.isDatasetVisible(i) : !hidden;
-          return {
-            label: ds.label,
-            color: ds.borderColor || ds.backgroundColor || '#1976d2',
-            index: i,
-            visible,
-          };
-        });
-        console.debug('CustomLegend: built items ->', arr.map(a => ({ i: a.index, label: a.label, visible: a.visible })));
-        setItems(arr);
-      };
-      build();
-      // Monkey-patch chart.update to also refresh items (safe restore on unmount)
-      const originalUpdate = chart.update.bind(chart);
-      chart.update = function() {
-        console.debug('CustomLegend: chart.update called');
-        const ret = originalUpdate(...arguments);
-        try { build(); } catch (e) { console.debug('CustomLegend: build after update failed', e); }
-        return ret;
-      };
+
       return () => {
-        try { chart.update = originalUpdate; } catch (e) { console.debug('CustomLegend: restore update failed', e); }
+        mounted = false;
+        if (intervalId) clearInterval(intervalId);
       };
-    }, [chartRef]);
+    }, [chartRef, data]);
 
     const toggle = (idx) => {
       const chart = chartRef.current?.chart || chartRef.current?.getChart?.();
@@ -556,7 +582,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     };
 
     if (!items.length) {
-      console.debug('CustomLegend: no items to render');
+      console.log('CustomLegend: no items to render');
       return null;
     }
     return (
@@ -619,7 +645,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           </FormControl>
         </Box>
         {/* Custom React-rendered legend */}
-        <CustomLegend chartRef={chartRef} />
+        <CustomLegend chartRef={chartRef} data={data} />
         {loading ? (
           <Skeleton variant="rounded" width="100%" height={240} />
         ) : state.error ? (
