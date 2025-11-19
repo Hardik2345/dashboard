@@ -523,29 +523,28 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           const datasets = chart.data?.datasets || [];
           console.log('CustomLegend: build items, dataset count=', datasets.length);
           const arr = datasets.map((ds, i) => {
-            const meta = chart.getDatasetMeta(i);
-            const hidden = meta?.hidden;
-            const visible = hidden === null ? chart.isDatasetVisible(i) : !hidden;
-            return {
-              label: ds.label,
-              color: ds.borderColor || ds.backgroundColor || '#1976d2',
-              index: i,
-              visible,
-            };
-          });
+              const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
+              const visible = !dsHidden;
+              return {
+                label: ds.label,
+                color: ds.borderColor || ds.backgroundColor || '#1976d2',
+                index: i,
+                visible,
+              };
+            });
           console.log('CustomLegend: built items ->', arr.map(a => ({ i: a.index, label: a.label, visible: a.visible })));
           if (mounted) setItems(arr);
         };
 
         build();
         // Monkey-patch chart.update to also refresh items (safe restore on unmount)
-        const originalUpdate = chart.update.bind(chart);
-        chart.update = function() {
-          console.log('CustomLegend: chart.update called');
-          const ret = originalUpdate(...arguments);
-          try { build(); } catch (e) { console.log('CustomLegend: build after update failed', e); }
-          return ret;
-        };
+          const originalUpdate = chart.update.bind(chart);
+          chart.update = function() {
+            console.log('CustomLegend: chart.update called');
+            const ret = originalUpdate(...arguments);
+            try { build(); } catch (e) { console.log('CustomLegend: build after update failed', e); }
+            return ret;
+          };
         return () => {
           try { chart.update = originalUpdate; } catch (e) { console.log('CustomLegend: restore update failed', e); }
         };
@@ -577,16 +576,15 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       if (typeof chart.toggleDataVisibility === 'function') {
         chart.toggleDataVisibility(idx);
       } else {
-        const meta = chart.getDatasetMeta(idx);
-        meta.hidden = !meta.hidden;
+        const currentHidden = chart.data?.datasets?.[idx]?.hidden === true;
+        chart.data.datasets[idx].hidden = !currentHidden;
       }
       chart.update();
       // reflect new state
       const datasets = chart.data?.datasets || [];
       const arr = datasets.map((ds, i) => {
-        const meta = chart.getDatasetMeta(i);
-        const hidden = meta?.hidden;
-        const visible = hidden === null ? chart.isDatasetVisible(i) : !hidden;
+        const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
+        const visible = !dsHidden;
         return { label: ds.label, color: ds.borderColor || ds.backgroundColor || '#1976d2', index: i, visible };
       });
       setItems(arr);
