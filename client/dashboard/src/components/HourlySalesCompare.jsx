@@ -573,18 +573,32 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     const toggle = (idx) => {
       const chart = resolveChart(chartRef);
       if (!chart) return;
+      console.log('CustomLegend: toggle idx=', idx);
       if (typeof chart.toggleDataVisibility === 'function') {
+        console.log('CustomLegend: using toggleDataVisibility');
         chart.toggleDataVisibility(idx);
       } else {
         const currentHidden = chart.data?.datasets?.[idx]?.hidden === true;
-        chart.data.datasets[idx].hidden = !currentHidden;
+        const newHidden = !currentHidden;
+        console.log('CustomLegend: setting dataset.hidden=', newHidden);
+        if (chart.data && chart.data.datasets && chart.data.datasets[idx]) {
+          chart.data.datasets[idx].hidden = newHidden;
+        }
+        try {
+          const meta = chart.getDatasetMeta(idx);
+          if (meta) meta.hidden = newHidden;
+        } catch (e) {
+          console.log('CustomLegend: unable to set meta.hidden', e);
+        }
       }
-      chart.update();
+      // Force update and redraw
+      try { chart.update(); } catch (e) { console.log('CustomLegend: chart.update error', e); }
       // reflect new state
       const datasets = chart.data?.datasets || [];
       const arr = datasets.map((ds, i) => {
         const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
-        const visible = !dsHidden;
+        const metaHidden = chart.getDatasetMeta?.(i)?.hidden;
+        const visible = !(dsHidden === true || metaHidden === true);
         return { label: ds.label, color: ds.borderColor || ds.backgroundColor || '#1976d2', index: i, visible };
       });
       setItems(arr);
