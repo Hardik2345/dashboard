@@ -479,10 +479,21 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   // Chart ref for legend interaction
   const chartRef = useRef(null);
 
+  // Resolve Chart.js instance from different react-chartjs-2 ref shapes
+  const resolveChart = (ref) => {
+    if (!ref) return null;
+    const r = ref.current;
+    if (!r) return null;
+    if (r.chart) return r.chart;
+    if (typeof r.getChart === 'function') return r.getChart();
+    if (r.config || r.ctx || r.data) return r;
+    return null;
+  };
+
   // Debug: log chartRef and data when loading or data changes
   useEffect(() => {
     try {
-      const chartInstance = chartRef.current?.chart || chartRef.current?.getChart?.();
+      const chartInstance = resolveChart(chartRef);
       console.log('HourlySalesCompare: chartRef.current ->', chartRef.current);
       console.log('HourlySalesCompare: chartInstance ->', chartInstance);
       console.log('HourlySalesCompare: datasets count ->', chartInstance?.data?.datasets?.length ?? 0);
@@ -502,7 +513,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       // after the component mounts).
       let intervalId = null;
       let mounted = true;
-      const getChart = () => chartRef.current?.chart || chartRef.current?.getChart?.();
+      const getChart = () => resolveChart(chartRef);
 
       const tryBuild = () => {
         const chart = getChart();
@@ -561,7 +572,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     }, [chartRef, data]);
 
     const toggle = (idx) => {
-      const chart = chartRef.current?.chart || chartRef.current?.getChart?.();
+      const chart = resolveChart(chartRef);
       if (!chart) return;
       if (typeof chart.toggleDataVisibility === 'function') {
         chart.toggleDataVisibility(idx);
