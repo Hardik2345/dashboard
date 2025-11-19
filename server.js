@@ -1391,7 +1391,7 @@ app.get('/author/brands', requireAuth, (req, res) => {
   return res.json({ brands: Object.values(getBrands()).map(b => ({ key: b.key, host: b.dbHost, db: b.dbName })) });
 });
 
-// In-memory mutex to serialize persistence operations
+// In-memory mutex to serialize persistence operations 
 const brandPersistLock = { locked: false };
 async function withBrandLock(fn) {
   while (brandPersistLock.locked) { await new Promise(r => setTimeout(r, 50)); }
