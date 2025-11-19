@@ -25,7 +25,18 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, BarElement, ChartDataLabels);
+  ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, BarElement, ChartDataLabels);
+  // Custom legendCallback for toggle buttons
+  ChartJS.defaults.plugins.legend.legendCallback = function(chart) {
+    const datasets = chart.data.datasets || [];
+    let html = '<div class="custom-legend" style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;">';
+    datasets.forEach((ds, i) => {
+      const visible = !chart.getDatasetMeta(i).hidden;
+      html += `<button class="legend-toggle${visible ? ' active' : ''}" data-index="${i}" style="margin:0 8px 8px 0;padding:6px 16px;border-radius:20px;border:1px solid #ccc;background:${visible ? ds.borderColor : '#f5f5f5'};color:${visible ? '#fff' : '#333'};cursor:pointer;font-weight:500;transition:background 0.2s,color 0.2s;">${ds.label}</button>`;
+    });
+    html += '</div>';
+    return html;
+  };
 // Configure datalabels defaults (adapted from StackOverflow suggestion)
 if (!ChartJS.defaults.plugins) ChartJS.defaults.plugins = {};
 ChartJS.defaults.plugins.datalabels = ChartJS.defaults.plugins.datalabels || {};
@@ -473,6 +484,43 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     }
   };
 
+  // ...existing code...
+  // Custom legend container
+  const [legendHtml, setLegendHtml] = useState('');
+  useEffect(() => {
+    if (!loading && !state.error && state.labels.length > 0) {
+      // Use ChartJS instance to generate legend
+      // Wait for chart to mount
+      setTimeout(() => {
+        const chartEl = document.querySelector('.chartjs-render-monitor');
+        if (chartEl && chartEl._chart) {
+          setLegendHtml(chartEl._chart.generateLegend());
+        }
+      }, 100);
+    }
+  }, [loading, state, viewMode, metric]);
+
+  // Legend toggle click handler
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.target.classList.contains('legend-toggle')) {
+        const idx = +e.target.getAttribute('data-index');
+        const chartEl = document.querySelector('.chartjs-render-monitor');
+        if (chartEl && chartEl._chart) {
+          const chart = chartEl._chart;
+          const meta = chart.getDatasetMeta(idx);
+          meta.hidden = meta.hidden === null ? !chart.data.datasets[idx].hidden : null;
+          chart.update();
+          setLegendHtml(chart.generateLegend());
+        }
+      }
+    };
+    document.getElementById('custom-legend-container')?.addEventListener('click', handler);
+    return () => {
+      document.getElementById('custom-legend-container')?.removeEventListener('click', handler);
+    };
+  }, [legendHtml]);
+
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
       <CardContent sx={{ minHeight: 320, display: 'flex', flexDirection: 'column' }}>
@@ -512,7 +560,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             </Select>
           </FormControl>
         </Box>
-        
+        {/* Custom legend HTML container */}
+        <div id="custom-legend-container" dangerouslySetInnerHTML={{ __html: legendHtml }} style={{ marginBottom: 8 }} />
         {loading ? (
           <Skeleton variant="rounded" width="100%" height={240} />
         ) : state.error ? (
