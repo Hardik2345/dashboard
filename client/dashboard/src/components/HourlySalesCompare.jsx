@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, MenuItem, InputLabel } from '@mui/material';
+import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, MenuItem, InputLabel, Checkbox, FormControlLabel, Stack } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { Line, Bar } from 'react-chartjs-2';
 import { useRef } from 'react';
@@ -27,17 +27,6 @@ function hexToRgba(hex, alpha) {
 }
 
   ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, BarElement, ChartDataLabels);
-  // Custom legendCallback for toggle buttons
-  ChartJS.defaults.plugins.legend.legendCallback = function(chart) {
-    const datasets = chart.data.datasets || [];
-    let html = '<div class="custom-legend" style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;">';
-    datasets.forEach((ds, i) => {
-      const visible = !chart.getDatasetMeta(i).hidden;
-      html += `<button class="legend-toggle${visible ? ' active' : ''}" data-index="${i}" style="margin:0 8px 8px 0;padding:6px 16px;border-radius:20px;border:1px solid #ccc;background:${visible ? ds.borderColor : '#f5f5f5'};color:${visible ? '#fff' : '#333'};cursor:pointer;font-weight:500;transition:background 0.2s,color 0.2s;">${ds.label}</button>`;
-    });
-    html += '</div>';
-    return html;
-  };
 // Configure datalabels defaults (adapted from StackOverflow suggestion)
 if (!ChartJS.defaults.plugins) ChartJS.defaults.plugins = {};
 ChartJS.defaults.plugins.datalabels = ChartJS.defaults.plugins.datalabels || {};
@@ -422,7 +411,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     interaction: { mode: 'index', intersect: false },
     plugins: {
       legend: {
-        display: Boolean(state.comparisonValues.length),
+        display: false,
         align: 'start',
         position: 'top',
         padding: 16,
@@ -437,19 +426,6 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             const labels = defaultLegendLabels(chart);
             return labels.map((item) => ({ ...item, text: `  ${item.text}` }));
           },
-          // Custom legend HTML generator for toggle-button style
-          legendCallback: function(chart) {
-            const datasets = chart.data.datasets || [];
-            let html = '<div class="custom-legend" style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;padding:0;">';
-            datasets.forEach((ds, i) => {
-              const visible = !chart.getDatasetMeta(i).hidden;
-              const bg = visible ? (ds.borderColor || '#1976d2') : '#f5f5f5';
-              const color = visible ? '#fff' : '#333';
-              html += `<button class="legend-toggle${visible ? ' active' : ''}" data-index="${i}" style="margin:0;padding:6px 14px;border-radius:16px;border:1px solid rgba(0,0,0,0.08);background:${bg};color:${color};cursor:pointer;font-weight:500;display:inline-flex;align-items:center;gap:8px;">${ds.label}</button>`;
-            });
-            html += '</div>';
-            return html;
-          }
         },
       },
       tooltip: {
@@ -500,43 +476,85 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
 
   // ...existing code...
 
-  // Chart ref for legend generation
+  // Chart ref for legend interaction
   const chartRef = useRef(null);
-  const [legendHtml, setLegendHtml] = useState('');
-  useEffect(() => {
-    if (!loading && !state.error && state.labels.length > 0 && chartRef.current) {
-      // react-chartjs-2 v4: chartRef.current.chart is the Chart.js instance
-      const chartInstance = chartRef.current.chart || chartRef.current.getChart?.();
-      if (chartInstance && typeof chartInstance.generateLegend === 'function') {
-        setLegendHtml(chartInstance.generateLegend());
-      } else {
-        setLegendHtml('');
-      }
-    }
-  }, [loading, state, viewMode, metric]);
 
-  // Legend toggle click handler
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.target.classList.contains('legend-toggle') && chartRef.current) {
-        const idx = +e.target.getAttribute('data-index');
-        const chartInstance = chartRef.current.chart || chartRef.current.getChart?.();
-        if (chartInstance) {
-          const meta = chartInstance.getDatasetMeta(idx);
-          meta.hidden = meta.hidden === null ? !chartInstance.data.datasets[idx].hidden : null;
-          chartInstance.update();
-          if (typeof chartInstance.generateLegend === 'function') {
-            setLegendHtml(chartInstance.generateLegend());
-          }
-        }
+  // React-rendered custom legend component using MUI Checkbox controls
+  function CustomLegend({ chartRef }) {
+    const [items, setItems] = useState([]);
+
+    useEffect(() => {
+      const chart = chartRef.current?.chart || chartRef.current?.getChart?.();
+      if (!chart) return;
+      const build = () => {
+        const datasets = chart.data?.datasets || [];
+        const arr = datasets.map((ds, i) => {
+          const meta = chart.getDatasetMeta(i);
+          const hidden = meta?.hidden;
+          const visible = hidden === null ? chart.isDatasetVisible(i) : !hidden;
+          return {
+            label: ds.label,
+            color: ds.borderColor || ds.backgroundColor || '#1976d2',
+            index: i,
+            visible,
+          };
+        });
+        setItems(arr);
+      };
+      build();
+      // Monkey-patch chart.update to also refresh items (safe restore on unmount)
+      const originalUpdate = chart.update.bind(chart);
+      chart.update = function() {
+        const ret = originalUpdate(...arguments);
+        build();
+        return ret;
+      };
+      return () => {
+        try { chart.update = originalUpdate; } catch (e) { /* ignore */ }
+      };
+    }, [chartRef]);
+
+    const toggle = (idx) => {
+      const chart = chartRef.current?.chart || chartRef.current?.getChart?.();
+      if (!chart) return;
+      if (typeof chart.toggleDataVisibility === 'function') {
+        chart.toggleDataVisibility(idx);
+      } else {
+        const meta = chart.getDatasetMeta(idx);
+        meta.hidden = !meta.hidden;
       }
+      chart.update();
+      // reflect new state
+      const datasets = chart.data?.datasets || [];
+      const arr = datasets.map((ds, i) => {
+        const meta = chart.getDatasetMeta(i);
+        const hidden = meta?.hidden;
+        const visible = hidden === null ? chart.isDatasetVisible(i) : !hidden;
+        return { label: ds.label, color: ds.borderColor || ds.backgroundColor || '#1976d2', index: i, visible };
+      });
+      setItems(arr);
     };
-    const legendEl = document.getElementById('custom-legend-container');
-    legendEl?.addEventListener('click', handler);
-    return () => {
-      legendEl?.removeEventListener('click', handler);
-    };
-  }, [legendHtml]);
+
+    if (!items.length) return null;
+    return (
+      <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', mb: 1 }}>
+        {items.map((item) => (
+          <FormControlLabel
+            key={item.index}
+            control={(
+              <Checkbox
+                checked={Boolean(item.visible)}
+                onChange={() => toggle(item.index)}
+                sx={{ color: item.color, '&.Mui-checked': { color: item.color } }}
+                size="small"
+              />
+            )}
+            label={<Typography variant="caption" sx={{ ml: 0.25 }}>{item.label}</Typography>}
+          />
+        ))}
+      </Stack>
+    );
+  }
 
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
@@ -577,8 +595,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             </Select>
           </FormControl>
         </Box>
-        {/* Custom legend HTML container */}
-        <div id="custom-legend-container" dangerouslySetInnerHTML={{ __html: legendHtml }} style={{ marginBottom: 8 }} />
+        {/* Custom React-rendered legend */}
+        <CustomLegend chartRef={chartRef} />
         {loading ? (
           <Skeleton variant="rounded" width="100%" height={240} />
         ) : state.error ? (
