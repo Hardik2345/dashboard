@@ -411,7 +411,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     interaction: { mode: 'index', intersect: false },
     plugins: {
       legend: {
-        display: false,
+        display: Boolean(state.comparisonValues.length),
         align: 'start',
         position: 'top',
         padding: 16,
@@ -479,21 +479,36 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   // Chart ref for legend interaction
   const chartRef = useRef(null);
 
+  // Debug: log chartRef and data when loading or data changes
+  useEffect(() => {
+    try {
+      const chartInstance = chartRef.current?.chart || chartRef.current?.getChart?.();
+      console.debug('HourlySalesCompare: chartRef.current ->', chartRef.current);
+      console.debug('HourlySalesCompare: chartInstance ->', chartInstance);
+      console.debug('HourlySalesCompare: datasets count ->', chartInstance?.data?.datasets?.length ?? 0);
+      console.debug('HourlySalesCompare: labels length ->', state.labels.length);
+    } catch (err) {
+      console.debug('HourlySalesCompare: error reading chartRef', err);
+    }
+  }, [loading, state.labels, state.values, state.comparisonValues]);
+
   // React-rendered custom legend component using MUI Checkbox controls
   function CustomLegend({ chartRef }) {
     const [items, setItems] = useState([]);
 
     useEffect(() => {
       const chart = chartRef.current?.chart || chartRef.current?.getChart?.();
-      if (!chart) return;
+      console.debug('CustomLegend: init - chart ->', chart);
+      if (!chart) {
+        console.debug('CustomLegend: no chart instance available yet');
+        return;
+      }
       const build = () => {
         const datasets = chart.data?.datasets || [];
-        console.log("datasets: ",datasets)
+        console.debug('CustomLegend: build items, dataset count=', datasets.length);
         const arr = datasets.map((ds, i) => {
           const meta = chart.getDatasetMeta(i);
-          console.log("meta: ",meta)
           const hidden = meta?.hidden;
-          console.log("hidden: ", hidden)
           const visible = hidden === null ? chart.isDatasetVisible(i) : !hidden;
           return {
             label: ds.label,
@@ -502,18 +517,20 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             visible,
           };
         });
+        console.debug('CustomLegend: built items ->', arr.map(a => ({ i: a.index, label: a.label, visible: a.visible })));
         setItems(arr);
       };
       build();
       // Monkey-patch chart.update to also refresh items (safe restore on unmount)
       const originalUpdate = chart.update.bind(chart);
       chart.update = function() {
+        console.debug('CustomLegend: chart.update called');
         const ret = originalUpdate(...arguments);
-        build();
+        try { build(); } catch (e) { console.debug('CustomLegend: build after update failed', e); }
         return ret;
       };
       return () => {
-        try { chart.update = originalUpdate; } catch (e) { /* ignore */ }
+        try { chart.update = originalUpdate; } catch (e) { console.debug('CustomLegend: restore update failed', e); }
       };
     }, [chartRef]);
 
@@ -531,7 +548,6 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       const datasets = chart.data?.datasets || [];
       const arr = datasets.map((ds, i) => {
         const meta = chart.getDatasetMeta(i);
-        console.log("Meta: ", meta)
         const hidden = meta?.hidden;
         const visible = hidden === null ? chart.isDatasetVisible(i) : !hidden;
         return { label: ds.label, color: ds.borderColor || ds.backgroundColor || '#1976d2', index: i, visible };
@@ -539,7 +555,10 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       setItems(arr);
     };
 
-    if (!items.length) return null;
+    if (!items.length) {
+      console.debug('CustomLegend: no items to render');
+      return null;
+    }
     return (
       <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', mb: 1 }}>
         {items.map((item) => (
