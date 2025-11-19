@@ -492,7 +492,13 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   const [legendHtml, setLegendHtml] = useState('');
   useEffect(() => {
     if (!loading && !state.error && state.labels.length > 0 && chartRef.current) {
-      setLegendHtml(chartRef.current.generateLegend());
+      // react-chartjs-2 v4: chartRef.current.chart is the Chart.js instance
+      const chartInstance = chartRef.current.chart || chartRef.current.getChart?.();
+      if (chartInstance && typeof chartInstance.generateLegend === 'function') {
+        setLegendHtml(chartInstance.generateLegend());
+      } else {
+        setLegendHtml('');
+      }
     }
   }, [loading, state, viewMode, metric]);
 
@@ -501,11 +507,15 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     const handler = (e) => {
       if (e.target.classList.contains('legend-toggle') && chartRef.current) {
         const idx = +e.target.getAttribute('data-index');
-        const chart = chartRef.current;
-        const meta = chart.getDatasetMeta(idx);
-        meta.hidden = meta.hidden === null ? !chart.data.datasets[idx].hidden : null;
-        chart.update();
-        setLegendHtml(chart.generateLegend());
+        const chartInstance = chartRef.current.chart || chartRef.current.getChart?.();
+        if (chartInstance) {
+          const meta = chartInstance.getDatasetMeta(idx);
+          meta.hidden = meta.hidden === null ? !chartInstance.data.datasets[idx].hidden : null;
+          chartInstance.update();
+          if (typeof chartInstance.generateLegend === 'function') {
+            setLegendHtml(chartInstance.generateLegend());
+          }
+        }
       }
     };
     const legendEl = document.getElementById('custom-legend-container');
