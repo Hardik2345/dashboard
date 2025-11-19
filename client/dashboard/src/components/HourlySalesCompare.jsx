@@ -488,9 +488,12 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       if (!chart) return;
       const build = () => {
         const datasets = chart.data?.datasets || [];
+        console.log("datasets: ",datasets)
         const arr = datasets.map((ds, i) => {
           const meta = chart.getDatasetMeta(i);
+          console.log("meta: ",meta)
           const hidden = meta?.hidden;
+          console.log("hidden: ", hidden)
           const visible = hidden === null ? chart.isDatasetVisible(i) : !hidden;
           return {
             label: ds.label,
@@ -528,6 +531,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       const datasets = chart.data?.datasets || [];
       const arr = datasets.map((ds, i) => {
         const meta = chart.getDatasetMeta(i);
+        console.log("Meta: ", meta)
         const hidden = meta?.hidden;
         const visible = hidden === null ? chart.isDatasetVisible(i) : !hidden;
         return { label: ds.label, color: ds.borderColor || ds.backgroundColor || '#1976d2', index: i, visible };
