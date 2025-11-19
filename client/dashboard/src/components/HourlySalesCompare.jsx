@@ -437,6 +437,19 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             const labels = defaultLegendLabels(chart);
             return labels.map((item) => ({ ...item, text: `  ${item.text}` }));
           },
+          // Custom legend HTML generator for toggle-button style
+          legendCallback: function(chart) {
+            const datasets = chart.data.datasets || [];
+            let html = '<div class="custom-legend" style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;padding:0;">';
+            datasets.forEach((ds, i) => {
+              const visible = !chart.getDatasetMeta(i).hidden;
+              const bg = visible ? (ds.borderColor || '#1976d2') : '#f5f5f5';
+              const color = visible ? '#fff' : '#333';
+              html += `<button class="legend-toggle${visible ? ' active' : ''}" data-index="${i}" style="margin:0;padding:6px 14px;border-radius:16px;border:1px solid rgba(0,0,0,0.08);background:${bg};color:${color};cursor:pointer;font-weight:500;display:inline-flex;align-items:center;gap:8px;">${ds.label}</button>`;
+            });
+            html += '</div>';
+            return html;
+          }
         },
       },
       tooltip: {
