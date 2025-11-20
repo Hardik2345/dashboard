@@ -2455,6 +2455,8 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
     const rows = await req.brandDb.sequelize.query(
       `SELECT date, hour, total_sales, number_of_orders,
         COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
+        adjusted_number_of_sessions,
+        number_of_sessions AS raw_number_of_sessions,
         number_of_atc_sessions
        FROM hour_wise_sales
        WHERE date >= ? AND date <= ?`,
@@ -2469,7 +2471,10 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
       const key = `${row.date}#${hourVal}`;
       rowMap.set(key, {
         sales: Number(row.total_sales || 0),
-  sessions: Number(row.number_of_sessions || 0),
+        // Hourly should always use raw sessions (never adjusted)
+        sessions: Number(row.raw_number_of_sessions || 0),
+        adjusted_sessions: Number(row.adjusted_number_of_sessions || 0),
+        raw_sessions: Number(row.raw_number_of_sessions || 0),
         orders: Number(row.number_of_orders || 0),
         atc: Number(row.number_of_atc_sessions || 0),
       });
@@ -2500,13 +2505,15 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
       }
 
       // Accumulate by hour-of-day
-      const hourAcc = Array.from({ length: 24 }, () => ({ count: 0, sales: 0, sessions: 0, orders: 0, atc: 0 }));
+      const hourAcc = Array.from({ length: 24 }, () => ({ count: 0, sales: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, orders: 0, atc: 0 }));
       for (const { date: d, hour } of buckets) {
         const metrics = rowMap.get(`${d}#${hour}`) || { sales: 0, sessions: 0, orders: 0, atc: 0 };
         const acc = hourAcc[hour];
         acc.count += 1;
         acc.sales += metrics.sales;
         acc.sessions += metrics.sessions;
+        acc.adjusted_sessions += (metrics.adjusted_sessions || 0);
+        acc.raw_sessions += (metrics.raw_sessions || 0);
         acc.orders += metrics.orders;
         acc.atc += metrics.atc;
       }
@@ -2516,9 +2523,11 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
         const acc = hourAcc[hour];
         const avgSales = acc.count ? acc.sales / acc.count : 0;
         const avgSessions = acc.count ? acc.sessions / acc.count : 0;
+        const avgAdjustedSessions = acc.count ? acc.adjusted_sessions / acc.count : 0;
+        const avgRawSessions = acc.count ? acc.raw_sessions / acc.count : 0;
         const avgOrders = acc.count ? acc.orders / acc.count : 0;
         const avgAtc = acc.count ? acc.atc / acc.count : 0;
-        const cvrRatio = acc.sessions > 0 ? acc.orders / acc.sessions : 0;
+        const cvrRatio = avgSessions > 0 ? avgOrders / avgSessions : 0;
         const label = `${String(hour).padStart(2, '0')}:00`;
         return {
           hour,
@@ -2526,6 +2535,8 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
           metrics: {
             sales: avgSales,
             sessions: avgSessions,
+            adjusted_sessions: avgAdjustedSessions,
+            raw_sessions: avgRawSessions,
             orders: avgOrders,
             atc: avgAtc,
             cvr_ratio: cvrRatio,
@@ -2561,6 +2572,8 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
           metrics: {
             sales: metrics.sales,
             sessions: metrics.sessions,
+            adjusted_sessions: metrics.adjusted_sessions || 0,
+            raw_sessions: metrics.raw_sessions || 0,
             orders: metrics.orders,
             atc: metrics.atc,
             cvr_ratio: cvrRatio,
@@ -2577,6 +2590,8 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
       const comparisonRows = await req.brandDb.sequelize.query(
   `SELECT date, hour, total_sales, number_of_orders,
     COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
+    adjusted_number_of_sessions,
+    number_of_sessions AS raw_number_of_sessions,
     number_of_atc_sessions
          FROM hour_wise_sales
          WHERE date >= ? AND date <= ?`,
@@ -2591,7 +2606,10 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
         const key = `${row.date}#${hourVal}`;
         comparisonRowMap.set(key, {
           sales: Number(row.total_sales || 0),
-          sessions: Number(row.number_of_sessions || 0),
+          // Use raw sessions for hourly comparison as well
+          sessions: Number(row.raw_number_of_sessions || 0),
+          adjusted_sessions: Number(row.adjusted_number_of_sessions || 0),
+          raw_sessions: Number(row.raw_number_of_sessions || 0),
           orders: Number(row.number_of_orders || 0),
           atc: Number(row.number_of_atc_sessions || 0),
         });
@@ -2609,13 +2627,15 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
         for (let hour = 0; hour <= maxHour; hour += 1) comparisonBuckets.push({ date: dateStr, hour });
       }
 
-      const hourAcc = Array.from({ length: 24 }, () => ({ count: 0, sales: 0, sessions: 0, orders: 0, atc: 0 }));
+      const hourAcc = Array.from({ length: 24 }, () => ({ count: 0, sales: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, orders: 0, atc: 0 }));
       for (const { date: bucketDate, hour } of comparisonBuckets) {
         const metrics = comparisonRowMap.get(`${bucketDate}#${hour}`) || { sales: 0, sessions: 0, orders: 0, atc: 0 };
         const acc = hourAcc[hour];
         acc.count += 1;
         acc.sales += metrics.sales;
         acc.sessions += metrics.sessions;
+        acc.adjusted_sessions += (metrics.adjusted_sessions || 0);
+        acc.raw_sessions += (metrics.raw_sessions || 0);
         acc.orders += metrics.orders;
         acc.atc += metrics.atc;
       }
@@ -2623,12 +2643,16 @@ app.get('/metrics/hourly-trend', requireAuth, brandContext, async (req, res) => 
       const avgByHour = hourAcc.map((acc) => {
         const avgSales = acc.count ? acc.sales / acc.count : 0;
         const avgSessions = acc.count ? acc.sessions / acc.count : 0;
+        const avgAdjustedSessions = acc.count ? acc.adjusted_sessions / acc.count : 0;
+        const avgRawSessions = acc.count ? acc.raw_sessions / acc.count : 0;
         const avgOrders = acc.count ? acc.orders / acc.count : 0;
         const avgAtc = acc.count ? acc.atc / acc.count : 0;
-        const cvrRatio = acc.sessions > 0 ? acc.orders / acc.sessions : 0;
+        const cvrRatio = avgSessions > 0 ? avgOrders / avgSessions : 0;
         return {
           sales: avgSales,
           sessions: avgSessions,
+          adjusted_sessions: avgAdjustedSessions,
+          raw_sessions: avgRawSessions,
           orders: avgOrders,
           atc: avgAtc,
           cvr_ratio: cvrRatio,
@@ -2683,25 +2707,29 @@ app.get('/metrics/daily-trend', requireAuth, brandContext, async (req, res) => {
       dayList.push(formatIsoDate(new Date(ts)));
     }
 
-    const sql = `
-      SELECT date, 
-             SUM(total_sales) AS sales,
-             SUM(number_of_orders) AS orders,
-             SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)) AS sessions,
-             SUM(number_of_atc_sessions) AS atc
-      FROM hour_wise_sales
-      WHERE date >= ? AND date <= ?
-      GROUP BY date
-      ORDER BY date ASC`;
+        const sql = `
+          SELECT date, 
+            SUM(total_sales) AS sales,
+            SUM(number_of_orders) AS orders,
+            SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)) AS sessions,
+            SUM(COALESCE(adjusted_number_of_sessions, 0)) AS adjusted_sessions,
+            SUM(number_of_sessions) AS raw_sessions,
+            SUM(number_of_atc_sessions) AS atc
+          FROM hour_wise_sales
+          WHERE date >= ? AND date <= ?
+          GROUP BY date
+          ORDER BY date ASC`;
     const rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [start, end] });
     const map = new Map(rows.map(r => [r.date, {
       sales: Number(r.sales || 0),
       orders: Number(r.orders || 0),
       sessions: Number(r.sessions || 0),
+      adjusted_sessions: Number(r.adjusted_sessions || 0),
+      raw_sessions: Number(r.raw_sessions || 0),
       atc: Number(r.atc || 0),
     }]));
     const days = dayList.map(d => {
-      const m = map.get(d) || { sales: 0, orders: 0, sessions: 0, atc: 0 };
+      const m = map.get(d) || { sales: 0, orders: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, atc: 0 };
       const cvr = m.sessions > 0 ? m.orders / m.sessions : 0;
       return { date: d, label: d, metrics: { ...m, cvr_ratio: cvr, cvr_percent: cvr * 100 } };
     });
