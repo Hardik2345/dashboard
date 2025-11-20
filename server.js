@@ -2728,10 +2728,29 @@ app.get('/metrics/daily-trend', requireAuth, brandContext, async (req, res) => {
       raw_sessions: Number(r.raw_sessions || 0),
       atc: Number(r.atc || 0),
     }]));
+
+    // Also fetch overall_summary for the date range so we can prefer adjusted_total_sessions when present
+    const overallRows = await req.brandDb.sequelize.query(
+      `SELECT date, total_sessions, adjusted_total_sessions FROM overall_summary WHERE date >= ? AND date <= ?`,
+      { type: QueryTypes.SELECT, replacements: [start, end] }
+    );
+    const overallMap = new Map(overallRows.map(r => [r.date, { total_sessions: Number(r.total_sessions || 0), adjusted_total_sessions: r.adjusted_total_sessions == null ? null : Number(r.adjusted_total_sessions) }]));
+
     const days = dayList.map(d => {
       const m = map.get(d) || { sales: 0, orders: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, atc: 0 };
-      const cvr = m.sessions > 0 ? m.orders / m.sessions : 0;
-      return { date: d, label: d, metrics: { ...m, cvr_ratio: cvr, cvr_percent: cvr * 100 } };
+      // Prefer overall_summary.adjusted_total_sessions when it exists (not null). Otherwise use the hour-wise aggregated sessions.
+      const overall = overallMap.get(d);
+      const effectiveSessions = (overall && overall.adjusted_total_sessions != null) ? overall.adjusted_total_sessions : m.sessions;
+      const out = {
+        ...m,
+        // expose what the day-wise chart should use
+        sessions: effectiveSessions,
+        // also include the overall totals for visibility
+        overall_total_sessions: overall ? overall.total_sessions : null,
+        overall_adjusted_total_sessions: overall ? overall.adjusted_total_sessions : null,
+      };
+      const cvr = out.sessions > 0 ? out.orders / out.sessions : 0;
+      return { date: d, label: d, metrics: { ...out, cvr_ratio: cvr, cvr_percent: cvr * 100 } };
     });
 
     const prevWin = previousWindow(start, end);
