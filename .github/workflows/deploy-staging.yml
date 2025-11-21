@@ -53,7 +53,15 @@ jobs:
           cache-dependency-path: client/dashboard/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          # Prefer lockfile install, fall back to npm install when lockfile is missing
+          if [ -f client/dashboard/package-lock.json ]; then
+            echo "Found package-lock.json — running npm ci"
+            npm ci --prefix client/dashboard
+          else
+            echo "No package-lock.json — running npm install"
+            npm install --prefix client/dashboard
+          fi
 
       - name: Build frontend bundle
         run: npm run build
@@ -64,7 +72,10 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_STAGING_PROJECT_ID != '' && secrets.VERCEL_STAGING_PROJECT_ID || secrets.VERCEL_PROJECT_ID }}
         run: |
-          npm ci --prefix client/dashboard
+          # ensure install step already ran; run ci again if lockfile exists
+          if [ -f client/dashboard/package-lock.json ]; then
+            npm ci --prefix client/dashboard
+          fi
           npm i -g vercel@latest
           cd client/dashboard
           # Deploy preview/staging (no --prod). If you want to force project use --confirm --token etc.
@@ -74,6 +85,8 @@ jobs:
     name: Deploy backend to Render (staging)
     needs: approval
     runs-on: ubuntu-latest
+    environment:
+      name: staging
     env:
       NODE_VERSION: '20'
       RENDER_STAGING_DEPLOY_HOOK: ${{ secrets.RENDER_STAGING_DEPLOY_HOOK }}
