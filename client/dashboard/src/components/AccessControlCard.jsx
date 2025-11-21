@@ -20,6 +20,7 @@ export default function AccessControlCard() {
         setWhitelistCount(r.data.whitelistCount || 0);
       }
       setLoading(false);
+      console.log("small change");
     })();
   }, []);
 

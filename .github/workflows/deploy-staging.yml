@@ -3,6 +3,8 @@ name: Deploy Staging
 on:
   push:
     branches: [staging]
+  pull_request:
+    branches: [staging]
   workflow_dispatch:
     inputs:
       reason:
@@ -56,15 +58,17 @@ jobs:
       - name: Build frontend bundle
         run: npm run build
 
-      - name: Deploy to Vercel staging
-        # Uses staging project ID when provided; defaults to production project otherwise
-        uses: vercel/action@v3
-        with:
-          vercel-token: ${{ env.VERCEL_TOKEN }}
-          vercel-org-id: ${{ env.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ env.VERCEL_PROJECT_ID }}
-          working-directory: client/dashboard
-          prod: false
+      - name: Deploy to Vercel (CLI)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_STAGING_PROJECT_ID != '' && secrets.VERCEL_STAGING_PROJECT_ID || secrets.VERCEL_PROJECT_ID }}
+        run: |
+          npm ci --prefix client/dashboard
+          npm i -g vercel@latest
+          cd client/dashboard
+          # Deploy preview/staging (no --prod). If you want to force project use --confirm --token etc.
+          vercel --token "$VERCEL_TOKEN" --confirm --scope "$VERCEL_ORG_ID" --local-config ./vercel.json || true
 
   backend:
     name: Deploy backend to Render (staging)

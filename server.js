@@ -1869,6 +1869,7 @@ app.get('/metrics/total-sales-delta', requireAuth, brandContext, async (req, res
     }
 
     const delta = await deltaForSum('total_sales', date, req.brandDb.sequelize);
+    console.log('Total Sales Delta:', delta);
     return res.json({ metric: 'TOTAL_SALES_DELTA', date, ...delta });
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
 });
