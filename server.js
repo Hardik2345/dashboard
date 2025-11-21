@@ -1873,6 +1873,68 @@ app.get('/metrics/total-sales-delta', requireAuth, brandContext, async (req, res
   } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
 });
 
+// GET /metrics/rolling-30d?brand=KEY&end=YYYY-MM-DD
+// Returns 30-day rolling averages for AOV and CVR for the requested brand.
+app.get('/metrics/rolling-30d', requireAuth, brandContext, async (req, res) => {
+  try {
+    // Optional brand override (author/admin can request other brands)
+    const brandQuery = (req.query.brand || req.query.brand_key || '').toString().trim() || null;
+
+    // Resolve connection: prefer explicit brand query, else use brandContext-provided DB
+    let conn = req.brandDb && req.brandDb.sequelize ? req.brandDb.sequelize : null;
+    if (brandQuery) {
+      const brandCheck = requireBrandKey(brandQuery);
+      if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
+      const brandConn = await getBrandConnection(brandCheck.cfg);
+      conn = brandConn.sequelize;
+    }
+    if (!conn) return res.status(500).json({ error: 'Brand DB connection unavailable' });
+
+    // Determine end date (default: latest date available in overall_summary)
+    let end = (req.query.end || '').toString().trim() || null;
+    if (end) {
+      const parsed = isoDate.safeParse(end);
+      if (!parsed.success) return res.status(400).json({ error: 'Invalid end date. Use YYYY-MM-DD' });
+    } else {
+      const rows = await conn.query('SELECT MAX(date) AS max_d FROM overall_summary', { type: QueryTypes.SELECT });
+      const maxd = Array.isArray(rows) ? rows[0]?.max_d : (rows && rows.max_d);
+      end = maxd || new Date().toISOString().slice(0,10);
+    }
+
+    // Build 30-day series (for each day compute the 30-day window AOV & CVR ending on that day)
+    const days = [];
+    for (let i = 29; i >= 0; --i) {
+      days.push(shiftDays(end, -i));
+    }
+
+    const series = [];
+    for (const day of days) {
+      const winStart = shiftDays(day, -29);
+      const winEnd = day;
+      const aovVal = await aovForRange({ start: winStart, end: winEnd, conn });
+      const aovTotals = await computeAOV({ start: winStart, end: winEnd, conn });
+      const cvrObj = await cvrForRange({ start: winStart, end: winEnd, conn });
+      const cvrTotals = await computeCVR({ start: winStart, end: winEnd, conn });
+
+      series.push({
+        date: day,
+        window_start: winStart,
+        window_end: winEnd,
+        aov_30d: Number(aovVal || 0),
+        aov_totals: { total_sales: Number(aovTotals.total_sales || 0), total_orders: Number(aovTotals.total_orders || 0) },
+        cvr_30d: Number(cvrObj.cvr || 0),
+        cvr_percent_30d: Number(cvrObj.cvr_percent || 0),
+        cvr_totals: { total_orders: Number(cvrTotals.total_orders || 0), total_sessions: Number(cvrTotals.total_sessions || 0) }
+      });
+    }
+
+    return res.json({ metric: 'ROLLING_30D_SERIES', brand: brandQuery || null, end, days: series });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Total Sessions delta (vs previous day)
 app.get('/metrics/total-sessions-delta', requireAuth, brandContext, async (req, res) => {
   try {
