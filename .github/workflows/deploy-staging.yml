@@ -54,13 +54,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Prefer lockfile install, fall back to npm install when lockfile is missing
-          if [ -f client/dashboard/package-lock.json ]; then
+          # Running in working-directory: client/dashboard — use local paths
+          if [ -f package-lock.json ]; then
             echo "Found package-lock.json — running npm ci"
-            npm ci --prefix client/dashboard
+            npm ci
           else
             echo "No package-lock.json — running npm install"
-            npm install --prefix client/dashboard
+            npm install
           fi
 
       - name: Build frontend bundle
@@ -73,11 +73,10 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_STAGING_PROJECT_ID != '' && secrets.VERCEL_STAGING_PROJECT_ID || secrets.VERCEL_PROJECT_ID }}
         run: |
           # ensure install step already ran; run ci again if lockfile exists
-          if [ -f client/dashboard/package-lock.json ]; then
-            npm ci --prefix client/dashboard
+          if [ -f package-lock.json ]; then
+            npm ci
           fi
           npm i -g vercel@latest
-          cd client/dashboard
           # Deploy preview/staging (no --prod). If you want to force project use --confirm --token etc.
           vercel --token "$VERCEL_TOKEN" --confirm --scope "$VERCEL_ORG_ID" --local-config ./vercel.json || true
 
