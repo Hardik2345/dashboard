@@ -11,7 +11,7 @@ async function withBrandLock(fn) {
   try { return await fn(); } finally { brandPersistLock.locked = false; }
 }
 
-function buildAuthorBrandsRouter(sequelize) {
+function buildAuthorBrandsRouter() {
   const router = express.Router();
 
   // List brands (author only)

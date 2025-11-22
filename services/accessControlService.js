@@ -1,5 +1,3 @@
-const { QueryTypes } = require('sequelize');
-
 function createAccessControlService(sequelize) {
   const accessCache = { data: null, fetchedAt: 0 };
 

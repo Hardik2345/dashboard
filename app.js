@@ -156,7 +156,7 @@ sequelize.define('session_activity', {
   ]
 });
 
-const { resolveBrandFromEmail, addBrandRuntime, getBrands } = require('./config/brands');
+const { resolveBrandFromEmail, getBrands } = require('./config/brands');
 const { getBrandConnection } = require('./lib/brandConnectionManager');
 
 // ---- Session & Passport -----------------------------------------------------
