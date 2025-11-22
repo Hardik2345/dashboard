@@ -1,6 +1,6 @@
 const { QueryTypes } = require('sequelize');
 const { buildWhereClause } = require('./sql');
-const { previousWindow, prevDayStr, daysInclusive } = require('./dateUtils');
+const { prevDayStr, daysInclusive } = require('./dateUtils');
 
 // raw SUM helper to avoid ORM coercion issues
 async function rawSum(column, { start, end, conn }) {
