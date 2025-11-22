@@ -1,4 +1,4 @@
-// Default to production mode unless explicitly set, so secure cookies/trust proxy behave correctly in staging/prod.
+// Force production mode by default when running the server from this codebase.
 if (!process.env.NODE_ENV) {
   process.env.NODE_ENV = 'production';
 }
