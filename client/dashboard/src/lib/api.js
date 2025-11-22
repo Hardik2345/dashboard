@@ -1,7 +1,5 @@
-// In production default to the same-origin proxy (/api) so cookies are first-party.
-const API_BASE = import.meta.env.VITE_API_BASE
-  ? import.meta.env.VITE_API_BASE
-  : (import.meta.env.PROD ? '/api' : 'http://localhost:3000');
+// Force same-origin proxy in production so session cookies remain first-party.
+const API_BASE = import.meta.env.PROD ? '/api' : (import.meta.env.VITE_API_BASE || 'http://localhost:3000');
 
 function qs(params) {
   const parts = Object.entries(params)
