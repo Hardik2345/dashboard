@@ -1,5 +1,7 @@
-// Force production mode by default when running the server from this codebase.
-process.env.NODE_ENV = 'development';
+// Default to production mode unless explicitly set, so secure cookies/trust proxy behave correctly in staging/prod.
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'production';
+}
 const express = require("express");
 const cors = require("cors");
 const session = require('express-session');
@@ -164,7 +166,8 @@ const SequelizeStore = SequelizeStoreFactory(session.Store);
 const sessionStore = new SequelizeStore({ db: sequelize, tableName: 'sessions' });
 
 const isProd = process.env.NODE_ENV === 'production';
-const crossSite = process.env.CROSS_SITE === 'true';
+// Default to cross-site=true so SameSite=None/secure cookies work when frontend is on a different host (e.g., Vercel -> Render).
+const crossSite = String(process.env.CROSS_SITE || 'true').toLowerCase() === 'true';
 const sessionTrackingEnabled = String(process.env.SESSION_TRACKING_ENABLED || 'false').toLowerCase() === 'true';
 const SESSION_BUCKET_MS = 10 * 60 * 1000; // 10 minutes
 const accessControlService = createAccessControlService(sequelize);
