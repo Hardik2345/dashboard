@@ -1,4 +1,3 @@
-const { QueryTypes } = require('sequelize');
 const { computeBucketStart, formatDateTimeUTC, hashIp } = require('../utils/sessionUtils');
 
 function createSessionActivityService(sequelize, { sessionBucketMs = 10 * 60 * 1000, sessionTrackingEnabled }) {

@@ -1,7 +1,6 @@
 const { QueryTypes } = require('sequelize');
 const { BucketSchema, RangeSchema } = require('../validation/schemas');
 const { requireBrandKey } = require('../utils/brandHelpers');
-const { getBrands } = require('../config/brands');
 const { getBrandConnection } = require('../lib/brandConnectionManager');
 
 function buildAdjustmentBucketsController({ SessionAdjustmentBucket, SessionAdjustmentAudit }) {
