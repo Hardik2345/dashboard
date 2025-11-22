@@ -31,8 +31,18 @@ export default async function handler(req, res) {
   const upstreamRes = await fetch(url, {
     method: req.method,
     headers,
+    redirect: 'manual', // preserve upstream redirects (e.g., Google OAuth) for the browser to follow
     body: body && ['GET', 'HEAD'].includes(req.method) ? undefined : body,
   });
+
+  // If upstream wants to redirect (e.g., /auth/google 302), forward it as-is.
+  if (upstreamRes.status >= 300 && upstreamRes.status < 400) {
+    const location = upstreamRes.headers.get('location');
+    if (location) res.setHeader('Location', location);
+    res.status(upstreamRes.status);
+    res.end();
+    return;
+  }
 
   res.status(upstreamRes.status);
   upstreamRes.headers.forEach((value, key) => {

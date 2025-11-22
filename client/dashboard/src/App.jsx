@@ -11,7 +11,7 @@ import OrderSplit from './components/OrderSplit.jsx';
 import PaymentSalesSplit from './components/PaymentSalesSplit.jsx';
 import HourlySalesCompare from './components/HourlySalesCompare.jsx';
 import Footer from './components/Footer.jsx';
-import { me, login, logout, listAuthorBrands } from './lib/api.js';
+import { listAuthorBrands } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
 import AuthorAdjustments from './components/AuthorAdjustments.jsx';
 import Unauthorized from './components/Unauthorized.jsx';
@@ -19,6 +19,8 @@ import AccessControlCard from './components/AccessControlCard.jsx';
 import WhitelistTable from './components/WhitelistTable.jsx';
 import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
 import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
+import { useAppDispatch, useAppSelector } from './state/hooks.js';
+import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -55,13 +57,12 @@ function loadInitialRange() {
 }
 
 export default function App() {
+  const dispatch = useAppDispatch();
+  const { user, initialized, loginStatus, loginError } = useAppSelector((state) => state.auth);
+  const loggingIn = loginStatus === 'loading';
   const [range, setRange] = useState(loadInitialRange);
   const [start, end] = range;
-  const [authChecked, setAuthChecked] = useState(false);
-  const [user, setUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
-  const [loginError, setLoginError] = useState(null);
-  const [loggingIn, setLoggingIn] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState(DEFAULT_TREND_METRIC);
 
   const isAuthor = !!user?.isAuthor;
@@ -197,28 +198,22 @@ export default function App() {
 
   // Check auth on mount
   useEffect(() => {
-  me().then(r => { if (r.authenticated) setUser(r.user); setAuthChecked(true); });
-  }, []);
+    dispatch(fetchCurrentUser());
+  }, [dispatch]);
 
   async function handleLogin(e) {
     e.preventDefault();
-    setLoggingIn(true);
-    setLoginError(null);
-    const r = await login(loginForm.email, loginForm.password);
-    setLoggingIn(false);
-    if (r.error) {
-      setLoginError(r.data?.error || 'Login failed');
-    } else {
-  setUser(r.data.user);
+    const action = await dispatch(loginUser({ email: loginForm.email, password: loginForm.password }));
+    if (loginUser.fulfilled.match(action)) {
+      setLoginForm({ email: '', password: '' });
     }
   }
 
   function handleLogout() {
-    logout();
-    setUser(null);
+    dispatch(logoutUser());
   }
 
-  if (!authChecked) return null;
+  if (!initialized) return null;
 
   if (!user) {
     const params = new URLSearchParams(window.location.search);
