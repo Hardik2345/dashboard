@@ -45,9 +45,13 @@ export default async function handler(req, res) {
   });
 
   // Rewrite Set-Cookie to drop the upstream domain so the cookie sticks to the Vercel host.
+  // Vercel/Node fetch exposes cookies via getSetCookie(); raw() is not guaranteed.
+  const fromGet = typeof upstreamRes.headers.getSetCookie === 'function' ? upstreamRes.headers.getSetCookie() : [];
   const rawSetCookies = upstreamRes.headers.raw?.()['set-cookie'] || [];
   const singleSetCookie = upstreamRes.headers.get('set-cookie');
-  const cookies = rawSetCookies.length ? rawSetCookies : (singleSetCookie ? [singleSetCookie] : []);
+  const cookies = (fromGet && fromGet.length)
+    ? fromGet
+    : (rawSetCookies.length ? rawSetCookies : (singleSetCookie ? [singleSetCookie] : []));
   if (cookies.length) {
     const rewritten = cookies.map((c) => c.replace(/;?\s*Domain=[^;]+/i, ''));
     res.setHeader('Set-Cookie', rewritten);
