@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://dashboard-staging-w01n.onrender.com/$1"
+      "destination": "/api/proxy?path=$1"
     },
     { "source": "/login", "destination": "/" },
     { "source": "/unauthorized", "destination": "/" }
