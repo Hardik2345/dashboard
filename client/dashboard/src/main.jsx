@@ -5,11 +5,15 @@ import enTranslations from '@shopify/polaris/locales/en.json';
 import '@shopify/polaris/build/esm/styles.css';
 import './index.css';
 import App from './App.jsx';
+import { Provider } from 'react-redux';
+import { store } from './state/store.js';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <AppProvider i18n={enTranslations}>
-      <App />
-    </AppProvider>
+    <Provider store={store}>
+      <AppProvider i18n={enTranslations}>
+        <App />
+      </AppProvider>
+    </Provider>
   </StrictMode>,
 );
