@@ -1,5 +1,21 @@
-// Default to same-origin proxy unless overridden. This keeps cookies on the same host.
-const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+function resolveApiBase() {
+  const envBase = (import.meta.env.VITE_API_BASE || '').trim();
+  if (!envBase) return '/api';
+
+  // If env base is absolute but on a different host, fall back to same-origin proxy to keep cookies working.
+  try {
+    const envUrl = new URL(envBase, window.location.origin);
+    if (envUrl.origin !== window.location.origin) {
+      return '/api';
+    }
+  } catch {
+    // Ignore parse errors, fall through to envBase
+  }
+  return envBase;
+}
+
+// Keep API calls on same origin so session cookies stick.
+const API_BASE = resolveApiBase();
 
 function qs(params) {
   const parts = Object.entries(params)

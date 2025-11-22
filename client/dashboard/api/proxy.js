@@ -39,6 +39,17 @@ export default async function handler(req, res) {
   if (upstreamRes.status >= 300 && upstreamRes.status < 400) {
     const location = upstreamRes.headers.get('location');
     if (location) res.setHeader('Location', location);
+    // Forward Set-Cookie on redirects so sessions stick after auth flows.
+    const fromGet = typeof upstreamRes.headers.getSetCookie === 'function' ? upstreamRes.headers.getSetCookie() : [];
+    const rawSetCookies = upstreamRes.headers.raw?.()['set-cookie'] || [];
+    const singleSetCookie = upstreamRes.headers.get('set-cookie');
+    const cookies = (fromGet && fromGet.length)
+      ? fromGet
+      : (rawSetCookies.length ? rawSetCookies : (singleSetCookie ? [singleSetCookie] : []));
+    if (cookies.length) {
+      const rewritten = cookies.map((c) => c.replace(/;?\s*Domain=[^;]+/i, ''));
+      res.setHeader('Set-Cookie', rewritten);
+    }
     res.status(upstreamRes.status);
     res.end();
     return;
