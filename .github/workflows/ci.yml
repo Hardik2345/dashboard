@@ -6,8 +6,8 @@ on:
   push:
     branches:
       - 'feature/**'
-      - development
-      - modular-2
+      - modular
+      - stagiing
 
 permissions:
   contents: read
