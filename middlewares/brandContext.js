@@ -19,7 +19,6 @@ async function brandContext(req, res, next) {
       return res.status(404).json({ error: `Unknown brand_key ${rawKey}` });
     }
   } else {
-    // Prefer brandKey set at login time (e.g., via Google SSO)
     if (req.user.brandKey) {
       const map = getBrands();
       brandCfg = map[req.user.brandKey] || null;
