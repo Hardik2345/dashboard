@@ -1,5 +1,4 @@
 const { getBrands } = require('../config/brands');
-const { BucketSchema, RangeSchema } = require('../validation/schemas'); // RangeSchema used for symmetry, even if not needed here
 const { requireBrandKey } = require('../utils/brandHelpers');
 
 function listSettings(requireAuthor, getAccessSettings) {

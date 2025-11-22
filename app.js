@@ -158,7 +158,7 @@ sequelize.define('session_activity', {
   ]
 });
 
-const { resolveBrandFromEmail, addBrandRuntime, getBrands } = require('./config/brands');
+const { resolveBrandFromEmail, getBrands } = require('./config/brands');
 const { getBrandConnection } = require('./lib/brandConnectionManager');
 
 // ---- Session & Passport -----------------------------------------------------
@@ -166,7 +166,8 @@ const SequelizeStore = SequelizeStoreFactory(session.Store);
 const sessionStore = new SequelizeStore({ db: sequelize, tableName: 'sessions' });
 
 const isProd = process.env.NODE_ENV === 'production';
-const crossSite = process.env.CROSS_SITE === 'true';
+// Default to cross-site=true so SameSite=None/secure cookies work when frontend is on a different host (e.g., Vercel -> Render).
+const crossSite = String(process.env.CROSS_SITE || 'true').toLowerCase() === 'true';
 const sessionTrackingEnabled = String(process.env.SESSION_TRACKING_ENABLED || 'false').toLowerCase() === 'true';
 const SESSION_BUCKET_MS = 10 * 60 * 1000; // 10 minutes
 const accessControlService = createAccessControlService(sequelize);

@@ -1,4 +1,5 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+// Hardcode the API base for staging while we debug auth (can override with VITE_API_BASE).
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://dashboard-staging-w01n.onrender.com';
 
 function qs(params) {
   const parts = Object.entries(params)
