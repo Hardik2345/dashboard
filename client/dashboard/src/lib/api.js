@@ -1,5 +1,5 @@
-// Hardcode the API base for staging while we debug auth (can override with VITE_API_BASE).
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://dashboard-staging-w01n.onrender.com';
+// Default to same-origin proxy unless overridden. This keeps cookies on the same host.
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 function qs(params) {
   const parts = Object.entries(params)

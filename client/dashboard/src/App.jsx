@@ -254,8 +254,9 @@ export default function App() {
                   type="button"
                   className="gsi-material-button"
                   onClick={() => {
-                    const base = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
-                    window.location.href = `${base}/auth/google`;
+                    const base = import.meta.env.VITE_API_BASE || '/api';
+                    const target = base.startsWith('http') ? base : `${window.location.origin}${base}`;
+                    window.location.href = `${target}/auth/google`;
                   }}
                 >
                   <div className="gsi-material-button-state"></div>
