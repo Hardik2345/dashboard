@@ -929,7 +929,12 @@ function buildMetricsController() {
           comparison = { range: { start: prevWin.prevStart, end: prevWin.prevEnd }, points: prevPoints };
         }
 
-        return res.json({ range: { start, end }, points, comparison });
+        return res.json({
+          range: { start, end },
+          points,
+          days: points, // alias for frontend expecting `days`
+          comparison: comparison ? { ...comparison, days: comparison.points } : null,
+        });
       } catch (e) { console.error('[daily-trend] failed', e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
