@@ -21,7 +21,8 @@ export default async function handler(req, res) {
   const headers = { ...req.headers };
   delete headers.host;
   delete headers['content-length'];
-  delete headers['accept-encoding']; // upstream will set its own encoding
+  // Request upstream in identity encoding to avoid decode mismatches on the client.
+  headers['accept-encoding'] = 'identity';
 
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -35,7 +36,10 @@ export default async function handler(req, res) {
 
   res.status(upstreamRes.status);
   upstreamRes.headers.forEach((value, key) => {
-    if (key.toLowerCase() === 'transfer-encoding') return;
+    const k = key.toLowerCase();
+    if (k === 'transfer-encoding') return;
+    if (k === 'content-encoding') return;
+    if (k === 'content-length') return;
     res.setHeader(key, value);
   });
   const buf = Buffer.from(await upstreamRes.arrayBuffer());
