@@ -40,8 +40,18 @@ export default async function handler(req, res) {
     if (k === 'transfer-encoding') return;
     if (k === 'content-encoding') return;
     if (k === 'content-length') return;
+    if (k === 'set-cookie') return; // handled separately to adjust domain
     res.setHeader(key, value);
   });
+
+  // Rewrite Set-Cookie to drop the upstream domain so the cookie sticks to the Vercel host.
+  const rawSetCookies = upstreamRes.headers.raw?.()['set-cookie'] || [];
+  const singleSetCookie = upstreamRes.headers.get('set-cookie');
+  const cookies = rawSetCookies.length ? rawSetCookies : (singleSetCookie ? [singleSetCookie] : []);
+  if (cookies.length) {
+    const rewritten = cookies.map((c) => c.replace(/;?\s*Domain=[^;]+/i, ''));
+    res.setHeader('Set-Cookie', rewritten);
+  }
   const buf = Buffer.from(await upstreamRes.arrayBuffer());
   res.send(buf);
 }
