@@ -1,0 +1,33 @@
+name: Auto-create PR for feature/* pushes
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Create or update PR to staging
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(ci): open/update PR for ${{ github.ref_name }} -> staging"
+          title: "Auto PR: ${{ github.ref_name }} → staging"
+          body: |
+            Automated pull request created from branch `${{ github.ref_name }}`.
+            CI ran on push — please review and approve to deploy to staging.
+          base: staging
+          branch: ${{ github.ref_name }}
+          labels: automated, feature
+          draft: false
