@@ -1,0 +1,44 @@
+name: sessions-export-nightly
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 00:01 IST daily -> 18:31 UTC previous day
+    - cron: '31 18 * * *'
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Export sessions and upload
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          MONGO_DB: ${{ secrets.MONGO_DB }}
+          MONGO_COLLECTION: ${{ secrets.MONGO_COLLECTION }}
+          SESSIONS_BRAND_ID: ${{ secrets.SESSIONS_BRAND_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          TZ_OFFSET_MINUTES: 330
+          OUTPUT_DIR: /tmp
+        run: |
+          if [ -z "$MONGO_URI" ] || [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$S3_BUCKET" ]; then
+            echo "Missing required secrets (MONGO_URI, AWS credentials, or S3_BUCKET)."
+            exit 1
+          fi
+          # DATE_OVERRIDE allows manual re-runs for a specific day: YYYY-MM-DD
+          node scripts/sessions_export.js --date=${DATE_OVERRIDE:-} --brand=${SESSIONS_BRAND_ID:-}
