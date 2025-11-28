@@ -18,7 +18,7 @@ import {
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfMoney = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const nfMoney2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
-const nfPct = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
+const nfPct = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 2 });
 
 export default function KPIs({ query, selectedMetric, onSelectMetric, onLoaded }) {
   const [loading, setLoading] = useState(true);
