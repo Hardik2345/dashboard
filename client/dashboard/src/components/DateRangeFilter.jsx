@@ -9,6 +9,7 @@ export default function DateRangeFilter({ value, onChange }) {
   const [popoverActive, setPopoverActive] = useState(false);
   const [month, setMonth] = useState(initialReference.month());
   const [year, setYear] = useState(initialReference.year());
+  const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1024 : false);
 
   useEffect(() => {
     if (start && end && start.isAfter(end)) {
@@ -23,6 +24,16 @@ export default function DateRangeFilter({ value, onChange }) {
       setYear(focusDate.year());
     }
   }, [start, end]);
+
+  // Track desktop vs mobile to show presets on larger screens only
+  useEffect(() => {
+    function onResize() {
+      setIsDesktop(window.innerWidth >= 1024);
+    }
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const selectedRange = useMemo(() => {
     if (!start && !end) return undefined;
@@ -111,16 +122,62 @@ export default function DateRangeFilter({ value, onChange }) {
               style={{
                 padding: '12px',
                 display: 'flex',
-                justifyContent: 'center',
+                flexDirection: 'column',
+                alignItems: 'center',
                 boxSizing: 'border-box',
-                width: 'clamp(320px, 90vw, 360px)',
-                minWidth: 'clamp(320px, 90vw, 360px)',
-                maxWidth: 'clamp(320px, 90vw, 360px)',
+                width: 'clamp(320px, 90vw, 560px)',
+                minWidth: 'clamp(320px, 90vw, 320px)',
+                maxWidth: 'clamp(320px, 90vw, 560px)',
                 maxHeight: '70vh',
                 overflowX: 'hidden',
                 overflowY: 'auto'
               }}
             >
+              {/* Presets row visible on desktop */}
+              {isDesktop && (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                  <Button
+                    onClick={() => {
+                      const today = dayjs().startOf('day');
+                      onChange([today, today]);
+                      setMonth(today.month());
+                      setYear(today.year());
+                      setPopoverActive(false);
+                    }}
+                    variant={start && end && start.isSame(dayjs().startOf('day'), 'day') && end.isSame(dayjs().startOf('day'), 'day') ? 'primary' : 'secondary'}
+                  >
+                    Today
+                  </Button>
+
+                  <Button
+                    onClick={() => {
+                      const yesterday = dayjs().subtract(1, 'day').startOf('day');
+                      onChange([yesterday, yesterday]);
+                      setMonth(yesterday.month());
+                      setYear(yesterday.year());
+                      setPopoverActive(false);
+                    }}
+                    variant={start && end && start.isSame(dayjs().subtract(1, 'day').startOf('day'), 'day') && end.isSame(dayjs().subtract(1, 'day').startOf('day'), 'day') ? 'primary' : 'secondary'}
+                  >
+                    Yesterday
+                  </Button>
+
+                  <Button
+                    onClick={() => {
+                      const endD = dayjs().startOf('day');
+                      const startD = dayjs().subtract(29, 'day').startOf('day');
+                      onChange([startD, endD]);
+                      setMonth(endD.month());
+                      setYear(endD.year());
+                      setPopoverActive(false);
+                    }}
+                    variant={start && end && start.isSame(dayjs().subtract(29, 'day').startOf('day'), 'day') && end.isSame(dayjs().startOf('day'), 'day') ? 'primary' : 'secondary'}
+                  >
+                    Last 30 days
+                  </Button>
+                </div>
+              )}
+
               <DatePicker
                 month={month}
                 year={year}
