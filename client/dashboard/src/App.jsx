@@ -21,6 +21,7 @@ import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
 import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
 import { useAppDispatch, useAppSelector } from './state/hooks.js';
 import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
+import { setBrand } from './state/slices/brandSlice.js';
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -59,6 +60,7 @@ function loadInitialRange() {
 export default function App() {
   const dispatch = useAppDispatch();
   const { user, initialized, loginStatus, loginError } = useAppSelector((state) => state.auth);
+  const globalBrandKey = useAppSelector((state) => state.brand.brand);
   const loggingIn = loginStatus === 'loading';
   const [range, setRange] = useState(loadInitialRange);
   const [start, end] = range;
@@ -70,15 +72,10 @@ export default function App() {
 
   const [authorBrands, setAuthorBrands] = useState([]);
   const [authorBrandsLoading, setAuthorBrandsLoading] = useState(false);
-  const [authorBrandKey, setAuthorBrandKey] = useState(() => {
-    if (typeof window === 'undefined') return '';
-    try {
-      const stored = localStorage.getItem(AUTHOR_BRAND_STORAGE_KEY);
-      return stored ? stored.toUpperCase() : '';
-    } catch {
-      return '';
-    }
-  });
+  const authorBrandKey = useMemo(
+    () => (globalBrandKey || '').toString().trim().toUpperCase(),
+    [globalBrandKey]
+  );
   const [authorTab, setAuthorTab] = useState('dashboard');
   const [authorRefreshKey, setAuthorRefreshKey] = useState(0);
   const [authorLastLoadedAt, setAuthorLastLoadedAt] = useState(null);
@@ -98,21 +95,12 @@ export default function App() {
   const handleAuthorBrandChange = useCallback((nextKeyRaw) => {
     const normalized = (nextKeyRaw || '').toString().trim().toUpperCase();
     const changed = normalized !== authorBrandKey;
-    setAuthorBrandKey(normalized);
-    if (typeof window !== 'undefined') {
-      try {
-        if (normalized) {
-          localStorage.setItem(AUTHOR_BRAND_STORAGE_KEY, normalized);
-        } else {
-          localStorage.removeItem(AUTHOR_BRAND_STORAGE_KEY);
-        }
-      } catch {}
-    }
+    dispatch(setBrand(normalized || ''));
     if (changed) {
       setAuthorRefreshKey((prev) => prev + 1);
       setAuthorLastLoadedAt(null);
     }
-  }, [authorBrandKey]);
+  }, [authorBrandKey, dispatch]);
 
   const handleAuthorRefresh = useCallback(() => {
     setAuthorRefreshKey((prev) => prev + 1);
