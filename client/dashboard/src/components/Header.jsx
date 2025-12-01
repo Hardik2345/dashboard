@@ -1,23 +1,27 @@
-import { AppBar, Toolbar, Typography, Box, Button, IconButton, Chip } from '@mui/material';
+import { AppBar, Toolbar, Typography, Box, Button, IconButton, Chip, useTheme, useMediaQuery } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
+import MenuIcon from '@mui/icons-material/Menu';
 
-export default function Header({ user, onLogout }) {
+export default function Header({ user, onLogout, onMenuClick, showMenuButton = false }) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const brand = user?.email ? user.email.split('@')[0].toUpperCase() : null;
   // Prefer explicit brand fields if present; fallback to derived brand from email
   const brandName = user?.activeBrand?.name || user?.brandName || brand;
   return (
-    <AppBar position="static" color="transparent" elevation={0} sx={{ py: 1 }}>
-      <Toolbar sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 'unset', mb:2, py: 0 }}>
-        {/* Left: Brand logo linking to home (hidden on xs for compact header) */}
-          <Box component="a" href="/" aria-label="Home" sx={{ display: { xs: 'none', sm: 'inline-flex' }, alignItems: 'center' }}>
-          <Box
-            component="img"
-            src="/brand-logo.jpg"
-            alt="Brand"
-            loading="eager"
-            decoding="async"
-            sx={{ height: { xs: 28, sm: 36 }, width: 'auto', display: 'block' }}
-          />
+    <AppBar position="static" color="transparent" elevation={0} sx={{  borderColor: 'grey.100' }}>
+      <Toolbar sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: { xs: 56, md: 64 }, py: 0 }}>
+        {/* Left: Hamburger menu (mobile) */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {showMenuButton && isMobile && (
+            <IconButton
+              onClick={onMenuClick}
+              size="medium"
+              aria-label="Open navigation menu"
+            >
+              <MenuIcon />
+            </IconButton>
+          )}
         </Box>
 
         {/* Center: Brand image (replaces typography) */}
@@ -30,9 +34,8 @@ export default function Header({ user, onLogout }) {
             decoding="async"
             sx={{
               display: 'block',
-                height: { xs: 72, sm: 96, md: 112 },
+              height: { xs: 72, sm: 80, md: 96 },
               width: 'auto',
-              mt: { xs: 0.5, sm: 0 },
               filter: 'none',
             }}
           />
