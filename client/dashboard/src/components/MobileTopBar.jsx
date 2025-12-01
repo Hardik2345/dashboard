@@ -95,7 +95,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.75, py: 0.25 }}>
       {last.loading ? (
-        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 0.75, height: 32, display: 'flex', alignItems: 'center', bgcolor: 'grey.50', fontSize: 13 }}>
+        <Card elevation={0} sx={{  px: 0.75, height: 32, display: 'flex', alignItems: 'center', bgcolor: 'grey.50', fontSize: 13 }}>
           Updating…
         </Card>
       ) : last.ts ? (
