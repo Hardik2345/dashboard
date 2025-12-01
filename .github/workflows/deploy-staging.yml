@@ -33,6 +33,8 @@ jobs:
     name: Deploy frontend to Vercel (staging)
     needs: approval
     runs-on: ubuntu-latest
+    environment:
+      name: staging
     env:
       NODE_VERSION: '20'
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -80,7 +82,7 @@ jobs:
           fi
           npm i -g vercel@latest
           # Deploy preview/staging (no --prod)
-          vercel --token "$VERCEL_TOKEN" --confirm --scope "$VERCEL_ORG_ID" --local-config ./vercel.json || true
+          vercel --token "$VERCEL_TOKEN" --confirm --scope "$VERCEL_ORG_ID" --local-config ./vercel.json
 
   backend:
     name: Deploy backend to Render (staging)
