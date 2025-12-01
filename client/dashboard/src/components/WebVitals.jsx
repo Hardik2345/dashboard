@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from "react";
 import Grid from "@mui/material/Grid2";
-import { Box, Typography, Divider } from "@mui/material";
+import {
+  Box,
+  Typography,
+  Divider,
+  Select,
+  MenuItem,
+  FormControl,
+} from "@mui/material";
+import { useAppSelector } from "../state/hooks.js";
 
 const StatBox = ({ children }) => (
   <Box
@@ -18,18 +26,64 @@ const StatBox = ({ children }) => (
   </Box>
 );
 
+const METRIC_KEYS = {
+  FCP: "fcp",
+  LCP: "lcp",
+  TTFB: "ttfb",
+};
+
 const WebVitals = () => {
+  const [metric, setMetric] = useState("FCP"); // dropdown selection
   const [webVitals, setWebVitals] = useState({
     performanceAvg: null,
     performancePrev: null,
     performanceChange: null,
     topPDPs: [],
   });
+  const { user } = useAppSelector((state) => state.auth);
+  const globalBrandKey = useAppSelector((state) => state.brand.brand);
 
-  const brand_name = localStorage.getItem("author_active_brand_v1");
+  const isAuthor = !!user?.isAuthor;
+  const activeBrandKey = isAuthor
+    ? (globalBrandKey || "").toString().trim().toUpperCase()
+    : (user?.brandKey || "").toString().trim().toUpperCase();
+
+  let brand_name;
+  switch (activeBrandKey) {
+    case "TMC":
+      brand_name = "TMC";
+      break;
+    case "BBB":
+      brand_name = "BlaBliBluLife";
+      break;
+    case "PTS":
+      brand_name = "SkincarePersonalTouch";
+      break;
+    case "MILA":
+      brand_name = "MilaBeaute";
+      break;
+    default:
+      brand_name = activeBrandKey || "";
+  }
+
   const date_range = JSON.parse(localStorage.getItem("pts_date_range_v2"));
   const start_date = date_range.start.split(":")[0].split("T")[0];
   const end_date = date_range.end.split(":")[0].split("T")[0];
+
+  switch (brand_name) {
+    case "TMC":
+      brand_name = "TMC";
+      break;
+    case "BBB":
+      brand_name = "BlaBliBluLife";
+      break;
+    case "PTS":
+      brand_name = "SkincarePersonalTouch";
+      break;
+    case "MILA":
+      brand_name = "MilaBeaute";
+      break;
+  }
 
   const getYesterday = (dateStr) => {
     const d = new Date(dateStr);
@@ -41,61 +95,80 @@ const WebVitals = () => {
   const prev_end = getYesterday(end_date);
 
   const fetchData = async (start, end) => {
+    if (!brand_name) return []; // <-- don't call API without brand
     const res = await fetch(
-      `https://speed-audit-service.onrender.com/api/pagespeed?brand_name=${brand_name}&start_date=${start}&end_date=${end}`
+      `https://speed-audit-service.onrender.com/api/pagespeed?brand_name=${encodeURIComponent(
+        brand_name
+      )}&start_date=${start}&end_date=${end}`
     );
     return (await res.json()).results;
   };
 
-  const calculatePDPFCP = (results) => {
+  const calculatePDPMetric = (results, metricKey) => {
     const pdps = results.filter((r) => r.url.includes("products"));
     const grouped = {};
 
     pdps.forEach((p) => {
       if (!grouped[p.url]) grouped[p.url] = [];
-      grouped[p.url].push(p.fcp);
+      grouped[p.url].push(p[metricKey]);
     });
 
     return Object.entries(grouped).map(([url, arr]) => ({
       url,
-      avgFCP: arr.reduce((a, b) => a + b, 0) / arr.length,
+      avg: arr.reduce((a, b) => a + b, 0) / arr.length,
     }));
   };
 
   const getWebVitalsData = async () => {
+    if (!brand_name || !date_range) return; // <-- nothing to do yet
+
+    const metricKey = METRIC_KEYS[metric];
+
     const currentData = await fetchData(start_date, end_date);
     const prevData = await fetchData(prev_start, prev_end);
 
-    const curPerfArr = currentData.map((i) => i.performance);
-    const prevPerfArr = prevData.map((i) => i.performance);
+    if (!currentData.length && !prevData.length) {
+      setWebVitals({
+        performanceAvg: null,
+        performancePrev: null,
+        performanceChange: null,
+        topPDPs: [],
+      });
+      return;
+    }
 
+    // Performance block
     const curPerf =
-      curPerfArr.reduce((a, b) => a + b, 0) / (curPerfArr.length || 1);
+      currentData.reduce((a, b) => a + b.performance, 0) /
+      (currentData.length || 1);
+
     const prevPerf =
-      prevPerfArr.reduce((a, b) => a + b, 0) / (prevPerfArr.length || 1);
+      prevData.reduce((a, b) => a + b.performance, 0) / (prevData.length || 1);
 
     const perfChange =
       prevPerf > 0 ? ((curPerf - prevPerf) / prevPerf) * 100 : null;
 
-    const todayPDP = calculatePDPFCP(currentData);
-    const yesterdayPDP = calculatePDPFCP(prevData);
+    // PDP metric block (dynamic)
+    const todayPDP = calculatePDPMetric(currentData, metricKey);
+    const yesterdayPDP = calculatePDPMetric(prevData, metricKey);
 
     const combined = todayPDP.map((t) => {
       const match = yesterdayPDP.find((y) => y.url === t.url);
 
       let change = null;
-      if (match && match.avgFCP > 0) {
-        change = ((match.avgFCP - t.avgFCP) / match.avgFCP) * 100;
+      if (match && match.avg > 0) {
+        // Lower is better → change positive means improvement
+        change = ((match.avg - t.avg) / match.avg) * 100;
       }
 
       return {
         url: t.url,
-        avgFCP: t.avgFCP,
-        changeFCP: change,
+        avg: t.avg,
+        change,
       };
     });
 
-    const top5 = combined.sort((a, b) => a.avgFCP - b.avgFCP).slice(0, 5);
+    const top5 = combined.sort((a, b) => a.avg - b.avg).slice(0, 5);
 
     setWebVitals({
       performanceAvg: curPerf,
@@ -107,14 +180,16 @@ const WebVitals = () => {
 
   useEffect(() => {
     getWebVitalsData();
-  }, []);
+    // it’s OK that getWebVitalsData is not in deps here
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metric, brand_name]);
 
   const perfChange = webVitals.performanceChange;
   const perfImproved = perfChange > 0;
 
   return (
     <>
-      {/* SECTION HEADER */}
+      {/* Header */}
       <Box sx={{ display: "flex", alignItems: "center", my: 2 }}>
         <Box sx={{ flexGrow: 1, height: "1px", backgroundColor: "#ddd" }} />
         <Typography
@@ -127,19 +202,17 @@ const WebVitals = () => {
       </Box>
 
       <Grid container spacing={1.5} columns={{ xs: 2, sm: 6 }}>
-
-        {/* PERFORMANCE BLOCK */}
+        {/* PERFORMANCE TILE */}
         <Grid size={{ xs: 2, sm: 3 }}>
           <StatBox>
             <Box
               sx={{
-                width: "100%",
-                height: "100%",
                 textAlign: "center",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                justifyContent: "center",   // FULL CENTERED
+                justifyContent: "center",
+                height: "100%",
               }}
             >
               <Typography
@@ -170,25 +243,42 @@ const WebVitals = () => {
           </StatBox>
         </Grid>
 
-        {/* PDP LIST BLOCK */}
+        {/* PDP TILE */}
         <Grid size={{ xs: 2, sm: 3 }}>
           <StatBox>
-            <Typography
-              variant="subtitle2"
-              sx={{ color: "#555", fontWeight: 600, mb: 1 }}
-            >
-              Top 5 PDPs (FCP)
-            </Typography>
-
             <Box
               sx={{
-                maxHeight: "160px",
-                overflowY: "auto",
-                pr: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                mb: 1,
               }}
             >
-              {webVitals.topPDPs.slice(0, 5).map((pdp, idx) => {
-                const improved = pdp.changeFCP > 0;
+              <Typography
+                variant="subtitle2"
+                sx={{ color: "#555", fontWeight: 600 }}
+              >
+                Top 5 PDPs ({metric})
+              </Typography>
+
+              {/* METRIC DROPDOWN */}
+              <FormControl size="small">
+                <Select
+                  value={metric}
+                  onChange={(e) => setMetric(e.target.value)}
+                  sx={{ height: 28, fontSize: "12px" }}
+                >
+                  <MenuItem value="FCP">FCP</MenuItem>
+                  <MenuItem value="LCP">LCP</MenuItem>
+                  <MenuItem value="TTFB">TTFB</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+
+            <Box sx={{ maxHeight: "150px", overflowY: "auto", pr: 1 }}>
+              {webVitals.topPDPs.map((pdp, idx) => {
+                const improved = pdp.change > 0;
+
                 return (
                   <Box key={idx} sx={{ mb: 1 }}>
                     <Typography variant="body2" fontWeight={600}>
@@ -196,10 +286,11 @@ const WebVitals = () => {
                     </Typography>
 
                     <Typography variant="caption" color="text.secondary">
-                      FCP: {pdp.avgFCP.toFixed(2)}s
+                      {metric}: {pdp.avg.toFixed(2)}
+                      {metric !== "TTFB" ? "s" : ""}
                     </Typography>
 
-                    {pdp.changeFCP !== null && (
+                    {pdp.change !== null && (
                       <Typography
                         variant="caption"
                         sx={{
@@ -208,8 +299,8 @@ const WebVitals = () => {
                           fontWeight: 600,
                         }}
                       >
-                        {improved ? "▲" : "▼"}{" "}
-                        {Math.abs(pdp.changeFCP).toFixed(2)}%
+                        {improved ? "▲" : "▼"} {Math.abs(pdp.change).toFixed(2)}
+                        %
                       </Typography>
                     )}
 
