@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Card, CardContent, Stack, Typography, Button, TextField, Grid, Chip, Snackbar, Alert } from '@mui/material';
+import { Card, CardContent, Stack, Typography, Button, TextField, Chip, Snackbar, Alert, Grid, Box } from '@mui/material';
 import dayjs from 'dayjs';
 import { listAdjustmentBuckets, createAdjustmentBucket, updateAdjustmentBucket, deactivateAdjustmentBucket, activateAdjustmentBucket, listAuthorBrands } from '../lib/api.js';
 
@@ -137,72 +137,70 @@ export default function AuthorAdjustments({ brandKey: externalBrandKey, onBrandK
   const deltaColor = (v) => v > 0 ? 'success.main' : v < 0 ? 'error.main' : 'text.secondary';
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={{ xs: 2.5, md: 3.5 }}>
       <Card variant="outlined">
-        <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-          <Stack spacing={1.25}>
-            <Typography variant="h6" sx={{ fontSize: { xs: '1rem', md: '1.1rem' } }}>Select Brand</Typography>
-            <TextField
-              size="small"
-              select
-              SelectProps={{ native: true }}
-              label="Brand"
-              value={brandKey ?? ''}
-              onChange={(e)=>{ updateBrandKey(e.target.value); setPreview(null); }}
-              disabled={!brands.length}
-              helperText={!brands.length ? 'Add a brand in Brand Setup to begin' : undefined}
-            >
-              <option value="" disabled={!!brands.length}>Select brand</option>
-              {brands.map(b => (
-                <option key={b.key} value={b.key}>{b.key}</option>
-              ))}
-            </TextField>
-          </Stack>
-        </CardContent>
-      </Card>
-      <Card variant="outlined">
-        <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-          <Stack spacing={2} component="form" onSubmit={handleCreate}>
+        <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+          <Stack spacing={2.5} component="form" onSubmit={handleCreate}>
             <Typography variant="h6">Create Adjustment Bucket</Typography>
-            <Grid container spacing={1.25}>
-              <Grid item xs={12} sm={6}><TextField size="small" label="Lower bound sessions" required type="number" value={form.lower_bound_sessions} onChange={e=>setForm(f=>({...f, lower_bound_sessions:e.target.value}))} fullWidth /></Grid>
-              <Grid item xs={12} sm={6}><TextField size="small" label="Upper bound sessions" required type="number" value={form.upper_bound_sessions} onChange={e=>setForm(f=>({...f, upper_bound_sessions:e.target.value}))} fullWidth /></Grid>
-              <Grid item xs={12} sm={4}><TextField size="small" label="Offset %" required type="number" value={form.offset_pct} onChange={e=>setForm(f=>({...f, offset_pct:e.target.value}))} fullWidth /></Grid>
-              <Grid item xs={12} sm={4}><TextField size="small" label="Priority" required type="number" value={form.priority} onChange={e=>setForm(f=>({...f, priority:e.target.value}))} fullWidth /></Grid>
-              <Grid item xs={12} sm={4}><TextField size="small" label="Notes" value={form.notes} onChange={e=>setForm(f=>({...f, notes:e.target.value}))} fullWidth /></Grid>
-              <Grid item xs={12} sm={6}><TextField size="small" label="Effective from (YYYY-MM-DD)" value={form.effective_from} onChange={e=>setForm(f=>({...f, effective_from:e.target.value}))} fullWidth /></Grid>
-              <Grid item xs={12} sm={6}><TextField size="small" label="Effective to (YYYY-MM-DD)" value={form.effective_to} onChange={e=>setForm(f=>({...f, effective_to:e.target.value}))} fullWidth /></Grid>
-            </Grid>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
-              <Button type="submit" variant="contained" size="small" disabled={creating} fullWidth>
-                {creating ? 'Creating...' : 'Create bucket'}
-              </Button>
-              {error && <Typography variant="body2" color="error">{error}</Typography>}
-            </Stack>
+            
+            {/* Mobile: Centered stacked layout */}
+            <Box sx={{ display: { xs: 'flex', md: 'none' }, justifyContent: 'center' }}>
+              <Stack spacing={1.5} sx={{ width: '100%', maxWidth: 400 }}>
+                <TextField size="small" label="Lower bound sessions" required type="number" value={form.lower_bound_sessions} onChange={e=>setForm(f=>({...f, lower_bound_sessions:e.target.value}))} fullWidth />
+                <TextField size="small" label="Upper bound sessions" required type="number" value={form.upper_bound_sessions} onChange={e=>setForm(f=>({...f, upper_bound_sessions:e.target.value}))} fullWidth />
+                <TextField size="small" label="Offset %" required type="number" value={form.offset_pct} onChange={e=>setForm(f=>({...f, offset_pct:e.target.value}))} fullWidth />
+                <TextField size="small" label="Priority" required type="number" value={form.priority} onChange={e=>setForm(f=>({...f, priority:e.target.value}))} fullWidth />
+                <TextField size="small" label="Notes" value={form.notes} onChange={e=>setForm(f=>({...f, notes:e.target.value}))} fullWidth />
+                <TextField size="small" label="Effective from (YYYY-MM-DD)" value={form.effective_from} onChange={e=>setForm(f=>({...f, effective_from:e.target.value}))} fullWidth />
+                <TextField size="small" label="Effective to (YYYY-MM-DD)" value={form.effective_to} onChange={e=>setForm(f=>({...f, effective_to:e.target.value}))} fullWidth />
+                <Button type="submit" variant="contained" size="small" disabled={creating} fullWidth>
+                  {creating ? 'Creating...' : 'Create bucket'}
+                </Button>
+                {error && <Typography variant="body2" color="error" textAlign="center">{error}</Typography>}
+              </Stack>
+            </Box>
+
+            {/* Desktop: Grid layout */}
+            <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+              <Grid container spacing={1.5}>
+                <Grid item xs={12} sm={6}><TextField size="small" label="Lower bound sessions" required type="number" value={form.lower_bound_sessions} onChange={e=>setForm(f=>({...f, lower_bound_sessions:e.target.value}))} fullWidth /></Grid>
+                <Grid item xs={12} sm={6}><TextField size="small" label="Upper bound sessions" required type="number" value={form.upper_bound_sessions} onChange={e=>setForm(f=>({...f, upper_bound_sessions:e.target.value}))} fullWidth /></Grid>
+                <Grid item xs={12} sm={4}><TextField size="small" label="Offset %" required type="number" value={form.offset_pct} onChange={e=>setForm(f=>({...f, offset_pct:e.target.value}))} fullWidth /></Grid>
+                <Grid item xs={12} sm={4}><TextField size="small" label="Priority" required type="number" value={form.priority} onChange={e=>setForm(f=>({...f, priority:e.target.value}))} fullWidth /></Grid>
+                <Grid item xs={12} sm={4}><TextField size="small" label="Notes" value={form.notes} onChange={e=>setForm(f=>({...f, notes:e.target.value}))} fullWidth /></Grid>
+                <Grid item xs={12} sm={6}><TextField size="small" label="Effective from (YYYY-MM-DD)" value={form.effective_from} onChange={e=>setForm(f=>({...f, effective_from:e.target.value}))} fullWidth /></Grid>
+                <Grid item xs={12} sm={6}><TextField size="small" label="Effective to (YYYY-MM-DD)" value={form.effective_to} onChange={e=>setForm(f=>({...f, effective_to:e.target.value}))} fullWidth /></Grid>
+              </Grid>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 2 }}>
+                <Button type="submit" variant="contained" size="small" disabled={creating}>
+                  {creating ? 'Creating...' : 'Create bucket'}
+                </Button>
+                {error && <Typography variant="body2" color="error">{error}</Typography>}
+              </Stack>
+            </Box>
           </Stack>
         </CardContent>
       </Card>
 
       <Card variant="outlined">
-        <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-          <Stack spacing={1.25}>
+        <CardContent sx={{ p: { xs: 2.5, md: 3 }, maxHeight: 450, overflowY: 'auto' }}>
+          <Stack spacing={1.5}>
             <Typography variant="h6">Buckets ({buckets.length})</Typography>
             {loadingBuckets && <Typography variant="body2">Loading...</Typography>}
             {!loadingBuckets && buckets.length === 0 && <Typography variant="body2" color="text.secondary">No buckets yet.</Typography>}
-            <Stack spacing={0.75}>
+            <Stack spacing={1}>
               {buckets.map(b => (
-                <Card key={b.id} variant="outlined" sx={{ p: { xs: 1.25, md: 1.5 } }}>
-                  <Stack direction={{ xs:'column', sm:'row' }} spacing={{ xs: 1, sm: 1.5 }} alignItems={{ xs: 'flex-start', sm:'center' }} justifyContent="space-between">
-                    <Stack direction="row" spacing={0.75} flexWrap="wrap" alignItems="center">
-                      <Chip size="small" label={`ID ${b.id}`} />
-                      <Chip size="small" label={`Range ${b.lower_bound_sessions}–${b.upper_bound_sessions}`} />
-                      <Chip size="small" label={`Offset ${pct(b.offset_pct)}`} color={b.offset_pct >= 0 ? 'success' : 'error'} />
-                      <Chip size="small" label={`Priority ${b.priority}`} />
+                <Card key={b.id} variant="outlined" sx={{ p: { xs: 1.5, md: 1.5 } }}>
+                  <Stack direction={{ xs:'column', sm:'row' }} spacing={{ xs: 1.25, sm: 1.5 }} alignItems={{ xs: 'flex-start', sm:'center' }} justifyContent="space-between">
+                    <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" rowGap={1}>
+                      <Chip size="small" label={`${b.lower_bound_sessions}–${b.upper_bound_sessions}`} variant="outlined" />
+                      <Chip size="small" label={`${pct(b.offset_pct)}`} color={b.offset_pct >= 0 ? 'success' : 'error'} />
                       <Chip size="small" label={b.active ? 'Active' : 'Inactive'} color={b.active ? 'primary' : 'default'} />
-                      {b.effective_from && <Chip size="small" label={`From ${b.effective_from}`} />}
-                      {b.effective_to && <Chip size="small" label={`To ${b.effective_to}`} />}
+                      {(b.effective_from || b.effective_to) && (
+                        <Chip size="small" label={`${b.effective_from || '∞'} → ${b.effective_to || '∞'}`} variant="outlined" />
+                      )}
                     </Stack>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>
+                    <Stack direction="row" spacing={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>
                       {b.active ? (
                         <Button size="small" disabled={deactivatingId===b.id} onClick={()=>handleDeactivate(b.id)} fullWidth>
                           {deactivatingId===b.id? 'Deactivating…' : 'Deactivate'}
@@ -214,7 +212,7 @@ export default function AuthorAdjustments({ brandKey: externalBrandKey, onBrandK
                       )}
                     </Stack>
                   </Stack>
-                  {b.notes && <Typography variant="caption" sx={{ mt:0.5 }}>{b.notes}</Typography>}
+                  {b.notes && <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>{b.notes}</Typography>}
                 </Card>
               ))}
             </Stack>
