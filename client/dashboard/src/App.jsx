@@ -1,8 +1,9 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import dayjs from 'dayjs';
-import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, Tabs, Tab } from '@mui/material';
+import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, useMediaQuery } from '@mui/material';
 import Header from './components/Header.jsx';
 import MobileTopBar from './components/MobileTopBar.jsx';
+import Sidebar, { DRAWER_WIDTH } from './components/Sidebar.jsx';
 import AuthorBrandForm from './components/AuthorBrandForm.jsx';
 import AuthorBrandList from './components/AuthorBrandList.jsx';
 import KPIs from './components/KPIs.jsx';
@@ -21,6 +22,7 @@ import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
 import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
 import { useAppDispatch, useAppSelector } from './state/hooks.js';
 import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
+import { setBrand } from './state/slices/brandSlice.js';
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -59,6 +61,7 @@ function loadInitialRange() {
 export default function App() {
   const dispatch = useAppDispatch();
   const { user, initialized, loginStatus, loginError } = useAppSelector((state) => state.auth);
+  const globalBrandKey = useAppSelector((state) => state.brand.brand);
   const loggingIn = loginStatus === 'loading';
   const [range, setRange] = useState(loadInitialRange);
   const [start, end] = range;
@@ -70,18 +73,14 @@ export default function App() {
 
   const [authorBrands, setAuthorBrands] = useState([]);
   const [authorBrandsLoading, setAuthorBrandsLoading] = useState(false);
-  const [authorBrandKey, setAuthorBrandKey] = useState(() => {
-    if (typeof window === 'undefined') return '';
-    try {
-      const stored = localStorage.getItem(AUTHOR_BRAND_STORAGE_KEY);
-      return stored ? stored.toUpperCase() : '';
-    } catch {
-      return '';
-    }
-  });
+  const authorBrandKey = useMemo(
+    () => (globalBrandKey || '').toString().trim().toUpperCase(),
+    [globalBrandKey]
+  );
   const [authorTab, setAuthorTab] = useState('dashboard');
   const [authorRefreshKey, setAuthorRefreshKey] = useState(0);
   const [authorLastLoadedAt, setAuthorLastLoadedAt] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
 
@@ -98,21 +97,12 @@ export default function App() {
   const handleAuthorBrandChange = useCallback((nextKeyRaw) => {
     const normalized = (nextKeyRaw || '').toString().trim().toUpperCase();
     const changed = normalized !== authorBrandKey;
-    setAuthorBrandKey(normalized);
-    if (typeof window !== 'undefined') {
-      try {
-        if (normalized) {
-          localStorage.setItem(AUTHOR_BRAND_STORAGE_KEY, normalized);
-        } else {
-          localStorage.removeItem(AUTHOR_BRAND_STORAGE_KEY);
-        }
-      } catch {}
-    }
+    dispatch(setBrand(normalized || ''));
     if (changed) {
       setAuthorRefreshKey((prev) => prev + 1);
       setAuthorLastLoadedAt(null);
     }
-  }, [authorBrandKey]);
+  }, [authorBrandKey, dispatch]);
 
   const handleAuthorRefresh = useCallback(() => {
     setAuthorRefreshKey((prev) => prev + 1);
@@ -176,6 +166,12 @@ export default function App() {
   const handleSelectMetric = useCallback((metricKey) => {
     if (!metricKey) return;
     setSelectedMetric(TREND_METRICS.has(metricKey) ? metricKey : DEFAULT_TREND_METRIC);
+  }, []);
+
+  const handleSidebarOpen = useCallback(() => setSidebarOpen(true), []);
+  const handleSidebarClose = useCallback(() => setSidebarOpen(false), []);
+  const handleSidebarTabChange = useCallback((tabId) => {
+    setAuthorTab(tabId);
   }, []);
 
   const theme = useMemo(() => createTheme({
@@ -287,112 +283,111 @@ export default function App() {
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
-          <Header user={user} onLogout={handleLogout} />
-          <Box component="main" sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: { xs: 1.5, sm: 2.5, md: 4 }, py: { xs: 2, md: 4 } }}>
-            <Stack spacing={{ xs: 2, md: 3 }}>
-              <AuthorBrandSelector
-                brands={authorBrands}
-                value={authorBrandKey}
-                loading={authorBrandsLoading}
-                lastLoadedAt={authorLastLoadedAt}
-                onChange={handleAuthorBrandChange}
-                onRefresh={handleAuthorRefresh}
-              />
-              <Box
-                sx={{
-                  position: 'sticky',
-                  top: 0,
-                  zIndex: (theme) => theme.zIndex.appBar + 1,
-                  bgcolor: 'background.paper',
-                  pt: { xs: 1, md: 0 },
-                  borderBottom: 1,
-                  borderColor: 'divider',
-                }}
-              >
-                <Tabs
-                  value={authorTab}
-                  onChange={(event, value) => setAuthorTab(value)}
-                  variant="scrollable"
-                  scrollButtons="auto"
-                  allowScrollButtonsMobile
-                  textColor="primary"
-                  indicatorColor="primary"
-                  sx={{
-                    '& .MuiTabs-indicator': { height: 3, borderRadius: 1.5 },
-                    '& .MuiTab-root': {
-                      minWidth: { xs: 120, sm: 140 },
-                      fontSize: { xs: '0.8rem', sm: '0.9rem' },
-                      textTransform: 'none',
-                    },
-                  }}
-                >
-                  <Tab label="Dashboard" value="dashboard" />
-                  <Tab label="Access Control" value="access" />
-                  <Tab label="Session Adjustments" value="adjustments" />
-                  <Tab label="Brand Setup" value="brands" />
-                </Tabs>
-              </Box>
+        <Box sx={{ display: 'flex', minHeight: '100svh', bgcolor: 'background.default' }}>
+          {/* Sidebar Navigation */}
+          <Sidebar
+            open={sidebarOpen}
+            onClose={handleSidebarClose}
+            activeTab={authorTab}
+            onTabChange={handleSidebarTabChange}
+          />
 
-              {authorTab === 'dashboard' && (
-                hasAuthorBrand ? (
-                  <Stack spacing={{ xs: 1.5, md: 2 }}>
-                    <Box sx={{ position: 'relative', zIndex: 0 }}>
-                      <MobileTopBar value={range} onChange={setRange} brandKey={authorBrandKey} />
-                    </Box>
-                    <KPIs
-                      query={metricsQuery}
-                      selectedMetric={selectedMetric}
-                      onSelectMetric={handleSelectMetric}
-                      onLoaded={handleAuthorDataLoaded}
-                    />
-                    <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-                    <Divider textAlign="left">Funnel</Divider>
-                    <FunnelChart query={metricsQuery} />
-                    <OrderSplit query={metricsQuery} />
-                    <PaymentSalesSplit query={metricsQuery} />
+          {/* Main content area */}
+          <Box
+            component="main"
+            sx={{
+              flexGrow: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: '100svh',
+              width: { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` },
+            }}
+          >
+            <Header user={user} onLogout={handleLogout} onMenuClick={handleSidebarOpen} showMenuButton />
+
+            <Box
+              sx={{
+                flex: 1,
+                width: '100%',
+                maxWidth: 1200,
+                mx: 'auto',
+                px: { xs: 1.5, sm: 2.5, md: 4 },
+                py: { xs: 2, md: 4 },
+              }}
+            >
+              <Stack spacing={{ xs: 1, md: 2 }}>
+                <AuthorBrandSelector
+                  brands={authorBrands}
+                  value={authorBrandKey}
+                  loading={authorBrandsLoading}
+                  onChange={handleAuthorBrandChange}
+                  onRefresh={handleAuthorRefresh}
+                />
+
+                {authorTab === 'dashboard' && (
+                  hasAuthorBrand ? (
+                    <Stack spacing={{ xs: 1, md: 1.5 }}>
+                      <Box sx={{ position: 'relative', zIndex: 0 }}>
+                        <MobileTopBar
+                          value={range}
+                          onChange={setRange}
+                          brandKey={authorBrandKey}
+                        />
+                      </Box>
+                      <KPIs
+                        query={metricsQuery}
+                        selectedMetric={selectedMetric}
+                        onSelectMetric={handleSelectMetric}
+                        onLoaded={handleAuthorDataLoaded}
+                      />
+                      <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+                      <Divider textAlign="left">Funnel</Divider>
+                      <FunnelChart query={metricsQuery} />
+                      <OrderSplit query={metricsQuery} />
+                      <PaymentSalesSplit query={metricsQuery} />
+                    </Stack>
+                  ) : (
+                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        Select a brand to load dashboard metrics.
+                      </Typography>
+                    </Paper>
+                  )
+                )}
+
+                {authorTab === 'access' && (
+                  <Stack spacing={{ xs: 2, md: 3 }}>
+                    <AccessControlCard />
+                    <WhitelistTable />
                   </Stack>
-                ) : (
-                  <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                    <Typography variant="body2" color="text.secondary">
-                      Select a brand to load dashboard metrics.
-                    </Typography>
-                  </Paper>
-                )
-              )}
+                )}
 
-              {authorTab === 'access' && (
-                <Stack spacing={{ xs: 2, md: 3 }}>
-                  <AccessControlCard />
-                  <WhitelistTable />
-                </Stack>
-              )}
+                {authorTab === 'adjustments' && (
+                  hasAuthorBrand ? (
+                    <AuthorAdjustments
+                      brandKey={authorBrandKey}
+                      onBrandKeyChange={handleAuthorBrandChange}
+                      brands={authorBrands}
+                    />
+                  ) : (
+                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        Choose a brand to manage session adjustments.
+                      </Typography>
+                    </Paper>
+                  )
+                )}
 
-              {authorTab === 'adjustments' && (
-                hasAuthorBrand ? (
-                  <AuthorAdjustments
-                    brandKey={authorBrandKey}
-                    onBrandKeyChange={handleAuthorBrandChange}
-                    brands={authorBrands}
-                  />
-                ) : (
-                  <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                    <Typography variant="body2" color="text.secondary">
-                      Choose a brand to manage session adjustments.
-                    </Typography>
-                  </Paper>
-                )
-              )}
-
-              {authorTab === 'brands' && (
-                <Stack spacing={{ xs: 2, md: 3 }}>
-                  <AuthorBrandForm />
-                  <AuthorBrandList />
-                </Stack>
-              )}
-            </Stack>
+                {authorTab === 'brands' && (
+                  <Stack spacing={{ xs: 2, md: 3 }}>
+                    <AuthorBrandForm />
+                    <AuthorBrandList />
+                  </Stack>
+                )}
+              </Stack>
+            </Box>
+            <Footer />
           </Box>
-          <Footer />
         </Box>
       </ThemeProvider>
     );
