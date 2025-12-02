@@ -11,6 +11,7 @@ import FunnelChart from './components/FunnelChart.jsx';
 import OrderSplit from './components/OrderSplit.jsx';
 import PaymentSalesSplit from './components/PaymentSalesSplit.jsx';
 import HourlySalesCompare from './components/HourlySalesCompare.jsx';
+import WebVitals from './components/WebVitals.jsx';
 import Footer from './components/Footer.jsx';
 import { listAuthorBrands } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
@@ -341,6 +342,7 @@ export default function App() {
                         onLoaded={handleAuthorDataLoaded}
                       />
                       <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+                      <WebVitals query={metricsQuery} />
                       <Divider textAlign="left">Funnel</Divider>
                       <FunnelChart query={metricsQuery} />
                       <OrderSplit query={metricsQuery} />
@@ -406,6 +408,7 @@ export default function App() {
             </Box>
             <KPIs query={metricsQuery} selectedMetric={selectedMetric} onSelectMetric={handleSelectMetric} />
             <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+            <WebVitals query={metricsQuery} />
             <Divider textAlign="left">Funnel</Divider>
             <FunnelChart query={metricsQuery} />
             <OrderSplit query={metricsQuery} />

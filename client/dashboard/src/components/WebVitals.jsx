@@ -32,7 +32,7 @@ const METRIC_KEYS = {
   TTFB: "ttfb",
 };
 
-const WebVitals = () => {
+const WebVitals = ({ query }) => {
   const [metric, setMetric] = useState("FCP"); // dropdown selection
   const [webVitals, setWebVitals] = useState({
     performanceAvg: null,
@@ -66,33 +66,48 @@ const WebVitals = () => {
       brand_name = activeBrandKey || "";
   }
 
-  const date_range = JSON.parse(localStorage.getItem("pts_date_range_v2"));
-  const start_date = date_range.start.split(":")[0].split("T")[0];
-  const end_date = date_range.end.split(":")[0].split("T")[0];
-
-  switch (brand_name) {
-    case "TMC":
-      brand_name = "TMC";
-      break;
-    case "BBB":
-      brand_name = "BlaBliBluLife";
-      break;
-    case "PTS":
-      brand_name = "SkincarePersonalTouch";
-      break;
-    case "MILA":
-      brand_name = "MilaBeaute";
-      break;
+  // Use dates from query prop if available, otherwise fall back to localStorage
+  let start_date, end_date;
+  if (query?.start && query?.end) {
+    start_date = query.start;
+    end_date = query.end;
+  } else {
+    try {
+      const date_range = JSON.parse(localStorage.getItem("pts_date_range_v2"));
+      start_date = date_range?.start?.split(":")[0]?.split("T")[0];
+      end_date = date_range?.end?.split(":")[0]?.split("T")[0];
+    } catch {
+      start_date = null;
+      end_date = null;
+    }
   }
 
-  const getYesterday = (dateStr) => {
-    const d = new Date(dateStr);
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().split("T")[0];
+  // Calculate the previous equivalent date window
+  // e.g., if selected range is Nov 27-30 (4 days), prev range should be Nov 23-26
+  const getPreviousDateWindow = (startStr, endStr) => {
+    if (!startStr || !endStr) return { prev_start: null, prev_end: null };
+    
+    const startDate = new Date(startStr);
+    const endDate = new Date(endStr);
+    
+    // Calculate the number of days in the selected range (inclusive)
+    const daysDiff = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+    
+    // Previous window ends one day before current start
+    const prevEnd = new Date(startDate);
+    prevEnd.setDate(prevEnd.getDate() - 1);
+    
+    // Previous window starts (daysDiff) days before prevEnd
+    const prevStart = new Date(prevEnd);
+    prevStart.setDate(prevStart.getDate() - daysDiff + 1);
+    
+    return {
+      prev_start: prevStart.toISOString().split("T")[0],
+      prev_end: prevEnd.toISOString().split("T")[0],
+    };
   };
 
-  const prev_start = getYesterday(start_date);
-  const prev_end = getYesterday(end_date);
+  const { prev_start, prev_end } = getPreviousDateWindow(start_date, end_date);
 
   const fetchData = async (start, end) => {
     if (!brand_name) return []; // <-- don't call API without brand
@@ -120,7 +135,7 @@ const WebVitals = () => {
   };
 
   const getWebVitalsData = async () => {
-    if (!brand_name || !date_range) return; // <-- nothing to do yet
+    if (!brand_name || !start_date || !end_date) return; // <-- nothing to do yet
 
     const metricKey = METRIC_KEYS[metric];
 
@@ -180,9 +195,8 @@ const WebVitals = () => {
 
   useEffect(() => {
     getWebVitalsData();
-    // it’s OK that getWebVitalsData is not in deps here
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metric, brand_name]);
+  }, [metric, brand_name, start_date, end_date]);
 
   const perfChange = webVitals.performanceChange;
   const perfImproved = perfChange > 0;
@@ -236,7 +250,7 @@ const WebVitals = () => {
                     fontWeight: 600,
                   }}
                 >
-                  {perfImproved ? "▲" : "▼"} {Math.abs(perfChange).toFixed(2)}%
+                  {perfChange > 0 ? "▲" : "▼"} {Math.abs(perfChange).toFixed(2)}%
                 </Typography>
               )}
             </Box>
@@ -299,7 +313,7 @@ const WebVitals = () => {
                           fontWeight: 600,
                         }}
                       >
-                        {improved ? "▲" : "▼"} {Math.abs(pdp.change).toFixed(2)}
+                        {improved ? "▼" : "▲"} {Math.abs(pdp.change).toFixed(2)}
                         %
                       </Typography>
                     )}
