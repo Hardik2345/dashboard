@@ -342,7 +342,7 @@ export default function App() {
                         onLoaded={handleAuthorDataLoaded}
                       />
                       <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-                      <WebVitals />
+                      <WebVitals query={metricsQuery} />
                       <Divider textAlign="left">Funnel</Divider>
                       <FunnelChart query={metricsQuery} />
                       <OrderSplit query={metricsQuery} />
@@ -408,7 +408,7 @@ export default function App() {
             </Box>
             <KPIs query={metricsQuery} selectedMetric={selectedMetric} onSelectMetric={handleSelectMetric} />
             <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-            <WebVitals />
+            <WebVitals query={metricsQuery} />
             <Divider textAlign="left">Funnel</Divider>
             <FunnelChart query={metricsQuery} />
             <OrderSplit query={metricsQuery} />
