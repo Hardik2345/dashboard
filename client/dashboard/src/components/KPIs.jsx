@@ -14,7 +14,6 @@ import {
   getAtcSessionsDelta,
   getAOVDelta,
 } from "../lib/api.js";
-import WebVitals from "./WebVitals.jsx";
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfMoney = new Intl.NumberFormat("en-IN", {
@@ -232,8 +231,6 @@ export default function KPIs({
           />
         </Grid>
       </Grid>
-
-      <WebVitals />
     </>
   );
 }
