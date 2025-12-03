@@ -369,15 +369,15 @@ export default function App() {
               width: { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` },
             }}
           >
-            {/* Sticky Top Panel */}
+            {/* Sticky Top Panel (mobile only) */}
             <Box
               sx={{
-                position: 'sticky',
+                position: { xs: 'sticky', md: 'static' },
                 top: 0,
                 zIndex: (theme) => theme.zIndex.appBar,
                 bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
                 pb: 1,
-                borderBottom: 1,
+                borderBottom: { xs: 1, md: 0 },
                 borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
               }}
             >
@@ -480,15 +480,15 @@ export default function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
-        {/* Sticky Top Panel */}
+        {/* Sticky Top Panel (mobile only) */}
         <Box
           sx={{
-            position: 'sticky',
+            position: { xs: 'sticky', md: 'static' },
             top: 0,
             zIndex: (theme) => theme.zIndex.appBar,
             bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
             pb: 1,
-            borderBottom: 1,
+            borderBottom: { xs: 1, md: 0 },
             borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
           }}
         >
