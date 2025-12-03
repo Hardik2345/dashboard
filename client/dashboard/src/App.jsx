@@ -400,7 +400,6 @@ export default function App() {
                     value={authorBrandKey}
                     loading={authorBrandsLoading}
                     onChange={handleAuthorBrandChange}
-                    onRefresh={handleAuthorRefresh}
                   />
                   {authorTab === 'dashboard' && hasAuthorBrand && (
                     <MobileTopBar
