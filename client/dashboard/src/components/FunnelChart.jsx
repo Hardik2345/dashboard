@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Card, CardContent, Typography, Skeleton } from '@mui/material';
+import { Card, CardContent, Typography, Skeleton, useTheme } from '@mui/material';
 import { Bar } from 'react-chartjs-2';
 import { getFunnelStats } from '../lib/api.js';
 import {
@@ -16,6 +16,8 @@ ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 export default function FunnelChart({ query }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total_sessions: 0, total_atc_sessions: 0, total_orders: 0 });
   const brandKey = query?.brand_key;
@@ -77,7 +79,7 @@ export default function FunnelChart({ query }) {
         const pctText = `${pct.toFixed(pct >= 99.95 || pct === 0 ? 0 : 1)}%`;
         const countText = nfInt.format(raw);
         ctx.textAlign = 'center';
-        ctx.fillStyle = '#0d47a1';
+        ctx.fillStyle = isDark ? '#ffffffff' : '#0d47a1';
         // Single line: count (xx%)
         ctx.font = '600 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
         ctx.textBaseline = 'bottom';
@@ -100,15 +102,23 @@ export default function FunnelChart({ query }) {
       },
     },
     scales: {
-      x: { grid: { display: false } },
-      y: { beginAtZero: true, grid: { display: false }, border: { display: false } },
+      x: { 
+        grid: { display: false },
+        ticks: { color: isDark ? '#e0e0e0' : '#666' }
+      },
+      y: { 
+        beginAtZero: true, 
+        grid: { display: false }, 
+        border: { display: false },
+        ticks: { color: isDark ? '#e0e0e0' : '#666' }
+      },
     },
   };
 
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
       <CardContent sx={{ height: 320, pt: 1 }}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+        <Typography variant="subtitle2" color="text.primary" sx={{ mb: 0.5 }}>
           Session drop-offs
         </Typography>
         {loading ? (

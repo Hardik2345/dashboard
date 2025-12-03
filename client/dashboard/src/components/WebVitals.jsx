@@ -7,24 +7,31 @@ import {
   Select,
   MenuItem,
   FormControl,
+  useTheme,
 } from "@mui/material";
 import { useAppSelector } from "../state/hooks.js";
 
-const StatBox = ({ children }) => (
-  <Box
-    sx={{
-      border: "1px solid #e0e0e0",
-      borderRadius: "8px",
-      padding: "14px 16px",
-      height: "100%",
-      display: "flex",
-      flexDirection: "column",
-      background: "#fff",
-    }}
-  >
-    {children}
-  </Box>
-);
+const StatBox = ({ children }) => {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+  
+  return (
+    <Box
+      sx={{
+        border: "1px solid",
+        borderColor: isDark ? 'grey.700' : '#e0e0e0',
+        borderRadius: "8px",
+        padding: "14px 16px",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        bgcolor: isDark ? 'grey.900' : '#fff',
+      }}
+    >
+      {children}
+    </Box>
+  );
+};
 
 const METRIC_KEYS = {
   FCP: "fcp",
@@ -205,14 +212,14 @@ const WebVitals = ({ query }) => {
     <>
       {/* Header */}
       <Box sx={{ display: "flex", alignItems: "center", my: 2 }}>
-        <Box sx={{ flexGrow: 1, height: "1px", backgroundColor: "#ddd" }} />
+        <Box sx={{ flexGrow: 1, height: "1px", bgcolor: "divider" }} />
         <Typography
           variant="subtitle2"
-          sx={{ mx: 2, color: "#666", fontWeight: 600 }}
+          sx={{ mx: 2, color: "text.primary", fontWeight: 600 }}
         >
           Web Vitals
         </Typography>
-        <Box sx={{ flexGrow: 1, height: "1px", backgroundColor: "#ddd" }} />
+        <Box sx={{ flexGrow: 1, height: "1px", bgcolor: "divider" }} />
       </Box>
 
       <Grid container spacing={1.5} columns={{ xs: 2, sm: 6 }}>
@@ -231,12 +238,12 @@ const WebVitals = ({ query }) => {
             >
               <Typography
                 variant="subtitle2"
-                sx={{ color: "#555", fontWeight: 600 }}
+                sx={{ color: "text.secondary", fontWeight: 600 }}
               >
                 Performance (Avg)
               </Typography>
 
-              <Typography variant="h4" fontWeight="bold" sx={{ mt: 0.5 }}>
+              <Typography variant="h4" fontWeight="bold" sx={{ mt: 0.5, color: "text.primary" }}>
                 {webVitals.performanceAvg
                   ? webVitals.performanceAvg.toFixed(2)
                   : "---"}
@@ -270,7 +277,7 @@ const WebVitals = ({ query }) => {
             >
               <Typography
                 variant="subtitle2"
-                sx={{ color: "#555", fontWeight: 600 }}
+                sx={{ color: "text.primary", fontWeight: 600 }}
               >
                 Top 5 PDPs ({metric})
               </Typography>
@@ -280,7 +287,14 @@ const WebVitals = ({ query }) => {
                 <Select
                   value={metric}
                   onChange={(e) => setMetric(e.target.value)}
-                  sx={{ height: 28, fontSize: "12px" }}
+                  sx={{ 
+                    height: 28, 
+                    fontSize: "12px",
+                    color: "text.primary",
+                    '& .MuiSelect-icon': {
+                      color: "text.primary"
+                    }
+                  }}
                 >
                   <MenuItem value="FCP">FCP</MenuItem>
                   <MenuItem value="LCP">LCP</MenuItem>
@@ -295,7 +309,7 @@ const WebVitals = ({ query }) => {
 
                 return (
                   <Box key={idx} sx={{ mb: 1 }}>
-                    <Typography variant="body2" fontWeight={600}>
+                    <Typography variant="body2" fontWeight={600} color="text.primary">
                       {idx + 1}. {pdp.url.split("/products/")[1]}
                     </Typography>
 

@@ -30,6 +30,7 @@ export default function Sidebar({
   onClose,
   activeTab,
   onTabChange,
+  darkMode = false,
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -47,7 +48,7 @@ export default function Sidebar({
             justifyContent: 'flex-start',
             minHeight: { xs: 56, md: 64 },
             borderBottom: '1px solid',
-            borderColor: 'grey.200',
+            borderColor: darkMode ? 'grey.800' : 'grey.200',
           }}
         >
           <Box
@@ -59,6 +60,11 @@ export default function Sidebar({
               width: 'auto',
               maxWidth: '100%',
               objectFit: 'contain',
+              borderRadius: 0.5,
+              ...(darkMode && {
+                bgcolor: '#121212',
+                filter: 'invert(1) hue-rotate(180deg) brightness(1.2)',
+              }),
             }}
           />
         </Box>
@@ -122,7 +128,7 @@ export default function Sidebar({
         </Box>
       </Box>
     ),
-    [activeTab, onTabChange, onClose, isMobile]
+    [activeTab, onTabChange, onClose, isMobile, darkMode]
   );
 
   // Mobile: temporary drawer (overlay)
