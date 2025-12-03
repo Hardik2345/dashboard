@@ -79,7 +79,7 @@ export default function FunnelChart({ query }) {
         const pctText = `${pct.toFixed(pct >= 99.95 || pct === 0 ? 0 : 1)}%`;
         const countText = nfInt.format(raw);
         ctx.textAlign = 'center';
-        ctx.fillStyle = isDark ? '#64b5f6' : '#0d47a1';
+        ctx.fillStyle = isDark ? '#ffffffff' : '#0d47a1';
         // Single line: count (xx%)
         ctx.font = '600 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
         ctx.textBaseline = 'bottom';

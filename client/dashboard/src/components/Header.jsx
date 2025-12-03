@@ -11,7 +11,15 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
   // Prefer explicit brand fields if present; fallback to derived brand from email
   const brandName = user?.activeBrand?.name || user?.brandName || brand;
   return (
-    <AppBar position="static" color="transparent" elevation={0} sx={{  borderColor: 'grey.100' }}>
+    <AppBar 
+      position="static" 
+      color="transparent" 
+      elevation={0} 
+      sx={{ 
+        borderColor: 'grey.100',
+        bgcolor: 'transparent',
+      }}
+    >
       <Toolbar sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: { xs: 56, md: 64 }, py: 0 }}>
         {/* Left: Hamburger menu (mobile) */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
