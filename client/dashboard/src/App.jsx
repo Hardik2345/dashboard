@@ -369,7 +369,38 @@ export default function App() {
               width: { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` },
             }}
           >
-            <Header user={user} onLogout={handleLogout} onMenuClick={handleSidebarOpen} showMenuButton darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
+            {/* Sticky Top Panel */}
+            <Box
+              sx={{
+                position: 'sticky',
+                top: 0,
+                zIndex: (theme) => theme.zIndex.appBar,
+                bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
+                pb: 1,
+                borderBottom: 1,
+                borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+              }}
+            >
+              <Header user={user} onLogout={handleLogout} onMenuClick={handleSidebarOpen} showMenuButton darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
+              <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
+                <Stack spacing={1}>
+                  <AuthorBrandSelector
+                    brands={authorBrands}
+                    value={authorBrandKey}
+                    loading={authorBrandsLoading}
+                    onChange={handleAuthorBrandChange}
+                    onRefresh={handleAuthorRefresh}
+                  />
+                  {authorTab === 'dashboard' && hasAuthorBrand && (
+                    <MobileTopBar
+                      value={range}
+                      onChange={setRange}
+                      brandKey={authorBrandKey}
+                    />
+                  )}
+                </Stack>
+              </Box>
+            </Box>
 
             <Box
               sx={{
@@ -378,28 +409,13 @@ export default function App() {
                 maxWidth: 1200,
                 mx: 'auto',
                 px: { xs: 1.5, sm: 2.5, md: 4 },
-                py: { xs: 2, md: 4 },
+                py: { xs: 1, md: 2 },
               }}
             >
               <Stack spacing={{ xs: 1, md: 2 }}>
-                <AuthorBrandSelector
-                  brands={authorBrands}
-                  value={authorBrandKey}
-                  loading={authorBrandsLoading}
-                  onChange={handleAuthorBrandChange}
-                  onRefresh={handleAuthorRefresh}
-                />
-
                 {authorTab === 'dashboard' && (
                   hasAuthorBrand ? (
                     <Stack spacing={{ xs: 1, md: 1.5 }}>
-                      <Box sx={{ position: 'relative', zIndex: 0 }}>
-                        <MobileTopBar
-                          value={range}
-                          onChange={setRange}
-                          brandKey={authorBrandKey}
-                        />
-                      </Box>
                       <KPIs
                         query={metricsQuery}
                         selectedMetric={selectedMetric}
@@ -408,7 +424,7 @@ export default function App() {
                       />
                       <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
                       <WebVitals />
-                      <Divider textAlign="left">Funnel</Divider>
+                      <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
                       <FunnelChart query={metricsQuery} />
                       <OrderSplit query={metricsQuery} />
                       <PaymentSalesSplit query={metricsQuery} />
@@ -464,17 +480,29 @@ export default function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
-  <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
-  <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
-    <Stack spacing={{ xs: 1, sm: 1.25 }}>
-            {/* Unified compact chips bar for all breakpoints */}
-            <Box>
-              <MobileTopBar value={range} onChange={setRange} brandKey={activeBrandKey} />
-            </Box>
+        {/* Sticky Top Panel */}
+        <Box
+          sx={{
+            position: 'sticky',
+            top: 0,
+            zIndex: (theme) => theme.zIndex.appBar,
+            bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
+            pb: 1,
+            borderBottom: 1,
+            borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+          }}
+        >
+          <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
+          <Container maxWidth="sm" sx={{ pt: 0.5 }}>
+            <MobileTopBar value={range} onChange={setRange} brandKey={activeBrandKey} />
+          </Container>
+        </Box>
+        <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
+          <Stack spacing={{ xs: 1, sm: 1.25 }}>
             <KPIs query={metricsQuery} selectedMetric={selectedMetric} onSelectMetric={handleSelectMetric} />
             <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
             <WebVitals />
-            <Divider textAlign="left">Funnel</Divider>
+            <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
             <FunnelChart query={metricsQuery} />
             <OrderSplit query={metricsQuery} />
             <PaymentSalesSplit query={metricsQuery} />
