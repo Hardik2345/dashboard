@@ -205,6 +205,130 @@ function formatHourLabel(hour) {
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+// Resolve Chart.js instance from different react-chartjs-2 ref shapes
+const resolveChart = (ref) => {
+  if (!ref) return null;
+  const r = ref.current;
+  if (!r) return null;
+  if (r.chart) return r.chart;
+  if (typeof r.getChart === 'function') return r.getChart();
+  if (r.config || r.ctx || r.data) return r;
+  return null;
+};
+
+// React-rendered custom legend component using MUI Checkbox controls
+// Moved outside HourlySalesCompare to prevent recreation on every render
+function CustomLegend({ chartRef, dataKey }) {
+  const [items, setItems] = useState([]);
+
+  useEffect(() => {
+    let intervalId = null;
+    let mounted = true;
+    const getChart = () => resolveChart(chartRef);
+
+    const tryBuild = () => {
+      const chart = getChart();
+      if (!chart) return false;
+      const build = () => {
+        const datasets = chart.data?.datasets || [];
+        const arr = datasets.map((ds, i) => {
+          const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
+          const metaHidden = chart.getDatasetMeta?.(i)?.hidden;
+          const visible = typeof chart.isDatasetVisible === 'function'
+            ? chart.isDatasetVisible(i)
+            : !(dsHidden === true || metaHidden === true);
+          return {
+            label: ds.label,
+            color: ds.borderColor || ds.backgroundColor || '#1976d2',
+            index: i,
+            visible,
+          };
+        });
+        if (mounted) setItems(arr);
+      };
+
+      build();
+      const originalUpdate = chart.update.bind(chart);
+      chart.update = function() {
+        const ret = originalUpdate(...arguments);
+        try { build(); } catch (e) { /* ignore */ }
+        return ret;
+      };
+      return () => {
+        try { chart.update = originalUpdate; } catch (e) { /* ignore */ }
+      };
+    };
+
+    const cleanupPatch = tryBuild();
+    if (!cleanupPatch) {
+      let attempts = 0;
+      intervalId = setInterval(() => {
+        attempts += 1;
+        const cleanup = tryBuild();
+        if (cleanup || attempts > 20) {
+          if (intervalId) clearInterval(intervalId);
+        }
+      }, 100);
+    }
+
+    return () => {
+      mounted = false;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [chartRef, dataKey]);
+
+  const toggle = (idx) => {
+    const chart = resolveChart(chartRef);
+    if (!chart) return;
+    const currentHidden = chart.data?.datasets?.[idx]?.hidden === true;
+    const newHidden = !currentHidden;
+    if (chart.data && chart.data.datasets && chart.data.datasets[idx]) {
+      chart.data.datasets[idx].hidden = newHidden;
+    }
+    try {
+      const meta = chart.getDatasetMeta(idx);
+      if (meta) meta.hidden = newHidden;
+    } catch (e) {
+      // ignore
+    }
+    try { chart.update(); } catch (e) { /* ignore */ }
+    const datasets2 = chart.data?.datasets || [];
+    const arr = datasets2.map((ds, i) => {
+      const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
+      const metaHidden = chart.getDatasetMeta?.(i)?.hidden;
+      const isVisible = typeof chart.isDatasetVisible === 'function' ? chart.isDatasetVisible(i) : !(dsHidden === true || metaHidden === true);
+      return { label: ds.label, color: ds.borderColor || ds.backgroundColor || '#1976d2', index: i, visible: isVisible };
+    });
+    setItems(arr);
+  };
+
+  if (!items.length) {
+    return null;
+  }
+  return (
+    <Stack 
+      direction={{ xs: 'column', sm: 'row' }} 
+      spacing={{ xs: 0, sm: 1 }} 
+      sx={{ flexWrap: 'wrap', mb: 1, alignItems: { xs: 'flex-start', sm: 'center' } }}
+    >
+      {items.map((item) => (
+        <FormControlLabel
+          key={item.index}
+          control={(
+            <Checkbox
+              checked={Boolean(item.visible)}
+              onChange={() => toggle(item.index)}
+              sx={{ color: item.color, '&.Mui-checked': { color: item.color } }}
+              size="small"
+            />
+          )}
+          label={<Typography variant="caption" sx={{ ml: 0.25 }}>{item.label}</Typography>}
+        />
+      ))}
+    </Stack>
+  );
+}
+
 function formatRangeLabel(range) {
   if (!range || !range.start || !range.end) return '';
   const startDate = new Date(`${range.start}T00:00:00Z`);
@@ -398,6 +522,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     datasets,
   };
 
+  // Stable key for legend effect dependency (avoids re-running on every render)
+  const dataKey = `${state.labels.length}|${state.values.length}|${state.comparisonValues.length}|${primaryLabel}|${comparisonLabel}`;
+
   function formatDay(dateStr) {
     if (!dateStr) return '';
     const dt = new Date(`${dateStr}T00:00:00Z`);
@@ -484,144 +611,6 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   // Chart ref for legend interaction
   const chartRef = useRef(null);
 
-  // Resolve Chart.js instance from different react-chartjs-2 ref shapes
-  const resolveChart = (ref) => {
-    if (!ref) return null;
-    const r = ref.current;
-    if (!r) return null;
-    if (r.chart) return r.chart;
-    if (typeof r.getChart === 'function') return r.getChart();
-    if (r.config || r.ctx || r.data) return r;
-    return null;
-  };
-
-  // Debug: log chartRef and data when loading or data changes
-  useEffect(() => {
-    // no-op — retained to trigger updates when data changes
-    void resolveChart(chartRef);
-  }, [loading, state.labels, state.values, state.comparisonValues]);
-
-  // React-rendered custom legend component using MUI Checkbox controls
-  function CustomLegend({ chartRef }) {
-    const [items, setItems] = useState([]);
-
-    useEffect(() => {
-      // Rebuild whenever incoming data changes. If the chart instance isn't
-      // available yet we poll briefly until it exists (useful when ref is set
-      // after the component mounts).
-      let intervalId = null;
-      let mounted = true;
-      const getChart = () => resolveChart(chartRef);
-
-      const tryBuild = () => {
-        const chart = getChart();
-        if (!chart) return false;
-        const build = () => {
-          const datasets = chart.data?.datasets || [];
-          const arr = datasets.map((ds, i) => {
-              const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
-              const metaHidden = chart.getDatasetMeta?.(i)?.hidden;
-              const visible = typeof chart.isDatasetVisible === 'function'
-                ? chart.isDatasetVisible(i)
-                : !(dsHidden === true || metaHidden === true);
-              return {
-                label: ds.label,
-                color: ds.borderColor || ds.backgroundColor || '#1976d2',
-                index: i,
-                visible,
-              };
-            });
-          if (mounted) setItems(arr);
-        };
-
-        build();
-        // Monkey-patch chart.update to also refresh items (safe restore on unmount)
-          const originalUpdate = chart.update.bind(chart);
-          chart.update = function() {
-            const ret = originalUpdate(...arguments);
-            try { build(); } catch (e) { /* ignore */ }
-            return ret;
-          };
-        return () => {
-          try { chart.update = originalUpdate; } catch (e) { /* ignore */ }
-        };
-      };
-
-      // First immediate attempt
-      const cleanupPatch = tryBuild();
-      if (!cleanupPatch) {
-        // Poll for up to ~2 seconds
-        let attempts = 0;
-        intervalId = setInterval(() => {
-          attempts += 1;
-          const cleanup = tryBuild();
-          if (cleanup || attempts > 20) {
-            if (intervalId) clearInterval(intervalId);
-          }
-        }, 100);
-      }
-
-      return () => {
-        mounted = false;
-        if (intervalId) clearInterval(intervalId);
-      };
-    }, [chartRef, data]);
-
-    const toggle = (idx) => {
-      const chart = resolveChart(chartRef);
-      if (!chart) return;
-      // Explicitly set dataset.hidden and meta.hidden so the dataset is hidden
-      const currentHidden = chart.data?.datasets?.[idx]?.hidden === true;
-      const newHidden = !currentHidden;
-      if (chart.data && chart.data.datasets && chart.data.datasets[idx]) {
-        chart.data.datasets[idx].hidden = newHidden;
-      }
-      try {
-        const meta = chart.getDatasetMeta(idx);
-        if (meta) meta.hidden = newHidden;
-      } catch (e) {
-        // ignore
-      }
-      // Force update and redraw
-      try { chart.update(); } catch (e) { /* ignore */ }
-      // reflect new state and log details for debugging
-      const datasets2 = chart.data?.datasets || [];
-      const arr = datasets2.map((ds, i) => {
-        const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
-        const metaHidden = chart.getDatasetMeta?.(i)?.hidden;
-        const isVisible = typeof chart.isDatasetVisible === 'function' ? chart.isDatasetVisible(i) : !(dsHidden === true || metaHidden === true);
-        return { label: ds.label, color: ds.borderColor || ds.backgroundColor || '#1976d2', index: i, visible: isVisible };
-      });
-      setItems(arr);
-    };
-
-    if (!items.length) {
-      return null;
-    }
-    return (
-      <Stack 
-        direction={{ xs: 'column', sm: 'row' }} 
-        spacing={{ xs: 0, sm: 1 }} 
-        sx={{ flexWrap: 'wrap', mb: 1, alignItems: { xs: 'flex-start', sm: 'center' } }}
-      >
-        {items.map((item) => (
-          <FormControlLabel
-            key={item.index}
-            control={(
-              <Checkbox
-                checked={Boolean(item.visible)}
-                onChange={() => toggle(item.index)}
-                sx={{ color: item.color, '&.Mui-checked': { color: item.color } }}
-                size="small"
-              />
-            )}
-            label={<Typography variant="caption" sx={{ ml: 0.25 }}>{item.label}</Typography>}
-          />
-        ))}
-      </Stack>
-    );
-  }
-
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
       <CardContent sx={{ minHeight: 320, display: 'flex', flexDirection: 'column' }}>
@@ -662,7 +651,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           </FormControl>
         </Box>
         {/* Custom React-rendered legend */}
-        <CustomLegend chartRef={chartRef} data={data} />
+        <CustomLegend chartRef={chartRef} dataKey={dataKey} />
         {loading ? (
           <Skeleton variant="rounded" width="100%" height={240} />
         ) : state.error ? (
