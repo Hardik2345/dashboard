@@ -465,11 +465,16 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           maxTicksLimit: 12,
           padding: 2,
           font: { size: 11 },
+          color: theme.palette.mode === 'dark' ? '#e0e0e0' : '#666',
         }
       },
       y: {
-        grid: { color: 'rgba(0,0,0,0.05)' },
-        ticks: { padding: 4, callback: (v) => config.formatter(v) }
+        grid: { color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' },
+        ticks: { 
+          padding: 4, 
+          callback: (v) => config.formatter(v),
+          color: theme.palette.mode === 'dark' ? '#e0e0e0' : '#666',
+        }
       }
     }
   };
@@ -722,8 +727,19 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   },
                   layout: options.layout,
                   scales: {
-                    x: { stacked: false, grid: { color: 'rgba(0,0,0,0.05)' } },
-                    y: { stacked: false, grid: { display: false }, ticks: { callback: (v) => config.formatter(v) } },
+                    x: { 
+                      stacked: false, 
+                      grid: { color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' },
+                      ticks: { color: theme.palette.mode === 'dark' ? '#e0e0e0' : '#666' },
+                    },
+                    y: { 
+                      stacked: false, 
+                      grid: { display: false }, 
+                      ticks: { 
+                        callback: (v) => config.formatter(v),
+                        color: theme.palette.mode === 'dark' ? '#e0e0e0' : '#666',
+                      } 
+                    },
                   },
                 }}
                 plugins={[legendPadPlugin]}

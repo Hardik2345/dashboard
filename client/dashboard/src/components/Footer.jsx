@@ -87,9 +87,9 @@ export default function Footer() {
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="center" justifyContent="space-between" sx={{ textAlign: { xs: 'center', sm: 'left' } }}>
           <Typography variant="body2" color="text.secondary">©{year} Datum. All rights reserved.</Typography>
           <Stack direction="row" spacing={3} sx={{ opacity: 0.9 }}>
-            <Link underline="hover" color="primary" variant="caption" onClick={() => handleOpen('privacy')} sx={{ cursor: 'pointer' }}>Privacy</Link>
-            <Link underline="hover" color="primary" variant="caption" onClick={() => handleOpen('terms')} sx={{ cursor: 'pointer' }}>Terms</Link>
-            <Link underline="hover" color="primary" variant="caption" onClick={() => handleOpen('support')} sx={{ cursor: 'pointer' }}>Support</Link>
+            <Link underline="hover" variant="caption" onClick={() => handleOpen('privacy')} sx={{ cursor: 'pointer', color: (theme) => theme.palette.mode === 'dark' ? '#64b5f6' : 'primary.main' }}>Privacy</Link>
+            <Link underline="hover" variant="caption" onClick={() => handleOpen('terms')} sx={{ cursor: 'pointer', color: (theme) => theme.palette.mode === 'dark' ? '#64b5f6' : 'primary.main' }}>Terms</Link>
+            <Link underline="hover" variant="caption" onClick={() => handleOpen('support')} sx={{ cursor: 'pointer', color: (theme) => theme.palette.mode === 'dark' ? '#64b5f6' : 'primary.main' }}>Support</Link>
           </Stack>
         </Stack>
       </Container>
