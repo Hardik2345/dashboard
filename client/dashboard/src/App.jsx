@@ -505,7 +505,7 @@ export default function App() {
           }}
         >
           <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
-          <Container maxWidth="sm" sx={{ pt: 0.5 }}>
+          <Container maxWidth="sm" sx={{ pt: { xs: 2.5, sm: 3 } }}>
             <MobileTopBar value={range} onChange={setRange} brandKey={activeBrandKey} />
           </Container>
         </Box>

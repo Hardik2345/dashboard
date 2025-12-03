@@ -21,7 +21,7 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
       }}
     >
       <Toolbar sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: { xs: 56, md: 64 }, py: 0 }}>
-        {/* Left: Hamburger menu (mobile) */}
+        {/* Left: Hamburger menu (mobile) or Brand chip */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {showMenuButton && isMobile && (
             <IconButton
@@ -31,6 +31,9 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
             >
               <MenuIcon />
             </IconButton>
+          )}
+          {!user?.isAuthor && brand && (
+            <Chip size="small" label={brand} color="primary" variant="outlined" sx={{ fontWeight: 600 }} />
           )}
         </Box>
 
@@ -71,9 +74,6 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
         {/* Right: User info and actions */}
         {user && (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
-            {!user.isAuthor && brand && (
-              <Chip size="small" label={brand} color="primary" variant="outlined" sx={{ fontWeight: 600 }} />
-            )}
             {/* Dark Mode Toggle */}
             <Tooltip title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'} arrow>
               <IconButton
