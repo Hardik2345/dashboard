@@ -1,8 +1,10 @@
-import { AppBar, Toolbar, Typography, Box, Button, IconButton, Chip, useTheme, useMediaQuery } from '@mui/material';
+import { AppBar, Toolbar, Typography, Box, Button, IconButton, Chip, useTheme, useMediaQuery, Tooltip } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu';
+import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
+import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 
-export default function Header({ user, onLogout, onMenuClick, showMenuButton = false }) {
+export default function Header({ user, onLogout, onMenuClick, showMenuButton = false, darkMode = false, onToggleDarkMode }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const brand = user?.email ? user.email.split('@')[0].toUpperCase() : null;
@@ -25,7 +27,19 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
         </Box>
 
         {/* Center: Brand image (replaces typography) */}
-        <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none' }}>
+        <Box 
+          sx={{ 
+            position: 'absolute', 
+            left: '50%', 
+            transform: 'translateX(-50%)', 
+            pointerEvents: 'none',
+            ...(darkMode && {
+              bgcolor: '#121212',
+              borderRadius: 1,
+              p: 0.5,
+            }),
+          }}
+        >
           <Box
             component="img"
             src="/brand-logo-final.png"
@@ -36,7 +50,13 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
               display: 'block',
               height: { xs: 72, sm: 80, md: 96 },
               width: 'auto',
-              filter: 'none',
+              ...(darkMode
+                ? {
+                    filter: 'invert(1) hue-rotate(180deg) brightness(1.2)',
+                  }
+                : {
+                    filter: 'none',
+                  }),
             }}
           />
         </Box>
@@ -47,11 +67,53 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
             {!user.isAuthor && brand && (
               <Chip size="small" label={brand} color="primary" variant="outlined" sx={{ fontWeight: 600 }} />
             )}
+            {/* Dark Mode Toggle */}
+            <Tooltip title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'} arrow>
+              <IconButton
+                size="small"
+                onClick={onToggleDarkMode}
+                color="inherit"
+                aria-label="Toggle dark mode"
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  p: 0.75,
+                }}
+              >
+                {darkMode ? (
+                  <LightModeOutlinedIcon fontSize="small" sx={{ color: 'warning.main' }} />
+                ) : (
+                  <DarkModeOutlinedIcon fontSize="small" />
+                )}
+              </IconButton>
+            </Tooltip>
             <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-              <Button size="small" variant="outlined" color="inherit" onClick={onLogout}>Logout</Button>
+              <Button 
+                size="small" 
+                variant="outlined" 
+                onClick={onLogout}
+                sx={{
+                  color: darkMode ? '#f0f0f0' : 'inherit',
+                  borderColor: darkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.23)',
+                  '&:hover': {
+                    borderColor: darkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)',
+                    bgcolor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+                  },
+                }}
+              >
+                Logout
+              </Button>
             </Box>
             <Box sx={{ display: { xs: 'flex', sm: 'none' } }}>
-              <IconButton size="small" aria-label="logout" onClick={onLogout} color="inherit">
+              <IconButton 
+                size="small" 
+                aria-label="logout" 
+                onClick={onLogout} 
+                sx={{ 
+                  color: darkMode ? '#f0f0f0' : 'inherit',
+                }}
+              >
                 <LogoutIcon fontSize="small" />
               </IconButton>
             </Box>
