@@ -599,7 +599,11 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       return null;
     }
     return (
-      <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', mb: 1 }}>
+      <Stack 
+        direction={{ xs: 'column', sm: 'row' }} 
+        spacing={{ xs: 0, sm: 1 }} 
+        sx={{ flexWrap: 'wrap', mb: 1, alignItems: { xs: 'flex-start', sm: 'center' } }}
+      >
         {items.map((item) => (
           <FormControlLabel
             key={item.index}
