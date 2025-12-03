@@ -238,6 +238,16 @@ export default function App() {
     },
   }), [darkMode]);
 
+  // Light-only theme for sign-in page
+  const lightTheme = useMemo(() => createTheme({
+    palette: {
+      mode: 'light',
+      primary: { main: '#0b6bcb' },
+      background: { default: '#FDFDFD', paper: '#ffffff' },
+    },
+    shape: { borderRadius: 12 },
+  }), []);
+
   // Persist when range changes
   useEffect(() => {
     if (start && end) {
@@ -279,7 +289,7 @@ export default function App() {
 
     if (isUnauthorized) {
       return (
-        <ThemeProvider theme={theme}>
+        <ThemeProvider theme={lightTheme}>
           <CssBaseline />
           <Unauthorized />
         </ThemeProvider>
@@ -287,7 +297,7 @@ export default function App() {
     }
 
     return (
-      <ThemeProvider theme={theme}>
+      <ThemeProvider theme={lightTheme}>
         <CssBaseline />
         <Box sx={{ minHeight: '100svh', bgcolor: 'background.default', display: 'flex', alignItems: 'center', justifyContent: 'center', p:2 }}>
           <Container maxWidth="xs">
