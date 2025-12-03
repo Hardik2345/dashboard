@@ -222,7 +222,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
             height: 32,
             display: "flex",
             alignItems: "center",
-            bgcolor: "grey.50",
+            bgcolor: "background.paper",
             fontSize: 13,
           }}
         >
@@ -334,8 +334,8 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
               maxHeight: 320,
               overflowY: "auto",
               borderRight: "1px solid",
-              borderColor: "grey.200",
-              bgcolor: "#fff",
+              borderColor: "divider",
+              bgcolor: "background.paper",
             }}
           >
             <List disablePadding>
@@ -394,8 +394,8 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
               maxHeight: 320,
               overflowY: "auto",
               borderRight: "1px solid",
-              borderColor: "grey.200",
-              bgcolor: "#fff",
+              borderColor: "divider",
+              bgcolor: "background.paper",
             }}
           >
             <List disablePadding>
@@ -447,7 +447,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
           </Box>
 
           {/* Calendar Panel */}
-          <Box sx={{ p: 1, bgcolor: "#fff", minWidth: 200 }}>
+          <Box sx={{ p: 1, bgcolor: "background.paper", minWidth: 200 }}>
             <DatePicker
               month={month}
               year={year}
