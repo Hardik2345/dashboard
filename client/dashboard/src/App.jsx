@@ -92,6 +92,16 @@ export default function App() {
   const [authorLastLoadedAt, setAuthorLastLoadedAt] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(loadInitialThemeMode);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  // Track scroll position for sticky panel border
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 0);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
 
@@ -377,12 +387,13 @@ export default function App() {
                 zIndex: (theme) => theme.zIndex.appBar,
                 bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
                 pb: 1,
-                borderBottom: { xs: 1, md: 0 },
+                borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
                 borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+                transition: 'border-color 0.2s ease',
               }}
             >
               <Header user={user} onLogout={handleLogout} onMenuClick={handleSidebarOpen} showMenuButton darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
-              <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
+              <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: { xs: 1.5, sm: 2 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
                 <Stack spacing={1}>
                   <AuthorBrandSelector
                     brands={authorBrands}
@@ -488,8 +499,9 @@ export default function App() {
             zIndex: (theme) => theme.zIndex.appBar,
             bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
             pb: 1,
-            borderBottom: { xs: 1, md: 0 },
+            borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
             borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+            transition: 'border-color 0.2s ease',
           }}
         >
           <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
