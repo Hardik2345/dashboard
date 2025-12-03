@@ -7,7 +7,6 @@ import {
   ListItemButton,
   ListItemText,
   Divider,
-  useTheme,
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import { Popover, DatePicker } from "@shopify/polaris";
@@ -222,7 +221,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
             height: 32,
             display: "flex",
             alignItems: "center",
-            bgcolor: isDark ? 'grey.900' : 'grey.50',
+            bgcolor: "grey.50",
             fontSize: 13,
           }}
         >
@@ -240,7 +239,6 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
             sx={{
               border: "1px solid",
               borderColor: "divider",
-              bgcolor: isDark ? 'grey.900' : 'background.paper',
               px: 0.75,
               height: 32,
               display: "flex",
@@ -257,7 +255,6 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
           sx={{
             border: "1px solid",
             borderColor: "divider",
-            bgcolor: isDark ? 'grey.900' : 'background.paper',
             px: 0.75,
             height: 32,
             display: "flex",
@@ -326,11 +323,6 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
             overflowX: "hidden",
             overflowY: "auto",
             borderRadius: 1,
-            ...(isDark && {
-              border: "2px solid",
-              borderColor: "#444",
-              bgcolor: "#1e1e1e",
-            }),
           }}
         >
           {/* Presets Panel - Mobile */}
@@ -341,8 +333,8 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
               maxHeight: 320,
               overflowY: "auto",
               borderRight: "1px solid",
-              borderColor: isDark ? "grey.700" : "grey.200",
-              bgcolor: isDark ? "#1e1e1e" : "#fff",
+              borderColor: "grey.200",
+              bgcolor: "#fff",
             }}
           >
             <List disablePadding>
@@ -359,14 +351,14 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
                       sx={{
                         py: 1,
                         px: 1.5,
-                        bgcolor: isSelected ? (isDark ? "grey.800" : "grey.100") : "transparent",
+                        bgcolor: isSelected ? "grey.100" : "transparent",
                         "&:hover": {
-                          bgcolor: isDark ? "grey.800" : "grey.100",
+                          bgcolor: "grey.100",
                         },
                         "&.Mui-selected": {
-                          bgcolor: isDark ? "grey.700" : "grey.200",
+                          bgcolor: "grey.200",
                           "&:hover": {
-                            bgcolor: isDark ? "grey.700" : "grey.200",
+                            bgcolor: "grey.200",
                           },
                         },
                       }}
@@ -376,17 +368,17 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
                         primaryTypographyProps={{
                           variant: "body2",
                           fontWeight: isSelected ? 600 : 400,
-                          color: isDark ? "#f0f0f0" : "text.primary",
+                          color: "text.primary",
                           fontSize: 12,
                         }}
                       />
                       {isSelected && (
                         <CheckIcon
-                          sx={{ fontSize: 14, color: isDark ? "#f0f0f0" : "text.primary", ml: 0.5 }}
+                          sx={{ fontSize: 14, color: "text.primary", ml: 0.5 }}
                         />
                       )}
                     </ListItemButton>
-                    {showDivider && <Divider sx={{ borderColor: isDark ? "grey.700" : "grey.200" }} />}
+                    {showDivider && <Divider />}
                   </Box>
                 );
               })}
@@ -401,8 +393,8 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
               maxHeight: 320,
               overflowY: "auto",
               borderRight: "1px solid",
-              borderColor: isDark ? "grey.700" : "grey.200",
-              bgcolor: isDark ? "#1e1e1e" : "#fff",
+              borderColor: "grey.200",
+              bgcolor: "#fff",
             }}
           >
             <List disablePadding>
@@ -420,14 +412,14 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
                       sx={{
                         py: 1.25,
                         px: 2,
-                        bgcolor: isSelected ? (isDark ? "grey.800" : "grey.100") : "transparent",
+                        bgcolor: isSelected ? "grey.100" : "transparent",
                         "&:hover": {
-                          bgcolor: isDark ? "grey.800" : "grey.100",
+                          bgcolor: "grey.100",
                         },
                         "&.Mui-selected": {
-                          bgcolor: isDark ? "grey.700" : "grey.200",
+                          bgcolor: "grey.200",
                           "&:hover": {
-                            bgcolor: isDark ? "grey.700" : "grey.200",
+                            bgcolor: "grey.200",
                           },
                         },
                       }}
@@ -437,16 +429,16 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
                         primaryTypographyProps={{
                           variant: "body2",
                           fontWeight: isSelected ? 600 : 400,
-                          color: isDark ? "#f0f0f0" : "text.primary",
+                          color: "text.primary",
                         }}
                       />
                       {isSelected && (
                         <CheckIcon
-                          sx={{ fontSize: 18, color: isDark ? "#f0f0f0" : "text.primary", ml: 1 }}
+                          sx={{ fontSize: 18, color: "text.primary", ml: 1 }}
                         />
                       )}
                     </ListItemButton>
-                    {showDivider && <Divider sx={{ borderColor: isDark ? "grey.700" : "grey.200" }} />}
+                    {showDivider && <Divider />}
                   </Box>
                 );
               })}
@@ -454,56 +446,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
           </Box>
 
           {/* Calendar Panel */}
-          <Box 
-            sx={{ 
-              p: 1, 
-              bgcolor: isDark ? "#1e1e1e" : "#fff", 
-              minWidth: 200,
-              ...(isDark && {
-                '& .Polaris-DatePicker': {
-                  '--p-color-bg': '#1e1e1e',
-                  '--p-color-bg-surface': '#1e1e1e',
-                  '--p-color-bg-surface-hover': '#333',
-                  '--p-color-bg-surface-selected': '#2563eb',
-                  '--p-color-text': '#f0f0f0',
-                  '--p-color-text-subdued': '#e0e0e0',
-                  '--p-color-border': '#444',
-                  '--p-color-border-subdued': '#333',
-                },
-                '& .Polaris-DatePicker__Title': {
-                  color: '#f0f0f0',
-                },
-                '& .Polaris-DatePicker__Weekday': {
-                  color: '#e0e0e0 !important',
-                },
-                '& .Polaris-DatePicker__Day': {
-                  color: '#f0f0f0',
-                  '&:hover': {
-                    backgroundColor: '#333',
-                  },
-                },
-                '& .Polaris-DatePicker__Day--disabled': {
-                  color: '#666',
-                },
-                '& .Polaris-DatePicker__Day--selected': {
-                  backgroundColor: '#2563eb',
-                  color: '#fff',
-                },
-                '& .Polaris-DatePicker__Day--inRange': {
-                  backgroundColor: 'rgba(37, 99, 235, 0.3)',
-                },
-                '& .Polaris-DatePicker__Header': {
-                  color: '#f0f0f0',
-                },
-                '& .Polaris-Button': {
-                  color: '#f0f0f0',
-                },
-                '& .Polaris-Button--plain .Polaris-Icon': {
-                  fill: '#f0f0f0',
-                },
-              }),
-            }}
-          >
+          <Box sx={{ p: 1, bgcolor: "#fff", minWidth: 200 }}>
             <DatePicker
               month={month}
               year={year}
