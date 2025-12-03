@@ -1,17 +1,71 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Box, Card, Tooltip } from '@mui/material';
-import { Popover, DatePicker } from '@shopify/polaris';
-import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
-import utc from 'dayjs/plugin/utc';
-import customParseFormat from 'dayjs/plugin/customParseFormat';
-import { getLastUpdatedPTS } from '../lib/api.js';
+import { useEffect, useMemo, useState, useCallback } from "react";
+import {
+  Box,
+  Card,
+  Tooltip,
+  List,
+  ListItemButton,
+  ListItemText,
+  Divider,
+} from "@mui/material";
+import { useTheme } from '@mui/material/styles';
+import CheckIcon from "@mui/icons-material/Check";
+import { Popover, DatePicker } from "@shopify/polaris";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import utc from "dayjs/plugin/utc";
+import customParseFormat from "dayjs/plugin/customParseFormat";
+import { getLastUpdatedPTS } from "../lib/api.js";
 
 dayjs.extend(relativeTime);
 dayjs.extend(utc);
 dayjs.extend(customParseFormat);
 
+const DATE_PRESETS = [
+  // Recent
+  {
+    label: "Today",
+    getValue: () => [dayjs().startOf("day"), dayjs().startOf("day")],
+    group: 1,
+  },
+  {
+    label: "Yesterday",
+    getValue: () => [
+      dayjs().subtract(1, "day").startOf("day"),
+      dayjs().subtract(1, "day").startOf("day"),
+    ],
+    group: 1,
+  },
+  // Days
+  {
+    label: "Last 7 days",
+    getValue: () => [
+      dayjs().subtract(6, "day").startOf("day"),
+      dayjs().startOf("day"),
+    ],
+    group: 2,
+  },
+  {
+    label: "Last 30 days",
+    getValue: () => [
+      dayjs().subtract(29, "day").startOf("day"),
+      dayjs().startOf("day"),
+    ],
+    group: 2,
+  },
+  {
+    label: "Last 90 days",
+    getValue: () => [
+      dayjs().subtract(89, "day").startOf("day"),
+      dayjs().startOf("day"),
+    ],
+    group: 2,
+  },
+];
+
 export default function MobileTopBar({ value, onChange, brandKey }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const [start, end] = value || [];
   const [popoverActive, setPopoverActive] = useState(false);
   const [month, setMonth] = useState((end || start || dayjs()).month());
@@ -20,92 +74,195 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
 
   useEffect(() => {
     let cancelled = false;
-    const normalizedKey = (brandKey || '').toString().trim().toUpperCase();
+    const normalizedKey = (brandKey || "").toString().trim().toUpperCase();
     setLast({ loading: true, ts: null, tz: null });
-    getLastUpdatedPTS(normalizedKey ? { brandKey: normalizedKey } : undefined).then(r => {
-      if (cancelled) return;
-      let parsed = null;
-      const sources = [];
-      if (r.iso) sources.push(r.iso);
-      if (r.raw) sources.push(r.raw);
-      for (const src of sources) {
-        if (parsed) break;
-        const cleaned = typeof src === 'string' ? src.replace(/ IST$/,'').trim() : src;
-        if (!cleaned) continue;
-        if (typeof cleaned === 'string') {
-          const formats = ['YYYY-MM-DDTHH:mm:ss.SSSZ','YYYY-MM-DDTHH:mm:ssZ','YYYY-MM-DD hh:mm:ss A','YYYY-MM-DD HH:mm:ss','YYYY-MM-DD hh:mm A'];
-          for (const f of formats) {
-            const d = dayjs(cleaned, f, true);
-            if (d.isValid()) { parsed = d; break; }
-          }
-          if (!parsed) {
+    getLastUpdatedPTS(normalizedKey ? { brandKey: normalizedKey } : undefined)
+      .then((r) => {
+        if (cancelled) return;
+        let parsed = null;
+        const sources = [];
+        if (r.iso) sources.push(r.iso);
+        if (r.raw) sources.push(r.raw);
+        for (const src of sources) {
+          if (parsed) break;
+          const cleaned =
+            typeof src === "string" ? src.replace(/ IST$/, "").trim() : src;
+          if (!cleaned) continue;
+          if (typeof cleaned === "string") {
+            const formats = [
+              "YYYY-MM-DDTHH:mm:ss.SSSZ",
+              "YYYY-MM-DDTHH:mm:ssZ",
+              "YYYY-MM-DD hh:mm:ss A",
+              "YYYY-MM-DD HH:mm:ss",
+              "YYYY-MM-DD hh:mm A",
+            ];
+            for (const f of formats) {
+              const d = dayjs(cleaned, f, true);
+              if (d.isValid()) {
+                parsed = d;
+                break;
+              }
+            }
+            if (!parsed) {
+              const auto = dayjs(cleaned);
+              if (auto.isValid()) parsed = auto;
+            }
+          } else if (cleaned instanceof Date) {
             const auto = dayjs(cleaned);
             if (auto.isValid()) parsed = auto;
           }
-        } else if (cleaned instanceof Date) {
-          const auto = dayjs(cleaned);
-          if (auto.isValid()) parsed = auto;
         }
-      }
-      setLast(prev => ({ loading: false, ts: parsed || prev.ts, tz: r.timezone || prev.tz || null }));
-    }).catch(() => {
-      if (cancelled) return;
-      setLast(prev => ({ loading: false, ts: prev.ts, tz: prev.tz }));
-    });
-    return () => { cancelled = true; };
+        setLast((prev) => ({
+          loading: false,
+          ts: parsed || prev.ts,
+          tz: r.timezone || prev.tz || null,
+        }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLast((prev) => ({ loading: false, ts: prev.ts, tz: prev.tz }));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [brandKey]);
 
   useEffect(() => {
     const focus = end || start;
-    if (focus) { setMonth(focus.month()); setYear(focus.year()); }
+    if (focus) {
+      setMonth(focus.month());
+      setYear(focus.year());
+    }
   }, [start, end]);
 
   const selectedRange = useMemo(() => {
     if (!start && !end) return undefined;
-    const s = start ? start.startOf('day').toDate() : undefined;
+    const s = start ? start.startOf("day").toDate() : undefined;
     const effectiveEnd = end || start;
-    const e = effectiveEnd ? effectiveEnd.startOf('day').toDate() : undefined;
+    const e = effectiveEnd ? effectiveEnd.startOf("day").toDate() : undefined;
     if (!s || !e) return undefined;
     return { start: s, end: e };
   }, [start, end]);
 
   const dateLabel = useMemo(() => {
     if (start && end) {
-      const same = start.isSame(end, 'day');
-      if (same) return start.format('DD MMM YYYY');
-      return `${start.format('DD MMM YYYY')} – ${end.format('DD MMM YYYY')}`;
+      const same = start.isSame(end, "day");
+      if (same) return start.format("DD MMM YYYY");
+      return `${start.format("DD MMM YYYY")} – ${end.format("DD MMM YYYY")}`;
     }
-    if (start) return start.format('DD MMM YYYY');
-    return 'Select dates';
+    if (start) return start.format("DD MMM YYYY");
+    return "Select dates";
   }, [start, end]);
 
-  const togglePopover = useCallback(() => setPopoverActive(p => !p), []);
+  const togglePopover = useCallback(() => setPopoverActive((p) => !p), []);
   const handleClose = useCallback(() => setPopoverActive(false), []);
-  const handleMonthChange = useCallback((m, y) => { setMonth(m); setYear(y); }, []);
-  const handleRangeChange = useCallback(({ start: ns, end: ne }) => {
-    const s = ns ? dayjs(ns).startOf('day') : null;
-    const e = ne ? dayjs(ne).startOf('day') : null;
-    const focus = e || s;
-    if (focus) { setMonth(focus.month()); setYear(focus.year()); }
-    if (s && e && s.isAfter(e)) { onChange([e, s]); return; }
-    if (s && !e) { onChange([s, s]); return; }
-    onChange([s, e ?? s ?? null]);
-  }, [onChange]);
+  const handleMonthChange = useCallback((m, y) => {
+    setMonth(m);
+    setYear(y);
+  }, []);
+
+  const handlePresetSelect = useCallback(
+    (preset) => {
+      const [presetStart, presetEnd] = preset.getValue();
+      setMonth(presetEnd.month());
+      setYear(presetEnd.year());
+      onChange([presetStart, presetEnd]);
+    },
+    [onChange]
+  );
+
+  // Check which preset is currently active
+  const activePreset = useMemo(() => {
+    if (!start || !end) return null;
+    return (
+      DATE_PRESETS.find((preset) => {
+        const [presetStart, presetEnd] = preset.getValue();
+        return start.isSame(presetStart, "day") && end.isSame(presetEnd, "day");
+      })?.label || null
+    );
+  }, [start, end]);
+
+  const handleRangeChange = useCallback(
+    ({ start: ns, end: ne }) => {
+      const s = ns ? dayjs(ns).startOf("day") : null;
+      const e = ne ? dayjs(ne).startOf("day") : null;
+      const focus = e || s;
+      if (focus) {
+        setMonth(focus.month());
+        setYear(focus.year());
+      }
+      if (s && e && s.isAfter(e)) {
+        onChange([e, s]);
+        return;
+      }
+      if (s && !e) {
+        onChange([s, s]);
+        return;
+      }
+      onChange([s, e ?? s ?? null]);
+    },
+    [onChange]
+  );
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.75, py: 0.25 }}>
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 0.75,
+        py: 0.25,
+      }}
+    >
       {last.loading ? (
-        <Card elevation={0} sx={{  px: 0.75, height: 32, display: 'flex', alignItems: 'center', bgcolor: 'grey.50', fontSize: 13 }}>
+        <Card
+          elevation={0}
+          sx={{
+            px: 0.75,
+            height: 32,
+            display: "flex",
+            alignItems: "center",
+            bgcolor: "background.paper",
+            fontSize: 13,
+          }}
+        >
           Updating…
         </Card>
       ) : last.ts ? (
-        <Tooltip title={`${last.ts.format('YYYY-MM-DD HH:mm:ss')}${last.tz ? ` ${last.tz}` : ''}`} arrow>
-          <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 0.75, height: 32, display: 'flex', alignItems: 'center', fontSize: 13 }}>
+        <Tooltip
+          title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${
+            last.tz ? ` ${last.tz}` : ""
+          }`}
+          arrow
+        >
+          <Card
+            elevation={0}
+            sx={{
+              border: "1px solid",
+              borderColor: "divider",
+              px: 0.75,
+              height: 32,
+              display: "flex",
+              alignItems: "center",
+              fontSize: 13,
+            }}
+          >
             Updated {last.ts.fromNow()}
           </Card>
         </Tooltip>
       ) : (
-        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', px: 0.75, height: 32, display: 'flex', alignItems: 'center', fontSize: 13 }}>
+        <Card
+          elevation={0}
+          sx={{
+            border: "1px solid",
+            borderColor: "divider",
+            px: 0.75,
+            height: 32,
+            display: "flex",
+            alignItems: "center",
+            fontSize: 13,
+          }}
+        >
           Updated: unavailable
         </Card>
       )}
@@ -119,7 +276,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
             role="button"
             tabIndex={0}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
+              if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
                 togglePopover();
               }
@@ -127,20 +284,29 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
             sx={{
               px: 1,
               height: 32,
-              display: 'flex',
-              alignItems: 'center',
-              cursor: 'pointer',
-              bgcolor: 'primary.main',
-              color: 'primary.contrastText',
-              width: 'auto',
-              maxWidth: { xs: 140, sm: 200 },
-              textAlign: 'center',
-              userSelect: 'none',
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              bgcolor: "primary.main",
+              color: "primary.contrastText",
+              minWidth: { xs: 120, sm: 180 },
+              width: { xs: 120, sm: 180 },
+              textAlign: "center",
+              userSelect: "none",
               fontSize: 13,
-              '&:hover': { filter: 'brightness(0.98)' }
+              "&:hover": { filter: "brightness(0.98)" },
             }}
           >
-            <span style={{ display: 'inline-block', maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span
+              style={{
+                display: "inline-block",
+                maxWidth: "100%",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
               {dateLabel}
             </span>
           </Card>
@@ -148,18 +314,150 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
         onClose={handleClose}
         fullWidth={false}
         preferInputActivator={false}
-        preferredAlignment="center"
+        preferredAlignment="right"
       >
-        <div style={{ padding: 12 }}>
-          <DatePicker
-            month={month}
-            year={year}
-            onChange={handleRangeChange}
-            onMonthChange={handleMonthChange}
-            selected={selectedRange}
-            allowRange
-          />
-        </div>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "row",
+            maxHeight: "80vh",
+            overflowX: "hidden",
+            overflowY: "auto",
+            borderRadius: 1,
+          }}
+        >
+          {/* Presets Panel - Mobile */}
+          <Box
+            sx={{
+              display: { xs: "block", md: "none" },
+              minWidth: 120,
+              maxHeight: 320,
+              overflowY: "auto",
+              borderRight: "1px solid",
+              borderColor: "divider",
+              bgcolor: "background.paper",
+            }}
+          >
+            <List disablePadding>
+              {DATE_PRESETS.map((preset, index) => {
+                const isSelected = activePreset === preset.label;
+                const showDivider =
+                  index < DATE_PRESETS.length - 1 &&
+                  DATE_PRESETS[index + 1].group !== preset.group;
+                return (
+                  <Box key={preset.label}>
+                    <ListItemButton
+                      selected={isSelected}
+                      onClick={() => handlePresetSelect(preset)}
+                      sx={{
+                        py: 1,
+                        px: 1.5,
+                        bgcolor: isSelected ? "grey.100" : "transparent",
+                        "&:hover": {
+                          bgcolor: "grey.100",
+                        },
+                        "&.Mui-selected": {
+                          bgcolor: "grey.200",
+                          "&:hover": {
+                            bgcolor: "grey.200",
+                          },
+                        },
+                      }}
+                    >
+                      <ListItemText
+                        primary={preset.label}
+                        primaryTypographyProps={{
+                          variant: "body2",
+                          fontWeight: isSelected ? 600 : 400,
+                          color: "text.primary",
+                          fontSize: 12,
+                        }}
+                      />
+                      {isSelected && (
+                        <CheckIcon
+                          sx={{ fontSize: 14, color: "text.primary", ml: 0.5 }}
+                        />
+                      )}
+                    </ListItemButton>
+                    {showDivider && <Divider />}
+                  </Box>
+                );
+              })}
+            </List>
+          </Box>
+
+          {/* Presets Panel - Desktop Only (All options) */}
+          <Box
+            sx={{
+              display: { xs: "none", md: "block" },
+              minWidth: 160,
+              maxHeight: 320,
+              overflowY: "auto",
+              borderRight: "1px solid",
+              borderColor: "divider",
+              bgcolor: "background.paper",
+            }}
+          >
+            <List disablePadding>
+              {DATE_PRESETS.map((preset, index) => {
+                const isSelected = activePreset === preset.label;
+                const showDivider =
+                  index < DATE_PRESETS.length - 1 &&
+                  DATE_PRESETS[index + 1].group !== preset.group;
+
+                return (
+                  <Box key={preset.label}>
+                    <ListItemButton
+                      selected={isSelected}
+                      onClick={() => handlePresetSelect(preset)}
+                      sx={{
+                        py: 1.25,
+                        px: 2,
+                        bgcolor: isSelected ? "grey.100" : "transparent",
+                        "&:hover": {
+                          bgcolor: "grey.100",
+                        },
+                        "&.Mui-selected": {
+                          bgcolor: "grey.200",
+                          "&:hover": {
+                            bgcolor: "grey.200",
+                          },
+                        },
+                      }}
+                    >
+                      <ListItemText
+                        primary={preset.label}
+                        primaryTypographyProps={{
+                          variant: "body2",
+                          fontWeight: isSelected ? 600 : 400,
+                          color: "text.primary",
+                        }}
+                      />
+                      {isSelected && (
+                        <CheckIcon
+                          sx={{ fontSize: 18, color: "text.primary", ml: 1 }}
+                        />
+                      )}
+                    </ListItemButton>
+                    {showDivider && <Divider />}
+                  </Box>
+                );
+              })}
+            </List>
+          </Box>
+
+          {/* Calendar Panel */}
+          <Box sx={{ p: 1, bgcolor: "background.paper", minWidth: 200 }}>
+            <DatePicker
+              month={month}
+              year={year}
+              onChange={handleRangeChange}
+              onMonthChange={handleMonthChange}
+              selected={selectedRange}
+              allowRange
+            />
+          </Box>
+        </Box>
       </Popover>
     </Box>
   );
