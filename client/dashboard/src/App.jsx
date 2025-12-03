@@ -41,6 +41,15 @@ const DEFAULT_TREND_METRIC = 'sales';
 const TREND_METRICS = new Set(['sales', 'orders', 'sessions', 'cvr', 'atc', 'aov']);
 const SESSION_TRACKING_ENABLED = String(import.meta.env.VITE_SESSION_TRACKING || 'false').toLowerCase() === 'true';
 const AUTHOR_BRAND_STORAGE_KEY = 'author_active_brand_v1';
+const THEME_MODE_KEY = 'dashboard_theme_mode';
+
+function loadInitialThemeMode() {
+  try {
+    const saved = localStorage.getItem(THEME_MODE_KEY);
+    if (saved === 'dark' || saved === 'light') return saved;
+  } catch {}
+  return 'light';
+}
 
 function loadInitialRange() {
   try {
@@ -82,6 +91,7 @@ export default function App() {
   const [authorRefreshKey, setAuthorRefreshKey] = useState(0);
   const [authorLastLoadedAt, setAuthorLastLoadedAt] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(loadInitialThemeMode);
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
 
@@ -175,14 +185,58 @@ export default function App() {
     setAuthorTab(tabId);
   }, []);
 
+  const handleToggleDarkMode = useCallback(() => {
+    setDarkMode((prev) => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      try {
+        localStorage.setItem(THEME_MODE_KEY, next);
+      } catch {}
+      return next;
+    });
+  }, []);
+
   const theme = useMemo(() => createTheme({
     palette: {
-      mode: 'light',
-      primary: { main: '#0b6bcb' },
-      background: { default: '#FDFDFD', paper: '#ffffff' }
+      mode: darkMode,
+      ...(darkMode === 'light'
+        ? {
+            primary: { main: '#0b6bcb' },
+            background: { default: '#FDFDFD', paper: '#ffffff' },
+          }
+        : {
+            primary: { main: '#5ba3e0' },
+            background: { default: '#121212', paper: '#1e1e1e' },
+            text: { 
+              primary: '#f0f0f0', 
+              secondary: '#c0c0c0',
+              disabled: '#808080',
+            },
+            divider: '#404040',
+          }),
     },
     shape: { borderRadius: 12 },
-  }), []);
+    components: {
+      MuiCard: {
+        styleOverrides: {
+          root: {
+            ...(darkMode === 'dark' && {
+              backgroundColor: '#1e1e1e',
+              borderColor: '#333',
+            }),
+          },
+        },
+      },
+      MuiPaper: {
+        styleOverrides: {
+          root: {
+            ...(darkMode === 'dark' && {
+              backgroundImage: 'none',
+            }),
+          },
+        },
+      },
+    },
+  }), [darkMode]);
 
   // Persist when range changes
   useEffect(() => {
@@ -291,6 +345,7 @@ export default function App() {
             onClose={handleSidebarClose}
             activeTab={authorTab}
             onTabChange={handleSidebarTabChange}
+            darkMode={darkMode === 'dark'}
           />
 
           {/* Main content area */}
@@ -304,7 +359,7 @@ export default function App() {
               width: { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` },
             }}
           >
-            <Header user={user} onLogout={handleLogout} onMenuClick={handleSidebarOpen} showMenuButton />
+            <Header user={user} onLogout={handleLogout} onMenuClick={handleSidebarOpen} showMenuButton darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
 
             <Box
               sx={{
@@ -399,7 +454,7 @@ export default function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
-  <Header user={user} onLogout={handleLogout} />
+  <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
   <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
     <Stack spacing={{ xs: 1, sm: 1.25 }}>
             {/* Unified compact chips bar for all breakpoints */}
