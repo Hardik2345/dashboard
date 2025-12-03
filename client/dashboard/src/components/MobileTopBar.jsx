@@ -222,7 +222,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
             height: 32,
             display: "flex",
             alignItems: "center",
-            bgcolor: "grey.50",
+            bgcolor: isDark ? 'grey.900' : 'grey.50',
             fontSize: 13,
           }}
         >
@@ -240,6 +240,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
             sx={{
               border: "1px solid",
               borderColor: "divider",
+              bgcolor: isDark ? 'grey.900' : 'background.paper',
               px: 0.75,
               height: 32,
               display: "flex",
@@ -256,6 +257,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
           sx={{
             border: "1px solid",
             borderColor: "divider",
+            bgcolor: isDark ? 'grey.900' : 'background.paper',
             px: 0.75,
             height: 32,
             display: "flex",
