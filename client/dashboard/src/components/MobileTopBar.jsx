@@ -8,6 +8,7 @@ import {
   ListItemText,
   Divider,
 } from "@mui/material";
+import { useTheme } from '@mui/material/styles';
 import CheckIcon from "@mui/icons-material/Check";
 import { Popover, DatePicker } from "@shopify/polaris";
 import dayjs from "dayjs";
