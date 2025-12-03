@@ -33,16 +33,15 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
             left: '50%', 
             transform: 'translateX(-50%)', 
             pointerEvents: 'none',
-            ...(darkMode && {
-              bgcolor: '#121212',
-              borderRadius: 1,
-              p: 0.5,
-            }),
+            borderRadius: 1,
+            p: 0.5,
+            bgcolor: darkMode ? '#121212' : 'transparent',
+            top: -10
           }}
         >
           <Box
             component="img"
-            src="/brand-logo-final.png"
+            src="/brand-logo-dark.png"
             alt="Brand"
             loading="eager"
             decoding="async"
