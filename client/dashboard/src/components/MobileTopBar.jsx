@@ -8,6 +8,7 @@ import {
   ListItemText,
   Divider,
 } from "@mui/material";
+import { AppProvider } from '@shopify/polaris';
 import { useTheme } from '@mui/material/styles';
 import CheckIcon from "@mui/icons-material/Check";
 import { Popover, DatePicker } from "@shopify/polaris";
@@ -205,36 +206,57 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
   );
 
   return (
-    <Box
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 0.75,
-        py: 0.25,
+    <AppProvider
+      theme={{
+        colorScheme: isDark ? 'dark' : 'light',
       }}
     >
-      {last.loading ? (
-        <Card
-          elevation={0}
-          sx={{
-            px: 0.75,
-            height: 32,
-            display: "flex",
-            alignItems: "center",
-            bgcolor: "background.paper",
-            fontSize: 13,
-          }}
-        >
-          Updating…
-        </Card>
-      ) : last.ts ? (
-        <Tooltip
-          title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${
-            last.tz ? ` ${last.tz}` : ""
-          }`}
-          arrow
-        >
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 0.75,
+          py: 0.25,
+        }}
+      >
+        {last.loading ? (
+          <Card
+            elevation={0}
+            sx={{
+              px: 0.75,
+              height: 32,
+              display: "flex",
+              alignItems: "center",
+              bgcolor: "background.paper",
+              fontSize: 13,
+            }}
+          >
+            Updating…
+          </Card>
+        ) : last.ts ? (
+          <Tooltip
+            title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${
+              last.tz ? ` ${last.tz}` : ""
+            }`}
+            arrow
+          >
+            <Card
+              elevation={0}
+              sx={{
+                border: "1px solid",
+                borderColor: "divider",
+                px: 0.75,
+                height: 32,
+                display: "flex",
+                alignItems: "center",
+                fontSize: 13,
+              }}
+            >
+              Updated {last.ts.fromNow()}
+            </Card>
+          </Tooltip>
+        ) : (
           <Card
             elevation={0}
             sx={{
@@ -247,218 +269,209 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
               fontSize: 13,
             }}
           >
-            Updated {last.ts.fromNow()}
+            Updated: unavailable
           </Card>
-        </Tooltip>
-      ) : (
-        <Card
-          elevation={0}
-          sx={{
-            border: "1px solid",
-            borderColor: "divider",
-            px: 0.75,
-            height: 32,
-            display: "flex",
-            alignItems: "center",
-            fontSize: 13,
-          }}
-        >
-          Updated: unavailable
-        </Card>
-      )}
+        )}
 
-      <Popover
-        active={popoverActive}
-        activator={
-          <Card
-            elevation={0}
-            onClick={togglePopover}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                togglePopover();
-              }
-            }}
-            sx={{
-              px: 1,
-              height: 32,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              bgcolor: "primary.main",
-              color: "primary.contrastText",
-              minWidth: { xs: 120, sm: 180 },
-              width: { xs: 120, sm: 180 },
-              textAlign: "center",
-              userSelect: "none",
-              fontSize: 13,
-              "&:hover": { filter: "brightness(0.98)" },
-            }}
-          >
-            <span
-              style={{
-                display: "inline-block",
-                maxWidth: "100%",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
+        <Popover
+          active={popoverActive}
+          activator={
+            <Card
+              elevation={0}
+              onClick={togglePopover}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  togglePopover();
+                }
+              }}
+              sx={{
+                px: 1,
+                // border: "1px solid",
+                // borderColor: "divider",
+                height: 32,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                bgcolor: "primary.main",
+                color: "primary.contrastText",
+                minWidth: { xs: 120, sm: 180 },
+                width: { xs: 120, sm: 180 },
+                textAlign: "center",
+                userSelect: "none",
+                fontSize: 13,
+                "&:hover": { filter: "brightness(0.98)" },
               }}
             >
-              {dateLabel}
-            </span>
-          </Card>
-        }
-        onClose={handleClose}
-        fullWidth={false}
-        preferInputActivator={false}
-        preferredAlignment="right"
-      >
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: "row",
-            maxHeight: "80vh",
-            overflowX: "hidden",
-            overflowY: "auto",
-            borderRadius: 1,
-          }}
+              <span
+                style={{
+                  display: "inline-block",
+                  maxWidth: "100%",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {dateLabel}
+              </span>
+            </Card>
+          }
+          onClose={handleClose}
+          fullWidth={false}
+          preferInputActivator={false}
+          preferredAlignment="right"
         >
-          {/* Presets Panel - Mobile */}
           <Box
             sx={{
-              display: { xs: "block", md: "none" },
-              minWidth: 120,
-              maxHeight: 320,
+              display: "flex",
+              flexDirection: "row",
+              maxHeight: "80vh",
+              overflowX: "hidden",
               overflowY: "auto",
-              borderRight: "1px solid",
-              borderColor: "divider",
-              bgcolor: "background.paper",
+              borderRadius: 1,
             }}
           >
-            <List disablePadding>
-              {DATE_PRESETS.map((preset, index) => {
-                const isSelected = activePreset === preset.label;
-                const showDivider =
-                  index < DATE_PRESETS.length - 1 &&
-                  DATE_PRESETS[index + 1].group !== preset.group;
-                return (
-                  <Box key={preset.label}>
-                    <ListItemButton
-                      selected={isSelected}
-                      onClick={() => handlePresetSelect(preset)}
-                      sx={{
-                        py: 1,
-                        px: 1.5,
-                        bgcolor: isSelected ? "grey.100" : "transparent",
-                        "&:hover": {
-                          bgcolor: "grey.100",
-                        },
-                        "&.Mui-selected": {
-                          bgcolor: "grey.200",
-                          "&:hover": {
-                            bgcolor: "grey.200",
+            {/* Presets Panel - Mobile */}
+            <Box
+              sx={{
+                display: { xs: "block", md: "none" },
+                minWidth: 120,
+                maxHeight: 320,
+                overflowY: "auto",
+                borderRight: "1px solid",
+                borderColor: "divider",
+                bgcolor: "background.paper",
+              }}
+            >
+              <List disablePadding>
+                {DATE_PRESETS.map((preset, index) => {
+                  const isSelected = activePreset === preset.label;
+                  const showDivider =
+                    index < DATE_PRESETS.length - 1 &&
+                    DATE_PRESETS[index + 1].group !== preset.group;
+                  return (
+                    <Box key={preset.label}>
+                      <ListItemButton
+                        selected={isSelected}
+                        onClick={() => handlePresetSelect(preset)}
+                        sx={{
+                          py: 1,
+                          px: 1.5,
+                          bgcolor: isSelected
+                            ? (isDark ? 'action.selected' : 'grey.100')
+                            : 'transparent',
+                          '&:hover': {
+                            bgcolor: isDark ? 'action.hover' : 'grey.100',
                           },
-                        },
-                      }}
-                    >
-                      <ListItemText
-                        primary={preset.label}
-                        primaryTypographyProps={{
-                          variant: "body2",
-                          fontWeight: isSelected ? 600 : 400,
-                          color: "text.primary",
-                          fontSize: 12,
-                        }}
-                      />
-                      {isSelected && (
-                        <CheckIcon
-                          sx={{ fontSize: 14, color: "text.primary", ml: 0.5 }}
-                        />
-                      )}
-                    </ListItemButton>
-                    {showDivider && <Divider />}
-                  </Box>
-                );
-              })}
-            </List>
-          </Box>
-
-          {/* Presets Panel - Desktop Only (All options) */}
-          <Box
-            sx={{
-              display: { xs: "none", md: "block" },
-              minWidth: 160,
-              maxHeight: 320,
-              overflowY: "auto",
-              borderRight: "1px solid",
-              borderColor: "divider",
-              bgcolor: "background.paper",
-            }}
-          >
-            <List disablePadding>
-              {DATE_PRESETS.map((preset, index) => {
-                const isSelected = activePreset === preset.label;
-                const showDivider =
-                  index < DATE_PRESETS.length - 1 &&
-                  DATE_PRESETS[index + 1].group !== preset.group;
-
-                return (
-                  <Box key={preset.label}>
-                    <ListItemButton
-                      selected={isSelected}
-                      onClick={() => handlePresetSelect(preset)}
-                      sx={{
-                        py: 1.25,
-                        px: 2,
-                        bgcolor: isSelected ? "grey.100" : "transparent",
-                        "&:hover": {
-                          bgcolor: "grey.100",
-                        },
-                        "&.Mui-selected": {
-                          bgcolor: "grey.200",
-                          "&:hover": {
-                            bgcolor: "grey.200",
+                          '&.Mui-selected': {
+                            bgcolor: isDark ? 'action.selected' : 'grey.200',
+                            '&:hover': {
+                              bgcolor: isDark ? 'action.selected' : 'grey.200',
+                            },
                           },
-                        },
-                      }}
-                    >
-                      <ListItemText
-                        primary={preset.label}
-                        primaryTypographyProps={{
-                          variant: "body2",
-                          fontWeight: isSelected ? 600 : 400,
-                          color: "text.primary",
                         }}
-                      />
-                      {isSelected && (
-                        <CheckIcon
-                          sx={{ fontSize: 18, color: "text.primary", ml: 1 }}
+                      >
+                        <ListItemText
+                          primary={preset.label}
+                          primaryTypographyProps={{
+                            variant: "body2",
+                            fontWeight: isSelected ? 600 : 400,
+                            color: "text.primary",
+                            fontSize: 12,
+                          }}
                         />
-                      )}
-                    </ListItemButton>
-                    {showDivider && <Divider />}
-                  </Box>
-                );
-              })}
-            </List>
-          </Box>
+                        {isSelected && (
+                          <CheckIcon
+                            sx={{ fontSize: 14, color: "text.primary", ml: 0.5 }}
+                          />
+                        )}
+                      </ListItemButton>
+                      {showDivider && <Divider />}
+                    </Box>
+                  );
+                })}
+              </List>
+            </Box>
 
-          {/* Calendar Panel */}
-          <Box sx={{ p: 1, bgcolor: "background.paper", minWidth: 200 }}>
-            <DatePicker
-              month={month}
-              year={year}
-              onChange={handleRangeChange}
-              onMonthChange={handleMonthChange}
-              selected={selectedRange}
-              allowRange
-            />
+            {/* Presets Panel - Desktop Only (All options) */}
+            <Box
+              sx={{
+                display: { xs: "none", md: "block" },
+                minWidth: 160,
+                maxHeight: 320,
+                overflowY: "auto",
+                borderRight: "1px solid",
+                borderColor: "divider",
+                bgcolor: "background.paper",
+              }}
+            >
+              <List disablePadding>
+                {DATE_PRESETS.map((preset, index) => {
+                  const isSelected = activePreset === preset.label;
+                  const showDivider =
+                    index < DATE_PRESETS.length - 1 &&
+                    DATE_PRESETS[index + 1].group !== preset.group;
+
+                  return (
+                    <Box key={preset.label}>
+                      <ListItemButton
+                        selected={isSelected}
+                        onClick={() => handlePresetSelect(preset)}
+                        sx={{
+                          py: 1,
+                          px: 1.5,
+                          bgcolor: isSelected
+                            ? (isDark ? 'action.selected' : 'grey.100')
+                            : 'transparent',
+                          '&:hover': {
+                            bgcolor: isDark ? 'action.hover' : 'grey.100',
+                          },
+                          '&.Mui-selected': {
+                            bgcolor: isDark ? 'action.selected' : 'grey.200',
+                            '&:hover': {
+                              bgcolor: isDark ? 'action.selected' : 'grey.200',
+                            },
+                          },
+                        }}
+                      >
+                        <ListItemText
+                          primary={preset.label}
+                          primaryTypographyProps={{
+                            variant: "body2",
+                            fontWeight: isSelected ? 600 : 400,
+                            color: "text.primary",
+                          }}
+                        />
+                        {isSelected && (
+                          <CheckIcon
+                            sx={{ fontSize: 18, color: "text.primary", ml: 1 }}
+                          />
+                        )}
+                      </ListItemButton>
+                      {showDivider && <Divider />}
+                    </Box>
+                  );
+                })}
+              </List>
+            </Box>
+
+            {/* Calendar Panel */}
+            <Box sx={{ p: 1, bgcolor: "background.paper", minWidth: 200 }}>
+              <DatePicker
+                month={month}
+                year={year}
+                onChange={handleRangeChange}
+                onMonthChange={handleMonthChange}
+                selected={selectedRange}
+                allowRange
+              />
+            </Box>
           </Box>
-        </Box>
-      </Popover>
-    </Box>
+        </Popover>
+      </Box>
+    </AppProvider>
   );
 }
