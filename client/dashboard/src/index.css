@@ -107,3 +107,95 @@ body { margin: 0; background-color: #FDFDFD; }
 	background-color: #303030;
 	opacity: 8%;
 }
+
+/* Polaris Popover styling - minimal visible border */
+/* .Polaris-Popover {
+  background: transparent !important;
+}
+
+.Polaris-Popover__Wrapper {
+  background: transparent !important;
+} */
+
+/* .Polaris-Popover__Content {
+  border: 1px solid #E1E3E5 !important;
+  border-radius: 6px !important; 
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  margin-top: 4px !important;
+  overflow: hidden !important;
+} */
+
+/* .Polaris-Popover,
+.Polaris-Popover__Content,
+.Polaris-DatePicker,
+.Polaris-DatePicker__Month {
+  background-color: #111 !important;
+  color: #eee !important;
+} */
+
+/* Selected day */
+/* .Polaris-DatePicker__Day--selected {
+  background-color: #333 !important;
+  color: #fff !important;
+} */
+
+/* Hover */
+/* .Polaris-DatePicker__Day:hover {
+  background-color: #222 !important;
+} */
+
+/* Kill Polaris' own border + background; we'll draw our own. */
+.Polaris-Popover__Popover {
+  box-shadow: none !important;
+  background-color: transparent !important;
+}
+
+.Polaris-Popover__Content {
+  background-color: #1e1e1e !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 8px !important;
+}
+
+.Polaris-Popover__Section {
+  background-color: transparent !important;
+  border-top-color: transparent !important;
+}
+
+/* Polaris DatePicker dark mode styling */
+.Polaris-DatePicker {
+  background-color: #1e1e1e !important;
+}
+
+.Polaris-DatePicker__Month {
+  background-color: #1e1e1e !important;
+}
+
+.Polaris-DatePicker__Title,
+.Polaris-DatePicker__Weekday {
+  color: #c0c0c0 !important;
+}
+
+.Polaris-DatePicker__Day {
+  color: #f0f0f0 !important;
+}
+
+.Polaris-DatePicker__Day--disabled {
+  color: #606060 !important;
+}
+
+.Polaris-DatePicker__Day--selected {
+  background-color: #5ba3e0 !important;
+  color: #121212 !important;
+}
+
+.Polaris-DatePicker__Day--inRange {
+  background-color: rgba(91, 163, 224, 0.25) !important;
+}
+
+.Polaris-DatePicker__Day:hover:not(.Polaris-DatePicker__Day--disabled) {
+  background-color: rgba(91, 163, 224, 0.35) !important;
+}
+
+.Polaris-Button--iconOnly svg {
+  fill: #c0c0c0 !important;
+}
