@@ -22,6 +22,7 @@ const { buildAuthorRouter } = require('./routes/author');
 const { buildAuthorBrandsRouter } = require('./routes/authorBrands');
 const { buildAdjustmentBucketsRouter } = require('./routes/adjustmentBuckets');
 const { buildAdjustmentsRouter } = require('./routes/adjustments');
+const { buildAlertsRouter } = require('./routes/alerts');
 const { buildMetricsRouter } = require('./routes/metrics');
 const { buildExternalRouter } = require('./routes/external');
 
@@ -117,6 +118,32 @@ const SessionAdjustmentAudit = sequelize.define('session_adjustment_audit', {
   author_user_id: { type: DataTypes.BIGINT, allowNull: true },
   changed_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
 }, { tableName: 'session_adjustment_audit', timestamps: false });
+
+const Alert = sequelize.define('alerts', {
+  id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
+  brand_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  name: { type: DataTypes.STRING(255), allowNull: false },
+  metric_name: { type: DataTypes.STRING(255), allowNull: true },
+  metric_type: { type: DataTypes.ENUM('base', 'derived'), allowNull: false, defaultValue: 'base' },
+  formula: { type: DataTypes.TEXT, allowNull: true },
+  threshold_type: { type: DataTypes.ENUM('absolute', 'percentage_drop', 'percentage_rise', 'less_than', 'more_than'), allowNull: false },
+  threshold_value: { type: DataTypes.DOUBLE, allowNull: false },
+  critical_threshold: { type: DataTypes.FLOAT, allowNull: true },
+  severity: { type: DataTypes.ENUM('low', 'medium', 'high'), allowNull: false, defaultValue: 'low' },
+  cooldown_minutes: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 30 },
+  is_active: { type: DataTypes.TINYINT, allowNull: true, defaultValue: 1 },
+  created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+  lookback_days: { type: DataTypes.INTEGER, allowNull: true },
+  quiet_hours_start: { type: DataTypes.INTEGER, allowNull: true },
+  quiet_hours_end: { type: DataTypes.INTEGER, allowNull: true }
+}, { tableName: 'alerts', timestamps: false });
+
+const AlertChannel = sequelize.define('alert_channels', {
+  id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
+  alert_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  channel_type: { type: DataTypes.ENUM('slack', 'email', 'webhook'), allowNull: false },
+  channel_config: { type: DataTypes.JSON, allowNull: false },
+}, { tableName: 'alert_channels', timestamps: false });
 
 // --- Access control (master DB) ---------------------------------------------
 // Tables are created idempotently on startup (MySQL CREATE TABLE IF NOT EXISTS)
@@ -411,6 +438,7 @@ app.use('/author/access-control', buildAccessControlRouter({ sequelize, getAcces
 app.use('/author', buildAuthorBrandsRouter(sequelize));
 app.use('/author', buildAuthorRouter());
 app.use('/author/adjustment-buckets', buildAdjustmentBucketsRouter({ SessionAdjustmentBucket, SessionAdjustmentAudit }));
+app.use('/author/alerts', buildAlertsRouter({ Alert, AlertChannel }));
 app.use('/author', buildAdjustmentsRouter({ SessionAdjustmentBucket, SessionAdjustmentAudit }));
 app.use('/metrics', buildMetricsRouter(sequelize));
 app.use('/external', buildExternalRouter());
@@ -450,4 +478,6 @@ module.exports = {
   User,
   SessionAdjustmentBucket,
   SessionAdjustmentAudit,
+  Alert,
+  AlertChannel,
 };

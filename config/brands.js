@@ -6,6 +6,12 @@
 //   e.g. [{"key":"PTS","dbHost":"...","dbPort":3306,"dbUser":"...","dbPass":"...","dbName":"PTS"}]
 
 const REQUIRED_SUFFIXES = ['DB_HOST','DB_USER','DB_PASS'];
+const DEFAULT_BRAND_IDS = Object.freeze({
+  PTS: 1,
+  BBB: 2,
+  TMC: 3,
+  MILA: 4,
+});
 
 function normalizeDomain(d) {
   return String(d || '').trim().toLowerCase();
@@ -27,6 +33,7 @@ function loadBrands() {
         for (const item of arr) {
           if (!item || !item.key) continue;
           const upper = String(item.key).toUpperCase();
+          const fallbackId = DEFAULT_BRAND_IDS[upper];
           map[upper] = {
             key: upper,
             dbHost: item.dbHost,
@@ -34,6 +41,9 @@ function loadBrands() {
             dbUser: item.dbUser,
             dbPass: item.dbPass,
             dbName: item.dbName || upper,
+            brandId: item.brandId != null && item.brandId !== ''
+              ? Number(item.brandId)
+              : (fallbackId !== undefined ? fallbackId : undefined),
             domains: Array.isArray(item.domains) ? item.domains.map(normalizeDomain).filter(Boolean) : [],
           };
         }
@@ -52,6 +62,7 @@ function loadBrands() {
       }
     }
     if (!map[upper]) { // don't override JSON config
+      const fallbackId = DEFAULT_BRAND_IDS[upper];
       map[upper] = {
         key: upper,
         dbHost: process.env[`${upper}_DB_HOST`],
@@ -59,6 +70,9 @@ function loadBrands() {
         dbUser: process.env[`${upper}_DB_USER`],
         dbPass: process.env[`${upper}_DB_PASS`],
         dbName: process.env[`${upper}_DB_NAME`] || upper,
+        brandId: process.env[`${upper}_BRAND_ID`]
+          ? Number(process.env[`${upper}_BRAND_ID`])
+          : (fallbackId !== undefined ? fallbackId : undefined),
         domains: [],
       };
     }
@@ -71,6 +85,7 @@ let brands = loadBrands();
 function addBrandRuntime(cfg) {
   const upper = cfg.key.toUpperCase();
   if (brands[upper]) throw new Error(`Brand ${upper} already exists`);
+  const fallbackId = DEFAULT_BRAND_IDS[upper];
   const brandCfg = {
     key: upper,
     dbHost: cfg.dbHost,
@@ -78,12 +93,23 @@ function addBrandRuntime(cfg) {
     dbUser: cfg.dbUser,
     dbPass: cfg.dbPass,
     dbName: cfg.dbName || upper,
+    brandId: cfg.brandId != null
+      ? Number(cfg.brandId)
+      : (fallbackId !== undefined ? fallbackId : undefined),
   };
   brands[upper] = brandCfg;
   return brandCfg;
 }
 
 function getBrands() { return { ...brands }; }
+
+function getBrandById(id) {
+  if (id == null) return null;
+  const numeric = Number(id);
+  if (!Number.isFinite(numeric)) return null;
+  const map = getBrands();
+  return Object.values(map).find((b) => Number(b.brandId) === numeric) || null;
+}
 
 // Optional external mapping: BRAND_DOMAIN_MAP = JSON array [{ domain, brandKey }]
 let externalDomainMap = [];
@@ -114,4 +140,4 @@ function resolveBrandFromEmail(email) {
   return brands[key] || null;
 }
 
-module.exports = { brands, resolveBrandFromEmail, addBrandRuntime, getBrands };
+module.exports = { brands, resolveBrandFromEmail, addBrandRuntime, getBrands, getBrandById };

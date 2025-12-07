@@ -21,6 +21,7 @@ import AccessControlCard from './components/AccessControlCard.jsx';
 import WhitelistTable from './components/WhitelistTable.jsx';
 import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
 import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
+import AlertsAdmin from './components/AlertsAdmin.jsx';
 import { useAppDispatch, useAppSelector } from './state/hooks.js';
 import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
 import { setBrand } from './state/slices/brandSlice.js';
@@ -476,6 +477,21 @@ export default function App() {
                     <AuthorBrandForm />
                     <AuthorBrandList />
                   </Stack>
+                )}
+
+                {authorTab === 'alerts' && (
+                  authorBrands.length ? (
+                    <AlertsAdmin
+                      brands={authorBrands}
+                      defaultBrandKey={authorBrandKey}
+                    />
+                  ) : (
+                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        Add at least one brand to start configuring alerts.
+                      </Typography>
+                    </Paper>
+                  )
                 )}
               </Stack>
             </Box>
