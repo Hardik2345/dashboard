@@ -73,6 +73,23 @@ async function doPost(path, body) {
   } catch (e) { return { error: true }; }
 }
 
+async function doPut(path, body) {
+  const url = `${API_BASE}${path}`;
+  try {
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body || {}),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: true, status: res.status, data: json };
+    return { error: false, data: json };
+  } catch (e) {
+    return { error: true };
+  }
+}
+
 async function doDelete(path) {
   const url = `${API_BASE}${path}`;
   try {
@@ -454,4 +471,25 @@ export async function activateAdjustmentBucket(id, { brandKey, start, end, onlyT
 // Author brands helper (list)
 export async function listAuthorBrands() {
   return getJSON('/author/brands');
+}
+
+// ---------------- Author: Alerts admin ----------------
+export async function listAlerts(params) {
+  return doGet('/author/alerts', params);
+}
+
+export async function createAlert(payload) {
+  return doPost('/author/alerts', payload);
+}
+
+export async function updateAlert(id, payload) {
+  return doPut(`/author/alerts/${id}`, payload);
+}
+
+export async function deleteAlert(id) {
+  return doDelete(`/author/alerts/${id}`);
+}
+
+export async function setAlertActive(id, isActive) {
+  return doPost(`/author/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
 }
