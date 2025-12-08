@@ -7,27 +7,45 @@ import {
   CardContent,
   CardHeader,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  Divider,
   FormControl,
   FormControlLabel,
   Grid,
   IconButton,
+  InputAdornment,
   InputLabel,
   MenuItem,
+  Paper,
   Select,
   Stack,
   Switch,
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableRow,
   TextField,
   Tooltip,
   Typography,
+  useTheme,
+  alpha,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import TuneIcon from '@mui/icons-material/Tune';
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import SendIcon from '@mui/icons-material/Send';
+import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { KPI_METRICS } from '../constants/kpiMetrics.js';
 import { createAlert, deleteAlert, listAlerts, setAlertActive, updateAlert } from '../lib/api.js';
 import { toast } from 'react-toast';
@@ -98,11 +116,14 @@ function parseRecipients(input) {
 }
 
 export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
+  const theme = useTheme();
   const [form, setForm] = useState(() => buildInitialForm(defaultBrandKey));
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [alertToDelete, setAlertToDelete] = useState(null);
 
   const brandOptions = useMemo(
     () => (Array.isArray(brands) ? brands : []).map((b) => ({
@@ -245,325 +266,534 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
     fetchAlerts();
   };
 
-  const handleDelete = async (alert) => {
-    if (!window.confirm(`Delete alert "${alert.name || alert.metric_name}"?`)) return;
-    const res = await deleteAlert(alert.id);
-    if (res.error) {
-      const message = res.data?.error || 'Failed to delete alert';
-      setError(message);
-      toast.error(message);
-      return;
-    }
-    toast.success('Alert deleted');
-    fetchAlerts();
-    if (form.id === alert.id) {
-      resetForm();
-    }
+  const handleDelete = (alert) => {
+    setAlertToDelete(alert);
+    setDeleteDialogOpen(true);
   };
 
+  const confirmDelete = async () => {
+    if (!alertToDelete) return;
+    
+    // Close dialog immediately or wait? 
+    // Let's keep it open or show loading state if we wanted, but for now simple correct flow:
+    const res = await deleteAlert(alertToDelete.id);
+    
+    if (res.error) {
+       const message = res.data?.error || 'Failed to delete alert';
+       setError(message);
+       toast.error(message);
+       // We keep the dialog open? Or close it. 
+       // Standard behavior: close it, show toast error.
+    } else {
+       toast.success('Alert deleted');
+       fetchAlerts();
+       if (form.id === alertToDelete.id) {
+         resetForm();
+       }
+    }
+    setDeleteDialogOpen(false);
+    setAlertToDelete(null);
+  };
+
+  const SectionHeader = ({ icon, title, subtitle }) => (
+    <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+      <Box sx={{ 
+        p: 1, 
+        borderRadius: '12px', 
+        bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.2 : 0.1),
+        color: 'primary.main',
+        display: 'flex'
+      }}>
+        {icon}
+      </Box>
+      <Box>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+          {title}
+        </Typography>
+        {subtitle && (
+          <Typography variant="caption" color="text.secondary">
+            {subtitle}
+          </Typography>
+        )}
+      </Box>
+    </Box>
+  );
+
   return (
-    <Stack spacing={{ xs: 2, md: 3 }}>
-      <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-        <CardHeader
-          title={form.id ? 'Update Alert' : 'Create Alert'}
-          subheader="Configure alert thresholds and delivery rules"
-          action={form.id ? (
-            <Button size="small" onClick={resetForm}>Clear</Button>
-          ) : null}
-        />
-        <CardContent component="form" onSubmit={handleSubmit}>
-          <Stack spacing={2}>
-            {error && <Alert severity="error">{error}</Alert>}
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  label="Alert Name"
-                  value={form.name}
-                  onChange={handleInputChange('name')}
-                  fullWidth
-                  placeholder="Optional friendly name"
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth size="small" disabled={!brandOptions.length}>
-                  <InputLabel id="brand-select-label">Brand</InputLabel>
-                  <Select
-                    labelId="brand-select-label"
-                    label="Brand"
-                    value={form.brand_key}
-                    onChange={handleInputChange('brand_key')}
-                  >
-                    {brandOptions.map((brand) => (
-                      <MenuItem key={brand.value} value={brand.value}>
-                        {brand.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth size="small">
-                  <InputLabel id="metric-select-label">Metric</InputLabel>
-                  <Select
-                    labelId="metric-select-label"
-                    label="Metric"
-                    value={form.metric_name}
-                    onChange={handleInputChange('metric_name')}
-                  >
-                    {KPI_METRICS.map((metric) => (
-                      <MenuItem key={metric.value} value={metric.value}>
-                        {metric.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth size="small">
-                  <InputLabel id="metric-type-label">Metric Type</InputLabel>
-                  <Select
-                    labelId="metric-type-label"
-                    label="Metric Type"
-                    value={form.metric_type}
-                    onChange={handleInputChange('metric_type')}
-                  >
-                    {METRIC_TYPES.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  label="Derived Formula"
-                  value={form.formula}
-                  onChange={handleInputChange('formula')}
-                  fullWidth
-                  multiline
-                  minRows={2}
-                  disabled={form.metric_type !== 'derived'}
-                  helperText="Provide a SQL expression only when using derived metrics."
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth size="small">
-                  <InputLabel id="threshold-type-label">Threshold Type</InputLabel>
-                  <Select
-                    labelId="threshold-type-label"
-                    label="Threshold Type"
-                    value={form.threshold_type}
-                    onChange={handleInputChange('threshold_type')}
-                  >
-                    {THRESHOLD_TYPES.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} sm={3}>
-                <TextField
-                  type="number"
-                  label="Threshold Value"
-                  value={form.threshold_value}
-                  onChange={handleInputChange('threshold_value')}
-                  fullWidth
-                  inputProps={{ step: 'any' }}
-                />
-              </Grid>
-              <Grid item xs={12} sm={3}>
-                <TextField
-                  type="number"
-                  label="Critical Value"
-                  value={form.critical_threshold}
-                  onChange={handleInputChange('critical_threshold')}
-                  fullWidth
-                  inputProps={{ step: 'any' }}
-                />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <FormControl fullWidth size="small">
-                  <InputLabel id="severity-label">Severity</InputLabel>
-                  <Select
-                    labelId="severity-label"
-                    label="Severity"
-                    value={form.severity}
-                    onChange={handleInputChange('severity')}
-                  >
-                    {SEVERITY_OPTIONS.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <TextField
-                  type="number"
-                  label="Cooldown (minutes)"
-                  value={form.cooldown_minutes}
-                  onChange={handleInputChange('cooldown_minutes')}
-                  fullWidth
-                  inputProps={{ min: 1 }}
-                />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <TextField
-                  label="Recipients"
-                  value={form.recipients}
-                  onChange={handleInputChange('recipients')}
-                  fullWidth
-                  placeholder="comma separated emails"
-                />
-              </Grid>
+    <Stack spacing={4} sx={{ maxWidth: 1600, mx: 'auto', p: 1 }}>
+      {/* Create / Edit Section */}
+      <Card 
+        elevation={0} 
+        sx={{ 
+          border: '1px solid', 
+          borderColor: 'divider',
+          borderRadius: 4,
+          boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+          overflow: 'hidden'
+        }}
+      >
+        <Box sx={{ 
+          p: 3, 
+          background: theme.palette.mode === 'dark' 
+            ? `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.15)} 0%, ${alpha(theme.palette.background.paper, 1)} 50%)`
+            : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, ${alpha(theme.palette.background.paper, 1)} 50%)`,
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <Box>
+            <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.5 }}>
+              {form.id ? 'Edit Alert Configuration' : 'New Alert Configuration'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Define metric thresholds and notification rules for your brands
+            </Typography>
+          </Box>
+          {form.id && (
+             <Button 
+               startIcon={<AddCircleOutlineIcon />} 
+               onClick={resetForm}
+               variant="outlined"
+               size="small"
+               sx={{ borderRadius: 2 }}
+             >
+               Create New Instead
+             </Button>
+          )}
+        </Box>
+
+        <CardContent sx={{ p: 4 }} component="form" onSubmit={handleSubmit}>
+          {error && (
+            <Alert severity="error" sx={{ mb: 4, borderRadius: 2 }}>
+              {error}
+            </Alert>
+          )}
+
+          <Grid container spacing={4}>
+            {/* Left Column: Core Config */}
+            <Grid item xs={12} lg={8}>
+              <Stack spacing={4}>
+                
+                {/* General Info */}
+                <Box>
+                  <SectionHeader 
+                    icon={<InfoOutlinedIcon fontSize="small" />} 
+                    title="General Information" 
+                    subtitle="Basic details about the alert"
+                  />
+                  <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'background.default' }}>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          label="Alert Name"
+                          value={form.name}
+                          onChange={handleInputChange('name')}
+                          fullWidth
+                          placeholder="e.g. High API Latency"
+                          variant="outlined"
+                          size="small"
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <FormControl fullWidth size="small" disabled={!brandOptions.length}>
+                          <InputLabel>Brand</InputLabel>
+                          <Select
+                            value={form.brand_key}
+                            onChange={handleInputChange('brand_key')}
+                            label="Brand"
+                          >
+                            {brandOptions.map((brand) => (
+                              <MenuItem key={brand.value} value={brand.value}>{brand.label}</MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                    </Grid>
+                  </Paper>
+                </Box>
+
+                {/* Metric Logic */}
+                <Box>
+                  <SectionHeader 
+                    icon={<TuneIcon fontSize="small" />} 
+                    title="Metric Logic" 
+                    subtitle="What to measure and how to evaluate it"
+                  />
+                  <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'background.default' }}>
+                    <Grid container spacing={3}>
+                      <Grid item xs={12} md={6}>
+                        <FormControl fullWidth size="small">
+                          <InputLabel>Metric</InputLabel>
+                          <Select
+                            value={form.metric_name}
+                            onChange={handleInputChange('metric_name')}
+                            label="Metric"
+                          >
+                            {KPI_METRICS.map((metric) => (
+                              <MenuItem key={metric.value} value={metric.value}>{metric.label}</MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                      <Grid item xs={12} md={6}>
+                        <FormControl fullWidth size="small">
+                          <InputLabel>Logic Type</InputLabel>
+                          <Select
+                            value={form.metric_type}
+                            onChange={handleInputChange('metric_type')}
+                            label="Logic Type"
+                          >
+                            {METRIC_TYPES.map((option) => (
+                              <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                      
+                      {form.metric_type === 'derived' && (
+                        <Grid item xs={12}>
+                          <TextField
+                            label="Derived Formula (SQL)"
+                            value={form.formula}
+                            onChange={handleInputChange('formula')}
+                            fullWidth
+                            multiline
+                            minRows={2}
+                            helperText="Example: (sales / visits) * 100"
+                            sx={{ '& .MuiOutlinedInput-root': { fontFamily: 'monospace' } }}
+                          />
+                        </Grid>
+                      )}
+
+                      <Grid item xs={12}><Divider /></Grid>
+
+                      <Grid item xs={12} md={4}>
+                         <FormControl fullWidth size="small">
+                          <InputLabel>Condition</InputLabel>
+                          <Select
+                            value={form.threshold_type}
+                            onChange={handleInputChange('threshold_type')}
+                            label="Condition"
+                          >
+                            {THRESHOLD_TYPES.map((option) => (
+                              <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                      <Grid item xs={6} md={4}>
+                        <TextField
+                          type="number"
+                          label="Warning Threshold"
+                          value={form.threshold_value}
+                          onChange={handleInputChange('threshold_value')}
+                          fullWidth
+                          size="small"
+                          inputProps={{ step: 'any' }}
+                          InputProps={{
+                            endAdornment: <InputAdornment position="end">Val</InputAdornment>,
+                          }}
+                        />
+                      </Grid>
+                      <Grid item xs={6} md={4}>
+                        <TextField
+                          type="number"
+                          label="Critical Threshold"
+                          value={form.critical_threshold}
+                          onChange={handleInputChange('critical_threshold')}
+                          fullWidth
+                          size="small"
+                          color="error" // Highlight critical
+                          inputProps={{ step: 'any' }}
+                          InputProps={{
+                            endAdornment: <InputAdornment position="end">Val</InputAdornment>,
+                          }}
+                        />
+                      </Grid>
+                    </Grid>
+                  </Paper>
+                </Box>
+
+              </Stack>
             </Grid>
-
-            <Box>
-              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>Lookback Window</Typography>
-              <TextField
-                type="number"
-                label="Lookback (days)"
-                value={form.lookback_days}
-                onChange={handleInputChange('lookback_days')}
-                fullWidth
-                inputProps={{ min: 1 }}
-              />
-            </Box>
-
-            <Box>
-              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>Quiet Hours (IST)</Typography>
-              <Grid container spacing={2}>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    label="Start Time"
-                    type="time"
-                    value={form.quiet_hours_start}
-                    onChange={handleInputChange('quiet_hours_start')}
-                    fullWidth
-                    InputLabelProps={{ shrink: true }}
+            
+            {/* Right Column: Settings & Delivery */}
+            <Grid item xs={12} lg={4}>
+              <Stack spacing={4}>
+                
+                <Box>
+                   <SectionHeader 
+                    icon={<AccessTimeIcon fontSize="small" />} 
+                    title="Timing & Constraints" 
                   />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    label="End Time"
-                    type="time"
-                    value={form.quiet_hours_end}
-                    onChange={handleInputChange('quiet_hours_end')}
-                    fullWidth
-                    InputLabelProps={{ shrink: true }}
+                  <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'background.default' }}>
+                    <Stack spacing={2}>
+                      <TextField
+                        type="number"
+                        label="Cooldown (minutes)"
+                        value={form.cooldown_minutes}
+                        onChange={handleInputChange('cooldown_minutes')}
+                        fullWidth
+                        size="small"
+                        helperText="Min wait between alerts"
+                      />
+                      <TextField
+                        type="number"
+                        label="Lookback Window (days)"
+                        value={form.lookback_days}
+                        onChange={handleInputChange('lookback_days')}
+                        fullWidth
+                        size="small"
+                        helperText="Data range to analyze"
+                      />
+                      
+                      <Box sx={{ mt: 1 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', mb: 1, display: 'block' }}>
+                          QUIET HOURS (IST)
+                        </Typography>
+                        <Grid container spacing={1}>
+                          <Grid item xs={6}>
+                            <TextField
+                              label="Start"
+                              type="time"
+                              value={form.quiet_hours_start}
+                              onChange={handleInputChange('quiet_hours_start')}
+                              fullWidth
+                              size="small"
+                              InputLabelProps={{ shrink: true }}
+                            />
+                          </Grid>
+                          <Grid item xs={6}>
+                            <TextField
+                              label="End"
+                              type="time"
+                              value={form.quiet_hours_end}
+                              onChange={handleInputChange('quiet_hours_end')}
+                              fullWidth
+                              size="small"
+                              InputLabelProps={{ shrink: true }}
+                            />
+                          </Grid>
+                        </Grid>
+                      </Box>
+                    </Stack>
+                  </Paper>
+                </Box>
+
+                <Box>
+                  <SectionHeader 
+                    icon={<NotificationsActiveIcon fontSize="small" />} 
+                    title="Delivery" 
                   />
-                </Grid>
-              </Grid>
-            </Box>
+                  <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'background.default' }}>
+                    <Stack spacing={3}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Severity Level</InputLabel>
+                        <Select
+                          value={form.severity}
+                          onChange={handleInputChange('severity')}
+                          label="Severity Level"
+                        >
+                           {SEVERITY_OPTIONS.map((option) => (
+                            <MenuItem key={option.value} value={option.value}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Box sx={{ 
+                                  width: 8, height: 8, borderRadius: '50%', 
+                                  bgcolor: option.value === 'high' ? 'error.main' : option.value === 'medium' ? 'warning.main' : 'info.main'
+                                }} />
+                                {option.label}
+                              </Box>
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
 
-            <FormControlLabel
-              control={(
-                <Switch
-                  checked={form.is_active}
-                  onChange={(event) => setForm((prev) => ({ ...prev, is_active: event.target.checked }))}
-                />
-              )}
-              label="Alert enabled"
-            />
+                      <TextField
+                        label="Recipients"
+                        value={form.recipients}
+                        onChange={handleInputChange('recipients')}
+                        fullWidth
+                        multiline
+                        rows={3}
+                        placeholder="email@example.com, ..."
+                        helperText="Comma separated list"
+                        size="small"
+                      />
+                      
+                      <Divider />
 
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-              <Button type="submit" variant="contained" disabled={saving}>
-                {form.id ? 'Update Alert' : 'Create Alert'}
-              </Button>
-              <Button variant="outlined" onClick={resetForm} disabled={saving}>
-                Reset
-              </Button>
-            </Box>
-          </Stack>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={form.is_active}
+                            onChange={(event) => setForm((prev) => ({ ...prev, is_active: event.target.checked }))}
+                            color="success"
+                          />
+                        }
+                        label={
+                          <Typography variant="body2" fontWeight={600}>
+                            Enable this alert
+                          </Typography>
+                        }
+                      />
+                    </Stack>
+                  </Paper>
+                </Box>
+
+                 <Button 
+                  type="submit" 
+                  variant="contained" 
+                  size="large"
+                  disabled={saving}
+                  startIcon={<SendIcon />}
+                  sx={{ 
+                    borderRadius: 3,
+                    py: 1.5,
+                    boxShadow: '0 8px 16px rgba(33, 150, 243, 0.24)'
+                  }}
+                >
+                  {form.id ? 'Save Changes' : 'Create Alert'}
+                </Button>
+
+              </Stack>
+            </Grid>
+          </Grid>
         </CardContent>
       </Card>
 
-      <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-        <CardHeader
-          title="Configured Alerts"
-          subheader="Manage alert status and thresholds"
-          action={(
-            <Tooltip title="Refresh list">
-              <span>
-                <IconButton onClick={fetchAlerts} disabled={loading}>
-                  <RefreshIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-          )}
-        />
-        <CardContent sx={{ pt: 0 }}>
-          {alerts.length === 0 && !loading ? (
-            <Typography variant="body2" color="text.secondary">
-              No alerts configured yet.
-            </Typography>
+      {/* List Section */}
+      <Card 
+        elevation={0}
+        sx={{ 
+          border: '1px solid', 
+          borderColor: 'divider',
+          borderRadius: 4,
+          boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+          overflow: 'hidden'
+        }}
+      >
+        <Box sx={{ 
+          px: 3, py: 2, 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          bgcolor: theme.palette.mode === 'dark' ? alpha(theme.palette.grey[900], 0.4) : 'grey.50'
+        }}>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+            Configured Alerts
+          </Typography>
+          <Tooltip title="Refresh List">
+          <IconButton onClick={fetchAlerts} disabled={loading} size="small" sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}>
+              <RefreshIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+
+        <CardContent sx={{ p: 0 }}>
+           {alerts.length === 0 && !loading ? (
+            <Box sx={{ p: 6, textAlign: 'center' }}>
+              <Typography variant="body1" color="text.secondary">
+                No alerts found. Create one above to get started.
+              </Typography>
+            </Box>
           ) : (
-            <Box sx={{ width: '100%', overflowX: 'auto' }}>
-              <Table size="small" sx={{ minWidth: 720, '& th': { fontWeight: 600 } }}>
+            <TableContainer sx={{ maxHeight: 600 }}>
+              <Table stickyHeader sx={{ minWidth: 720 }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell>Name</TableCell>
-                    <TableCell>Brand</TableCell>
-                    <TableCell>Metric</TableCell>
-                    <TableCell>Threshold</TableCell>
-                    <TableCell>Severity</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell align="right">Actions</TableCell>
+                     {['Name', 'Brand', 'Metric', 'Condition', 'Severity', 'Status', 'Actions'].map((head) => (
+                      <TableCell key={head} sx={{ bgcolor: theme.palette.mode === 'dark' ? alpha(theme.palette.grey[900], 0.4) : 'grey.50', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        {head}
+                      </TableCell>
+                     ))}
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {alerts.map((alert) => (
-                    <TableRow key={alert.id} hover>
-                      <TableCell>{alert.name || '—'}</TableCell>
-                      <TableCell>{alert.brand_key || alert.brand?.key || '—'}</TableCell>
+                    <TableRow key={alert.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                      <TableCell sx={{ fontWeight: 600 }}>{alert.name || '—'}</TableCell>
+                      <TableCell>
+                        <Chip label={alert.brand_key || alert.brand?.key || 'All'} size="small" variant="outlined" />
+                      </TableCell>
                       <TableCell>{alert.metric_name}</TableCell>
                       <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          {alert.threshold_type?.replace(/_/g, ' ')}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Value: {alert.threshold_value ?? '—'}
-                        </Typography>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Typography variant="body2" sx={{ fontWeight: 500, bgcolor: 'action.hover', px: 1, borderRadius: 1 }}>
+                            {alert.threshold_type?.replace(/_/g, ' ')}
+                          </Typography>
+                          <Typography variant="body2" fontWeight={700}>
+                            {alert.threshold_value ?? '—'}
+                          </Typography>
+                        </Stack>
                       </TableCell>
                       <TableCell>
-                        <Chip size="small" label={alert.severity} color={alert.severity === 'high' ? 'error' : alert.severity === 'medium' ? 'warning' : 'default'} />
-                      </TableCell>
-                      <TableCell>
-                        <FormControlLabel
-                          control={(
-                            <Switch
-                              size="small"
-                              checked={Boolean(alert.is_active)}
-                              onChange={() => handleToggleActive(alert)}
-                            />
-                          )}
-                          label={alert.is_active ? 'Enabled' : 'Disabled'}
+                        <Chip 
+                          size="small" 
+                          label={alert.severity} 
+                          color={alert.severity === 'high' ? 'error' : alert.severity === 'medium' ? 'warning' : 'success'} 
+                          sx={{ fontWeight: 600, textTransform: 'capitalize' }}
                         />
                       </TableCell>
-                      <TableCell align="right">
-                        <Tooltip title="Edit">
-                          <IconButton size="small" onClick={() => fillFormForEdit(alert)}>
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton size="small" onClick={() => handleDelete(alert)}>
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
+                      <TableCell>
+                        <Switch
+                          size="small"
+                          checked={Boolean(alert.is_active)}
+                          onChange={() => handleToggleActive(alert)}
+                          color="success"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Stack direction="row" spacing={0.5}>
+                          <Tooltip title="Edit">
+                            <IconButton size="small" onClick={() => fillFormForEdit(alert)} color="primary">
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton size="small" onClick={() => handleDelete(alert)} color="error">
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Stack>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-            </Box>
+            </TableContainer>
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        aria-labelledby="delete-dialog-title"
+        PaperProps={{ sx: { borderRadius: 3, p: 1 } }}
+      >
+        <DialogTitle id="delete-dialog-title" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningAmberIcon color="warning" />
+          Confirm Deletion
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete the alert <strong>{alertToDelete?.name || alertToDelete?.metric_name}</strong>?
+            This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)} sx={{ color: 'text.secondary' }}>
+            Cancel
+          </Button>
+          <Button onClick={confirmDelete} color="error" variant="contained" autoFocus>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }
