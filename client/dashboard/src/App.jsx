@@ -84,11 +84,23 @@ export default function App() {
 
   const [authorBrands, setAuthorBrands] = useState([]);
   const [authorBrandsLoading, setAuthorBrandsLoading] = useState(false);
+  // New state to strictly track if the initial fetch has completed
+  const [brandsLoaded, setBrandsLoaded] = useState(false);
+
   const authorBrandKey = useMemo(
     () => (globalBrandKey || '').toString().trim().toUpperCase(),
     [globalBrandKey]
   );
-  const [authorTab, setAuthorTab] = useState('dashboard');
+  
+  // Initialize tab checking storage; guard against invalid reads
+  const [authorTab, setAuthorTab] = useState(() => {
+    try {
+      return localStorage.getItem('author_active_tab_v1') || 'dashboard';
+    } catch {
+      return 'dashboard';
+    }
+  });
+
   const [authorRefreshKey, setAuthorRefreshKey] = useState(0);
   const [authorLastLoadedAt, setAuthorLastLoadedAt] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -119,6 +131,11 @@ export default function App() {
   const handleAuthorBrandChange = useCallback((nextKeyRaw) => {
     const normalized = (nextKeyRaw || '').toString().trim().toUpperCase();
     const changed = normalized !== authorBrandKey;
+    // Persist immediately alongside Redux
+    try {
+       localStorage.setItem('author_active_brand_v1', normalized);
+    } catch {}
+    
     dispatch(setBrand(normalized || ''));
     if (changed) {
       setAuthorRefreshKey((prev) => prev + 1);
@@ -142,10 +159,12 @@ export default function App() {
     if (!isAuthor) {
       setAuthorBrands([]);
       setAuthorBrandsLoading(false);
+      setBrandsLoaded(false);
       return;
     }
     let cancelled = false;
     setAuthorBrandsLoading(true);
+    setBrandsLoaded(false); // Reset loaded state on new fetch start
     listAuthorBrands().then((json) => {
       if (cancelled) return;
       if (json.__error) {
@@ -159,13 +178,19 @@ export default function App() {
       })) : [];
       setAuthorBrands(arr);
     }).finally(() => {
-      if (!cancelled) setAuthorBrandsLoading(false);
+      if (!cancelled) {
+        setAuthorBrandsLoading(false);
+        setBrandsLoaded(true); // Mark as fully loaded
+      }
     });
     return () => { cancelled = true; };
   }, [isAuthor]);
 
   useEffect(() => {
     if (!isAuthor) return;
+    // CRITICAL: Strict check for completion of initial load
+    if (!brandsLoaded) return;
+
     if (!authorBrands.length) {
       if (authorBrandKey) {
         handleAuthorBrandChange('');
@@ -174,16 +199,20 @@ export default function App() {
     }
     const normalized = (authorBrandKey || '').toString().trim().toUpperCase();
     const exists = normalized && authorBrands.some((b) => b.key === normalized);
+    
+    // Only force reset if we are sure the list is loaded and the key is truly invalid
     if (!exists) {
       handleAuthorBrandChange(authorBrands[0].key);
     }
-  }, [isAuthor, authorBrands, authorBrandKey, handleAuthorBrandChange]);
+  }, [isAuthor, authorBrands, authorBrandKey, handleAuthorBrandChange, brandsLoaded]);
 
+  // Persist tab state only for authors
   useEffect(() => {
-    if (!isAuthor) {
+    // Wait until initialized to decide if we should reset tab
+    if (initialized && !isAuthor) {
       setAuthorTab('dashboard');
     }
-  }, [isAuthor]);
+  }, [isAuthor, initialized]);
 
   const handleSelectMetric = useCallback((metricKey) => {
     if (!metricKey) return;
@@ -194,6 +223,9 @@ export default function App() {
   const handleSidebarClose = useCallback(() => setSidebarOpen(false), []);
   const handleSidebarTabChange = useCallback((tabId) => {
     setAuthorTab(tabId);
+    try {
+      localStorage.setItem('author_active_tab_v1', tabId);
+    } catch {}
   }, []);
 
   const handleToggleDarkMode = useCallback(() => {
