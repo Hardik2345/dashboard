@@ -43,8 +43,7 @@ function buildUploadsRouter() {
         Bucket: bucketName,
         Key: key,
         Body: file.buffer,
-        ContentType: file.mimetype,
-        ACL: 'public-read'
+        ContentType: file.mimetype
       };
 
       await s3.upload(params).promise();
