@@ -57,6 +57,82 @@ function buildUploadsRouter() {
     }
   });
 
+  /**
+   * GET /uploads
+   * List all uploaded files from S3 bucket with pagination.
+   * 
+   * Query params:
+   *   - page (optional, default=1) - page number
+   *   - limit (optional, default=20) - items per page
+   * 
+   * Response:
+   *   {
+   *     success: true,
+   *     files: [
+   *       { key, url, size, last_modified },
+   *       ...
+   *     ],
+   *     pagination: { page, limit, total, total_pages }
+   *   }
+   */
+  router.get('/uploads', async (req, res) => {
+    try {
+      const page = Math.max(1, parseInt(req.query.page) || 1);
+      const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 20));
+
+      let allFiles = [];
+      let continuationToken = undefined;
+
+      // Fetch all objects from bucket (paginate through S3 results)
+      while (true) {
+        const params = {
+          Bucket: bucketName,
+          MaxKeys: 1000,
+          ContinuationToken: continuationToken
+        };
+
+        const data = await s3.listObjectsV2(params).promise();
+
+        if (data.Contents) {
+          allFiles = allFiles.concat(
+            data.Contents.map(obj => ({
+              key: obj.Key,
+              url: `https://${bucketName}.s3.ap-south-1.amazonaws.com/${obj.Key}`,
+              size: obj.Size,
+              last_modified: obj.LastModified
+            }))
+          );
+        }
+
+        if (!data.IsTruncated) break;
+        continuationToken = data.NextContinuationToken;
+      }
+
+      // Sort by most recent first
+      allFiles.sort((a, b) => new Date(b.last_modified) - new Date(a.last_modified));
+
+      // Paginate
+      const total = allFiles.length;
+      const start = (page - 1) * limit;
+      const end = start + limit;
+      const files = allFiles.slice(start, end);
+
+      return res.json({
+        success: true,
+        files,
+        pagination: {
+          page,
+          limit,
+          total,
+          total_pages: Math.ceil(total / limit)
+        }
+      });
+    } catch (err) {
+      console.error('S3 list error:', err);
+      res.status(500).json({ success: false, message: 'Failed to list files', error: err.message });
+    }
+  });
+
   return router;
 }
 
