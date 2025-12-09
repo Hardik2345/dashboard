@@ -24,6 +24,7 @@ const { buildAdjustmentBucketsRouter } = require('./routes/adjustmentBuckets');
 const { buildAdjustmentsRouter } = require('./routes/adjustments');
 const { buildMetricsRouter } = require('./routes/metrics');
 const { buildExternalRouter } = require('./routes/external');
+const { buildUploadsRouter } = require('./routes/uploads');
 
 const app = express();
 app.use(helmet());
@@ -414,6 +415,7 @@ app.use('/author/adjustment-buckets', buildAdjustmentBucketsRouter({ SessionAdju
 app.use('/author', buildAdjustmentsRouter({ SessionAdjustmentBucket, SessionAdjustmentAudit }));
 app.use('/metrics', buildMetricsRouter(sequelize));
 app.use('/external', buildExternalRouter());
+app.use('/', buildUploadsRouter());
 
 // ---- Init -------------------------------------------------------------------
 async function init() {
