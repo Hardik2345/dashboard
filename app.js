@@ -161,6 +161,30 @@ sequelize.define('session_activity', {
   ]
 });
 
+// API Keys model (for managing API keys for brands)
+sequelize.define('api_keys', {
+  id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
+  name: { type: DataTypes.STRING(255), allowNull: false },
+  brand_key: { type: DataTypes.STRING(32), allowNull: false },
+  key_hash: { type: DataTypes.STRING(255), allowNull: false }, // bcrypt hash
+  sha256_hash: { type: DataTypes.CHAR(64), allowNull: false, unique: true }, // SHA256 for fast lookup
+  permissions: { type: DataTypes.JSON, allowNull: true }, // e.g. ["upload:files", "read:files"]
+  created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+  last_used_at: { type: DataTypes.DATE, allowNull: true },
+  expires_at: { type: DataTypes.DATE, allowNull: true },
+  is_active: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 1 },
+  revoked_at: { type: DataTypes.DATE, allowNull: true },
+  created_by_email: { type: DataTypes.STRING(255), allowNull: true },
+}, {
+  tableName: 'api_keys',
+  timestamps: false,
+  indexes: [
+    { fields: ['brand_key'], name: 'idx_brand_key' },
+    { fields: ['sha256_hash'], name: 'idx_sha256_hash' },
+    { fields: ['is_active'], name: 'idx_is_active' },
+  ]
+});
+
 const { resolveBrandFromEmail, getBrands } = require('./config/brands');
 const { getBrandConnection } = require('./lib/brandConnectionManager');
 
@@ -429,6 +453,7 @@ async function init() {
   // Ensure author tables exist if not created via manual DDL
   try { await SessionAdjustmentBucket.sync(); } catch (e) { console.warn('Bucket sync skipped', e?.message); }
   try { await SessionAdjustmentAudit.sync(); } catch (e) { console.warn('Audit sync skipped', e?.message); }
+  try { await sequelize.models.api_keys.sync(); } catch (e) { console.warn('API keys sync skipped', e?.message); }
   // seed admin if none
   if (!(await User.findOne({ where: { email: process.env.ADMIN_EMAIL || 'admin@example.com' } }))) {
     const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'ChangeMe123!', 12);
