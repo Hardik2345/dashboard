@@ -42,7 +42,7 @@ app.use(cors({
   credentials: true
 }));
 // Increase JSON body size limit to handle base64-encoded file uploads (default is 100KB)
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '60mb' }));
 if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 1); // so secure cookies work behind reverse proxy / load balancer
 }
