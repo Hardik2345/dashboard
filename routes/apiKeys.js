@@ -1,5 +1,6 @@
 const express = require('express');
 const ApiKeyService = require('../services/apiKeyService');
+const { requireAuthor } = require('../middlewares/auth');
 
 /**
  * Admin API Keys Router
@@ -29,7 +30,7 @@ function buildApiKeysRouter(sequelize) {
    *     "api_key": { id, name, brand_key, permissions, created_at, expires_at, is_active }
    *   }
    */
-  router.post('/admin/api-keys', async (req, res) => {
+  router.post('/admin/api-keys', requireAuthor, async (req, res) => {
     try {
       const { brand_key, name, permissions } = req.body;
 
@@ -76,7 +77,7 @@ function buildApiKeysRouter(sequelize) {
    *     ]
    *   }
    */
-  router.get('/admin/api-keys', async (req, res) => {
+  router.get('/admin/api-keys', requireAuthor, async (req, res) => {
     try {
       const { brand_key } = req.query;
 
@@ -104,11 +105,11 @@ function buildApiKeysRouter(sequelize) {
    * Response:
    *   { "success": true, "message": "API key revoked" }
    */
-  router.post('/admin/api-keys/:id/rotate', async (req, res) => {
+  router.post('/admin/api-keys/:id/revoke', requireAuthor, async (req, res) => {
     try {
       const { id } = req.params;
 
-      const result = await apiKeyService.rotateKey(id);
+      const result = await apiKeyService.revokeKey(id);
 
       if (!result.success) {
         return res.status(404).json(result);
@@ -116,8 +117,8 @@ function buildApiKeysRouter(sequelize) {
 
       res.json(result);
     } catch (err) {
-      console.error('Error rotating API key:', err);
-      res.status(500).json({ success: false, message: 'Failed to rotate API key' });
+      console.error('Error revoking API key:', err);
+      res.status(500).json({ success: false, message: 'Failed to revoke API key' });
     }
   });
 
@@ -132,12 +133,11 @@ function buildApiKeysRouter(sequelize) {
    *     "api_key": { ... }
    *   }
    */
-  router.post('/admin/api-keys/:id/rotate', async (req, res) => {
+  router.post('/admin/api-keys/:id/rotate', requireAuthor, async (req, res) => {
     try {
       const { id } = req.params;
-      const userEmail = req.user?.email || req.apiKey?.created_by_email || 'system';
 
-      const result = await apiKeyService.rotateKey(sequelize, id, userEmail);
+      const result = await apiKeyService.rotateKey(id);
 
       if (!result.success) {
         return res.status(500).json(result);

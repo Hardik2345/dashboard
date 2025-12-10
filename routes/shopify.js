@@ -1,5 +1,7 @@
 const express = require('express');
-const { createApiKeyAuthMiddleware } = require('../middleware/apiKeyAuth');
+const axios = require('axios');
+const FormData = require('form-data');
+const { createApiKeyAuthMiddleware } = require('../middlewares/apiKeyAuth');
 
 /**
  * Shopify Integration Router
@@ -50,13 +52,6 @@ function buildShopifyRouter(sequelize) {
         });
       }
 
-      if (!Buffer.isBuffer(Buffer.from(file_data, 'base64'))) {
-        return res.status(400).json({
-          success: false,
-          message: 'file_data must be valid base64',
-        });
-      }
-
       // Get Shopify credentials from environment
       const shopName = process.env[`SHOP_NAME_${brandKey}`];
       const apiVersion = process.env[`API_VERSION_${brandKey}`] || '2024-01';
@@ -69,54 +64,171 @@ function buildShopifyRouter(sequelize) {
         });
       }
 
-      // Call Shopify API to upload file
-      const shopifyUrl = `https://${shopName}.myshopify.com/admin/api/${apiVersion}/files.json`;
+      const graphqlUrl = `https://${shopName}.myshopify.com/admin/api/${apiVersion}/graphql.json`;
 
-      const response = await fetch(shopifyUrl, {
-        method: 'POST',
+      // Step 1: Create staged upload
+      const stagedUploadsQuery = `mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+        stagedUploadsCreate(input: $input) {
+          stagedTargets {
+            resourceUrl
+            url
+            parameters {
+              name
+              value
+            }
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }`;
+
+      const stagedUploadsVariables = {
+        input: {
+          filename: filename,
+          httpMethod: 'POST',
+          mimeType: 'application/octet-stream',
+          resource: 'FILE',
+        },
+      };
+
+      console.log(`[Shopify] Creating staged upload for ${filename}...`);
+      const stagedUploadResult = await axios.post(graphqlUrl, {
+        query: stagedUploadsQuery,
+        variables: stagedUploadsVariables,
+      }, {
         headers: {
           'X-Shopify-Access-Token': accessToken,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          file: {
-            attachment: file_data,
-            filename: filename,
-          },
-        }),
       });
 
-      const responseData = await response.json();
+      const stagedTargets = stagedUploadResult.data?.data?.stagedUploadsCreate?.stagedTargets;
+      const userErrors = stagedUploadResult.data?.data?.stagedUploadsCreate?.userErrors;
 
-      if (!response.ok) {
-        console.error('Shopify API error:', responseData);
-        return res.status(response.status).json({
+      if (userErrors && userErrors.length > 0) {
+        console.error('Staged upload errors:', userErrors);
+        return res.status(400).json({
           success: false,
-          message: 'Failed to upload file to Shopify',
-          error: responseData.errors || responseData.error,
+          message: 'Failed to create staged upload',
+          errors: userErrors,
         });
       }
 
-      // Extract file info from Shopify response
-      const uploadedFile = responseData.file || responseData.files?.[0];
-
-      if (!uploadedFile) {
+      if (!stagedTargets || !stagedTargets[0]) {
+        console.error('No staged target returned:', stagedUploadResult.data);
         return res.status(500).json({
           success: false,
-          message: 'Unexpected Shopify response format',
+          message: 'No staged target returned from Shopify',
         });
       }
 
+      const target = stagedTargets[0];
+      const params = target.parameters;
+      const s3Url = target.url;
+      const resourceUrl = target.resourceUrl;
+
+      // Step 2: Upload file to S3 staging location
+      console.log(`[Shopify] Uploading file to S3 staging: ${s3Url.slice(0, 50)}...`);
+      const form = new FormData();
+
+      // Add S3 parameters (must be in the exact order returned by Shopify)
+      params.forEach(({ name, value }) => {
+        form.append(name, value);
+      });
+
+      // Add file (convert base64 to buffer)
+      const fileBuffer = Buffer.from(file_data, 'base64');
+      form.append('file', fileBuffer, { filename });
+
+      try {
+        await axios.post(s3Url, form, {
+          headers: form.getHeaders(),
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+          timeout: 30000, // 30 second timeout
+        });
+        console.log('[Shopify] S3 upload completed successfully');
+      } catch (s3Err) {
+        console.error('S3 upload failed:', s3Err.response?.status, s3Err.response?.data || s3Err.message);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to upload file to S3 staging',
+          error: s3Err.message,
+        });
+      }
+
+      // Step 3: Create file resource in Shopify
+      const createFileQuery = `mutation fileCreate($files: [FileCreateInput!]!) {
+        fileCreate(files: $files) {
+          files {
+            id
+            alt
+            createdAt
+            fileStatus
+            preview {
+              image {
+                url
+              }
+            }
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }`;
+
+      const createFileVariables = {
+        files: {
+          alt: filename,
+          contentType: 'FILE',
+          originalSource: resourceUrl,
+        },
+      };
+
+      console.log(`[Shopify] Creating file resource in Shopify...`);
+      const createFileResult = await axios.post(graphqlUrl, {
+        query: createFileQuery,
+        variables: createFileVariables,
+      }, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const files = createFileResult.data?.data?.fileCreate?.files;
+      const fileUserErrors = createFileResult.data?.data?.fileCreate?.userErrors;
+
+      if (fileUserErrors && fileUserErrors.length > 0) {
+        console.error('File create errors:', fileUserErrors);
+        return res.status(400).json({
+          success: false,
+          message: 'Failed to create file in Shopify',
+          errors: fileUserErrors,
+        });
+      }
+
+      if (!files || !files[0]) {
+        console.error('No file created:', createFileResult.data);
+        return res.status(500).json({
+          success: false,
+          message: 'File creation returned no file object',
+        });
+      }
+
+      const uploadedFile = files[0];
       res.json({
         success: true,
         shopify_file_id: uploadedFile.id,
-        url: uploadedFile.url,
-        filename: uploadedFile.filename,
-        size: uploadedFile.size,
-        created_at: uploadedFile.created_at,
+        url: uploadedFile.preview?.image?.url || null,
+        filename: uploadedFile.alt,
+        created_at: uploadedFile.createdAt,
       });
     } catch (err) {
-      console.error('Shopify upload error:', err);
+      console.error('Shopify upload error:', err.message);
       res.status(500).json({
         success: false,
         message: 'Failed to upload file to Shopify',
