@@ -51,6 +51,9 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import SearchIcon from '@mui/icons-material/Search';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import { KPI_METRICS } from '../constants/kpiMetrics.js';
+
+const HOURS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
+const MINUTES = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
 import { createAlert, deleteAlert, listAlerts, setAlertActive, updateAlert } from '../lib/api.js';
 import { toast } from 'react-toast';
 
@@ -582,26 +585,72 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
               />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField
-                label="Quiet Hours Start (IST)"
-                type="time"
-                value={form.quiet_hours_start}
-                onChange={handleInputChange('quiet_hours_start')}
-                fullWidth
-                size="small"
-                InputLabelProps={{ shrink: true }}
-              />
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                  Quiet Hours Start (IST)
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  <FormControl fullWidth size="small">
+                    <Select
+                      value={form.quiet_hours_start ? form.quiet_hours_start.split(':')[0] : '00'}
+                      onChange={(e) => {
+                        const mm = form.quiet_hours_start ? form.quiet_hours_start.split(':')[1] : '00';
+                        setForm(prev => ({ ...prev, quiet_hours_start: `${e.target.value}:${mm}` }));
+                      }}
+                      MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
+                    >
+                      {HOURS.map(h => <MenuItem key={h} value={h}>{h}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                  <Typography sx={{ alignSelf: 'center' }}>:</Typography>
+                  <FormControl fullWidth size="small">
+                    <Select
+                      value={form.quiet_hours_start ? form.quiet_hours_start.split(':')[1] : '00'}
+                      onChange={(e) => {
+                        const hh = form.quiet_hours_start ? form.quiet_hours_start.split(':')[0] : '00';
+                        setForm(prev => ({ ...prev, quiet_hours_start: `${hh}:${e.target.value}` }));
+                      }}
+                      MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
+                    >
+                      {MINUTES.map(m => <MenuItem key={m} value={m}>{m}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </Stack>
+              </Box>
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField
-                label="Quiet Hours End (IST)"
-                type="time"
-                value={form.quiet_hours_end}
-                onChange={handleInputChange('quiet_hours_end')}
-                fullWidth
-                size="small"
-                InputLabelProps={{ shrink: true }}
-              />
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                  Quiet Hours End (IST)
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  <FormControl fullWidth size="small">
+                    <Select
+                      value={form.quiet_hours_end ? form.quiet_hours_end.split(':')[0] : '00'}
+                      onChange={(e) => {
+                        const mm = form.quiet_hours_end ? form.quiet_hours_end.split(':')[1] : '00';
+                        setForm(prev => ({ ...prev, quiet_hours_end: `${e.target.value}:${mm}` }));
+                      }}
+                      MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
+                    >
+                      {HOURS.map(h => <MenuItem key={h} value={h}>{h}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                  <Typography sx={{ alignSelf: 'center' }}>:</Typography>
+                  <FormControl fullWidth size="small">
+                    <Select
+                      value={form.quiet_hours_end ? form.quiet_hours_end.split(':')[1] : '00'}
+                      onChange={(e) => {
+                        const hh = form.quiet_hours_end ? form.quiet_hours_end.split(':')[0] : '00';
+                        setForm(prev => ({ ...prev, quiet_hours_end: `${hh}:${e.target.value}` }));
+                      }}
+                      MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
+                    >
+                      {MINUTES.map(m => <MenuItem key={m} value={m}>{m}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </Stack>
+              </Box>
             </Grid>
 
             {/* --- Delivery --- */}
