@@ -12,6 +12,7 @@ import { AppProvider } from '@shopify/polaris';
 import { useTheme } from '@mui/material/styles';
 import CheckIcon from "@mui/icons-material/Check";
 import { Popover, DatePicker } from "@shopify/polaris";
+import enTranslations from '@shopify/polaris/locales/en.json'
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
@@ -134,6 +135,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
       setMonth(focus.month());
       setYear(focus.year());
     }
+    console.log("Updating month/year:", month, year);
   }, [start, end]);
 
   const selectedRange = useMemo(() => {
@@ -161,6 +163,16 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
     setMonth(m);
     setYear(y);
   }, []);
+
+  // Prevent body scroll when the date picker popover is open (especially on mobile)
+  useEffect(() => {
+    if (!popoverActive) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [popoverActive]);
 
   const handlePresetSelect = useCallback(
     (preset) => {
@@ -210,6 +222,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
       theme={{
         colorScheme: isDark ? 'dark' : 'light',
       }}
+      i18n={enTranslations}
     >
       <Box
         sx={{
@@ -459,7 +472,13 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
             </Box>
 
             {/* Calendar Panel */}
-            <Box sx={{ p: 1, bgcolor: "background.paper", minWidth: 200 }}>
+            <Box
+              sx={{
+                p: 1,
+                bgcolor: "background.paper",
+                minWidth: 200,
+              }}
+            >
               <DatePicker
                 month={month}
                 year={year}
