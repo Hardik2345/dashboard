@@ -6,6 +6,32 @@ const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrandConnection } = require('../lib/brandConnectionManager');
 const { getBrands } = require('../config/brands');
 
+const SHOP_DOMAIN_CACHE = new Map();
+
+function resolveShopSubdomain(brandKey) {
+  if (!brandKey) return null;
+  const upper = brandKey.toString().trim().toUpperCase();
+  if (SHOP_DOMAIN_CACHE.has(upper)) {
+    return SHOP_DOMAIN_CACHE.get(upper);
+  }
+  const candidates = [
+    `SHOP_NAME_${upper}`,
+    `${upper}_SHOP_NAME`,
+    `SHOP_DOMAIN_${upper}`,
+    `${upper}_SHOP_DOMAIN`,
+  ];
+  for (const envKey of candidates) {
+    const value = process.env[envKey];
+    if (value && value.trim()) {
+      const trimmed = value.trim();
+      SHOP_DOMAIN_CACHE.set(upper, trimmed);
+      return trimmed;
+    }
+  }
+  SHOP_DOMAIN_CACHE.set(upper, null);
+  return null;
+}
+
 function buildMetricsController() {
   return {
     aov: async (req, res) => {
@@ -696,7 +722,7 @@ function buildMetricsController() {
             AND date >= ? AND date <= ?
           GROUP BY landing_page_path
           ORDER BY total_sessions DESC
-          LIMIT ${limit}
+          LIMIT ${limit};
         `;
 
         const rows = await req.brandDb.sequelize.query(sql, {
@@ -704,13 +730,19 @@ function buildMetricsController() {
           replacements: [rangeStart, rangeEnd],
         });
 
+        const shopSubdomain = resolveShopSubdomain(req.brandKey);
+        const host = shopSubdomain ? `${shopSubdomain}.myshopify.com` : null;
+
         const pages = rows.map((row, index) => {
           const totalSessions = Number(row.total_sessions || 0);
           const atcSessions = Number(row.total_atc_sessions || 0);
           const atcRate = totalSessions > 0 ? atcSessions / totalSessions : 0;
+          const rawPath = typeof row.landing_page_path === 'string' ? row.landing_page_path.trim() : '';
+          const normalizedPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+          const fullPath = host ? `${host}${normalizedPath}` : normalizedPath;
           return {
             rank: index + 1,
-            path: row.landing_page_path,
+            path: fullPath,
             product_id: row.product_id || null,
             sessions: totalSessions,
             sessions_with_cart_additions: atcSessions,
