@@ -22,8 +22,12 @@ const { buildAuthorRouter } = require('./routes/author');
 const { buildAuthorBrandsRouter } = require('./routes/authorBrands');
 const { buildAdjustmentBucketsRouter } = require('./routes/adjustmentBuckets');
 const { buildAdjustmentsRouter } = require('./routes/adjustments');
+const { buildAlertsRouter } = require('./routes/alerts');
 const { buildMetricsRouter } = require('./routes/metrics');
 const { buildExternalRouter } = require('./routes/external');
+const { buildUploadsRouter } = require('./routes/uploads');
+const { buildApiKeysRouter } = require('./routes/apiKeys');
+const { buildShopifyRouter } = require('./routes/shopify');
 
 const app = express();
 app.use(helmet());
@@ -38,7 +42,8 @@ app.use(cors({
   },
   credentials: true
 }));
-app.use(express.json());
+// Increase JSON body size limit to handle base64-encoded file uploads (default is 100KB)
+app.use(express.json({ limit: '60mb' }));
 if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 1); // so secure cookies work behind reverse proxy / load balancer
 }
@@ -118,6 +123,32 @@ const SessionAdjustmentAudit = sequelize.define('session_adjustment_audit', {
   changed_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
 }, { tableName: 'session_adjustment_audit', timestamps: false });
 
+const Alert = sequelize.define('alerts', {
+  id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
+  brand_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  name: { type: DataTypes.STRING(255), allowNull: false },
+  metric_name: { type: DataTypes.STRING(255), allowNull: true },
+  metric_type: { type: DataTypes.ENUM('base', 'derived'), allowNull: false, defaultValue: 'base' },
+  formula: { type: DataTypes.TEXT, allowNull: true },
+  threshold_type: { type: DataTypes.ENUM('absolute', 'percentage_drop', 'percentage_rise', 'less_than', 'more_than'), allowNull: false },
+  threshold_value: { type: DataTypes.DOUBLE, allowNull: false },
+  critical_threshold: { type: DataTypes.FLOAT, allowNull: true },
+  severity: { type: DataTypes.ENUM('low', 'medium', 'high'), allowNull: false, defaultValue: 'low' },
+  cooldown_minutes: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 30 },
+  is_active: { type: DataTypes.TINYINT, allowNull: true, defaultValue: 1 },
+  created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+  lookback_days: { type: DataTypes.INTEGER, allowNull: true },
+  quiet_hours_start: { type: DataTypes.INTEGER, allowNull: true },
+  quiet_hours_end: { type: DataTypes.INTEGER, allowNull: true }
+}, { tableName: 'alerts', timestamps: false });
+
+const AlertChannel = sequelize.define('alert_channels', {
+  id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
+  alert_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  channel_type: { type: DataTypes.ENUM('slack', 'email', 'webhook'), allowNull: false },
+  channel_config: { type: DataTypes.JSON, allowNull: false },
+}, { tableName: 'alert_channels', timestamps: false });
+
 // --- Access control (master DB) ---------------------------------------------
 // Tables are created idempotently on startup (MySQL CREATE TABLE IF NOT EXISTS)
 sequelize.define('access_control_settings', {
@@ -155,6 +186,30 @@ sequelize.define('session_activity', {
     { unique: true, fields: ['brand_key', 'user_email', 'bucket_start'], name: 'uq_brand_user_bucket' },
     { fields: ['brand_key', 'bucket_start'], name: 'idx_brand_bucket' },
     { fields: ['brand_key', 'last_seen'], name: 'idx_brand_last_seen' }
+  ]
+});
+
+// API Keys model (for managing API keys for brands)
+sequelize.define('api_keys', {
+  id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
+  name: { type: DataTypes.STRING(255), allowNull: false },
+  brand_key: { type: DataTypes.STRING(32), allowNull: false },
+  key_hash: { type: DataTypes.STRING(255), allowNull: false }, // bcrypt hash
+  sha256_hash: { type: DataTypes.CHAR(64), allowNull: false, unique: true }, // SHA256 for fast lookup
+  permissions: { type: DataTypes.JSON, allowNull: true }, // e.g. ["upload:files", "read:files"]
+  created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+  last_used_at: { type: DataTypes.DATE, allowNull: true },
+  expires_at: { type: DataTypes.DATE, allowNull: true },
+  is_active: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 1 },
+  revoked_at: { type: DataTypes.DATE, allowNull: true },
+  created_by_email: { type: DataTypes.STRING(255), allowNull: true },
+}, {
+  tableName: 'api_keys',
+  timestamps: false,
+  indexes: [
+    { fields: ['brand_key'], name: 'idx_brand_key' },
+    { fields: ['sha256_hash'], name: 'idx_sha256_hash' },
+    { fields: ['is_active'], name: 'idx_is_active' },
   ]
 });
 
@@ -411,9 +466,13 @@ app.use('/author/access-control', buildAccessControlRouter({ sequelize, getAcces
 app.use('/author', buildAuthorBrandsRouter(sequelize));
 app.use('/author', buildAuthorRouter());
 app.use('/author/adjustment-buckets', buildAdjustmentBucketsRouter({ SessionAdjustmentBucket, SessionAdjustmentAudit }));
+app.use('/author/alerts', buildAlertsRouter({ Alert, AlertChannel }));
 app.use('/author', buildAdjustmentsRouter({ SessionAdjustmentBucket, SessionAdjustmentAudit }));
 app.use('/metrics', buildMetricsRouter(sequelize));
 app.use('/external', buildExternalRouter());
+app.use('/', buildUploadsRouter());
+app.use('/', buildApiKeysRouter(sequelize));
+app.use('/shopify', buildShopifyRouter(sequelize));
 
 // ---- Init -------------------------------------------------------------------
 async function init() {
@@ -423,6 +482,7 @@ async function init() {
   // Ensure author tables exist if not created via manual DDL
   try { await SessionAdjustmentBucket.sync(); } catch (e) { console.warn('Bucket sync skipped', e?.message); }
   try { await SessionAdjustmentAudit.sync(); } catch (e) { console.warn('Audit sync skipped', e?.message); }
+  try { await sequelize.models.api_keys.sync(); } catch (e) { console.warn('API keys sync skipped', e?.message); }
   // seed admin if none
   if (!(await User.findOne({ where: { email: process.env.ADMIN_EMAIL || 'admin@example.com' } }))) {
     const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'ChangeMe123!', 12);
@@ -450,4 +510,6 @@ module.exports = {
   User,
   SessionAdjustmentBucket,
   SessionAdjustmentAudit,
+  Alert,
+  AlertChannel,
 };
