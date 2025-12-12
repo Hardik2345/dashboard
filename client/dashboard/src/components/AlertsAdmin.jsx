@@ -115,6 +115,18 @@ function parseRecipients(input) {
     .filter(Boolean);
 }
 
+function formatCondition(type, value) {
+  if (value == null) return '—';
+  switch (type) {
+    case 'percentage_drop': return `Drops by ${value}%`;
+    case 'percentage_rise': return `Rises by ${value}%`;
+    case 'less_than': return `< ${value}`;
+    case 'more_than': return `> ${value}`;
+    case 'absolute': return `Absolute: ${value}`;
+    default: return `${type?.replace(/_/g, ' ')} ${value}`;
+  }
+}
+
 export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
   const theme = useTheme();
   const [form, setForm] = useState(() => buildInitialForm(defaultBrandKey));
@@ -273,23 +285,23 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
 
   const confirmDelete = async () => {
     if (!alertToDelete) return;
-    
+
     // Close dialog immediately or wait? 
     // Let's keep it open or show loading state if we wanted, but for now simple correct flow:
     const res = await deleteAlert(alertToDelete.id);
-    
+
     if (res.error) {
-       const message = res.data?.error || 'Failed to delete alert';
-       setError(message);
-       toast.error(message);
-       // We keep the dialog open? Or close it. 
-       // Standard behavior: close it, show toast error.
+      const message = res.data?.error || 'Failed to delete alert';
+      setError(message);
+      toast.error(message);
+      // We keep the dialog open? Or close it. 
+      // Standard behavior: close it, show toast error.
     } else {
-       toast.success('Alert deleted');
-       fetchAlerts();
-       if (form.id === alertToDelete.id) {
-         resetForm();
-       }
+      toast.success('Alert deleted');
+      fetchAlerts();
+      if (form.id === alertToDelete.id) {
+        resetForm();
+      }
     }
     setDeleteDialogOpen(false);
     setAlertToDelete(null);
@@ -297,17 +309,11 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
 
   const SectionHeader = ({ icon, title, subtitle }) => (
     <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-      <Box sx={{ 
-        p: 1, 
-        borderRadius: '12px', 
-        bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.2 : 0.1),
-        color: 'primary.main',
-        display: 'flex'
-      }}>
+      <Box sx={{ color: 'primary.main', display: 'flex' }}>
         {icon}
       </Box>
       <Box>
-        <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+        <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem' }}>
           {title}
         </Typography>
         {subtitle && (
@@ -320,381 +326,323 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
   );
 
   return (
-    <Stack spacing={4} sx={{ maxWidth: 1600, mx: 'auto', p: 1 }}>
+    <Stack spacing={4} sx={{ maxWidth: 1600, mx: 'auto' }}>
       {/* Create / Edit Section */}
-      <Card 
-        elevation={0} 
-        sx={{ 
-          border: '1px solid', 
-          borderColor: 'divider',
-          borderRadius: 4,
-          boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-          overflow: 'hidden'
-        }}
-      >
-        <Box sx={{ 
-          p: 3, 
-          background: theme.palette.mode === 'dark' 
-            ? `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.15)} 0%, ${alpha(theme.palette.background.paper, 1)} 50%)`
-            : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, ${alpha(theme.palette.background.paper, 1)} 50%)`,
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <Box>
-            <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.5 }}>
-              {form.id ? 'Edit Alert Configuration' : 'New Alert Configuration'}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
+      <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+        <CardHeader
+          title={form.id ? 'Edit Alert Configuration' : 'New Alert Configuration'}
+          subheader={
+            <Typography variant="caption" color="text.secondary">
               Define metric thresholds and notification rules for your brands
             </Typography>
-          </Box>
-          {form.id && (
-             <Button 
-               startIcon={<AddCircleOutlineIcon />} 
-               onClick={resetForm}
-               variant="outlined"
-               size="small"
-               sx={{ borderRadius: 2 }}
-             >
-               Create New Instead
-             </Button>
-          )}
-        </Box>
+          }
+          titleTypographyProps={{ variant: 'h6', fontWeight: 700 }}
+          action={
+            form.id && (
+              <Button
+                startIcon={<AddCircleOutlineIcon />}
+                onClick={resetForm}
+                size="small"
+              >
+                Create New
+              </Button>
+            )
+          }
+        />
 
-        <CardContent sx={{ p: 4 }} component="form" onSubmit={handleSubmit}>
+        <CardContent sx={{ pt: 0 }} component="form" onSubmit={handleSubmit}>
           {error && (
             <Alert severity="error" sx={{ mb: 4, borderRadius: 2 }}>
               {error}
             </Alert>
           )}
 
-          <Grid container spacing={4}>
-            {/* Left Column: Core Config */}
-            <Grid item xs={12} lg={8}>
-              <Stack spacing={4}>
-                
-                {/* General Info */}
-                <Box>
-                  <SectionHeader 
-                    icon={<InfoOutlinedIcon fontSize="small" />} 
-                    title="General Information" 
-                    subtitle="Basic details about the alert"
-                  />
-                  <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'background.default' }}>
-                    <Grid container spacing={2}>
-                      <Grid item xs={12} sm={6}>
-                        <TextField
-                          label="Alert Name"
-                          value={form.name}
-                          onChange={handleInputChange('name')}
-                          fullWidth
-                          placeholder="e.g. High API Latency"
-                          variant="outlined"
-                          size="small"
-                        />
-                      </Grid>
-                      <Grid item xs={12} sm={6}>
-                        <FormControl fullWidth size="small" disabled={!brandOptions.length}>
-                          <InputLabel>Brand</InputLabel>
-                          <Select
-                            value={form.brand_key}
-                            onChange={handleInputChange('brand_key')}
-                            label="Brand"
-                          >
-                            {brandOptions.map((brand) => (
-                              <MenuItem key={brand.value} value={brand.value}>{brand.label}</MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      </Grid>
-                    </Grid>
-                  </Paper>
-                </Box>
+          <Grid container spacing={3}>
 
-                {/* Metric Logic */}
-                <Box>
-                  <SectionHeader 
-                    icon={<TuneIcon fontSize="small" />} 
-                    title="Metric Logic" 
-                    subtitle="What to measure and how to evaluate it"
-                  />
-                  <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'background.default' }}>
-                    <Grid container spacing={3}>
-                      <Grid item xs={12} md={6}>
-                        <FormControl fullWidth size="small">
-                          <InputLabel>Metric</InputLabel>
-                          <Select
-                            value={form.metric_name}
-                            onChange={handleInputChange('metric_name')}
-                            label="Metric"
-                          >
-                            {KPI_METRICS.map((metric) => (
-                              <MenuItem key={metric.value} value={metric.value}>{metric.label}</MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      </Grid>
-                      <Grid item xs={12} md={6}>
-                        <FormControl fullWidth size="small">
-                          <InputLabel>Logic Type</InputLabel>
-                          <Select
-                            value={form.metric_type}
-                            onChange={handleInputChange('metric_type')}
-                            label="Logic Type"
-                          >
-                            {METRIC_TYPES.map((option) => (
-                              <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      </Grid>
-                      
-                      {form.metric_type === 'derived' && (
-                        <Grid item xs={12}>
-                          <TextField
-                            label="Derived Formula (SQL)"
-                            value={form.formula}
-                            onChange={handleInputChange('formula')}
-                            fullWidth
-                            multiline
-                            minRows={2}
-                            helperText="Example: (sales / visits) * 100"
-                            sx={{ '& .MuiOutlinedInput-root': { fontFamily: 'monospace' } }}
-                          />
-                        </Grid>
-                      )}
-
-                      <Grid item xs={12}><Divider /></Grid>
-
-                      <Grid item xs={12} md={4}>
-                         <FormControl fullWidth size="small">
-                          <InputLabel>Condition</InputLabel>
-                          <Select
-                            value={form.threshold_type}
-                            onChange={handleInputChange('threshold_type')}
-                            label="Condition"
-                          >
-                            {THRESHOLD_TYPES.map((option) => (
-                              <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      </Grid>
-                      <Grid item xs={6} md={4}>
-                        <TextField
-                          type="number"
-                          label="Warning Threshold"
-                          value={form.threshold_value}
-                          onChange={handleInputChange('threshold_value')}
-                          fullWidth
-                          size="small"
-                          inputProps={{ step: 'any' }}
-                          InputProps={{
-                            endAdornment: <InputAdornment position="end">Val</InputAdornment>,
-                          }}
-                        />
-                      </Grid>
-                      <Grid item xs={6} md={4}>
-                        <TextField
-                          type="number"
-                          label="Critical Threshold"
-                          value={form.critical_threshold}
-                          onChange={handleInputChange('critical_threshold')}
-                          fullWidth
-                          size="small"
-                          color="error" // Highlight critical
-                          inputProps={{ step: 'any' }}
-                          InputProps={{
-                            endAdornment: <InputAdornment position="end">Val</InputAdornment>,
-                          }}
-                        />
-                      </Grid>
-                    </Grid>
-                  </Paper>
-                </Box>
-
-              </Stack>
+            {/* --- General Information --- */}
+            <Grid item xs={12}>
+              <SectionHeader
+                icon={<InfoOutlinedIcon />}
+                title="General Information"
+              />
             </Grid>
-            
-            {/* Right Column: Settings & Delivery */}
-            <Grid item xs={12} lg={4}>
-              <Stack spacing={4}>
-                
-                <Box>
-                   <SectionHeader 
-                    icon={<AccessTimeIcon fontSize="small" />} 
-                    title="Timing & Constraints" 
-                  />
-                  <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'background.default' }}>
-                    <Stack spacing={2}>
-                      <TextField
-                        type="number"
-                        label="Cooldown (minutes)"
-                        value={form.cooldown_minutes}
-                        onChange={handleInputChange('cooldown_minutes')}
-                        fullWidth
-                        size="small"
-                        helperText="Min wait between alerts"
-                      />
-                      <TextField
-                        type="number"
-                        label="Lookback Window (days)"
-                        value={form.lookback_days}
-                        onChange={handleInputChange('lookback_days')}
-                        fullWidth
-                        size="small"
-                        helperText="Data range to analyze"
-                      />
-                      
-                      <Box sx={{ mt: 1 }}>
-                        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', mb: 1, display: 'block' }}>
-                          QUIET HOURS (IST)
-                        </Typography>
-                        <Grid container spacing={1}>
-                          <Grid item xs={6}>
-                            <TextField
-                              label="Start"
-                              type="time"
-                              value={form.quiet_hours_start}
-                              onChange={handleInputChange('quiet_hours_start')}
-                              fullWidth
-                              size="small"
-                              InputLabelProps={{ shrink: true }}
-                            />
-                          </Grid>
-                          <Grid item xs={6}>
-                            <TextField
-                              label="End"
-                              type="time"
-                              value={form.quiet_hours_end}
-                              onChange={handleInputChange('quiet_hours_end')}
-                              fullWidth
-                              size="small"
-                              InputLabelProps={{ shrink: true }}
-                            />
-                          </Grid>
-                        </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                label="Alert Name"
+                value={form.name}
+                onChange={handleInputChange('name')}
+                fullWidth
+                placeholder="e.g. High API Latency"
+                variant="outlined"
+                size="small"
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth size="small" disabled={!brandOptions.length}>
+                <InputLabel>Brand</InputLabel>
+                <Select
+                  value={form.brand_key}
+                  onChange={handleInputChange('brand_key')}
+                  label="Brand"
+                >
+                  {brandOptions.map((brand) => (
+                    <MenuItem key={brand.value} value={brand.value}>{brand.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* --- Metric Logic --- */}
+            <Grid item xs={12}>
+              <Divider sx={{ my: 2 }} />
+              <SectionHeader
+                icon={<TuneIcon />}
+                title="Metric Logic"
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Metric</InputLabel>
+                <Select
+                  value={form.metric_name}
+                  onChange={handleInputChange('metric_name')}
+                  label="Metric"
+                >
+                  {KPI_METRICS.map((metric) => (
+                    <MenuItem key={metric.value} value={metric.value}>{metric.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Logic Type</InputLabel>
+                <Select
+                  value={form.metric_type}
+                  onChange={handleInputChange('metric_type')}
+                  label="Logic Type"
+                >
+                  {METRIC_TYPES.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {form.metric_type === 'derived' && (
+              <Grid item xs={12}>
+                <TextField
+                  label="Derived Formula (SQL)"
+                  value={form.formula}
+                  onChange={handleInputChange('formula')}
+                  fullWidth
+                  multiline
+                  minRows={2}
+                  helperText="Example: (sales / visits) * 100"
+                  sx={{ '& .MuiOutlinedInput-root': { fontFamily: 'monospace' } }}
+                />
+              </Grid>
+            )}
+
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Condition</InputLabel>
+                <Select
+                  value={form.threshold_type}
+                  onChange={handleInputChange('threshold_type')}
+                  label="Condition"
+                >
+                  {THRESHOLD_TYPES.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            {/* Spacer for alignment if needed, or let thresholds wrap */}
+            <Grid item xs={12} md={6}></Grid>
+
+            <Grid item xs={12} md={6}>
+              <TextField
+                type="number"
+                label="Warning Threshold"
+                value={form.threshold_value}
+                onChange={handleInputChange('threshold_value')}
+                fullWidth
+                size="small"
+                inputProps={{ step: 'any' }}
+                InputProps={{
+                  endAdornment: <InputAdornment position="end">Val</InputAdornment>,
+                }}
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                type="number"
+                label="Critical Threshold"
+                value={form.critical_threshold}
+                onChange={handleInputChange('critical_threshold')}
+                fullWidth
+                size="small"
+                color="error"
+                inputProps={{ step: 'any' }}
+                InputProps={{
+                  endAdornment: <InputAdornment position="end">Val</InputAdornment>,
+                }}
+              />
+            </Grid>
+
+            {/* --- Timing --- */}
+            <Grid item xs={12}>
+              <Divider sx={{ my: 2 }} />
+              <SectionHeader
+                icon={<AccessTimeIcon />}
+                title="Timing & Constraints"
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                type="number"
+                label="Cooldown (minutes)"
+                value={form.cooldown_minutes}
+                onChange={handleInputChange('cooldown_minutes')}
+                fullWidth
+                size="small"
+                helperText="Min wait between alerts"
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                type="number"
+                label="Lookback Window (days)"
+                value={form.lookback_days}
+                onChange={handleInputChange('lookback_days')}
+                fullWidth
+                size="small"
+                helperText="Data range to analyze"
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                label="Quiet Hours Start (IST)"
+                type="time"
+                value={form.quiet_hours_start}
+                onChange={handleInputChange('quiet_hours_start')}
+                fullWidth
+                size="small"
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                label="Quiet Hours End (IST)"
+                type="time"
+                value={form.quiet_hours_end}
+                onChange={handleInputChange('quiet_hours_end')}
+                fullWidth
+                size="small"
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+
+            {/* --- Delivery --- */}
+            <Grid item xs={12}>
+              <Divider sx={{ my: 2 }} />
+              <SectionHeader
+                icon={<NotificationsActiveIcon />}
+                title="Delivery"
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Severity Level</InputLabel>
+                <Select
+                  value={form.severity}
+                  onChange={handleInputChange('severity')}
+                  label="Severity Level"
+                >
+                  {SEVERITY_OPTIONS.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{
+                          width: 8, height: 8, borderRadius: '50%',
+                          bgcolor: option.value === 'high' ? 'error.main' : option.value === 'medium' ? 'warning.main' : 'info.main'
+                        }} />
+                        {option.label}
                       </Box>
-                    </Stack>
-                  </Paper>
-                </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                label="Recipients"
+                value={form.recipients}
+                onChange={handleInputChange('recipients')}
+                fullWidth
+                multiline
+                minRows={1}
+                placeholder="email@example.com, ..."
+                helperText="Comma separated list"
+                size="small"
+              />
+            </Grid>
 
-                <Box>
-                  <SectionHeader 
-                    icon={<NotificationsActiveIcon fontSize="small" />} 
-                    title="Delivery" 
-                  />
-                  <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'background.default' }}>
-                    <Stack spacing={3}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Severity Level</InputLabel>
-                        <Select
-                          value={form.severity}
-                          onChange={handleInputChange('severity')}
-                          label="Severity Level"
-                        >
-                           {SEVERITY_OPTIONS.map((option) => (
-                            <MenuItem key={option.value} value={option.value}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Box sx={{ 
-                                  width: 8, height: 8, borderRadius: '50%', 
-                                  bgcolor: option.value === 'high' ? 'error.main' : option.value === 'medium' ? 'warning.main' : 'info.main'
-                                }} />
-                                {option.label}
-                              </Box>
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-
-                      <TextField
-                        label="Recipients"
-                        value={form.recipients}
-                        onChange={handleInputChange('recipients')}
-                        fullWidth
-                        multiline
-                        rows={3}
-                        placeholder="email@example.com, ..."
-                        helperText="Comma separated list"
-                        size="small"
-                      />
-                      
-                      <Divider />
-
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={form.is_active}
-                            onChange={(event) => setForm((prev) => ({ ...prev, is_active: event.target.checked }))}
-                            color="success"
-                          />
-                        }
-                        label={
-                          <Typography variant="body2" fontWeight={600}>
-                            Enable this alert
-                          </Typography>
-                        }
-                      />
-                    </Stack>
-                  </Paper>
-                </Box>
-
-                 <Button 
-                  type="submit" 
-                  variant="contained" 
+            {/* --- Actions --- */}
+            <Grid item xs={12}>
+              <Divider sx={{ my: 2 }} />
+              <Stack direction="row" justifyContent="flex-end" spacing={2} alignItems="center">
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={form.is_active}
+                      onChange={(event) => setForm((prev) => ({ ...prev, is_active: event.target.checked }))}
+                      color="success"
+                    />
+                  }
+                  label={
+                    <Typography variant="body2" fontWeight={600}>
+                      Enable Alert
+                    </Typography>
+                  }
+                />
+                <Button
+                  type="submit"
+                  variant="contained"
                   size="large"
                   disabled={saving}
-                  startIcon={<SendIcon />}
-                  sx={{ 
-                    borderRadius: 3,
-                    py: 1.5,
-                    boxShadow: '0 8px 16px rgba(33, 150, 243, 0.24)'
-                  }}
+                  sx={{ px: 4 }}
                 >
                   {form.id ? 'Save Changes' : 'Create Alert'}
                 </Button>
-
               </Stack>
             </Grid>
+
           </Grid>
         </CardContent>
       </Card>
 
       {/* List Section */}
-      <Card 
-        elevation={0}
-        sx={{ 
-          border: '1px solid', 
-          borderColor: 'divider',
-          borderRadius: 4,
-          boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-          overflow: 'hidden'
-        }}
-      >
-        <Box sx={{ 
-          px: 3, py: 2, 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-          bgcolor: theme.palette.mode === 'dark' ? alpha(theme.palette.grey[900], 0.4) : 'grey.50'
-        }}>
-          <Typography variant="h6" sx={{ fontWeight: 700 }}>
-            Configured Alerts
-          </Typography>
-          <Tooltip title="Refresh List">
-          <IconButton onClick={fetchAlerts} disabled={loading} size="small" sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}>
-              <RefreshIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Box>
+      <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+        <CardHeader
+          title="Configured Alerts"
+          subheader={
+            <Typography variant="caption" color="text.secondary">
+              Includes all active and inactive alerts
+            </Typography>
+          }
+          titleTypographyProps={{ variant: 'h6', fontWeight: 700 }}
+          action={
+            <Tooltip title="Refresh List">
+              <IconButton onClick={fetchAlerts} disabled={loading} size="small">
+                <RefreshIcon />
+              </IconButton>
+            </Tooltip>
+          }
+        />
 
         <CardContent sx={{ p: 0 }}>
-           {alerts.length === 0 && !loading ? (
+          {alerts.length === 0 && !loading ? (
             <Box sx={{ p: 6, textAlign: 'center' }}>
               <Typography variant="body1" color="text.secondary">
                 No alerts found. Create one above to get started.
@@ -705,11 +653,11 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
               <Table stickyHeader sx={{ minWidth: 720 }}>
                 <TableHead>
                   <TableRow>
-                     {['Name', 'Brand', 'Metric', 'Condition', 'Severity', 'Status', 'Actions'].map((head) => (
-                      <TableCell key={head} sx={{ bgcolor: theme.palette.mode === 'dark' ? alpha(theme.palette.grey[900], 0.4) : 'grey.50', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    {['Name', 'Brand', 'Metric', 'Condition', 'Severity', 'Status', 'Actions'].map((head) => (
+                      <TableCell key={head} sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
                         {head}
                       </TableCell>
-                     ))}
+                    ))}
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -721,20 +669,22 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                       </TableCell>
                       <TableCell>{alert.metric_name}</TableCell>
                       <TableCell>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Typography variant="body2" sx={{ fontWeight: 500, bgcolor: 'action.hover', px: 1, borderRadius: 1 }}>
-                            {alert.threshold_type?.replace(/_/g, ' ')}
-                          </Typography>
-                          <Typography variant="body2" fontWeight={700}>
-                            {alert.threshold_value ?? '—'}
-                          </Typography>
-                        </Stack>
+                        <Chip
+                          label={formatCondition(alert.threshold_type, alert.threshold_value)}
+                          size="small"
+                          sx={{
+                            fontWeight: 500,
+                            bgcolor: 'action.hover',
+                            borderRadius: '6px',
+                            '& .MuiChip-label': { px: 1.5 }
+                          }}
+                        />
                       </TableCell>
                       <TableCell>
-                        <Chip 
-                          size="small" 
-                          label={alert.severity} 
-                          color={alert.severity === 'high' ? 'error' : alert.severity === 'medium' ? 'warning' : 'success'} 
+                        <Chip
+                          size="small"
+                          label={alert.severity}
+                          color={alert.severity === 'high' ? 'error' : alert.severity === 'medium' ? 'warning' : 'success'}
                           sx={{ fontWeight: 600, textTransform: 'capitalize' }}
                         />
                       </TableCell>
