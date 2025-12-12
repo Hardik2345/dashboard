@@ -666,6 +666,70 @@ function buildMetricsController() {
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
+    topProductPages: async (req, res) => {
+      try {
+        const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+        if (!parsed.success) {
+          return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+        }
+        const { start, end } = parsed.data;
+        const rangeStart = start || end;
+        const rangeEnd = end || start;
+        if (!rangeStart || !rangeEnd) {
+          return res.status(400).json({ error: 'start or end date required' });
+        }
+        if (rangeStart > rangeEnd) {
+          return res.status(400).json({ error: 'start must be on or before end' });
+        }
+
+        const limitParam = Number(req.query.limit);
+        const limit = Number.isFinite(limitParam) ? Math.min(Math.max(Math.trunc(limitParam), 1), 20) : 5;
+
+        const sql = `
+          SELECT landing_page_path,
+                 MAX(product_id) AS product_id,
+                 SUM(sessions) AS total_sessions,
+                 SUM(sessions_with_cart_additions) AS total_atc_sessions
+          FROM mv_product_sessions_by_path_daily
+          WHERE landing_page_path IS NOT NULL
+            AND landing_page_path <> ''
+            AND date >= ? AND date <= ?
+          GROUP BY landing_page_path
+          ORDER BY total_sessions DESC
+          LIMIT ${limit}
+        `;
+
+        const rows = await req.brandDb.sequelize.query(sql, {
+          type: QueryTypes.SELECT,
+          replacements: [rangeStart, rangeEnd],
+        });
+
+        const pages = rows.map((row, index) => {
+          const totalSessions = Number(row.total_sessions || 0);
+          const atcSessions = Number(row.total_atc_sessions || 0);
+          const atcRate = totalSessions > 0 ? atcSessions / totalSessions : 0;
+          return {
+            rank: index + 1,
+            path: row.landing_page_path,
+            product_id: row.product_id || null,
+            sessions: totalSessions,
+            sessions_with_cart_additions: atcSessions,
+            add_to_cart_rate: atcRate,
+            add_to_cart_rate_pct: atcRate * 100,
+          };
+        });
+
+        return res.json({
+          brand_key: req.brandKey || null,
+          range: { start: rangeStart, end: rangeEnd },
+          pages,
+        });
+      } catch (e) {
+        console.error('[top-pdps] failed', e);
+        return res.status(500).json({ error: 'Failed to load top PDP pages' });
+      }
+    },
+
     hourlyTrend: async (req, res) => {
       try {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });

@@ -119,7 +119,7 @@ const WebVitals = ({ query }) => {
   const fetchData = async (start, end) => {
     if (!brand_name) return []; // <-- don't call API without brand
     const res = await fetch(
-      `https://speed-audit-service.onrender.com/api/pagespeed?brand_name=${encodeURIComponent(
+      `https://speed-audit-service.onrender.com/api/pagespeed?brand_key=${encodeURIComponent(
         brand_name
       )}&start_date=${start}&end_date=${end}`
     );

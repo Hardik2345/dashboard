@@ -22,6 +22,7 @@ function buildMetricsRouter(sequelize) {
   router.get('/funnel-stats', ...protectedBrand, controller.funnelStats);
   router.get('/order-split', ...protectedBrand, controller.orderSplit);
   router.get('/payment-sales-split', ...protectedBrand, controller.paymentSalesSplit);
+  router.get('/top-pdps', ...protectedBrand, controller.topProductPages);
   router.get('/hourly-trend', ...protectedBrand, controller.hourlyTrend);
   router.get('/daily-trend', ...protectedBrand, controller.dailyTrend);
 
