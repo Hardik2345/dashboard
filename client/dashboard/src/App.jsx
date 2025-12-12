@@ -94,6 +94,11 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(loadInitialThemeMode);
   const [isScrolled, setIsScrolled] = useState(false);
 
+  // Keep a data attribute on the body so global CSS (e.g., Polaris overrides) can react to theme changes.
+  useEffect(() => {
+    document.body.dataset.theme = darkMode;
+  }, [darkMode]);
+
   // Track scroll position for sticky panel border
   useEffect(() => {
     const handleScroll = () => {

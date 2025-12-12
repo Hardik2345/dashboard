@@ -188,8 +188,16 @@ export default function DateRangeFilter({ value, onChange }) {
                   width: 'clamp(320px, 90vw, 360px)',
                   minWidth: 'clamp(320px, 90vw, 360px)',
                   maxWidth: 'clamp(320px, 90vw, 360px)',
+                  flexDirection: 'column',
+                  gap: 1,
                 }}
               >
+                <Typography
+                  variant="subtitle1"
+                  sx={{ textAlign: 'center', fontWeight: 600, color: 'text.primary' }}
+                >
+                  {dayjs(new Date(year, month, 1)).format('MMMM YYYY')}
+                </Typography>
                 <DatePicker
                   month={month}
                   year={year}
