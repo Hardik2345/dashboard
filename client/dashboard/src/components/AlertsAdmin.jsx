@@ -33,10 +33,6 @@ import {
   TextField,
   Tooltip,
   Typography,
-  useTheme,
-  useMediaQuery,
-  alpha,
-  TablePagination,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -130,8 +126,7 @@ function formatCondition(type, value) {
 }
 
 export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  
   const [form, setForm] = useState(() => buildInitialForm(defaultBrandKey));
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -139,23 +134,6 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
   const [error, setError] = useState(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [alertToDelete, setAlertToDelete] = useState(null);
-
-  // Pagination
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
-
-  const handleChangePage = (event, newPage) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
-  };
-
-  const paginatedAlerts = useMemo(() => {
-    return alerts.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
-  }, [alerts, page, rowsPerPage]);
 
   const brandOptions = useMemo(
     () => (Array.isArray(brands) ? brands : []).map((b) => ({
@@ -654,11 +632,9 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
           titleTypographyProps={{ variant: 'h6', fontWeight: 700 }}
           action={
             <Tooltip title="Refresh List">
-              <span>
-                <IconButton onClick={fetchAlerts} disabled={loading} size="small">
-                  <RefreshIcon />
-                </IconButton>
-              </span>
+              <IconButton onClick={fetchAlerts} disabled={loading} size="small">
+                <RefreshIcon />
+              </IconButton>
             </Tooltip>
           }
         />
@@ -671,158 +647,72 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
               </Typography>
             </Box>
           ) : (
-            <>
-              {error && (
-                <Alert severity="error" sx={{ mb: 4, borderRadius: 2, mx: 2, mt: 2 }}>
-                  {error}
-                </Alert>
-              )}
-
-              {/* Mobile View */}
-              {isMobile ? (
-                <Stack spacing={2} sx={{ p: 2 }}>
-                  {alerts.length === 0 && !loading && (
-                    <Typography variant="body2" color="text.secondary" align="center">
-                      No alerts found.
-                    </Typography>
-                  )}
-                  {paginatedAlerts.map((alert) => (
-                    <Card key={alert.id} variant="outlined" sx={{ borderRadius: 2 }}>
-                      <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                          <Box>
-                            <Typography variant="subtitle2" fontWeight={700} sx={{ lineHeight: 1.2, mb: 0.5 }}>
-                              {alert.name || 'Untitled Alert'}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                              {alert.metric_name}
-                            </Typography>
-                          </Box>
-                          <Chip
-                            size="small"
-                            label={alert.severity}
-                            color={alert.severity === 'high' ? 'error' : alert.severity === 'medium' ? 'warning' : 'success'}
-                            sx={{ fontWeight: 600, textTransform: 'capitalize', height: 20, fontSize: '0.7rem' }}
-                          />
-                        </Box>
-
-                        <Stack direction="row" spacing={1} sx={{ mb: 1.5 }} flexWrap="wrap" useFlexGap>
-                          <Chip label={alert.brand_key || alert.brand?.key || 'All'} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
-                          <Chip
-                            label={formatCondition(alert.threshold_type, alert.threshold_value)}
-                            size="small"
-                            sx={{ fontWeight: 500, bgcolor: 'action.hover', height: 20, fontSize: '0.7rem' }}
-                          />
+            <TableContainer sx={{ maxHeight: 600 }}>
+              <Table stickyHeader sx={{ minWidth: 720 }}>
+                <TableHead>
+                  <TableRow>
+                    {['Name', 'Brand', 'Metric', 'Condition', 'Severity', 'Status', 'Actions'].map((head) => (
+                      <TableCell key={head} sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        {head}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {alerts.map((alert) => (
+                    <TableRow key={alert.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                      <TableCell sx={{ fontWeight: 600 }}>{alert.name || '—'}</TableCell>
+                      <TableCell>
+                        <Chip label={alert.brand_key || alert.brand?.key || 'All'} size="small" variant="outlined" />
+                      </TableCell>
+                      <TableCell>{alert.metric_name}</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={formatCondition(alert.threshold_type, alert.threshold_value)}
+                          size="small"
+                          sx={{
+                            fontWeight: 500,
+                            bgcolor: 'action.hover',
+                            borderRadius: '6px',
+                            '& .MuiChip-label': { px: 1.5 }
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={alert.severity}
+                          color={alert.severity === 'high' ? 'error' : alert.severity === 'medium' ? 'warning' : 'success'}
+                          sx={{ fontWeight: 600, textTransform: 'capitalize' }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Switch
+                          size="small"
+                          checked={Boolean(alert.is_active)}
+                          onChange={() => handleToggleActive(alert)}
+                          color="success"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Stack direction="row" spacing={0.5}>
+                          <Tooltip title="Edit">
+                            <IconButton size="small" onClick={() => fillFormForEdit(alert)} color="primary">
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton size="small" onClick={() => handleDelete(alert)} color="error">
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                         </Stack>
-
-                        <Divider sx={{ my: 1 }} />
-
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <FormControlLabel
-                            control={
-                              <Switch
-                                size="small"
-                                checked={Boolean(alert.is_active)}
-                                onChange={() => handleToggleActive(alert)}
-                                color="success"
-                              />
-                            }
-                            label={<Typography variant="caption" color="text.secondary">Active</Typography>}
-                          />
-                          <Stack direction="row" spacing={1}>
-                            <IconButton size="small" onClick={() => fillFormForEdit(alert)} sx={{ color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1), p: 0.5 }}>
-                              <EditIcon fontSize="small" sx={{ fontSize: '1rem' }} />
-                            </IconButton>
-                            <IconButton size="small" onClick={() => handleDelete(alert)} sx={{ color: 'error.main', bgcolor: alpha(theme.palette.error.main, 0.1), p: 0.5 }}>
-                              <DeleteIcon fontSize="small" sx={{ fontSize: '1rem' }} />
-                            </IconButton>
-                          </Stack>
-                        </Box>
-                      </CardContent>
-                    </Card>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </Stack>
-              ) : (
-                <TableContainer sx={{ maxHeight: 600 }}>
-                  <Table stickyHeader sx={{ minWidth: 720 }}>
-                    <TableHead>
-                      <TableRow>
-                        {['Name', 'Brand', 'Metric', 'Condition', 'Severity', 'Status', 'Actions'].map((head) => (
-                          <TableCell key={head} sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-                            {head}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {paginatedAlerts.map((alert) => (
-                        <TableRow key={alert.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
-                          <TableCell sx={{ fontWeight: 600 }}>{alert.name || '—'}</TableCell>
-                          <TableCell>
-                            <Chip label={alert.brand_key || alert.brand?.key || 'All'} size="small" variant="outlined" />
-                          </TableCell>
-                          <TableCell>{alert.metric_name}</TableCell>
-                          <TableCell>
-                            <Chip
-                              label={formatCondition(alert.threshold_type, alert.threshold_value)}
-                              size="small"
-                              sx={{
-                                fontWeight: 500,
-                                bgcolor: 'action.hover',
-                                borderRadius: '6px',
-                                '& .MuiChip-label': { px: 1.5 }
-                              }}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              size="small"
-                              label={alert.severity}
-                              color={alert.severity === 'high' ? 'error' : alert.severity === 'medium' ? 'warning' : 'success'}
-                              sx={{ fontWeight: 600, textTransform: 'capitalize' }}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Switch
-                              size="small"
-                              checked={Boolean(alert.is_active)}
-                              onChange={() => handleToggleActive(alert)}
-                              color="success"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Stack direction="row" spacing={0.5}>
-                              <Tooltip title="Edit">
-                                <IconButton size="small" onClick={() => fillFormForEdit(alert)} color="primary">
-                                  <EditIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="Delete">
-                                <IconButton size="small" onClick={() => handleDelete(alert)} color="error">
-                                  <DeleteIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            </Stack>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
-              {alerts.length > 0 && (
-                <TablePagination
-                  rowsPerPageOptions={[5, 10, 25]}
-                  component="div"
-                  count={alerts.length}
-                  rowsPerPage={rowsPerPage}
-                  page={page}
-                  onPageChange={handleChangePage}
-                  onRowsPerPageChange={handleChangeRowsPerPage}
-                  sx={{ borderTop: '1px solid', borderColor: 'divider' }}
-                />
-              )}
-            </>
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
         </CardContent>
       </Card>
