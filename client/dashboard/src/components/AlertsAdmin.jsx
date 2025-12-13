@@ -571,6 +571,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 fullWidth
                 size="small"
                 helperText="Min wait between alerts"
+                sx={{ '& input': { colorScheme: theme.palette.mode } }}
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -582,6 +583,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 fullWidth
                 size="small"
                 helperText="Data range to analyze"
+                sx={{ '& input': { colorScheme: theme.palette.mode } }}
               />
             </Grid>
             <Grid item xs={12} md={6}>
