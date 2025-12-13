@@ -762,6 +762,144 @@ function buildMetricsController() {
       }
     },
 
+    topProducts: async (req, res) => {
+      try {
+        const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+        if (!parsed.success) {
+          return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+        }
+        const { start, end } = parsed.data;
+        const rangeStart = start || end;
+        const rangeEnd = end || start;
+        if (!rangeStart || !rangeEnd) {
+          return res.status(400).json({ error: 'start or end date required' });
+        }
+        if (rangeStart > rangeEnd) {
+          return res.status(400).json({ error: 'start must be on or before end' });
+        }
+
+        const limitParam = Number(req.query.limit);
+        const limit = Number.isFinite(limitParam) ? Math.min(Math.max(Math.trunc(limitParam), 1), 50) : 5;
+
+        const sql = `
+          SELECT product_id,
+                 MIN(landing_page_path) AS landing_page_path,
+                 SUM(sessions) AS total_sessions,
+                 SUM(sessions_with_cart_additions) AS total_atc_sessions
+          FROM mv_product_sessions_by_path_daily
+          WHERE product_id IS NOT NULL
+            AND product_id <> ''
+            AND date >= ? AND date <= ?
+          GROUP BY product_id
+          ORDER BY total_sessions DESC
+          LIMIT ${limit}
+        `;
+
+        const rows = await req.brandDb.sequelize.query(sql, {
+          type: QueryTypes.SELECT,
+          replacements: [rangeStart, rangeEnd],
+        });
+
+        const products = rows.map((row, index) => {
+          const totalSessions = Number(row.total_sessions || 0);
+          const atcSessions = Number(row.total_atc_sessions || 0);
+          const atcRate = totalSessions > 0 ? atcSessions / totalSessions : 0;
+          return {
+            rank: index + 1,
+            product_id: row.product_id,
+            landing_page_path: row.landing_page_path || null,
+            sessions: totalSessions,
+            sessions_with_cart_additions: atcSessions,
+            add_to_cart_rate: atcRate,
+            add_to_cart_rate_pct: atcRate * 100,
+          };
+        });
+
+        return res.json({
+          brand_key: req.brandKey || null,
+          range: { start: rangeStart, end: rangeEnd },
+          products,
+        });
+      } catch (e) {
+        console.error('[top-products] failed', e);
+        return res.status(500).json({ error: 'Failed to load top products' });
+      }
+    },
+
+    productKpis: async (req, res) => {
+      try {
+        const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+        if (!parsed.success) {
+          return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+        }
+        const { start, end } = parsed.data;
+        const rangeStart = start || end;
+        const rangeEnd = end || start;
+        if (!rangeStart || !rangeEnd) {
+          return res.status(400).json({ error: 'start or end date required' });
+        }
+        if (rangeStart > rangeEnd) {
+          return res.status(400).json({ error: 'start must be on or before end' });
+        }
+
+        const productIdRaw = (req.query.product_id || '').toString().trim();
+        if (!productIdRaw) {
+          return res.status(400).json({ error: 'product_id is required' });
+        }
+
+        const conn = req.brandDb.sequelize;
+
+        const sessionsSql = `
+          SELECT
+            SUM(sessions) AS total_sessions,
+            SUM(sessions_with_cart_additions) AS total_atc_sessions
+          FROM mv_product_sessions_by_path_daily
+          WHERE product_id = ?
+            AND product_id IS NOT NULL
+            AND date >= ? AND date <= ?
+        `;
+
+        const ordersSql = `
+          SELECT
+            COUNT(DISTINCT order_name) AS total_orders,
+            COALESCE(SUM(line_item_price * line_item_quantity), 0) AS total_sales
+          FROM shopify_orders
+          WHERE product_id = ?
+            AND created_date >= ? AND created_date <= ?
+        `;
+
+        const [[sessRow], [orderRow]] = await Promise.all([
+          conn.query(sessionsSql, { type: QueryTypes.SELECT, replacements: [productIdRaw, rangeStart, rangeEnd] }),
+          conn.query(ordersSql, { type: QueryTypes.SELECT, replacements: [productIdRaw, rangeStart, rangeEnd] }),
+        ]);
+
+        const totalSessions = Number(sessRow?.total_sessions || 0);
+        const totalAtcSessions = Number(sessRow?.total_atc_sessions || 0);
+        const totalOrders = Number(orderRow?.total_orders || 0);
+        const totalSales = Number(orderRow?.total_sales || 0);
+
+        const addToCartRate = totalSessions > 0 ? totalAtcSessions / totalSessions : 0;
+        const cvr = totalSessions > 0 ? totalOrders / totalSessions : 0;
+
+        return res.json({
+          product_id: productIdRaw,
+          brand_key: req.brandKey || null,
+          range: { start: rangeStart, end: rangeEnd },
+          sessions: totalSessions,
+          sessions_with_cart_additions: totalAtcSessions,
+          add_to_cart_rate: addToCartRate,
+          add_to_cart_rate_pct: addToCartRate * 100,
+          total_orders: totalOrders,
+          total_sales: totalSales,
+          conversion_rate: cvr,
+          conversion_rate_pct: cvr * 100,
+        });
+      } catch (e) {
+        console.error('[product-kpis] failed', e);
+        return res.status(500).json({ error: 'Failed to load product KPIs' });
+      }
+    },
+
     hourlyTrend: async (req, res) => {
       try {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });

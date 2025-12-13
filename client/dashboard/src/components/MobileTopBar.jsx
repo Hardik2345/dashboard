@@ -7,7 +7,11 @@ import {
   ListItemButton,
   ListItemText,
   Divider,
-  Popover,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  CircularProgress,
 } from "@mui/material";
 import { AppProvider } from '@shopify/polaris';
 import { useTheme } from '@mui/material/styles';
@@ -66,7 +70,15 @@ const DATE_PRESETS = [
   },
 ];
 
-export default function MobileTopBar({ value, onChange, brandKey }) {
+export default function MobileTopBar({
+  value,
+  onChange,
+  brandKey,
+  productOptions = [],
+  productValue = null,
+  onProductChange,
+  productLoading = false,
+}) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const [start, end] = value || [];
@@ -222,35 +234,74 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
       }}
       i18n={enTranslations}
     >
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 0.75,
-          py: 0.25,
-        }}
-      >
-        {last.loading ? (
-          <Card
-            elevation={0}
-            sx={{
-              px: 0.75,
-              height: 32,
-              display: "flex",
-              alignItems: "center",
-              bgcolor: "background.paper",
-              fontSize: 13,
-            }}
-          >
-            Updating…
-          </Card>
-        ) : last.ts ? (
-          <Tooltip
-            title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${last.tz ? ` ${last.tz}` : ""
+      <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
+        {/* Mobile: Product filter on its own row */}
+        <Box sx={{ display: { xs: 'block', sm: 'none' }, width: '100%' }}>
+          <FormControl size="small" fullWidth>
+            <InputLabel id="mobile-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
+            <Select
+              labelId="mobile-product-label"
+              label="Product"
+              value={productValue?.id ?? ''}
+              onChange={(e) => {
+                const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
+                if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
+              }}
+              disabled={productLoading || !productOptions?.length}
+              sx={{ fontSize: 12, height: 36 }}
+            >
+              {(productOptions || []).map((opt) => (
+                <MenuItem key={opt.id || 'all'} value={opt.id || ''} sx={{ fontSize: 12 }}>
+                  {opt.id ? opt.label : 'All products'}
+                </MenuItem>
+              ))}
+            </Select>
+            {productLoading && (
+              <CircularProgress size={14} sx={{ position: 'absolute', top: 11, right: 28 }} />
+            )}
+          </FormControl>
+        </Box>
+
+        {/* Main row: Updated chip | (desktop: product filter) | Date picker */}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
+          {/* Left: Updated chip */}
+          {last.loading ? (
+            <Card
+              elevation={0}
+              sx={{
+                px: 0.75,
+                height: 32,
+                display: "flex",
+                alignItems: "center",
+                bgcolor: "background.paper",
+                fontSize: 13,
+              }}
+            >
+              Updating…
+            </Card>
+          ) : last.ts ? (
+            <Tooltip
+              title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${
+                last.tz ? ` ${last.tz}` : ""
               }`}
-            arrow
-          >
+              arrow
+            >
+              <Card
+                elevation={0}
+                sx={{
+                  border: "1px solid",
+                  borderColor: "divider",
+                  px: 0.75,
+                  height: 32,
+                  display: "flex",
+                  alignItems: "center",
+                  fontSize: 13,
+                }}
+              >
+                Updated {last.ts.fromNow()}
+              </Card>
+            </Tooltip>
+          ) : (
             <Card
               elevation={0}
               sx={{
@@ -263,95 +314,90 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
                 fontSize: 13,
               }}
             >
-              Updated {last.ts.fromNow()}
+              Updated: unavailable
             </Card>
-          </Tooltip>
-        ) : (
-          <Card
-            elevation={0}
-            sx={{
-              border: "1px solid",
-              borderColor: "divider",
-              px: 0.75,
-              height: 32,
-              display: "flex",
-              alignItems: "center",
-              fontSize: 13,
-            }}
-          >
-            Updated: unavailable
-          </Card>
-        )}
+          )}
 
-        <Card
-          elevation={0}
-          onClick={handleClick}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              handleClick(e);
-            }
-          }}
-          sx={{
-            px: 1,
-            height: 32,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            bgcolor: "primary.main",
-            color: "primary.contrastText",
-            minWidth: { xs: 120, sm: 180 },
-            width: { xs: 120, sm: 180 },
-            textAlign: "center",
-            userSelect: "none",
-            fontSize: 13,
-            "&:hover": { filter: "brightness(0.98)" },
-          }}
-        >
-          <span
-            style={{
-              display: "inline-block",
-              maxWidth: "100%",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {dateLabel}
-          </span>
-        </Card>
+          {/* Right: Product filter (desktop only) + Date picker */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {/* Desktop-only compact product filter */}
+            <FormControl size="small" sx={{ minWidth: 120, display: { xs: 'none', sm: 'flex' } }}>
+              <InputLabel id="desktop-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
+              <Select
+                labelId="desktop-product-label"
+                label="Product"
+                value={productValue?.id ?? ''}
+                onChange={(e) => {
+                  const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
+                  if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
+                }}
+                disabled={productLoading || !productOptions?.length}
+                sx={{ fontSize: 12, height: 32 }}
+              >
+                {(productOptions || []).map((opt) => (
+                  <MenuItem key={opt.id || 'all'} value={opt.id || ''} sx={{ fontSize: 12 }}>
+                    {opt.id ? opt.label : 'All products'}
+                  </MenuItem>
+                ))}
+              </Select>
+              {productLoading && (
+                <CircularProgress size={14} sx={{ position: 'absolute', top: 9, right: 28 }} />
+              )}
+            </FormControl>
 
-        <Popover
-          open={open}
-          anchorEl={anchorEl}
-          onClose={handleClose}
-          anchorOrigin={{
-            vertical: 'bottom',
-            horizontal: 'right',
-          }}
-          transformOrigin={{
-            vertical: 'top',
-            horizontal: 'right',
-          }}
-          disableScrollLock
-          PaperProps={{
-            sx: {
-              mt: 1,
-              borderRadius: 2,
-              boxShadow: theme.shadows[8],
-              border: '1px solid',
-              borderColor: 'divider',
-            }
-          }}
-        >
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: "row",
-              maxHeight: "80vh",
+            <Popover
+              active={popoverActive}
+              activator={
+                <Card
+                  elevation={0}
+                  onClick={togglePopover}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      togglePopover();
+                    }
+                  }}
+                  sx={{
+                    px: 1,
+                    height: 32,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    bgcolor: "primary.main",
+                    color: "primary.contrastText",
+                    minWidth: { xs: 120, sm: 140 },
+                    textAlign: "center",
+                    userSelect: "none",
+                    fontSize: 13,
+                    "&:hover": { filter: "brightness(0.98)" },
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "inline-block",
+                      maxWidth: "100%",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {dateLabel}
+                  </span>
+                </Card>
+              }
+              onClose={handleClose}
+              fullWidth={false}
+              preferInputActivator={false}
+              preferredAlignment="right"
+            >
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: "row",
+                  maxHeight: "80vh",
               overflowX: "hidden",
               overflowY: "auto",
               bgcolor: 'background.paper',
@@ -501,7 +547,9 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
               />
             </Box>
           </Box>
-        </Popover>
+            </Popover>
+          </Box>
+        </Box>
       </Box>
     </AppProvider>
   );

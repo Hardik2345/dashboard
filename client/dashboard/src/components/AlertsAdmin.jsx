@@ -34,28 +34,27 @@ import {
   TextField,
   Tooltip,
   Typography,
-  useTheme,
-  useMediaQuery,
-  alpha,
-} from '@mui/material';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import TuneIcon from '@mui/icons-material/Tune';
-import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
-import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import SendIcon from '@mui/icons-material/Send';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import SearchIcon from '@mui/icons-material/Search';
-import FilterListIcon from '@mui/icons-material/FilterList';
-import { KPI_METRICS } from '../constants/kpiMetrics.js';
-
-const HOURS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
-const MINUTES = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
-import { createAlert, deleteAlert, listAlerts, setAlertActive, updateAlert } from '../lib/api.js';
-import { toast } from 'react-toast';
+} from "@mui/material";
+import EditIcon from "@mui/icons-material/Edit";
+import DeleteIcon from "@mui/icons-material/Delete";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import TuneIcon from "@mui/icons-material/Tune";
+import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import SendIcon from "@mui/icons-material/Send";
+import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import { KPI_METRICS } from "../constants/kpiMetrics.js";
+import {
+  createAlert,
+  deleteAlert,
+  listAlerts,
+  setAlertActive,
+  updateAlert,
+} from "../lib/api.js";
+import { toast } from "react-toastify";
+import axios from "axios";
 
 const METRIC_TYPES = [
   { value: 'base', label: 'Base' },
