@@ -5,6 +5,10 @@
 
   "rewrites": [
     {
+      "source": "/api/external-pagespeed/(.*)",
+      "destination": "https://speed-audit-service.onrender.com/api/$1"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/proxy?path=$1"
     },
