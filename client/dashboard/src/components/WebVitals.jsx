@@ -8,13 +8,14 @@ import {
   MenuItem,
   FormControl,
   useTheme,
+  Link,
 } from "@mui/material";
 import { useAppSelector } from "../state/hooks.js";
 
 const StatBox = ({ children }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
-  
+
   return (
     <Box
       sx={{
@@ -37,6 +38,7 @@ const METRIC_KEYS = {
   FCP: "fcp",
   LCP: "lcp",
   TTFB: "ttfb",
+  SESSIONS: "sessions",
 };
 
 const WebVitals = ({ query }) => {
@@ -45,7 +47,7 @@ const WebVitals = ({ query }) => {
     performanceAvg: null,
     performancePrev: null,
     performanceChange: null,
-    topPDPs: [],
+    topPages: [],
   });
   const { user } = useAppSelector((state) => state.auth);
   const globalBrandKey = useAppSelector((state) => state.brand.brand);
@@ -93,21 +95,21 @@ const WebVitals = ({ query }) => {
   // e.g., if selected range is Nov 27-30 (4 days), prev range should be Nov 23-26
   const getPreviousDateWindow = (startStr, endStr) => {
     if (!startStr || !endStr) return { prev_start: null, prev_end: null };
-    
+
     const startDate = new Date(startStr);
     const endDate = new Date(endStr);
-    
+
     // Calculate the number of days in the selected range (inclusive)
     const daysDiff = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
-    
+
     // Previous window ends one day before current start
     const prevEnd = new Date(startDate);
     prevEnd.setDate(prevEnd.getDate() - 1);
-    
+
     // Previous window starts (daysDiff) days before prevEnd
     const prevStart = new Date(prevEnd);
     prevStart.setDate(prevStart.getDate() - daysDiff + 1);
-    
+
     return {
       prev_start: prevStart.toISOString().split("T")[0],
       prev_end: prevEnd.toISOString().split("T")[0],
@@ -119,26 +121,29 @@ const WebVitals = ({ query }) => {
   const fetchData = async (start, end) => {
     if (!brand_name) return []; // <-- don't call API without brand
     const res = await fetch(
-      `https://speed-audit-service.onrender.com/api/pagespeed?brand_name=${encodeURIComponent(
+      `https://speed-audit-service.onrender.com/api/pagespeed?brand_key=${encodeURIComponent(
         brand_name
       )}&start_date=${start}&end_date=${end}`
     );
     return (await res.json()).results;
   };
 
-  const calculatePDPMetric = (results, metricKey) => {
-    const pdps = results.filter((r) => r.url.includes("products"));
+  const calculatePageMetric = (results, metricKey) => {
     const grouped = {};
 
-    pdps.forEach((p) => {
+    results.forEach((p) => {
       if (!grouped[p.url]) grouped[p.url] = [];
       grouped[p.url].push(p[metricKey]);
     });
 
-    return Object.entries(grouped).map(([url, arr]) => ({
-      url,
-      avg: arr.reduce((a, b) => a + b, 0) / arr.length,
-    }));
+    return Object.entries(grouped).map(([url, arr]) => {
+      const isSum = metricKey === "sessions";
+      const sum = arr.reduce((a, b) => a + (b || 0), 0);
+      return {
+        url,
+        avg: isSum ? sum : sum / arr.length,
+      };
+    });
   };
 
   const getWebVitalsData = async () => {
@@ -154,7 +159,7 @@ const WebVitals = ({ query }) => {
         performanceAvg: null,
         performancePrev: null,
         performanceChange: null,
-        topPDPs: [],
+        topPages: [],
       });
       return;
     }
@@ -170,17 +175,22 @@ const WebVitals = ({ query }) => {
     const perfChange =
       prevPerf > 0 ? ((curPerf - prevPerf) / prevPerf) * 100 : null;
 
-    // PDP metric block (dynamic)
-    const todayPDP = calculatePDPMetric(currentData, metricKey);
-    const yesterdayPDP = calculatePDPMetric(prevData, metricKey);
+    // Page metric block (dynamic)
+    const todayPages = calculatePageMetric(currentData, metricKey);
+    const yesterdayPages = calculatePageMetric(prevData, metricKey);
 
-    const combined = todayPDP.map((t) => {
-      const match = yesterdayPDP.find((y) => y.url === t.url);
+    const combined = todayPages.map((t) => {
+      const match = yesterdayPages.find((y) => y.url === t.url);
 
       let change = null;
       if (match && match.avg > 0) {
-        // Lower is better → change positive means improvement
-        change = ((match.avg - t.avg) / match.avg) * 100;
+        if (metric === "SESSIONS") {
+          // Higher is better -> (Current - Prev) / Prev
+          change = ((t.avg - match.avg) / match.avg) * 100;
+        } else {
+          // Lower is better -> (Prev - Current) / Prev
+          change = ((match.avg - t.avg) / match.avg) * 100;
+        }
       }
 
       return {
@@ -190,13 +200,16 @@ const WebVitals = ({ query }) => {
       };
     });
 
-    const top5 = combined.sort((a, b) => a.avg - b.avg).slice(0, 5);
+    const isDesc = metric === "SESSIONS";
+    const top5 = combined
+      .sort((a, b) => (isDesc ? b.avg - a.avg : a.avg - b.avg))
+      .slice(0, 5);
 
     setWebVitals({
       performanceAvg: curPerf,
       performancePrev: prevPerf,
       performanceChange: perfChange,
-      topPDPs: top5,
+      topPages: top5,
     });
   };
 
@@ -279,7 +292,7 @@ const WebVitals = ({ query }) => {
                 variant="subtitle2"
                 sx={{ color: "text.primary", fontWeight: 600 }}
               >
-                Top 5 PDPs ({metric})
+                Top 5 Pages ({metric})
               </Typography>
 
               {/* METRIC DROPDOWN */}
@@ -287,8 +300,8 @@ const WebVitals = ({ query }) => {
                 <Select
                   value={metric}
                   onChange={(e) => setMetric(e.target.value)}
-                  sx={{ 
-                    height: 28, 
+                  sx={{
+                    height: 28,
                     fontSize: "12px",
                     color: "text.primary",
                     '& .MuiSelect-icon': {
@@ -299,38 +312,60 @@ const WebVitals = ({ query }) => {
                   <MenuItem value="FCP">FCP</MenuItem>
                   <MenuItem value="LCP">LCP</MenuItem>
                   <MenuItem value="TTFB">TTFB</MenuItem>
+                  <MenuItem value="SESSIONS">Sessions</MenuItem>
                 </Select>
               </FormControl>
             </Box>
 
             <Box sx={{ maxHeight: "150px", overflowY: "auto", pr: 1 }}>
-              {webVitals.topPDPs.map((pdp, idx) => {
-                const improved = pdp.change > 0;
+              {webVitals.topPages.map((page, idx) => {
+                const improved = page.change > 0;
+
+                // Fix double domain issue in URL/Path
+                // e.g. https://site.com/site.myshopify.com/products/... -> https://site.com/products/...
+                let cleanUrl = page.url.replace(/\/[a-z0-9-]+\.myshopify\.com(\/|$)/i, "/");
+                // Ensure no double slashes after protocol
+                cleanUrl = cleanUrl.replace(/([^:]\/)\/+/g, "$1");
+
+                let displayUrl = cleanUrl;
+                try {
+                  displayUrl = new URL(cleanUrl).pathname;
+                } catch (e) {
+                  // fallback
+                }
 
                 return (
                   <Box key={idx} sx={{ mb: 1 }}>
-                    <Typography variant="body2" fontWeight={600} color="text.primary">
-                      {idx + 1}. {pdp.url.split("/products/")[1]}
-                    </Typography>
-
-                    <Typography variant="caption" color="text.secondary">
-                      {metric}: {pdp.avg.toFixed(2)}
-                      {metric !== "TTFB" ? "s" : ""}
-                    </Typography>
-
-                    {pdp.change !== null && (
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          ml: 1.5,
-                          color: improved ? "green" : "red",
-                          fontWeight: 600,
-                        }}
-                      >
-                        {improved ? "▼" : "▲"} {Math.abs(pdp.change).toFixed(2)}
-                        %
+                    <Box sx={{ display: "flex", alignItems: "center", mb: 0.5 }}>
+                      <Typography variant="body2" fontWeight={600} color="text.primary" sx={{ mr: 0.5 }}>
+                        {idx + 1}.
                       </Typography>
-                    )}
+                      <Link
+                        href={cleanUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        color="text.primary"
+                        underline="hover"
+                        variant="body2"
+                        sx={{ fontWeight: 600, wordBreak: "break-all" }}
+                      >
+                        {displayUrl}
+                      </Link>
+                    </Box>
+
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      {metric === "SESSIONS" ? "Sessions" : metric}: {Math.round(page.avg * 100) / 100}
+                      {metric !== "TTFB" && metric !== "SESSIONS" ? "s" : ""}
+
+                      {page.change !== null && (
+                        <Box component="span" sx={{ ml: 1.5, color: improved ? "green" : "red", fontWeight: 700 }}>
+                          {metric === "SESSIONS"
+                            ? (improved ? "▲" : "▼")
+                            : (improved ? "▼" : "▲")
+                          } {Math.abs(page.change).toFixed(2)}%
+                        </Box>
+                      )}
+                    </Typography>
 
                     {idx !== 4 && <Divider sx={{ mt: 1 }} />}
                   </Box>

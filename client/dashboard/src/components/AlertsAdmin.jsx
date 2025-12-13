@@ -29,10 +29,14 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   TextField,
   Tooltip,
   Typography,
+  useTheme,
+  useMediaQuery,
+  alpha,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -44,7 +48,12 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import SendIcon from '@mui/icons-material/Send';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import SearchIcon from '@mui/icons-material/Search';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import { KPI_METRICS } from '../constants/kpiMetrics.js';
+
+const HOURS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
+const MINUTES = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
 import { createAlert, deleteAlert, listAlerts, setAlertActive, updateAlert } from '../lib/api.js';
 import { toast } from 'react-toast';
 
@@ -126,9 +135,21 @@ function formatCondition(type, value) {
 }
 
 export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
-  
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  // Filter States
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterBrand, setFilterBrand] = useState('all');
+  const [filterSeverity, setFilterSeverity] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+
   const [form, setForm] = useState(() => buildInitialForm(defaultBrandKey));
   const [alerts, setAlerts] = useState([]);
+
+  // ... existing loading/saving state ...
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -142,6 +163,41 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
     })),
     [brands]
   );
+
+  const filteredAlerts = useMemo(() => {
+    return alerts.filter((alert) => {
+      // Search
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchName = alert.name?.toLowerCase().includes(query);
+        const matchMetric = alert.metric_name?.toLowerCase().includes(query);
+        if (!matchName && !matchMetric) return false;
+      }
+
+      // Brand Filter
+      if (filterBrand !== 'all') {
+        const brand = alert.brand_key || alert.brand?.key;
+        if (brand !== filterBrand) return false;
+      }
+
+      // Severity Filter
+      if (filterSeverity !== 'all' && alert.severity !== filterSeverity) return false;
+
+      // Status Filter
+      if (filterStatus !== 'all') {
+        const isActive = Boolean(alert.is_active);
+        const wantActive = filterStatus === 'active';
+        if (isActive !== wantActive) return false;
+      }
+
+      return true;
+    });
+  }, [alerts, searchQuery, filterBrand, filterSeverity, filterStatus]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery, filterBrand, filterSeverity, filterStatus]);
 
   useEffect(() => {
     setForm((prev) => ({ ...prev, brand_key: prev.brand_key || defaultBrandKey || (brandOptions[0]?.value || '') }));
@@ -274,6 +330,15 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
     toast.success(hasId ? 'Alert updated successfully' : 'Alert created successfully');
     resetForm();
     fetchAlerts();
+  };
+
+  const handleChangePage = (event, newPage) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
   };
 
   const handleDelete = (alert) => {
@@ -506,6 +571,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 fullWidth
                 size="small"
                 helperText="Min wait between alerts"
+                sx={{ '& input': { colorScheme: theme.palette.mode } }}
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -517,29 +583,76 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 fullWidth
                 size="small"
                 helperText="Data range to analyze"
+                sx={{ '& input': { colorScheme: theme.palette.mode } }}
               />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField
-                label="Quiet Hours Start (IST)"
-                type="time"
-                value={form.quiet_hours_start}
-                onChange={handleInputChange('quiet_hours_start')}
-                fullWidth
-                size="small"
-                InputLabelProps={{ shrink: true }}
-              />
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                  Quiet Hours Start (IST)
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  <FormControl fullWidth size="small">
+                    <Select
+                      value={form.quiet_hours_start ? form.quiet_hours_start.split(':')[0] : '00'}
+                      onChange={(e) => {
+                        const mm = form.quiet_hours_start ? form.quiet_hours_start.split(':')[1] : '00';
+                        setForm(prev => ({ ...prev, quiet_hours_start: `${e.target.value}:${mm}` }));
+                      }}
+                      MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
+                    >
+                      {HOURS.map(h => <MenuItem key={h} value={h}>{h}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                  <Typography sx={{ alignSelf: 'center' }}>:</Typography>
+                  <FormControl fullWidth size="small">
+                    <Select
+                      value={form.quiet_hours_start ? form.quiet_hours_start.split(':')[1] : '00'}
+                      onChange={(e) => {
+                        const hh = form.quiet_hours_start ? form.quiet_hours_start.split(':')[0] : '00';
+                        setForm(prev => ({ ...prev, quiet_hours_start: `${hh}:${e.target.value}` }));
+                      }}
+                      MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
+                    >
+                      {MINUTES.map(m => <MenuItem key={m} value={m}>{m}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </Stack>
+              </Box>
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField
-                label="Quiet Hours End (IST)"
-                type="time"
-                value={form.quiet_hours_end}
-                onChange={handleInputChange('quiet_hours_end')}
-                fullWidth
-                size="small"
-                InputLabelProps={{ shrink: true }}
-              />
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                  Quiet Hours End (IST)
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  <FormControl fullWidth size="small">
+                    <Select
+                      value={form.quiet_hours_end ? form.quiet_hours_end.split(':')[0] : '00'}
+                      onChange={(e) => {
+                        const mm = form.quiet_hours_end ? form.quiet_hours_end.split(':')[1] : '00';
+                        setForm(prev => ({ ...prev, quiet_hours_end: `${e.target.value}:${mm}` }));
+                      }}
+                      MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
+                    >
+                      {HOURS.map(h => <MenuItem key={h} value={h}>{h}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                  <Typography sx={{ alignSelf: 'center' }}>:</Typography>
+                  <FormControl fullWidth size="small">
+                    <Select
+                      value={form.quiet_hours_end ? form.quiet_hours_end.split(':')[1] : '00'}
+                      onChange={(e) => {
+                        const hh = form.quiet_hours_end ? form.quiet_hours_end.split(':')[0] : '00';
+                        setForm(prev => ({ ...prev, quiet_hours_end: `${hh}:${e.target.value}` }));
+                      }}
+                      MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
+                    >
+                      {MINUTES.map(m => <MenuItem key={m} value={m}>{m}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </Stack>
+              </Box>
             </Grid>
 
             {/* --- Delivery --- */}
@@ -640,79 +753,242 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
         />
 
         <CardContent sx={{ p: 0 }}>
+          {/* Filters Bar */}
+          <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.neutral' }}>
+            <Grid container spacing={2} alignItems="center">
+              <Grid item xs={12} md={4}>
+                <TextField
+                  fullWidth
+                  placeholder="Search alerts..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  size="small"
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon fontSize="small" color="action" />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={2}>
+                <FormControl fullWidth size="small">
+                  <Select
+                    value={filterBrand}
+                    onChange={(e) => setFilterBrand(e.target.value)}
+                    displayEmpty
+                  >
+                    <MenuItem value="all"><em>All Brands</em></MenuItem>
+                    {brandOptions.map((b) => (
+                      <MenuItem key={b.value} value={b.value}>{b.label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} sm={6} md={2}>
+                <FormControl fullWidth size="small">
+                  <Select
+                    value={filterSeverity}
+                    onChange={(e) => setFilterSeverity(e.target.value)}
+                    displayEmpty
+                  >
+                    <MenuItem value="all"><em>Any Severity</em></MenuItem>
+                    {SEVERITY_OPTIONS.map((s) => (
+                      <MenuItem key={s.value} value={s.value}>{s.label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} sm={6} md={2}>
+                <FormControl fullWidth size="small">
+                  <Select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    displayEmpty
+                  >
+                    <MenuItem value="all"><em>Any Status</em></MenuItem>
+                    <MenuItem value="active">Active</MenuItem>
+                    <MenuItem value="inactive">Inactive</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+          </Box>
+
           {alerts.length === 0 && !loading ? (
             <Box sx={{ p: 6, textAlign: 'center' }}>
               <Typography variant="body1" color="text.secondary">
-                No alerts found. Create one above to get started.
+                No alerts configured yet.
+              </Typography>
+            </Box>
+          ) : filteredAlerts.length === 0 && !loading ? (
+            <Box sx={{ p: 6, textAlign: 'center' }}>
+              <Typography variant="body1" color="text.secondary">
+                No alerts match your search/filters.
               </Typography>
             </Box>
           ) : (
-            <TableContainer sx={{ maxHeight: 600 }}>
-              <Table stickyHeader sx={{ minWidth: 720 }}>
-                <TableHead>
-                  <TableRow>
-                    {['Name', 'Brand', 'Metric', 'Condition', 'Severity', 'Status', 'Actions'].map((head) => (
-                      <TableCell key={head} sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-                        {head}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {alerts.map((alert) => (
-                    <TableRow key={alert.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
-                      <TableCell sx={{ fontWeight: 600 }}>{alert.name || '—'}</TableCell>
-                      <TableCell>
-                        <Chip label={alert.brand_key || alert.brand?.key || 'All'} size="small" variant="outlined" />
-                      </TableCell>
-                      <TableCell>{alert.metric_name}</TableCell>
-                      <TableCell>
-                        <Chip
-                          label={formatCondition(alert.threshold_type, alert.threshold_value)}
-                          size="small"
-                          sx={{
-                            fontWeight: 500,
-                            bgcolor: 'action.hover',
-                            borderRadius: '6px',
-                            '& .MuiChip-label': { px: 1.5 }
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          label={alert.severity}
-                          color={alert.severity === 'high' ? 'error' : alert.severity === 'medium' ? 'warning' : 'success'}
-                          sx={{ fontWeight: 600, textTransform: 'capitalize' }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Switch
-                          size="small"
-                          checked={Boolean(alert.is_active)}
-                          onChange={() => handleToggleActive(alert)}
-                          color="success"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Stack direction="row" spacing={0.5}>
-                          <Tooltip title="Edit">
-                            <IconButton size="small" onClick={() => fillFormForEdit(alert)} color="primary">
-                              <EditIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Delete">
-                            <IconButton size="small" onClick={() => handleDelete(alert)} color="error">
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+            <>
+              {isMobile ? (
+                <Stack spacing={0} divider={<Divider />}>
+                  {filteredAlerts
+                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                    .map((alert) => (
+                      <Box key={alert.id} sx={{ p: 3, '&:hover': { bgcolor: 'action.hover' } }}>
+                        <Stack spacing={2}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <Box>
+                              <Typography variant="subtitle1" fontWeight={700} sx={{ fontSize: '1rem' }}>
+                                {alert.name || '—'}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                {alert.metric_name}
+                              </Typography>
+                            </Box>
+                            <Switch
+                              size="small"
+                              checked={Boolean(alert.is_active)}
+                              onChange={() => handleToggleActive(alert)}
+                              color="success"
+                            />
+                          </Box>
+
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                            <Chip label={alert.brand_key || alert.brand?.key || 'All'} size="small" variant="outlined" />
+                            <Chip
+                              label={formatCondition(alert.threshold_type, alert.threshold_value)}
+                              size="small"
+                              sx={{ fontWeight: 500, bgcolor: 'action.hover' }}
+                            />
+                            <Chip
+                              size="small"
+                              label={alert.severity}
+                              color={alert.severity === 'high' ? 'error' : alert.severity === 'medium' ? 'warning' : 'success'}
+                              sx={{ fontWeight: 600, textTransform: 'capitalize' }}
+                            />
+                          </Box>
+
+                          <Stack direction="row" spacing={1} justifyContent="flex-end">
+                            <Button
+                              startIcon={<EditIcon />}
+                              size="small"
+                              variant="outlined"
+                              color="primary"
+                              onClick={() => fillFormForEdit(alert)}
+                              sx={{ borderRadius: 2 }}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              startIcon={<DeleteIcon />}
+                              size="small"
+                              variant="outlined"
+                              color="error"
+                              onClick={() => handleDelete(alert)}
+                              sx={{ borderRadius: 2 }}
+                            >
+                              Delete
+                            </Button>
+                          </Stack>
                         </Stack>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                      </Box>
+                    ))}
+                </Stack>
+              ) : (
+                <TableContainer sx={{ maxHeight: 600 }}>
+                  <Table stickyHeader sx={{ minWidth: 720 }}>
+                    <TableHead>
+                      <TableRow>
+                        {['Name', 'Brand', 'Metric', 'Condition', 'Severity', 'Status', 'Actions'].map((head) => (
+                          <TableCell key={head} sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                            {head}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {filteredAlerts
+                        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                        .map((alert) => (
+                          <TableRow key={alert.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                            <TableCell sx={{ fontWeight: 600 }}>{alert.name || '—'}</TableCell>
+                            <TableCell>
+                              <Chip label={alert.brand_key || alert.brand?.key || 'All'} size="small" variant="outlined" />
+                            </TableCell>
+                            <TableCell>{alert.metric_name}</TableCell>
+                            <TableCell>
+                              <Chip
+                                label={formatCondition(alert.threshold_type, alert.threshold_value)}
+                                size="small"
+                                sx={{
+                                  fontWeight: 500,
+                                  bgcolor: 'action.hover',
+                                  borderRadius: '6px',
+                                  '& .MuiChip-label': { px: 1.5 }
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                size="small"
+                                label={alert.severity}
+                                color={alert.severity === 'high' ? 'error' : alert.severity === 'medium' ? 'warning' : 'success'}
+                                sx={{ fontWeight: 600, textTransform: 'capitalize' }}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Switch
+                                size="small"
+                                checked={Boolean(alert.is_active)}
+                                onChange={() => handleToggleActive(alert)}
+                                color="success"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Stack direction="row" spacing={0.5}>
+                                <Tooltip title="Edit">
+                                  <IconButton size="small" onClick={() => fillFormForEdit(alert)} color="primary">
+                                    <EditIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Delete">
+                                  <IconButton size="small" onClick={() => handleDelete(alert)} color="error">
+                                    <DeleteIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </Stack>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+              <TablePagination
+                component="div"
+                count={filteredAlerts.length}
+                page={page}
+                onPageChange={handleChangePage}
+                rowsPerPage={rowsPerPage}
+                onRowsPerPageChange={handleChangeRowsPerPage}
+                rowsPerPageOptions={[10, 25, 50]}
+                sx={{
+                  borderTop: '1px solid',
+                  borderColor: 'divider',
+                  '& .MuiTablePagination-toolbar': {
+                    justifyContent: 'center',
+                    pl: 0, // Remove default padding-left if needed for perfect centering
+                  },
+                  '& .MuiTablePagination-spacer': {
+                    display: 'none',
+                  },
+                  '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows': {
+                    mb: 0,
+                  }
+                }}
+              />
+            </>
           )}
         </CardContent>
       </Card>
@@ -742,6 +1018,6 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
           </Button>
         </DialogActions>
       </Dialog>
-    </Stack>
+    </Stack >
   );
 }
