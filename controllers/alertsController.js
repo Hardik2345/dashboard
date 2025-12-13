@@ -2,11 +2,7 @@ const { AlertSchema, AlertStatusSchema } = require('../validation/schemas');
 const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrandById } = require('../config/brands');
 
-const CHANNEL_TYPE_EMAIL = 'email';
-const DEFAULT_SMTP_USER = process.env.ALERT_SMTP_USER || 'projects.techit@gmail.com';
-const DEFAULT_SMTP_PASS = process.env.ALERT_SMTP_PASS || 'vqbvrbnezcwqgruw';
-
-function buildAlertsController({ Alert, AlertChannel = null }) {
+function buildAlertsController({ Alert, BrandAlertChannel }) {
   function hourToDisplay(value) {
     if (value === null || value === undefined) return '';
     const num = Number(value);
@@ -134,8 +130,23 @@ function buildAlertsController({ Alert, AlertChannel = null }) {
         where.brand_id = brandInfo.brandId;
       }
       const alerts = await Alert.findAll({ where, order: [['id', 'DESC']] });
-      const channelMap = await loadChannelMap(alerts);
-      const payload = alerts.map((alert) => formatAlertRow(alert, { channelConfig: channelMap.get(alert.id) }));
+
+      // Load brand-level recipients
+      const brandIds = [...new Set(alerts.map(a => a.brand_id))];
+      const channelMap = new Map();
+      if (BrandAlertChannel && brandIds.length) {
+        const brandChannels = await BrandAlertChannel.findAll({
+          where: { brand_id: brandIds, is_active: 1, channel_type: 'email' } // only email
+        });
+        for (const bc of brandChannels) {
+          channelMap.set(bc.brand_id, parseChannelConfig(bc.channel_config));
+        }
+      }
+
+      const payload = alerts.map((alert) => {
+        // Use the brand's config for each alert
+        return formatAlertRow(alert, { channelConfig: channelMap.get(alert.brand_id) });
+      });
       return res.json({ alerts: payload });
     } catch (err) {
       console.error('[alerts] list failed', err);
@@ -153,34 +164,16 @@ function buildAlertsController({ Alert, AlertChannel = null }) {
       const brandInfo = resolveBrand(data.brand_key);
       if (brandInfo.error) return res.status(400).json({ error: brandInfo.error });
       const values = buildAlertValues({ ...data, brand_key: brandInfo.key }, brandInfo.brandId);
-      const recipients = normalizeRecipients(data.recipients);
-      let created;
-      const sequelize = Alert.sequelize;
-      if (sequelize && typeof sequelize.transaction === 'function') {
-        await sequelize.transaction(async (transaction) => {
-          created = await Alert.create(values, { transaction });
-          await syncAlertChannel({
-            alertId: created.id,
-            brandKey: brandInfo.key,
-            alertName: values.name,
-            metricName: values.metric_name,
-            severity: values.severity,
-            recipients,
-            transaction,
-          });
-        });
-      } else {
-        created = await Alert.create(values);
-        await syncAlertChannel({
-          alertId: created.id,
-          brandKey: brandInfo.key,
-          alertName: values.name,
-          metricName: values.metric_name,
-          severity: values.severity,
-          recipients,
-        });
+      
+      const created = await Alert.create(values);
+      
+      // Fetch recipients for display
+      let channelConfig = null;
+      if (BrandAlertChannel) {
+        const bc = await BrandAlertChannel.findOne({ where: { brand_id: brandInfo.brandId, is_active: 1, channel_type: 'email' } });
+        if (bc) channelConfig = parseChannelConfig(bc.channel_config);
       }
-      const channelConfig = await getChannelConfig(created.id);
+
       return res.status(201).json({ alert: formatAlertRow(created, { channelConfig }) });
     } catch (err) {
       console.error('[alerts] create failed', err);
@@ -202,34 +195,16 @@ function buildAlertsController({ Alert, AlertChannel = null }) {
       const brandInfo = resolveBrand(data.brand_key);
       if (brandInfo.error) return res.status(400).json({ error: brandInfo.error });
       const values = buildAlertValues({ ...data, brand_key: brandInfo.key }, brandInfo.brandId, existing);
-      const recipients = normalizeRecipients(data.recipients);
-      let updated;
-      const sequelize = Alert.sequelize;
-      if (sequelize && typeof sequelize.transaction === 'function') {
-        await sequelize.transaction(async (transaction) => {
-          updated = await existing.update(values, { transaction });
-          await syncAlertChannel({
-            alertId: id,
-            brandKey: brandInfo.key,
-            alertName: values.name,
-            metricName: values.metric_name,
-            severity: values.severity,
-            recipients,
-            transaction,
-          });
-        });
-      } else {
-        updated = await existing.update(values);
-        await syncAlertChannel({
-          alertId: id,
-          brandKey: brandInfo.key,
-          alertName: values.name,
-          metricName: values.metric_name,
-          severity: values.severity,
-          recipients,
-        });
+      
+      const updated = await existing.update(values);
+
+      // Fetch recipients for display
+      let channelConfig = null;
+      if (BrandAlertChannel) {
+        const bc = await BrandAlertChannel.findOne({ where: { brand_id: brandInfo.brandId, is_active: 1, channel_type: 'email' } });
+        if (bc) channelConfig = parseChannelConfig(bc.channel_config);
       }
-      const channelConfig = await getChannelConfig(id);
+
       return res.json({ alert: formatAlertRow(updated, { channelConfig }) });
     } catch (err) {
       console.error('[alerts] update failed', err);
@@ -242,40 +217,14 @@ function buildAlertsController({ Alert, AlertChannel = null }) {
       const id = Number(req.params.id);
       if (!id) return res.status(400).json({ error: 'Invalid id' });
 
-      const existing = await Alert.findByPk(id);
-      if (!existing) return res.status(404).json({ error: 'Alert not found' });
-
-      const sequelize = Alert.sequelize;
-      if (sequelize && typeof sequelize.transaction === 'function') {
-        await sequelize.transaction(async (transaction) => {
-          await removeAlertDependencies(sequelize, id, transaction);
-          await Alert.destroy({ where: { id }, transaction });
-        });
-      } else {
-        await removeAlertDependencies(Alert.sequelize || null, id, null);
-        await Alert.destroy({ where: { id } });
-      }
+      // No need for transaction since we don't delete dependent channels anymore
+      const deleted = await Alert.destroy({ where: { id } });
+      if (!deleted) return res.status(404).json({ error: 'Alert not found' });
 
       return res.status(204).end();
     } catch (err) {
       console.error('[alerts] delete failed', err);
       return res.status(500).json({ error: 'Failed to delete alert' });
-    }
-  }
-
-  async function removeAlertDependencies(sequelize, alertId, transaction) {
-    if (AlertChannel) {
-      try {
-        await AlertChannel.destroy({ where: { alert_id: alertId }, transaction });
-      } catch (err) {
-        if (!isMissingTableError(err)) throw err;
-      }
-    } else if (sequelize && typeof sequelize.query === 'function') {
-      await safeDeleteTable(sequelize, 'alert_channels', alertId, transaction);
-    }
-
-    if (sequelize && typeof sequelize.query === 'function') {
-      await safeDeleteTable(sequelize, 'alert_history', alertId, transaction);
     }
   }
 
@@ -291,79 +240,19 @@ function buildAlertsController({ Alert, AlertChannel = null }) {
       if (!existing) return res.status(404).json({ error: 'Alert not found' });
       existing.is_active = parsed.data.is_active ? 1 : 0;
       await existing.save();
-      return res.json({ alert: formatAlertRow(existing) });
+
+      // Fetch recipients for display
+      let channelConfig = null;
+      if (BrandAlertChannel) {
+        const bc = await BrandAlertChannel.findOne({ where: { brand_id: existing.brand_id, is_active: 1, channel_type: 'email' } });
+        if (bc) channelConfig = parseChannelConfig(bc.channel_config);
+      }
+
+      return res.json({ alert: formatAlertRow(existing, { channelConfig }) });
     } catch (err) {
       console.error('[alerts] status update failed', err);
       return res.status(500).json({ error: 'Failed to update status' });
     }
-  }
-
-  async function loadChannelMap(alerts) {
-    if (!AlertChannel || !Array.isArray(alerts) || !alerts.length) return new Map();
-    const ids = alerts.map((row) => (typeof row.get === 'function' ? row.get('id') : row.id)).filter(Boolean);
-    if (!ids.length) return new Map();
-    const rows = await AlertChannel.findAll({ where: { alert_id: ids, channel_type: CHANNEL_TYPE_EMAIL } });
-    const map = new Map();
-    for (const row of rows) {
-      const data = typeof row.toJSON === 'function' ? row.toJSON() : row;
-      map.set(data.alert_id, parseChannelConfig(data.channel_config));
-    }
-    return map;
-  }
-
-  async function getChannelConfig(alertId, transaction) {
-    if (!AlertChannel || !alertId) return null;
-    const row = await AlertChannel.findOne({ where: { alert_id: alertId, channel_type: CHANNEL_TYPE_EMAIL }, transaction });
-    if (!row) return null;
-    const data = typeof row.toJSON === 'function' ? row.toJSON() : row;
-    return parseChannelConfig(data.channel_config);
-  }
-
-  async function syncAlertChannel({ alertId, brandKey, alertName, metricName, severity, recipients, transaction }) {
-    if (!AlertChannel || !alertId) return;
-    const list = normalizeRecipients(recipients);
-    if (!list.length) {
-      await deleteAlertChannel(alertId, transaction);
-      return;
-    }
-    const payload = {
-      to: list,
-      subject: buildSubject(brandKey, severity, alertName, metricName),
-      smtp_user: DEFAULT_SMTP_USER,
-      smtp_pass: DEFAULT_SMTP_PASS,
-    };
-    const existing = await AlertChannel.findOne({ where: { alert_id: alertId, channel_type: CHANNEL_TYPE_EMAIL }, transaction });
-    if (existing) {
-      await existing.update({ channel_config: payload }, { transaction });
-    } else {
-      await AlertChannel.create({ alert_id: alertId, channel_type: CHANNEL_TYPE_EMAIL, channel_config: payload }, { transaction });
-    }
-  }
-
-  async function deleteAlertChannel(alertId, transaction) {
-    if (!AlertChannel || !alertId) return;
-    try {
-      await AlertChannel.destroy({ where: { alert_id: alertId }, transaction });
-    } catch (err) {
-      if (!isMissingTableError(err)) throw err;
-    }
-  }
-
-  function normalizeRecipients(value) {
-    if (!value) return [];
-    const list = Array.isArray(value) ? value : [value];
-    const emails = list
-      .map((item) => (typeof item === 'string' ? item.trim() : ''))
-      .filter((item) => item && item.includes('@'));
-    return Array.from(new Set(emails));
-  }
-
-  function buildSubject(brandKey, severity, alertName, metricName) {
-    const brand = (brandKey || '').toString().trim() || 'Brand';
-    const label = (alertName || metricName || 'Alert').toString().trim() || 'Alert';
-    const severityLabel = (severity || '').toString().trim().toLowerCase();
-    const severityPart = severityLabel ? ` ${severityLabel}` : '';
-    return `${brand}${severityPart} ${label} Alert`;
   }
 
   function parseChannelConfig(raw) {
@@ -373,22 +262,6 @@ function buildAlertsController({ Alert, AlertChannel = null }) {
     }
     if (typeof raw === 'object') return raw;
     return null;
-  }
-
-  async function safeDeleteTable(sequelize, table, alertId, transaction) {
-    if (!sequelize || typeof sequelize.query !== 'function') return;
-    try {
-      await sequelize.query(`DELETE FROM ${table} WHERE alert_id = ?`, {
-        replacements: [alertId],
-        transaction,
-      });
-    } catch (err) {
-      if (!isMissingTableError(err)) throw err;
-    }
-  }
-
-  function isMissingTableError(err) {
-    return err?.parent?.code === 'ER_NO_SUCH_TABLE';
   }
 
   return {
