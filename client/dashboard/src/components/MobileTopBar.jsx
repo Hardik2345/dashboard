@@ -16,7 +16,7 @@ import {
 import { AppProvider } from '@shopify/polaris';
 import { useTheme } from '@mui/material/styles';
 import CheckIcon from "@mui/icons-material/Check";
-import { DatePicker } from "@shopify/polaris";
+import { Popover, DatePicker } from "@shopify/polaris";
 import enTranslations from '@shopify/polaris/locales/en.json'
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -82,8 +82,7 @@ export default function MobileTopBar({
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const [start, end] = value || [];
-  const [anchorEl, setAnchorEl] = useState(null);
-  const open = Boolean(anchorEl);
+  const [popoverActive, setPopoverActive] = useState(false);
   const [month, setMonth] = useState((end || start || dayjs()).month());
   const [year, setYear] = useState((end || start || dayjs()).year());
   const [last, setLast] = useState({ loading: true, ts: null, tz: null });
@@ -171,18 +170,22 @@ export default function MobileTopBar({
     return "Select dates";
   }, [start, end]);
 
-  const handleClick = useCallback((event) => {
-    setAnchorEl(event.currentTarget);
-  }, []);
-  const handleClose = useCallback(() => {
-    setAnchorEl(null);
-  }, []);
+  const togglePopover = useCallback(() => setPopoverActive((p) => !p), []);
+  const handleClose = useCallback(() => setPopoverActive(false), []);
   const handleMonthChange = useCallback((m, y) => {
     setMonth(m);
     setYear(y);
   }, []);
 
-
+  // Prevent body scroll when the date picker popover is open (especially on mobile)
+  useEffect(() => {
+    if (!popoverActive) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [popoverActive]);
 
   const handlePresetSelect = useCallback(
     (preset) => {
@@ -400,7 +403,7 @@ export default function MobileTopBar({
                   maxHeight: "80vh",
               overflowX: "hidden",
               overflowY: "auto",
-              bgcolor: 'background.paper',
+              borderRadius: 1,
             }}
           >
             {/* Presets Panel - Mobile */}
@@ -470,7 +473,6 @@ export default function MobileTopBar({
               sx={{
                 display: { xs: "none", md: "block" },
                 minWidth: 160,
-                width: 160,
                 maxHeight: 320,
                 overflowY: "auto",
                 borderRight: "1px solid",
@@ -534,7 +536,6 @@ export default function MobileTopBar({
                 p: 1,
                 bgcolor: "background.paper",
                 minWidth: 200,
-                maxWidth: 340,
               }}
             >
               <DatePicker
