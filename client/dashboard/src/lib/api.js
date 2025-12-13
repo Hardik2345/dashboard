@@ -381,6 +381,50 @@ export async function getDailyTrend(args) {
   };
 }
 
+export async function getTopProducts(args = {}) {
+  const params = appendBrandKey({ start: args.start, end: args.end, limit: args.limit }, args);
+  const json = await getJSON('/metrics/top-products', params);
+  const products = Array.isArray(json?.products) ? json.products.map((p) => ({
+    product_id: p.product_id,
+    landing_page_path: p.landing_page_path || p.path || null,
+    sessions: Number(p.sessions || p.total_sessions || 0),
+    sessions_with_cart_additions: Number(p.sessions_with_cart_additions || p.total_atc_sessions || 0),
+    add_to_cart_rate: Number(p.add_to_cart_rate || 0),
+    add_to_cart_rate_pct: Number(p.add_to_cart_rate_pct || (p.add_to_cart_rate ? p.add_to_cart_rate * 100 : 0)),
+  })) : [];
+  return { products, error: json?.__error };
+}
+
+export async function getProductKpis(args = {}) {
+  const params = appendBrandKey({ start: args.start, end: args.end, product_id: args.product_id }, args);
+  const json = await getJSON('/metrics/product-kpis', params);
+  const sessions = Number(json?.sessions || 0);
+  const atcSessions = Number(json?.sessions_with_cart_additions || 0);
+  const totalOrders = Number(json?.total_orders || 0);
+  const totalSales = Number(json?.total_sales || 0);
+  const addToCartRate = typeof json?.add_to_cart_rate === 'number'
+    ? json.add_to_cart_rate
+    : (sessions > 0 ? atcSessions / sessions : 0);
+  const conversionRate = typeof json?.conversion_rate === 'number'
+    ? json.conversion_rate
+    : (sessions > 0 ? totalOrders / sessions : 0);
+
+  return {
+    product_id: json?.product_id || args.product_id,
+    range: json?.range || { start: args.start || null, end: args.end || null },
+    sessions,
+    sessions_with_cart_additions: atcSessions,
+    add_to_cart_rate: addToCartRate,
+    add_to_cart_rate_pct: addToCartRate * 100,
+    total_orders: totalOrders,
+    total_sales: totalSales,
+    conversion_rate: conversionRate,
+    conversion_rate_pct: conversionRate * 100,
+    brand_key: json?.brand_key || null,
+    error: json?.__error,
+  };
+}
+
 // Fetch last updated timestamp from external service (not using API_BASE)
 export async function getLastUpdatedPTS(arg = undefined) {
   const base = import.meta.env.VITE_API_BASE || 'http://localhost:3000';

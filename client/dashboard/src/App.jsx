@@ -13,7 +13,7 @@ import PaymentSalesSplit from './components/PaymentSalesSplit.jsx';
 import HourlySalesCompare from './components/HourlySalesCompare.jsx';
 import WebVitals from './components/WebVitals.jsx';
 import Footer from './components/Footer.jsx';
-import { listAuthorBrands } from './lib/api.js';
+import { listAuthorBrands, getTopProducts } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
 import AuthorAdjustments from './components/AuthorAdjustments.jsx';
 import Unauthorized from './components/Unauthorized.jsx';
@@ -43,6 +43,7 @@ const TREND_METRICS = new Set(['sales', 'orders', 'sessions', 'cvr', 'atc', 'aov
 const SESSION_TRACKING_ENABLED = String(import.meta.env.VITE_SESSION_TRACKING || 'false').toLowerCase() === 'true';
 const AUTHOR_BRAND_STORAGE_KEY = 'author_active_brand_v1';
 const THEME_MODE_KEY = 'dashboard_theme_mode';
+const DEFAULT_PRODUCT_OPTION = { id: '', label: 'All products', detail: 'Whole store' };
 
 function loadInitialThemeMode() {
   try {
@@ -106,6 +107,9 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(loadInitialThemeMode);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [productOptions, setProductOptions] = useState([DEFAULT_PRODUCT_OPTION]);
+  const [productSelection, setProductSelection] = useState(DEFAULT_PRODUCT_OPTION);
+  const [productOptionsLoading, setProductOptionsLoading] = useState(false);
 
   // Keep a data attribute on the body so global CSS (e.g., Polaris overrides) can react to theme changes.
   useEffect(() => {
@@ -219,9 +223,71 @@ export default function App() {
     }
   }, [isAuthor, initialized]);
 
+  useEffect(() => {
+    if (!start || !end) {
+      setProductOptions([DEFAULT_PRODUCT_OPTION]);
+      setProductSelection(DEFAULT_PRODUCT_OPTION);
+      return;
+    }
+
+    let cancelled = false;
+    setProductOptionsLoading(true);
+
+    const params = {
+      start: formatDate(start),
+      end: formatDate(end),
+      limit: 5,
+    };
+    if (activeBrandKey) params.brand_key = activeBrandKey;
+
+    getTopProducts(params)
+      .then(({ products, error }) => {
+        if (cancelled) return;
+        if (error) {
+          setProductOptions([DEFAULT_PRODUCT_OPTION]);
+          setProductSelection(DEFAULT_PRODUCT_OPTION);
+          return;
+        }
+
+        const mapped = Array.isArray(products)
+          ? products.map((p) => {
+              const rawPath = (p.landing_page_path || '').toString();
+              const slug = rawPath.includes('/products/')
+                ? rawPath.split('/products/')[1] || rawPath
+                : rawPath || p.product_id;
+              const label = slug || p.product_id || 'Unknown product';
+              const sessions = Number(p.sessions || 0);
+              const detail = `${sessions.toLocaleString()} sessions`;
+              return { id: p.product_id, label, detail };
+            })
+          : [];
+
+        const nextOptions = [DEFAULT_PRODUCT_OPTION, ...mapped];
+        setProductOptions(nextOptions);
+
+        const existing = nextOptions.find((opt) => opt.id === productSelection.id);
+        setProductSelection(existing || DEFAULT_PRODUCT_OPTION);
+      })
+      .finally(() => {
+        if (!cancelled) setProductOptionsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [start, end, activeBrandKey, authorRefreshKey, productSelection.id]);
+
   const handleSelectMetric = useCallback((metricKey) => {
     if (!metricKey) return;
     setSelectedMetric(TREND_METRICS.has(metricKey) ? metricKey : DEFAULT_TREND_METRIC);
+  }, []);
+
+  const handleProductChange = useCallback((option) => {
+    if (!option || typeof option !== 'object') {
+      setProductSelection(DEFAULT_PRODUCT_OPTION);
+      return;
+    }
+    setProductSelection(option);
   }, []);
 
   const handleSidebarOpen = useCallback(() => setSidebarOpen(true), []);
@@ -444,6 +510,10 @@ export default function App() {
                       value={range}
                       onChange={setRange}
                       brandKey={authorBrandKey}
+                      productOptions={productOptions}
+                      productValue={productSelection}
+                      onProductChange={handleProductChange}
+                      productLoading={productOptionsLoading}
                     />
                   )}
                 </Stack>
@@ -469,6 +539,8 @@ export default function App() {
                         selectedMetric={selectedMetric}
                         onSelectMetric={handleSelectMetric}
                         onLoaded={handleAuthorDataLoaded}
+                        productId={productSelection.id}
+                        productLabel={productSelection.label}
                       />
                       <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
                       <WebVitals query={metricsQuery} />
@@ -558,12 +630,26 @@ export default function App() {
         >
           <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
           <Container maxWidth="sm" sx={{ pt: { xs: 2.5, sm: 3 } }}>
-            <MobileTopBar value={range} onChange={setRange} brandKey={activeBrandKey} />
+            <MobileTopBar
+              value={range}
+              onChange={setRange}
+              brandKey={activeBrandKey}
+              productOptions={productOptions}
+              productValue={productSelection}
+              onProductChange={handleProductChange}
+              productLoading={productOptionsLoading}
+            />
           </Container>
         </Box>
         <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
           <Stack spacing={{ xs: 1, sm: 1.25 }}>
-            <KPIs query={metricsQuery} selectedMetric={selectedMetric} onSelectMetric={handleSelectMetric} />
+            <KPIs
+              query={metricsQuery}
+              selectedMetric={selectedMetric}
+              onSelectMetric={handleSelectMetric}
+              productId={productSelection.id}
+              productLabel={productSelection.label}
+            />
             <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
             <WebVitals query={metricsQuery} />
             <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
