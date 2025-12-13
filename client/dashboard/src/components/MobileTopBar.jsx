@@ -7,11 +7,12 @@ import {
   ListItemButton,
   ListItemText,
   Divider,
+  Popover,
 } from "@mui/material";
 import { AppProvider } from '@shopify/polaris';
 import { useTheme } from '@mui/material/styles';
 import CheckIcon from "@mui/icons-material/Check";
-import { Popover, DatePicker } from "@shopify/polaris";
+import { DatePicker } from "@shopify/polaris";
 import enTranslations from '@shopify/polaris/locales/en.json'
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -69,7 +70,8 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const [start, end] = value || [];
-  const [popoverActive, setPopoverActive] = useState(false);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const open = Boolean(anchorEl);
   const [month, setMonth] = useState((end || start || dayjs()).month());
   const [year, setYear] = useState((end || start || dayjs()).year());
   const [last, setLast] = useState({ loading: true, ts: null, tz: null });
@@ -157,22 +159,18 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
     return "Select dates";
   }, [start, end]);
 
-  const togglePopover = useCallback(() => setPopoverActive((p) => !p), []);
-  const handleClose = useCallback(() => setPopoverActive(false), []);
+  const handleClick = useCallback((event) => {
+    setAnchorEl(event.currentTarget);
+  }, []);
+  const handleClose = useCallback(() => {
+    setAnchorEl(null);
+  }, []);
   const handleMonthChange = useCallback((m, y) => {
     setMonth(m);
     setYear(y);
   }, []);
 
-  // Prevent body scroll when the date picker popover is open (especially on mobile)
-  useEffect(() => {
-    if (!popoverActive) return undefined;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [popoverActive]);
+
 
   const handlePresetSelect = useCallback(
     (preset) => {
@@ -249,9 +247,8 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
           </Card>
         ) : last.ts ? (
           <Tooltip
-            title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${
-              last.tz ? ` ${last.tz}` : ""
-            }`}
+            title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${last.tz ? ` ${last.tz}` : ""
+              }`}
             arrow
           >
             <Card
@@ -286,56 +283,69 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
           </Card>
         )}
 
+        <Card
+          elevation={0}
+          onClick={handleClick}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleClick(e);
+            }
+          }}
+          sx={{
+            px: 1,
+            height: 32,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            bgcolor: "primary.main",
+            color: "primary.contrastText",
+            minWidth: { xs: 120, sm: 180 },
+            width: { xs: 120, sm: 180 },
+            textAlign: "center",
+            userSelect: "none",
+            fontSize: 13,
+            "&:hover": { filter: "brightness(0.98)" },
+          }}
+        >
+          <span
+            style={{
+              display: "inline-block",
+              maxWidth: "100%",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {dateLabel}
+          </span>
+        </Card>
+
         <Popover
-          active={popoverActive}
-          activator={
-            <Card
-              elevation={0}
-              onClick={togglePopover}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  togglePopover();
-                }
-              }}
-              sx={{
-                px: 1,
-                // border: "1px solid",
-                // borderColor: "divider",
-                height: 32,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-                bgcolor: "primary.main",
-                color: "primary.contrastText",
-                minWidth: { xs: 120, sm: 180 },
-                width: { xs: 120, sm: 180 },
-                textAlign: "center",
-                userSelect: "none",
-                fontSize: 13,
-                "&:hover": { filter: "brightness(0.98)" },
-              }}
-            >
-              <span
-                style={{
-                  display: "inline-block",
-                  maxWidth: "100%",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {dateLabel}
-              </span>
-            </Card>
-          }
+          open={open}
+          anchorEl={anchorEl}
           onClose={handleClose}
-          fullWidth={false}
-          preferInputActivator={false}
-          preferredAlignment="right"
+          anchorOrigin={{
+            vertical: 'bottom',
+            horizontal: 'right',
+          }}
+          transformOrigin={{
+            vertical: 'top',
+            horizontal: 'right',
+          }}
+          disableScrollLock
+          PaperProps={{
+            sx: {
+              mt: 1,
+              borderRadius: 2,
+              boxShadow: theme.shadows[8],
+              border: '1px solid',
+              borderColor: 'divider',
+            }
+          }}
         >
           <Box
             sx={{
@@ -344,7 +354,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
               maxHeight: "80vh",
               overflowX: "hidden",
               overflowY: "auto",
-              borderRadius: 1,
+              bgcolor: 'background.paper',
             }}
           >
             {/* Presets Panel - Mobile */}
@@ -414,6 +424,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
               sx={{
                 display: { xs: "none", md: "block" },
                 minWidth: 160,
+                width: 160,
                 maxHeight: 320,
                 overflowY: "auto",
                 borderRight: "1px solid",
@@ -477,6 +488,7 @@ export default function MobileTopBar({ value, onChange, brandKey }) {
                 p: 1,
                 bgcolor: "background.paper",
                 minWidth: 200,
+                maxWidth: 340,
               }}
             >
               <DatePicker

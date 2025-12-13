@@ -48,7 +48,7 @@ function loadInitialThemeMode() {
   try {
     const saved = localStorage.getItem(THEME_MODE_KEY);
     if (saved === 'dark' || saved === 'light') return saved;
-  } catch {}
+  } catch { }
   return 'light';
 }
 
@@ -65,7 +65,7 @@ function loadInitialRange() {
         }
       }
     }
-  } catch {}
+  } catch { }
   return defaultRangeYesterdayToday();
 }
 
@@ -91,7 +91,7 @@ export default function App() {
     () => (globalBrandKey || '').toString().trim().toUpperCase(),
     [globalBrandKey]
   );
-  
+
   // Initialize tab checking storage; guard against invalid reads
   const [authorTab, setAuthorTab] = useState(() => {
     try {
@@ -138,9 +138,9 @@ export default function App() {
     const changed = normalized !== authorBrandKey;
     // Persist immediately alongside Redux
     try {
-       localStorage.setItem('author_active_brand_v1', normalized);
-    } catch {}
-    
+      localStorage.setItem('author_active_brand_v1', normalized);
+    } catch { }
+
     dispatch(setBrand(normalized || ''));
     if (changed) {
       setAuthorRefreshKey((prev) => prev + 1);
@@ -204,7 +204,7 @@ export default function App() {
     }
     const normalized = (authorBrandKey || '').toString().trim().toUpperCase();
     const exists = normalized && authorBrands.some((b) => b.key === normalized);
-    
+
     // Only force reset if we are sure the list is loaded and the key is truly invalid
     if (!exists) {
       handleAuthorBrandChange(authorBrands[0].key);
@@ -230,7 +230,7 @@ export default function App() {
     setAuthorTab(tabId);
     try {
       localStorage.setItem('author_active_tab_v1', tabId);
-    } catch {}
+    } catch { }
   }, []);
 
   const handleToggleDarkMode = useCallback(() => {
@@ -238,7 +238,7 @@ export default function App() {
       const next = prev === 'light' ? 'dark' : 'light';
       try {
         localStorage.setItem(THEME_MODE_KEY, next);
-      } catch {}
+      } catch { }
       return next;
     });
   }, []);
@@ -248,19 +248,19 @@ export default function App() {
       mode: darkMode,
       ...(darkMode === 'light'
         ? {
-            primary: { main: '#0b6bcb' },
-            background: { default: '#FDFDFD', paper: '#ffffff' },
-          }
+          primary: { main: '#0b6bcb' },
+          background: { default: '#FDFDFD', paper: '#ffffff' },
+        }
         : {
-            primary: { main: '#5ba3e0' },
-            background: { default: '#121212', paper: '#1e1e1e' },
-            text: { 
-              primary: '#f0f0f0', 
-              secondary: '#c0c0c0',
-              disabled: '#808080',
-            },
-            divider: '#404040',
-          }),
+          primary: { main: '#5ba3e0' },
+          background: { default: '#121212', paper: '#1e1e1e' },
+          text: {
+            primary: '#f0f0f0',
+            secondary: '#c0c0c0',
+            disabled: '#808080',
+          },
+          divider: '#404040',
+        }),
     },
     shape: { borderRadius: 12 },
     components: {
@@ -301,7 +301,7 @@ export default function App() {
     if (start && end) {
       try {
         localStorage.setItem(RANGE_KEY, JSON.stringify({ start: start.toISOString(), end: end.toISOString(), savedAt: Date.now() }));
-      } catch {}
+      } catch { }
     }
   }, [start, end]);
 
@@ -347,15 +347,15 @@ export default function App() {
     return (
       <ThemeProvider theme={lightTheme}>
         <CssBaseline />
-        <Box sx={{ minHeight: '100svh', bgcolor: 'background.default', display: 'flex', alignItems: 'center', justifyContent: 'center', p:2 }}>
+        <Box sx={{ minHeight: '100svh', bgcolor: 'background.default', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
           <Container maxWidth="xs">
-            <Paper elevation={3} sx={{ p:3, borderRadius:3 }} component="form" onSubmit={handleLogin}>
+            <Paper elevation={3} sx={{ p: 3, borderRadius: 3 }} component="form" onSubmit={handleLogin}>
               <Stack spacing={2}>
                 <Box sx={{ display: 'flex', justifyContent: 'center' }}>
                   <Box component="img" src="/brand-logo-final.png" alt="Datum" sx={{ height: 80, width: 220, objectFit: 'contain' }} />
                 </Box>
-                <TextField size="small" label="Email" type="email" required value={loginForm.email} onChange={e=>setLoginForm(f=>({ ...f, email: e.target.value }))} />
-                <TextField size="small" label="Password" type="password" required value={loginForm.password} onChange={e=>setLoginForm(f=>({ ...f, password: e.target.value }))} />
+                <TextField size="small" label="Email" type="email" required value={loginForm.email} onChange={e => setLoginForm(f => ({ ...f, email: e.target.value }))} />
+                <TextField size="small" label="Password" type="password" required value={loginForm.password} onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))} />
                 {loginError && <Alert severity="error">{loginError}</Alert>}
                 <Button variant="contained" type="submit" disabled={loggingIn}>{loggingIn ? 'Logging in...' : 'Login'}</Button>
                 <Divider>or</Divider>
@@ -471,7 +471,7 @@ export default function App() {
                         onLoaded={handleAuthorDataLoaded}
                       />
                       <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-                      <WebVitals />
+                      <WebVitals query={metricsQuery} />
                       <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
                       <FunnelChart query={metricsQuery} />
                       <OrderSplit query={metricsQuery} />
@@ -565,14 +565,14 @@ export default function App() {
           <Stack spacing={{ xs: 1, sm: 1.25 }}>
             <KPIs query={metricsQuery} selectedMetric={selectedMetric} onSelectMetric={handleSelectMetric} />
             <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-            <WebVitals />
+            <WebVitals query={metricsQuery} />
             <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
             <FunnelChart query={metricsQuery} />
             <OrderSplit query={metricsQuery} />
             <PaymentSalesSplit query={metricsQuery} />
           </Stack>
         </Container>
-  <Footer />
+        <Footer />
       </Box>
     </ThemeProvider>
   );
