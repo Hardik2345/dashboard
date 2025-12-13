@@ -6,6 +6,32 @@ const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrandConnection } = require('../lib/brandConnectionManager');
 const { getBrands } = require('../config/brands');
 
+const SHOP_DOMAIN_CACHE = new Map();
+
+function resolveShopSubdomain(brandKey) {
+  if (!brandKey) return null;
+  const upper = brandKey.toString().trim().toUpperCase();
+  if (SHOP_DOMAIN_CACHE.has(upper)) {
+    return SHOP_DOMAIN_CACHE.get(upper);
+  }
+  const candidates = [
+    `SHOP_NAME_${upper}`,
+    `${upper}_SHOP_NAME`,
+    `SHOP_DOMAIN_${upper}`,
+    `${upper}_SHOP_DOMAIN`,
+  ];
+  for (const envKey of candidates) {
+    const value = process.env[envKey];
+    if (value && value.trim()) {
+      const trimmed = value.trim();
+      SHOP_DOMAIN_CACHE.set(upper, trimmed);
+      return trimmed;
+    }
+  }
+  SHOP_DOMAIN_CACHE.set(upper, null);
+  return null;
+}
+
 function buildMetricsController() {
   return {
     aov: async (req, res) => {
@@ -664,6 +690,76 @@ function buildMetricsController() {
 
         return res.json({ metric: 'PAYMENT_SPLIT_SALES', range: { start: effectiveStart, end: effectiveEnd }, cod_sales, prepaid_sales, partial_sales, total_sales_from_split: total, cod_percent, prepaid_percent, partial_percent, sql_used: process.env.NODE_ENV === 'production' ? undefined : sql });
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
+    },
+
+    topProductPages: async (req, res) => {
+      try {
+        const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+        if (!parsed.success) {
+          return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+        }
+        const { start, end } = parsed.data;
+        const rangeStart = start || end;
+        const rangeEnd = end || start;
+        if (!rangeStart || !rangeEnd) {
+          return res.status(400).json({ error: 'start or end date required' });
+        }
+        if (rangeStart > rangeEnd) {
+          return res.status(400).json({ error: 'start must be on or before end' });
+        }
+
+        const limitParam = Number(req.query.limit);
+        const limit = Number.isFinite(limitParam) ? Math.min(Math.max(Math.trunc(limitParam), 1), 20) : 5;
+
+        const sql = `
+          SELECT landing_page_path,
+                 MAX(product_id) AS product_id,
+                 SUM(sessions) AS total_sessions,
+                 SUM(sessions_with_cart_additions) AS total_atc_sessions
+          FROM mv_product_sessions_by_path_daily
+          WHERE landing_page_path IS NOT NULL
+            AND landing_page_path <> ''
+            AND date >= ? AND date <= ?
+          GROUP BY landing_page_path
+          ORDER BY total_sessions DESC
+          LIMIT ${limit};
+        `;
+
+        const rows = await req.brandDb.sequelize.query(sql, {
+          type: QueryTypes.SELECT,
+          replacements: [rangeStart, rangeEnd],
+        });
+
+        const shopSubdomain = resolveShopSubdomain(req.brandKey);
+        const host = shopSubdomain ? `${shopSubdomain}.myshopify.com` : null;
+
+        const pages = rows.map((row, index) => {
+          const totalSessions = Number(row.total_sessions || 0);
+          const atcSessions = Number(row.total_atc_sessions || 0);
+          const atcRate = totalSessions > 0 ? atcSessions / totalSessions : 0;
+          const rawPath = typeof row.landing_page_path === 'string' ? row.landing_page_path.trim() : '';
+          const normalizedPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+          const fullPath = host ? `${host}${normalizedPath}` : normalizedPath;
+          return {
+            rank: index + 1,
+            path: fullPath,
+            product_id: row.product_id || null,
+            sessions: totalSessions,
+            sessions_with_cart_additions: atcSessions,
+            add_to_cart_rate: atcRate,
+            add_to_cart_rate_pct: atcRate * 100,
+          };
+        });
+
+        return res.json({
+          brand_key: req.brandKey || null,
+          range: { start: rangeStart, end: rangeEnd },
+          pages,
+        });
+      } catch (e) {
+        console.error('[top-pdps] failed', e);
+        return res.status(500).json({ error: 'Failed to load top PDP pages' });
+      }
     },
 
     hourlyTrend: async (req, res) => {
