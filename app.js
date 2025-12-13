@@ -149,6 +149,17 @@ const AlertChannel = sequelize.define('alert_channels', {
   channel_config: { type: DataTypes.JSON, allowNull: false },
 }, { tableName: 'alert_channels', timestamps: false });
 
+// Brand-level alert channel configuration
+const BrandAlertChannel = sequelize.define('brands_alert_channel', {
+  id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
+  brand_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, unique: true },
+  channel_type: { type: DataTypes.ENUM('slack', 'email', 'webhook'), allowNull: false },
+  channel_config: { type: DataTypes.JSON, allowNull: false },
+  is_active: { type: DataTypes.TINYINT, allowNull: true, defaultValue: 1 },
+  created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+  updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP') }
+}, { tableName: 'brands_alert_channel', timestamps: false });
+
 // --- Access control (master DB) ---------------------------------------------
 // Tables are created idempotently on startup (MySQL CREATE TABLE IF NOT EXISTS)
 sequelize.define('access_control_settings', {
@@ -466,7 +477,7 @@ app.use('/author/access-control', buildAccessControlRouter({ sequelize, getAcces
 app.use('/author', buildAuthorBrandsRouter(sequelize));
 app.use('/author', buildAuthorRouter());
 app.use('/author/adjustment-buckets', buildAdjustmentBucketsRouter({ SessionAdjustmentBucket, SessionAdjustmentAudit }));
-app.use('/author/alerts', buildAlertsRouter({ Alert, AlertChannel }));
+app.use('/author/alerts', buildAlertsRouter({ Alert, AlertChannel, BrandAlertChannel }));
 app.use('/author', buildAdjustmentsRouter({ SessionAdjustmentBucket, SessionAdjustmentAudit }));
 app.use('/metrics', buildMetricsRouter(sequelize));
 app.use('/external', buildExternalRouter());
@@ -512,4 +523,5 @@ module.exports = {
   SessionAdjustmentAudit,
   Alert,
   AlertChannel,
+  BrandAlertChannel,
 };
