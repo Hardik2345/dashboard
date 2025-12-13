@@ -11,16 +11,16 @@ export default defineConfig({
         enabled: true
       },
       registerType: 'autoUpdate',
+      includeAssets: ['favicon.png', 'brand-logo-final.png'],
       workbox: {
         navigateFallbackDenylist: [/^\/api/],
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => url.pathname.startsWith('/api'),
+            urlPattern: /^\/api/,
             handler: 'NetworkOnly',
           },
         ],
       },
-      includeAssets: ['favicon.png', 'brand-logo-final.png'],
       manifest: {
         name: 'Datum',
         short_name: 'Datum',
