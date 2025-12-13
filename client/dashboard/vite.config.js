@@ -11,6 +11,15 @@ export default defineConfig({
         enabled: true
       },
       registerType: 'autoUpdate',
+      workbox: {
+        navigateFallbackDenylist: [/^\/api/],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith('/api'),
+            handler: 'NetworkOnly',
+          },
+        ],
+      },
       includeAssets: ['favicon.png', 'brand-logo-final.png'],
       workbox: {
         navigateFallbackDenylist: [/^\/api/],
