@@ -425,9 +425,8 @@ export async function getProductKpis(args = {}) {
   };
 }
 
-// Fetch last updated timestamp from external service (not using API_BASE)
+// Fetch last updated timestamp from external service using same-origin API base to avoid CORS issues
 export async function getLastUpdatedPTS(arg = undefined) {
-  const base = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
   let brandKey = '';
   if (typeof arg === 'string') {
     brandKey = normalizeBrandKey(arg);
@@ -435,9 +434,9 @@ export async function getLastUpdatedPTS(arg = undefined) {
     brandKey = normalizeBrandKey(arg.brandKey);
   }
   const search = brandKey ? `?brand_key=${encodeURIComponent(brandKey)}` : '';
-  const url = `${base}/external/last-updated/pts${search}`;
+  const url = `${API_BASE}/external/last-updated/pts${search}`;
   try {
-  const res = await fetch(url, { cache: 'no-store', credentials: 'include' });
+    const res = await fetch(url, { cache: 'no-store', credentials: 'include' });
     if (!res.ok) throw new Error('Failed');
     const json = await res.json();
     return { raw: json["Last successful run completed at"], timezone: json.timezone, error: false };
