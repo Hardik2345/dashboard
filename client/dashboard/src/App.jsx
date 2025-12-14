@@ -230,6 +230,20 @@ export default function App() {
       return;
     }
 
+    if (!initialized || !user) {
+      setProductOptions([DEFAULT_PRODUCT_OPTION]);
+      setProductSelection(DEFAULT_PRODUCT_OPTION);
+      setProductOptionsLoading(false);
+      return;
+    }
+
+    if (isAuthor && !activeBrandKey) {
+      setProductOptions([DEFAULT_PRODUCT_OPTION]);
+      setProductSelection(DEFAULT_PRODUCT_OPTION);
+      setProductOptionsLoading(false);
+      return;
+    }
+
     let cancelled = false;
     setProductOptionsLoading(true);
 
@@ -275,7 +289,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [start, end, activeBrandKey, authorRefreshKey, productSelection.id]);
+  }, [start, end, activeBrandKey, authorRefreshKey, productSelection.id, initialized, user, isAuthor]);
 
   const handleSelectMetric = useCallback((metricKey) => {
     if (!metricKey) return;
