@@ -61,7 +61,13 @@ const sequelize = new Sequelize(
     // NOTE: keep timezone if you need it for DATETIME columns. It doesn't affect DATEONLY reads,
     // but we still remove ORM ambiguity by using raw SQL for date filters.
     timezone: "+00:00",
-    pool: { max: 10, min: 0, idle: 10000 },
+    pool: {
+      max: Number(process.env.DB_POOL_MAX || 3),
+      min: Number(process.env.DB_POOL_MIN || 1),
+      idle: Number(process.env.DB_POOL_IDLE || 30000),
+      acquire: Number(process.env.DB_POOL_ACQUIRE || 60000),
+      evict: Number(process.env.DB_POOL_EVICT || 1000),
+    },
     logging: false,
   }
 );
@@ -510,7 +516,8 @@ async function init() {
     }
   }
   const port = process.env.PORT || 3000;
-  app.listen(port, () => console.log(`Metrics API running on :${port}`));
+  const server = app.listen(port, () => console.log(`Metrics API running on :${port}`));
+  return server;
 }
 
 module.exports = {
