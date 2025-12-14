@@ -250,7 +250,7 @@ export default function App() {
     const params = {
       start: formatDate(start),
       end: formatDate(end),
-      limit: 5,
+      limit: 50,
     };
     if (activeBrandKey) params.brand_key = activeBrandKey;
 
