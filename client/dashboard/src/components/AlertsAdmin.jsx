@@ -34,6 +34,8 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -45,6 +47,7 @@ import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import SendIcon from "@mui/icons-material/Send";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import SearchIcon from "@mui/icons-material/Search";
 import { KPI_METRICS } from "../constants/kpiMetrics.js";
 import {
   createAlert,
@@ -74,6 +77,9 @@ const SEVERITY_OPTIONS = [
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
 ];
+
+const HOURS = Array.from({ length: 24 }, (_, idx) => String(idx).padStart(2, '0'));
+const MINUTES = Array.from({ length: 60 }, (_, idx) => String(idx).padStart(2, '0'));
 
 function buildInitialForm(defaultBrand = '') {
   return {
