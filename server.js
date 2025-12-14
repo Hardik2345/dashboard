@@ -6,7 +6,7 @@ const { closeAll: closeBrandConnections } = require('./lib/brandConnectionManage
 let server = null;
 
 async function gracefulShutdown(signal) {
-  console.log(`\n[${signal}] Graceful shutdown initiated...`);
+  console.log(`[${signal}] Graceful shutdown initiated...`);
 
   // Stop accepting new connections
   if (server) {
@@ -24,9 +24,13 @@ async function gracefulShutdown(signal) {
     console.log('[shutdown] Main database connection closed.');
 
     console.log('[shutdown] Graceful shutdown complete.');
+    
+    // Small delay to ensure logs are flushed to stdout before exit
+    await new Promise(resolve => setTimeout(resolve, 500));
     process.exit(0);
   } catch (e) {
     console.error('[shutdown] Error during graceful shutdown:', e.message);
+    await new Promise(resolve => setTimeout(resolve, 500));
     process.exit(1);
   }
 }
