@@ -779,7 +779,7 @@ function buildMetricsController() {
         }
 
         const limitParam = Number(req.query.limit);
-        const limit = Number.isFinite(limitParam) ? Math.min(Math.max(Math.trunc(limitParam), 1), 50) : 5;
+        const limit = Number.isFinite(limitParam) ? Math.min(Math.max(Math.trunc(limitParam), 1), 50) : 50;
 
         const sql = `
           SELECT product_id,
