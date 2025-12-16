@@ -256,8 +256,8 @@ export default function MobileTopBar({
       i18n={enTranslations}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
-        {/* Mobile: Product filter on its own row */}
-        <Box sx={{ display: { xs: 'block', sm: 'none' }, width: '100%' }}>
+      {/* Mobile: Product filter on its own row */}
+      <Box sx={{ display: { xs: 'block', sm: 'none' }, width: '100%', mb: { xs: 1.5, sm: 0 } }}>
           <FormControl size="small" fullWidth>
             <InputLabel id="mobile-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
             <Select
@@ -363,7 +363,7 @@ export default function MobileTopBar({
           {/* Right: Product filter (desktop only) + Date picker */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {/* Desktop-only compact product filter */}
-            <FormControl size="small" sx={{ width: { xs: '100%', sm: 420 }, minWidth: { sm: 420 }, maxWidth: { sm: 420 }, display: { xs: 'none', sm: 'flex' } }}>
+            <FormControl size="small" sx={{ width: { xs: '100%', sm: 420 }, display: { xs: 'none', sm: 'flex' } }}>
               <InputLabel id="desktop-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
               <Select
                 labelId="desktop-product-label"
@@ -378,33 +378,25 @@ export default function MobileTopBar({
                   fontSize: 12,
                   height: 32,
                   width: '100%',
-                  boxSizing: 'border-box',
+                  // Ensure the selected value area ellipses long labels instead of expanding the control
                   '& .MuiSelect-select': {
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
-                    display: 'block'
-                  },
-                  '& .MuiInputBase-input': {
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
                   }
-                  }}
-                  MenuProps={{
-                    PaperProps: {
-                      sx: {
-                        maxHeight: '60vh',
-                        width: { xs: '100%', sm: 420 },
-                        whiteSpace: 'normal',
-                        borderRadius: 1,
-                      }
-                    },
-                    sx: { mt: 1 }
-                  }}
+                }}
+                MenuProps={{
+                  PaperProps: {
+                    sx: {
+                      maxHeight: '60vh',
+                      width: { xs: '100%', sm: 420 },
+                      whiteSpace: 'normal',
+                    }
+                  }
+                }}
               >
                 {(productOptions || []).map((opt) => (
-                  <MenuItem key={opt.id || 'all'} value={opt.id || ''} sx={{ fontSize: 12 }}>
+                  <MenuItem key={opt.id || 'all'} value={opt.id || ''} sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.5 }}>
                     {opt.id ? opt.label : 'All products'}
                   </MenuItem>
                 ))}

@@ -7,9 +7,8 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // Disable PWA generation during the dev server to avoid modifying
-      // `dev-dist/sw.js` and workbox files on every `npm run dev`.
-      // Files will still be generated during a production `build`.
+      // Disable automatic service worker generation during `vite` dev server runs
+      // so `dev-dist/sw.js` and workbox files aren't rewritten on every reload.
       devOptions: {
         enabled: false
       },
