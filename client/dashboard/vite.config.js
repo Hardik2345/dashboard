@@ -7,8 +7,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // Disable automatic service worker generation during `vite` dev server runs
+      // so `dev-dist/sw.js` and workbox files aren't rewritten on every reload.
       devOptions: {
-        enabled: true
+        enabled: false
       },
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'brand-logo-final.png'],
