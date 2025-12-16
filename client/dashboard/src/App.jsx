@@ -513,7 +513,7 @@ export default function App() {
             >
               <Header user={user} onLogout={handleLogout} onMenuClick={handleSidebarOpen} showMenuButton darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
               <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: { xs: 1.5, sm: 2 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
-                <Stack spacing={1}>
+                <Stack spacing={{ xs: 2, sm: 1 }}>
                   <AuthorBrandSelector
                     brands={authorBrands}
                     value={authorBrandKey}
