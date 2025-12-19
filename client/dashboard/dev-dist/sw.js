@@ -75,14 +75,14 @@ define(['./workbox-38bb0eb2'], (function (workbox) { 'use strict';
   /**
    * The precacheAndRoute() method efficiently caches and responds to
    * requests for URLs in the manifest.
-   * See https://goo.gl/S9QRa
+   * See https://goo.gl/S9QRab
    */
   workbox.precacheAndRoute([{
     "url": "registerSW.js",
     "revision": "3ca0b8505b4bec776b69afdba2768812"
   }, {
     "url": "index.html",
-    "revision": "0.s2srhcmee14"
+    "revision": "0.g4vsts5d1io"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
