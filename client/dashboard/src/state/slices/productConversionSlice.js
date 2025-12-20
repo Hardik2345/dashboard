@@ -5,7 +5,7 @@ const today = new Date().toISOString().slice(0, 10);
 
 export const fetchProductConversion = createAsyncThunk(
   'productConversion/fetch',
-  async (params = {}, { getState, rejectWithValue }) => {
+  async (params = {}, { getState, rejectWithValue, signal }) => {
     const state = getState().productConversion || {};
     const start = params.start || state.start || today;
     const end = params.end || state.end || today;
@@ -14,7 +14,7 @@ export const fetchProductConversion = createAsyncThunk(
     const sortBy = params.sortBy || state.sortBy || 'sessions';
     const sortDir = params.sortDir || state.sortDir || 'desc';
 
-    const resp = await getProductConversion({ start, end, page, pageSize, sortBy, sortDir, brand_key: params.brand_key });
+    const resp = await getProductConversion({ start, end, page, pageSize, sortBy, sortDir, brand_key: params.brand_key }, { signal });
     if (resp.error) {
       return rejectWithValue('Failed to fetch product conversion');
     }

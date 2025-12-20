@@ -48,10 +48,10 @@ async function getJSON(path, params) {
 }
 
 // Generic helpers returning { error, data, status }
-async function doGet(path, params) {
+async function doGet(path, params, options = {}) {
   const url = `${API_BASE}${path}${qs(params || {})}`;
   try {
-    const res = await fetch(url, { credentials: 'include' });
+    const res = await fetch(url, { credentials: 'include', signal: options.signal });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) return { error: true, status: res.status, data: json };
     return { error: false, data: json };
@@ -212,7 +212,7 @@ export async function getTotalOrdersDelta(args) {
   };
 }
 
-export async function getProductConversion(args) {
+export async function getProductConversion(args, options = {}) {
   const params = appendBrandKey({
     start: args.start,
     end: args.end,
@@ -221,14 +221,16 @@ export async function getProductConversion(args) {
     sort_by: args.sortBy,
     sort_dir: args.sortDir,
   }, args);
-  const json = await getJSON('/metrics/product-conversion', params);
+  const res = await doGet('/metrics/product-conversion', params, { signal: options.signal });
+  if (res.error) return { error: true };
+  const json = res.data || {};
   return {
     rows: Array.isArray(json?.rows) ? json.rows : [],
     total_count: Number(json?.total_count || 0),
     page: Number(json?.page || 1),
     page_size: Number(json?.page_size || Number(params.page_size) || 10),
     range: json?.range || null,
-    error: json?.__error,
+    error: false,
   };
 }
 
