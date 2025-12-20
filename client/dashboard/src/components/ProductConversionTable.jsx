@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import dayjs from 'dayjs';
 import {
   Box,
@@ -25,6 +25,8 @@ import {
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import CheckIcon from '@mui/icons-material/Check';
+import KeyboardArrowLeft from '@mui/icons-material/KeyboardArrowLeft';
+import KeyboardArrowRight from '@mui/icons-material/KeyboardArrowRight';
 import { Popover, DatePicker } from '@shopify/polaris';
 import { AppProvider } from '@shopify/polaris';
 import enTranslations from '@shopify/polaris/locales/en.json';
@@ -52,6 +54,34 @@ function formatPercent(val) {
   return `${num.toFixed(2)}%`;
 }
 
+function PaginationActions({ count, page, rowsPerPage, onPageChange, disabled }) {
+  const handleBack = (event) => {
+    onPageChange(event, page - 1);
+  };
+  const handleNext = (event) => {
+    onPageChange(event, page + 1);
+  };
+  const lastPage = Math.max(0, Math.ceil(count / rowsPerPage) - 1);
+  return (
+    <Box sx={{ flexShrink: 0, ml: 2.5, display: 'flex', alignItems: 'center' }}>
+      <Button
+        onClick={handleBack}
+        disabled={disabled || page <= 0}
+        sx={{ minWidth: 0, px: 1 }}
+      >
+        <KeyboardArrowLeft />
+      </Button>
+      <Button
+        onClick={handleNext}
+        disabled={disabled || page >= lastPage}
+        sx={{ minWidth: 0, px: 1 }}
+      >
+        <KeyboardArrowRight />
+      </Button>
+    </Box>
+  );
+}
+
 export default function ProductConversionTable({ brandKey, brands = [], onBrandChange, brandsLoading = false }) {
   const dispatch = useAppDispatch();
   const productState = useAppSelector((state) => state.productConversion);
@@ -62,6 +92,8 @@ export default function ProductConversionTable({ brandKey, brands = [], onBrandC
   const [year, setYear] = useState(dayjs().year());
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
+  const fetchTimer = useRef(null);
+  const inflight = useRef(null);
 
   const rangeValue = useMemo(() => {
     const startDay = start ? dayjs(start) : dayjs();
@@ -70,9 +102,28 @@ export default function ProductConversionTable({ brandKey, brands = [], onBrandC
   }, [start, end]);
 
   useEffect(() => {
-    if (!brandKey) return;
-    dispatch(fetchProductConversion({ brand_key: brandKey, start, end, page, pageSize, sortBy, sortDir }));
-  }, [dispatch, brandKey, start, end, page, pageSize, sortBy, sortDir]);
+    return () => {
+      if (fetchTimer.current) clearTimeout(fetchTimer.current);
+      if (inflight.current?.abort) inflight.current.abort();
+    };
+  }, []);
+
+  const triggerFetch = useCallback((params = {}) => {
+    if (fetchTimer.current) clearTimeout(fetchTimer.current);
+    fetchTimer.current = setTimeout(() => {
+      if (!brandKey) return;
+      if (inflight.current?.abort) inflight.current.abort();
+      const promise = dispatch(fetchProductConversion({ brand_key: brandKey, start, end, page, pageSize, sortBy, sortDir, ...params }));
+      inflight.current = promise;
+      promise.finally(() => {
+        if (inflight.current === promise) inflight.current = null;
+      });
+    }, 200);
+  }, [brandKey, dispatch, start, end, page, pageSize, sortBy, sortDir]);
+
+  useEffect(() => {
+    triggerFetch();
+  }, [triggerFetch]);
 
   useEffect(() => {
     const focus = rangeValue[1] || rangeValue[0];
@@ -86,26 +137,26 @@ export default function ProductConversionTable({ brandKey, brands = [], onBrandC
     const nextStart = s ? s.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD');
     const nextEnd = e ? e.format('YYYY-MM-DD') : nextStart;
     dispatch(setDateRange({ start: nextStart, end: nextEnd }));
-    dispatch(fetchProductConversion({ brand_key: brandKey, start: nextStart, end: nextEnd, page: 1, pageSize, sortBy, sortDir }));
-  }, [dispatch, brandKey, pageSize, sortBy, sortDir]);
+    triggerFetch({ start: nextStart, end: nextEnd, page: 1 });
+  }, [dispatch, triggerFetch]);
 
   const handleChangePage = (_e, newPage) => {
     const nextPage = newPage + 1;
     dispatch(setPage(nextPage));
-    dispatch(fetchProductConversion({ brand_key: brandKey, start, end, page: nextPage, pageSize, sortBy, sortDir }));
+    triggerFetch({ page: nextPage });
   };
 
   const handleChangeRowsPerPage = (e) => {
     const nextSize = parseInt(e.target.value, 10);
     dispatch(setPageSize(nextSize));
-    dispatch(fetchProductConversion({ brand_key: brandKey, start, end, page: 1, pageSize: nextSize, sortBy, sortDir }));
+    triggerFetch({ page: 1, pageSize: nextSize });
   };
 
   const handleSort = (column) => {
     const isAsc = sortBy === column && sortDir === 'asc';
     const nextDir = isAsc ? 'desc' : 'asc';
     dispatch(setSort({ sortBy: column, sortDir: nextDir }));
-    dispatch(fetchProductConversion({ brand_key: brandKey, start, end, page: 1, pageSize, sortBy: column, sortDir: nextDir }));
+    triggerFetch({ page: 1, sortBy: column, sortDir: nextDir });
   };
 
   const handleExport = async () => {
@@ -423,6 +474,10 @@ export default function ProductConversionTable({ brandKey, brands = [], onBrandC
               rowsPerPage={pageSize}
               onRowsPerPageChange={handleChangeRowsPerPage}
               rowsPerPageOptions={[10, 25, 50]}
+              ActionsComponent={(props) => (
+                <PaginationActions {...props} disabled={status === 'loading' || exporting} />
+              )}
+              SelectProps={{ disabled: status === 'loading' || exporting }}
             />
           </Box>
         </CardContent>
