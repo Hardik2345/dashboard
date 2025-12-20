@@ -23,7 +23,7 @@ export default function AuthorBrandSelector({
   const selected = value ? options.find((opt) => opt.value === value) || null : null;
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, maxWidth: 180 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, maxWidth: 180, mb: { xs: 1.5, sm: 0 } }}>
       <Autocomplete
         fullWidth
         size="small"
