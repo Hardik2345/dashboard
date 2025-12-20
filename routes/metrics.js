@@ -1,5 +1,5 @@
 const express = require('express');
-const { requireAuth } = require('../middlewares/auth');
+const { requireAuth, requireAuthor } = require('../middlewares/auth');
 const { brandContext } = require('../middlewares/brandContext');
 const { createApiKeyAuthMiddleware } = require('../middlewares/apiKeyAuth');
 const { requireBrandKey } = require('../utils/brandHelpers');
@@ -62,6 +62,8 @@ function buildMetricsRouter(sequelize) {
   router.get('/product-kpis', authOrApiKey, ensureBrandDb, controller.productKpis);
   router.get('/hourly-trend', ...protectedBrand, controller.hourlyTrend);
   router.get('/daily-trend', ...protectedBrand, controller.dailyTrend);
+  router.get('/product-conversion', requireAuthor, brandContext, controller.productConversion);
+  router.get('/product-conversion/export', requireAuthor, brandContext, controller.productConversionCsv);
 
   router.get('/hourly-sales-compare', requireAuth, controller.hourlySalesCompare);
   router.get('/diagnose/total-orders', requireAuth, controller.diagnoseTotalOrders(sequelize));

@@ -1226,6 +1226,195 @@ function buildMetricsController() {
       } catch (e) { console.error('[daily-trend] failed', e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
+    productConversion: async (req, res) => {
+      try {
+        const todayStr = formatIsoDate(new Date());
+        const parsed = RangeSchema.safeParse({ start: req.query.start || todayStr, end: req.query.end || todayStr });
+        if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+        const { start, end } = parsed.data;
+        if (start && end && start > end) return res.status(400).json({ error: 'start must be on or before end' });
+
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const pageSizeRaw = Number(req.query.page_size) || 10;
+        const pageSize = Math.min(Math.max(1, pageSizeRaw), 200);
+        const offset = (page - 1) * pageSize;
+
+        const allowedSort = new Map([
+          ['sessions', 'sessions'],
+          ['atc', 'atc'],
+          ['orders', 'orders'],
+          ['sales', 'sales'],
+          ['cvr', 'cvr'],
+          ['landing_page_path', 'landing_page_path'],
+        ]);
+        const sortBy = (req.query.sort_by || 'sessions').toString().toLowerCase();
+        const sortCol = allowedSort.get(sortBy) || 'sessions';
+        const sortDir = (req.query.sort_dir || 'desc').toString().toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
+        const replacements = [start, end, start, end];
+        const baseCte = `
+          WITH orders_60d AS (
+            SELECT
+              product_id,
+              COUNT(DISTINCT order_name) AS orders,
+              SUM(line_item_price * line_item_quantity) AS sales
+            FROM shopify_orders
+            WHERE created_date >= ? AND created_date <= ?
+              AND product_id IS NOT NULL
+            GROUP BY product_id
+          ),
+          sessions_60d AS (
+            SELECT
+              product_id,
+              landing_page_path,
+              SUM(sessions) AS sessions,
+              SUM(sessions_with_cart_additions) AS atc
+            FROM mv_product_sessions_by_path_daily
+            WHERE date >= ? AND date <= ?
+              AND product_id IS NOT NULL
+            GROUP BY product_id, landing_page_path
+          )
+        `;
+
+        const sql = `
+          ${baseCte}
+          SELECT
+            s.landing_page_path,
+            s.sessions,
+            s.atc,
+            COALESCE(o.orders, 0) AS orders,
+            COALESCE(o.sales, 0) AS sales,
+            CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
+          FROM sessions_60d s
+          LEFT JOIN orders_60d o
+            ON s.product_id = o.product_id
+          ORDER BY ${sortCol} ${sortDir}
+          LIMIT ${pageSize} OFFSET ${offset}
+        `;
+
+        const countSql = `
+          ${baseCte}
+          SELECT COUNT(*) AS total_count
+          FROM sessions_60d s
+        `;
+
+        const conn = req.brandDb?.sequelize;
+        if (!conn) return res.status(500).json({ error: 'Brand DB connection unavailable' });
+
+        const [rows, countRows] = await Promise.all([
+          conn.query(sql, { type: QueryTypes.SELECT, replacements }),
+          conn.query(countSql, { type: QueryTypes.SELECT, replacements }),
+        ]);
+        const total_count = Number(countRows?.[0]?.total_count || 0);
+
+        return res.json({
+          range: { start, end },
+          page,
+          page_size: pageSize,
+          total_count,
+          rows: rows.map(r => ({
+            landing_page_path: r.landing_page_path,
+            sessions: Number(r.sessions || 0),
+            atc: Number(r.atc || 0),
+            orders: Number(r.orders || 0),
+            sales: Number(r.sales || 0),
+            cvr: Number(r.cvr || 0),
+          })),
+          sort: { by: sortCol, dir: sortDir.toLowerCase() },
+        });
+      } catch (e) {
+        console.error('[product-conversion] failed', e);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    productConversionCsv: async (req, res) => {
+      try {
+        const todayStr = formatIsoDate(new Date());
+        const parsed = RangeSchema.safeParse({ start: req.query.start || todayStr, end: req.query.end || todayStr });
+        if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+        const { start, end } = parsed.data;
+        if (start && end && start > end) return res.status(400).json({ error: 'start must be on or before end' });
+
+        const allowedSort = new Map([
+          ['sessions', 'sessions'],
+          ['atc', 'atc'],
+          ['orders', 'orders'],
+          ['sales', 'sales'],
+          ['cvr', 'cvr'],
+          ['landing_page_path', 'landing_page_path'],
+        ]);
+        const sortBy = (req.query.sort_by || 'sessions').toString().toLowerCase();
+        const sortCol = allowedSort.get(sortBy) || 'sessions';
+        const sortDir = (req.query.sort_dir || 'desc').toString().toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
+        const replacements = [start, end, start, end];
+        const sql = `
+          WITH orders_60d AS (
+            SELECT
+              product_id,
+              COUNT(DISTINCT order_name) AS orders,
+              SUM(line_item_price * line_item_quantity) AS sales
+            FROM shopify_orders
+            WHERE created_date >= ? AND created_date <= ?
+              AND product_id IS NOT NULL
+            GROUP BY product_id
+          ),
+          sessions_60d AS (
+            SELECT
+              product_id,
+              landing_page_path,
+              SUM(sessions) AS sessions,
+              SUM(sessions_with_cart_additions) AS atc
+            FROM mv_product_sessions_by_path_daily
+            WHERE date >= ? AND date <= ?
+              AND product_id IS NOT NULL
+            GROUP BY product_id, landing_page_path
+          )
+          SELECT
+            s.landing_page_path,
+            s.sessions,
+            s.atc,
+            COALESCE(o.orders, 0) AS orders,
+            COALESCE(o.sales, 0) AS sales,
+            CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
+          FROM sessions_60d s
+          LEFT JOIN orders_60d o
+            ON s.product_id = o.product_id
+          ORDER BY ${sortCol} ${sortDir}
+        `;
+
+        const conn = req.brandDb?.sequelize;
+        if (!conn) return res.status(500).json({ error: 'Brand DB connection unavailable' });
+        const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements });
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="product_conversion.csv"');
+        const headers = ['landing_page_path', 'sessions', 'atc', 'orders', 'sales', 'cvr'];
+        const escapeCsv = (val) => {
+          if (val === null || val === undefined) return '';
+          const str = String(val);
+          if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
+          return str;
+        };
+        const lines = [headers.join(',')];
+        for (const r of rows) {
+          lines.push([
+            escapeCsv(r.landing_page_path),
+            Number(r.sessions || 0),
+            Number(r.atc || 0),
+            Number(r.orders || 0),
+            Number(r.sales || 0),
+            Number(r.cvr || 0),
+          ].join(','));
+        }
+        return res.send(lines.join('\n'));
+      } catch (e) {
+        console.error('[product-conversion-csv] failed', e);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
     hourlySalesCompare: async (req, res) => {
       try {
         const brandKey = (req.query.brand_key || req.query.brand || '').toString().trim().toUpperCase();
