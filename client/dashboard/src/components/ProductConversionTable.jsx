@@ -94,6 +94,7 @@ export default function ProductConversionTable({ brandKey, brands = [], onBrandC
   const isDark = theme.palette.mode === 'dark';
   const fetchTimer = useRef(null);
   const inflight = useRef(null);
+  const paramsRef = useRef({ start, end, page, pageSize, sortBy, sortDir });
 
   const rangeValue = useMemo(() => {
     const startDay = start ? dayjs(start) : dayjs();
@@ -108,22 +109,38 @@ export default function ProductConversionTable({ brandKey, brands = [], onBrandC
     };
   }, []);
 
+  useEffect(() => {
+    paramsRef.current = { start, end, page, pageSize, sortBy, sortDir };
+  }, [start, end, page, pageSize, sortBy, sortDir]);
+
+  const runFetch = useCallback((params = {}) => {
+    if (fetchTimer.current) {
+      clearTimeout(fetchTimer.current);
+      fetchTimer.current = null;
+    }
+    if (!brandKey) return;
+    if (inflight.current?.abort) inflight.current.abort();
+    const base = paramsRef.current || {};
+    const promise = dispatch(fetchProductConversion({ brand_key: brandKey, ...base, ...params }));
+    inflight.current = promise;
+    promise.finally(() => {
+      if (inflight.current === promise) inflight.current = null;
+    });
+  }, [brandKey, dispatch]);
+
   const triggerFetch = useCallback((params = {}) => {
     if (fetchTimer.current) clearTimeout(fetchTimer.current);
     fetchTimer.current = setTimeout(() => {
-      if (!brandKey) return;
-      if (inflight.current?.abort) inflight.current.abort();
-      const promise = dispatch(fetchProductConversion({ brand_key: brandKey, start, end, page, pageSize, sortBy, sortDir, ...params }));
-      inflight.current = promise;
-      promise.finally(() => {
-        if (inflight.current === promise) inflight.current = null;
-      });
+      runFetch(params);
     }, 200);
-  }, [brandKey, dispatch, start, end, page, pageSize, sortBy, sortDir]);
+  }, [runFetch]);
 
   useEffect(() => {
-    triggerFetch();
-  }, [triggerFetch]);
+    if (!brandKey) return;
+    runFetch();
+    // We intentionally do not depend on start/end to avoid double-fetch on date changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandKey, runFetch]);
 
   useEffect(() => {
     const focus = rangeValue[1] || rangeValue[0];
@@ -137,8 +154,8 @@ export default function ProductConversionTable({ brandKey, brands = [], onBrandC
     const nextStart = s ? s.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD');
     const nextEnd = e ? e.format('YYYY-MM-DD') : nextStart;
     dispatch(setDateRange({ start: nextStart, end: nextEnd }));
-    triggerFetch({ start: nextStart, end: nextEnd, page: 1 });
-  }, [dispatch, triggerFetch]);
+    runFetch({ start: nextStart, end: nextEnd, page: 1 });
+  }, [dispatch, runFetch]);
 
   const handleChangePage = (_e, newPage) => {
     const nextPage = newPage + 1;
