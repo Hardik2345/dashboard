@@ -84,7 +84,8 @@ function buildUploadsRouter() {
       let continuationToken = undefined;
 
       // Fetch all objects from bucket (paginate through S3 results)
-      while (true) {
+      let hasMore = true;
+      while (hasMore) {
         const params = {
           Bucket: bucketName,
           MaxKeys: 1000,
@@ -104,7 +105,7 @@ function buildUploadsRouter() {
           );
         }
 
-        if (!data.IsTruncated) break;
+        hasMore = Boolean(data.IsTruncated);
         continuationToken = data.NextContinuationToken;
       }
 
