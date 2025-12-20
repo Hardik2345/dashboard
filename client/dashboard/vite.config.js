@@ -7,8 +7,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // Disable PWA generation during the dev server to avoid modifying
+      // `dev-dist/sw.js` and workbox files on every `npm run dev`.
+      // Files will still be generated during a production `build`.
       devOptions: {
-        enabled: true
+        enabled: false
       },
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'brand-logo-final.png'],
