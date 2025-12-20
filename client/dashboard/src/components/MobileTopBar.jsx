@@ -12,11 +12,10 @@ import {
   Select,
   MenuItem,
   CircularProgress,
-} from "@mui/material";
-import { AppProvider } from '@shopify/polaris';
-import { useTheme } from '@mui/material/styles';
+  useTheme,
+} from '@mui/material';
 import CheckIcon from "@mui/icons-material/Check";
-import { Popover, DatePicker } from "@shopify/polaris";
+import { AppProvider, Popover, DatePicker } from "@shopify/polaris";
 import enTranslations from '@shopify/polaris/locales/en.json'
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -252,9 +251,30 @@ export default function MobileTopBar({
               }}
               disabled={productLoading || !productOptions?.length}
               sx={{ fontSize: 12, height: 36 }}
+              MenuProps={{
+                anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
+                transformOrigin: { vertical: 'top', horizontal: 'left' },
+                PaperProps: {
+                  sx: {
+                    maxHeight: { xs: '40vh', sm: '60vh' },
+                    width: '100%',
+                    borderRadius: 0.5,
+                    boxShadow: 6,
+                    bgcolor: isDark ? 'grey.900' : 'background.paper',
+                    border: '2px solid',
+                    borderColor: 'divider',
+                    p: 0,
+                  }
+                },
+                sx: { mt: 0 }
+              }}
             >
               {(productOptions || []).map((opt) => (
-                <MenuItem key={opt.id || 'all'} value={opt.id || ''} sx={{ fontSize: 12 }}>
+                <MenuItem
+                  key={opt.id || 'all'}
+                  value={opt.id || ''}
+                  sx={{ fontSize: 15, py: { xs: 0, sm: 0.25 } }}
+                >
                   {opt.id ? opt.label : 'All products'}
                 </MenuItem>
               ))}
@@ -324,7 +344,7 @@ export default function MobileTopBar({
           {/* Right: Product filter (desktop only) + Date picker */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {/* Desktop-only compact product filter */}
-            <FormControl size="small" sx={{ minWidth: 120, display: { xs: 'none', sm: 'flex' } }}>
+            <FormControl size="small" sx={{ width: { xs: '100%', sm: 420 }, minWidth: { sm: 420 }, maxWidth: { sm: 420 }, display: { xs: 'none', sm: 'flex' } }}>
               <InputLabel id="desktop-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
               <Select
                 labelId="desktop-product-label"
@@ -335,7 +355,34 @@ export default function MobileTopBar({
                   if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
                 }}
                 disabled={productLoading || !productOptions?.length}
-                sx={{ fontSize: 12, height: 32 }}
+                sx={{
+                  fontSize: 12,
+                  height: 32,
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  '& .MuiSelect-select': {
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    display: 'block'
+                  },
+                  '& .MuiInputBase-input': {
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }
+                  }}
+                  MenuProps={{
+                    PaperProps: {
+                      sx: {
+                        maxHeight: '60vh',
+                        width: { xs: '100%', sm: 420 },
+                        whiteSpace: 'normal',
+                        borderRadius: 1,
+                      }
+                    },
+                    sx: { mt: 1 }
+                  }}
               >
                 {(productOptions || []).map((opt) => (
                   <MenuItem key={opt.id || 'all'} value={opt.id || ''} sx={{ fontSize: 12 }}>
