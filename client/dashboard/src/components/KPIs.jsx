@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Grid from "@mui/material/Grid2";
+import { Stack, Typography } from "@mui/material";
 import KPIStat from "./KPIStat.jsx";
 import {
   getTotalOrders,
@@ -13,6 +14,7 @@ import {
   getTotalSessionsDelta,
   getAtcSessionsDelta,
   getAOVDelta,
+  getProductKpis,
 } from "../lib/api.js";
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
@@ -36,6 +38,8 @@ export default function KPIs({
   selectedMetric,
   onSelectMetric,
   onLoaded,
+  productId,
+  productLabel,
 }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({});
@@ -43,6 +47,13 @@ export default function KPIs({
   const end = query?.end;
   const brandKey = query?.brand_key;
   const refreshKey = query?.refreshKey;
+  const scopedProductId = (productId || "").toString().trim();
+  const isProductScoped = scopedProductId.length > 0;
+
+  const scopeLabel = useMemo(() => {
+    if (!isProductScoped) return "All products";
+    return productLabel || scopedProductId;
+  }, [isProductScoped, productLabel, scopedProductId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,38 +65,70 @@ export default function KPIs({
       };
     }
     setLoading(true);
-    const base = brandKey
-      ? { start, end, brand_key: brandKey }
-      : { start, end };
-    Promise.all([
-      getTotalOrders(base),
-      getTotalOrdersDelta({ ...base, align: "hour" }),
-      getTotalSales(base),
-      getAOV(base),
-      getCVR(base),
-      getCVRDelta({ ...base, align: "hour" }),
-      getFunnelStats(base),
-      getTotalSalesDelta({ ...base, align: "hour" }),
-      getTotalSessionsDelta({ ...base, align: "hour" }),
-      getAtcSessionsDelta({ ...base, align: "hour" }),
-      getAOVDelta({ ...base, align: "hour" }),
-    ])
-      .then(
-        ([
-          orders,
-          ordersDelta,
-          sales,
-          aov,
-          cvr,
-          cvrDelta,
-          funnel,
-          salesDelta,
-          sessDelta,
-          atcDelta,
-          aovDelta,
-        ]) => {
+
+    if (isProductScoped) {
+      const base = brandKey
+        ? { start, end, brand_key: brandKey, product_id: scopedProductId }
+        : { start, end, product_id: scopedProductId };
+
+      getProductKpis(base)
+        .then((resp) => {
           if (cancelled) return;
-          setData({
+          if (resp.error) {
+            setData({});
+            setLoading(false);
+            return;
+          }
+
+          const orders = { value: resp.total_orders ?? 0 };
+          const sales = { value: resp.total_sales ?? 0 };
+          const aovValue = orders.value > 0 ? resp.total_sales / orders.value : 0;
+
+          const funnel = {
+            total_sessions: resp.sessions ?? 0,
+            total_atc_sessions: resp.sessions_with_cart_additions ?? 0,
+            total_orders: orders.value,
+          };
+
+          const cvr = {
+            cvr: resp.conversion_rate ?? 0,
+            cvr_percent: resp.conversion_rate_pct ?? 0,
+            total_orders: orders.value,
+            total_sessions: funnel.total_sessions,
+          };
+
+          const aov = {
+            aov: aovValue,
+            total_sales: sales.value,
+            total_orders: orders.value,
+          };
+
+          setData({ orders, sales, aov, cvr, funnel });
+          setLoading(false);
+          if (typeof onLoaded === "function") {
+            onLoaded(new Date());
+          }
+        })
+        .catch(() => setLoading(false));
+    } else {
+      const base = brandKey
+        ? { start, end, brand_key: brandKey }
+        : { start, end };
+      Promise.all([
+        getTotalOrders(base),
+        getTotalOrdersDelta({ ...base, align: "hour" }),
+        getTotalSales(base),
+        getAOV(base),
+        getCVR(base),
+        getCVRDelta({ ...base, align: "hour" }),
+        getFunnelStats(base),
+        getTotalSalesDelta({ ...base, align: "hour" }),
+        getTotalSessionsDelta({ ...base, align: "hour" }),
+        getAtcSessionsDelta({ ...base, align: "hour" }),
+        getAOVDelta({ ...base, align: "hour" }),
+      ])
+        .then(
+          ([
             orders,
             ordersDelta,
             sales,
@@ -97,20 +140,35 @@ export default function KPIs({
             sessDelta,
             atcDelta,
             aovDelta,
-          });
-          setLoading(false);
-          if (typeof onLoaded === "function") {
-            onLoaded(new Date());
+          ]) => {
+            if (cancelled) return;
+            setData({
+              orders,
+              ordersDelta,
+              sales,
+              aov,
+              cvr,
+              cvrDelta,
+              funnel,
+              salesDelta,
+              sessDelta,
+              atcDelta,
+              aovDelta,
+            });
+            setLoading(false);
+            if (typeof onLoaded === "function") {
+              onLoaded(new Date());
+            }
           }
-        }
-      )
-      .catch(() => setLoading(false));
+        )
+        .catch(() => setLoading(false));
+    }
     return () => {
       cancelled = true;
     };
-  }, [start, end, brandKey, refreshKey, onLoaded]);
+  }, [start, end, brandKey, refreshKey, isProductScoped, scopedProductId, onLoaded]);
 
-  const totalSessions = data.cvr?.total_sessions || 0;
+  const totalSessions = data.cvr?.total_sessions || data.funnel?.total_sessions || 0;
   const totalAtcSessions = data.funnel?.total_atc_sessions || 0;
   const cvrDeltaValue = data.cvrDelta
     ? data.cvrDelta.diff_pct ?? data.cvrDelta.diff_pp
@@ -118,6 +176,16 @@ export default function KPIs({
 
   return (
     <>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+        <Typography variant="subtitle2" color="text.secondary">
+          Scope: {scopeLabel}
+        </Typography>
+        {isProductScoped && (
+          <Typography variant="caption" color="text.secondary">
+            Using product-level KPIs
+          </Typography>
+        )}
+      </Stack>
       <Grid container spacing={1.5} columns={{ xs: 2, sm: 6 }}>
         <Grid size={{ xs: 1, sm: 2 }}>
           <KPIStat

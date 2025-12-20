@@ -12,7 +12,7 @@ function initSequelize() {
       dialect: "mysql",
       dialectModule: mysql2,
       timezone: "+00:00",
-      pool: { max: 10, min: 0, idle: 10000 },
+      pool: { max: 3, min: 1, idle: 30000 },
       logging: false,
     }
   );
