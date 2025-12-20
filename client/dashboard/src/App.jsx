@@ -19,6 +19,7 @@ import AuthorAdjustments from './components/AuthorAdjustments.jsx';
 import Unauthorized from './components/Unauthorized.jsx';
 import AccessControlCard from './components/AccessControlCard.jsx';
 import WhitelistTable from './components/WhitelistTable.jsx';
+import ProductConversionTable from './components/ProductConversionTable.jsx';
 import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
 import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
 import AlertsAdmin from './components/AlertsAdmin.jsx';
@@ -590,6 +591,23 @@ export default function App() {
                     <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
                       <Typography variant="body2" color="text.secondary">
                         Choose a brand to manage session adjustments.
+                      </Typography>
+                    </Paper>
+                  )
+                )}
+
+                {authorTab === 'product-conversion' && (
+                  hasAuthorBrand ? (
+                    <ProductConversionTable
+                      brandKey={authorBrandKey}
+                      brands={authorBrands}
+                      onBrandChange={handleAuthorBrandChange}
+                      brandsLoading={authorBrandsLoading}
+                    />
+                  ) : (
+                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        Select a brand to load product conversion data.
                       </Typography>
                     </Paper>
                   )

@@ -212,6 +212,45 @@ export async function getTotalOrdersDelta(args) {
   };
 }
 
+export async function getProductConversion(args) {
+  const params = appendBrandKey({
+    start: args.start,
+    end: args.end,
+    page: args.page,
+    page_size: args.pageSize,
+    sort_by: args.sortBy,
+    sort_dir: args.sortDir,
+  }, args);
+  const json = await getJSON('/metrics/product-conversion', params);
+  return {
+    rows: Array.isArray(json?.rows) ? json.rows : [],
+    total_count: Number(json?.total_count || 0),
+    page: Number(json?.page || 1),
+    page_size: Number(json?.page_size || Number(params.page_size) || 10),
+    range: json?.range || null,
+    error: json?.__error,
+  };
+}
+
+export async function exportProductConversionCsv(args) {
+  const params = appendBrandKey({
+    start: args.start,
+    end: args.end,
+    sort_by: args.sortBy,
+    sort_dir: args.sortDir,
+  }, args);
+  const url = `${resolveApiBase()}/metrics/product-conversion/export${qs(params)}`;
+  try {
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) return { error: true, status: res.status };
+    const blob = await res.blob();
+    return { error: false, blob, filename: 'product_conversion.csv' };
+  } catch (e) {
+    console.error('API error product-conversion csv', e);
+    return { error: true };
+  }
+}
+
 export async function getAOV(args) {
   const params = appendBrandKey({ start: args.start, end: args.end }, args);
   const json = await getJSON('/metrics/aov', params);
