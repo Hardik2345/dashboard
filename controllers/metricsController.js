@@ -7,6 +7,14 @@ const { getBrandConnection } = require('../lib/brandConnectionManager');
 const { getBrands } = require('../config/brands');
 
 const SHOP_DOMAIN_CACHE = new Map();
+const pad2 = (n) => String(n).padStart(2, '0');
+
+function isToday(dateStr) {
+  if (!dateStr) return false;
+  const now = new Date();
+  const today = `${now.getUTCFullYear()}-${pad2(now.getUTCMonth() + 1)}-${pad2(now.getUTCDate())}`;
+  return dateStr === today;
+}
 
 function resolveShopSubdomain(brandKey) {
   if (!brandKey) return null;
@@ -106,20 +114,29 @@ function buildMetricsController() {
             const targetHour = resolveTargetHour ? resolveTargetHour(end) : (end === todayIst ? nowIst.getUTCHours() : 23);
             const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
             const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
+            const isCurrentRangeToday = isToday(rangeStart) || isToday(rangeEnd);
+            const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
+            const prevCutoffSeconds = isCurrentRangeToday ? Math.min(fullDaySeconds, (prevCompareHour + 1) * 3600) : effectiveSeconds;
+            const prevCutoffTime = prevCutoffSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(prevCutoffSeconds);
 
-            const sqlSessRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date >= ? AND date <= ? AND hour <= ?`;
+            const sqlSessRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
             const orderRangeSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+            const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
 
             const prevWin = previousWindow(rangeStart, rangeEnd);
 
-            const [sessCurRows, sessPrevRows, ordCurRows, ordPrevRows] = await Promise.all([
+            const [sessCurRows, sessPrevRows, ordCurRows, ordPrevRows, overallCurrSess] = await Promise.all([
               conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, targetHour] }),
-              conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, targetHour] }),
+              conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, prevCompareHour] }),
               conn.query(orderRangeSql, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
-              conn.query(orderRangeSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }),
+              conn.query(orderRangeSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, prevCutoffTime] }),
+              (isToday(rangeStart) || isToday(rangeEnd)) ? conn.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd] }) : Promise.resolve(null),
             ]);
 
-            const curSessions = Number(sessCurRows?.[0]?.total || 0);
+            let curSessions = Number(sessCurRows?.[0]?.total || 0);
+            if (overallCurrSess) {
+              curSessions = Number(overallCurrSess?.[0]?.total || 0);
+            }
             const prevSessions = Number(sessPrevRows?.[0]?.total || 0);
             const curOrders = Number(ordCurRows?.[0]?.cnt || 0);
             const prevOrders = Number(ordPrevRows?.[0]?.cnt || 0);
@@ -144,18 +161,27 @@ function buildMetricsController() {
           const targetHour = resolveTargetHour ? resolveTargetHour(target) : (target === todayIst ? nowIst.getUTCHours() : 23);
           const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(target)));
           const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
+          const isCurrentToday = isToday(target);
+          const prevCompareHour = isCurrentToday ? Math.max(0, targetHour - 1) : targetHour;
+          const prevCutoffSeconds = isCurrentToday ? Math.min(fullDaySeconds, (prevCompareHour + 1) * 3600) : effectiveSeconds;
+          const prevCutoffTime = prevCutoffSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(prevCutoffSeconds);
 
-          const sqlSess = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
+          const sqlSess = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date = ? AND hour <= ?`;
           const orderSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+          const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date = ?`;
 
-          const [sessCurRows, sessPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
+          const [sessCurRows, sessPrevRows, ordersCurRows, ordersPrevRows, overallCurrSess] = await Promise.all([
             conn.query(sqlSess, { type: QueryTypes.SELECT, replacements: [target, targetHour] }),
-            conn.query(sqlSess, { type: QueryTypes.SELECT, replacements: [prevStr, targetHour] }),
+            conn.query(sqlSess, { type: QueryTypes.SELECT, replacements: [prevStr, prevCompareHour] }),
             conn.query(orderSql, { type: QueryTypes.SELECT, replacements: [target, target, cutoffTime] }),
-            conn.query(orderSql, { type: QueryTypes.SELECT, replacements: [prevStr, prevStr, cutoffTime] }),
+            conn.query(orderSql, { type: QueryTypes.SELECT, replacements: [prevStr, prevStr, prevCutoffTime] }),
+            isCurrentToday ? conn.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [target] }) : Promise.resolve(null),
           ]);
 
-          const curSessions = Number(sessCurRows?.[0]?.total || 0);
+          let curSessions = Number(sessCurRows?.[0]?.total || 0);
+          if (overallCurrSess) {
+            curSessions = Number(overallCurrSess?.[0]?.total || 0);
+          }
           const prevSessions = Number(sessPrevRows?.[0]?.total || 0);
           const curOrders = Number(ordersCurRows?.[0]?.cnt || 0);
           const prevOrders = Number(ordersPrevRows?.[0]?.cnt || 0);
@@ -385,12 +411,19 @@ function buildMetricsController() {
           if (start && end) {
             const targetHour = resolveTargetHour(end);
             const prevWin = previousWindow(start, end);
-            const sqlRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date >= ? AND date <= ? AND hour <= ?`;
-            const [currRow, prevRow] = await Promise.all([
+            const isCurrentRangeToday = isToday(start) || isToday(end);
+            const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
+            const sqlRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
+            const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
+            const [currRow, prevRow, overallCurrRow] = await Promise.all([
               req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
-              req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, targetHour] }),
+              req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, prevCompareHour] }),
+              isCurrentRangeToday ? req.brandDb.sequelize.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [start, end] }) : Promise.resolve(null),
             ]);
-            const curr = Number(currRow?.[0]?.total || 0);
+            let curr = Number(currRow?.[0]?.total || 0);
+            if (overallCurrRow) {
+              curr = Number(overallCurrRow?.[0]?.total || 0);
+            }
             const prevVal = Number(prevRow?.[0]?.total || 0);
             const diff = curr - prevVal;
             const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
@@ -399,12 +432,19 @@ function buildMetricsController() {
           } else {
             const targetHour = resolveTargetHour(date);
             const prev = prevDayStr(date);
-            const sql = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
-            const [currRow, prevRow] = await Promise.all([
+            const isCurrentToday = isToday(date);
+            const prevCompareHour = isCurrentToday ? Math.max(0, targetHour - 1) : targetHour;
+            const sql = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date = ? AND hour <= ?`;
+            const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date = ?`;
+            const [currRow, prevRow, overallCurrRow] = await Promise.all([
               req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
-              req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
+              req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, prevCompareHour] }),
+              isCurrentToday ? req.brandDb.sequelize.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [date] }) : Promise.resolve(null),
             ]);
-            const curr = Number(currRow?.[0]?.total || 0);
+            let curr = Number(currRow?.[0]?.total || 0);
+            if (overallCurrRow) {
+              curr = Number(overallCurrRow?.[0]?.total || 0);
+            }
             const prevVal = Number(prevRow?.[0]?.total || 0);
             const diff = curr - prevVal;
             const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
@@ -451,12 +491,19 @@ function buildMetricsController() {
           if (start && end) {
             const targetHour = resolveTargetHour(end);
             const prevWin = previousWindow(start, end);
-            const sqlRange = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary WHERE date >= ? AND date <= ? AND hour <= ?`;
-            const [currRow, prevRow] = await Promise.all([
+            const isCurrentRangeToday = isToday(start) || isToday(end);
+            const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
+            const sqlRange = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
+            const sqlOverallAtc = `SELECT COALESCE(SUM(total_atc_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
+            const [currRow, prevRow, overallCurrRow] = await Promise.all([
               req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
-              req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, targetHour] }),
+              req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, prevCompareHour] }),
+              isCurrentRangeToday ? req.brandDb.sequelize.query(sqlOverallAtc, { type: QueryTypes.SELECT, replacements: [start, end] }) : Promise.resolve(null),
             ]);
-            const curr = Number(currRow?.[0]?.total || 0);
+            let curr = Number(currRow?.[0]?.total || 0);
+            if (overallCurrRow) {
+              curr = Number(overallCurrRow?.[0]?.total || 0);
+            }
             const prevVal = Number(prevRow?.[0]?.total || 0);
             const diff = curr - prevVal;
             const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
@@ -465,12 +512,19 @@ function buildMetricsController() {
           } else {
             const targetHour = resolveTargetHour(date);
             const prev = prevDayStr(date);
-            const sql = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary WHERE date = ? AND hour <= ?`;
-            const [currRow, prevRow] = await Promise.all([
+            const isCurrentToday = isToday(date);
+            const prevCompareHour = isCurrentToday ? Math.max(0, targetHour - 1) : targetHour;
+            const sql = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date = ? AND hour <= ?`;
+            const sqlOverallAtc = `SELECT COALESCE(SUM(total_atc_sessions),0) AS total FROM overall_summary WHERE date = ?`;
+            const [currRow, prevRow, overallCurrRow] = await Promise.all([
               req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
-              req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, targetHour] }),
+              req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, prevCompareHour] }),
+              isCurrentToday ? req.brandDb.sequelize.query(sqlOverallAtc, { type: QueryTypes.SELECT, replacements: [date] }) : Promise.resolve(null),
             ]);
-            const curr = Number(currRow?.[0]?.total || 0);
+            let curr = Number(currRow?.[0]?.total || 0);
+            if (overallCurrRow) {
+              curr = Number(overallCurrRow?.[0]?.total || 0);
+            }
             const prevVal = Number(prevRow?.[0]?.total || 0);
             const diff = curr - prevVal;
             const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
@@ -759,6 +813,144 @@ function buildMetricsController() {
       } catch (e) {
         console.error('[top-pdps] failed', e);
         return res.status(500).json({ error: 'Failed to load top PDP pages' });
+      }
+    },
+
+    topProducts: async (req, res) => {
+      try {
+        const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+        if (!parsed.success) {
+          return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+        }
+        const { start, end } = parsed.data;
+        const rangeStart = start || end;
+        const rangeEnd = end || start;
+        if (!rangeStart || !rangeEnd) {
+          return res.status(400).json({ error: 'start or end date required' });
+        }
+        if (rangeStart > rangeEnd) {
+          return res.status(400).json({ error: 'start must be on or before end' });
+        }
+
+        const limitParam = Number(req.query.limit);
+        const limit = Number.isFinite(limitParam) ? Math.min(Math.max(Math.trunc(limitParam), 1), 50) : 50;
+
+        const sql = `
+          SELECT product_id,
+                 MIN(landing_page_path) AS landing_page_path,
+                 SUM(sessions) AS total_sessions,
+                 SUM(sessions_with_cart_additions) AS total_atc_sessions
+          FROM mv_product_sessions_by_path_daily
+          WHERE product_id IS NOT NULL
+            AND product_id <> ''
+            AND date >= ? AND date <= ?
+          GROUP BY product_id
+          ORDER BY total_sessions DESC
+          LIMIT ${limit}
+        `;
+
+        const rows = await req.brandDb.sequelize.query(sql, {
+          type: QueryTypes.SELECT,
+          replacements: [rangeStart, rangeEnd],
+        });
+
+        const products = rows.map((row, index) => {
+          const totalSessions = Number(row.total_sessions || 0);
+          const atcSessions = Number(row.total_atc_sessions || 0);
+          const atcRate = totalSessions > 0 ? atcSessions / totalSessions : 0;
+          return {
+            rank: index + 1,
+            product_id: row.product_id,
+            landing_page_path: row.landing_page_path || null,
+            sessions: totalSessions,
+            sessions_with_cart_additions: atcSessions,
+            add_to_cart_rate: atcRate,
+            add_to_cart_rate_pct: atcRate * 100,
+          };
+        });
+
+        return res.json({
+          brand_key: req.brandKey || null,
+          range: { start: rangeStart, end: rangeEnd },
+          products,
+        });
+      } catch (e) {
+        console.error('[top-products] failed', e);
+        return res.status(500).json({ error: 'Failed to load top products' });
+      }
+    },
+
+    productKpis: async (req, res) => {
+      try {
+        const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+        if (!parsed.success) {
+          return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+        }
+        const { start, end } = parsed.data;
+        const rangeStart = start || end;
+        const rangeEnd = end || start;
+        if (!rangeStart || !rangeEnd) {
+          return res.status(400).json({ error: 'start or end date required' });
+        }
+        if (rangeStart > rangeEnd) {
+          return res.status(400).json({ error: 'start must be on or before end' });
+        }
+
+        const productIdRaw = (req.query.product_id || '').toString().trim();
+        if (!productIdRaw) {
+          return res.status(400).json({ error: 'product_id is required' });
+        }
+
+        const conn = req.brandDb.sequelize;
+
+        const sessionsSql = `
+          SELECT
+            SUM(sessions) AS total_sessions,
+            SUM(sessions_with_cart_additions) AS total_atc_sessions
+          FROM mv_product_sessions_by_path_daily
+          WHERE product_id = ?
+            AND product_id IS NOT NULL
+            AND date >= ? AND date <= ?
+        `;
+
+        const ordersSql = `
+          SELECT
+            COUNT(DISTINCT order_name) AS total_orders,
+            COALESCE(SUM(line_item_price * line_item_quantity), 0) AS total_sales
+          FROM shopify_orders
+          WHERE product_id = ?
+            AND created_date >= ? AND created_date <= ?
+        `;
+
+        const [[sessRow], [orderRow]] = await Promise.all([
+          conn.query(sessionsSql, { type: QueryTypes.SELECT, replacements: [productIdRaw, rangeStart, rangeEnd] }),
+          conn.query(ordersSql, { type: QueryTypes.SELECT, replacements: [productIdRaw, rangeStart, rangeEnd] }),
+        ]);
+
+        const totalSessions = Number(sessRow?.total_sessions || 0);
+        const totalAtcSessions = Number(sessRow?.total_atc_sessions || 0);
+        const totalOrders = Number(orderRow?.total_orders || 0);
+        const totalSales = Number(orderRow?.total_sales || 0);
+
+        const addToCartRate = totalSessions > 0 ? totalAtcSessions / totalSessions : 0;
+        const cvr = totalSessions > 0 ? totalOrders / totalSessions : 0;
+
+        return res.json({
+          product_id: productIdRaw,
+          brand_key: req.brandKey || null,
+          range: { start: rangeStart, end: rangeEnd },
+          sessions: totalSessions,
+          sessions_with_cart_additions: totalAtcSessions,
+          add_to_cart_rate: addToCartRate,
+          add_to_cart_rate_pct: addToCartRate * 100,
+          total_orders: totalOrders,
+          total_sales: totalSales,
+          conversion_rate: cvr,
+          conversion_rate_pct: cvr * 100,
+        });
+      } catch (e) {
+        console.error('[product-kpis] failed', e);
+        return res.status(500).json({ error: 'Failed to load product KPIs' });
       }
     },
 

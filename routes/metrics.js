@@ -58,6 +58,8 @@ function buildMetricsRouter(sequelize) {
   router.get('/order-split', ...protectedBrand, controller.orderSplit);
   router.get('/payment-sales-split', ...protectedBrand, controller.paymentSalesSplit);
   router.get('/top-pdps', authOrApiKey, ensureBrandDb, controller.topProductPages);
+  router.get('/top-products', authOrApiKey, ensureBrandDb, controller.topProducts);
+  router.get('/product-kpis', authOrApiKey, ensureBrandDb, controller.productKpis);
   router.get('/hourly-trend', ...protectedBrand, controller.hourlyTrend);
   router.get('/daily-trend', ...protectedBrand, controller.dailyTrend);
 
