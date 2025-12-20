@@ -10,7 +10,6 @@ function getMinuteWindow() {
 }
 
 function checkRateLimit(apiKeyId, maxRequests = 100) {
-  const now = Date.now();
   const windowStart = getMinuteWindow();
 
   if (!rateLimitMap.has(apiKeyId)) {
