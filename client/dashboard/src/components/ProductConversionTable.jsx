@@ -423,12 +423,7 @@ export default function ProductConversionTable({ brandKey, brands = [], onBrandC
 
       <Card variant="outlined">
         <CardContent sx={{ p: 0 }}>
-          {error && (
-            <Box sx={{ p: 2 }}>
-              <Alert severity="error">Failed to load data</Alert>
-            </Box>
-          )}
-          <TableContainer sx={{ minHeight: 360 }}>
+          <TableContainer sx={{ minHeight: 360, position: 'relative' }}>
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ bgcolor: 'rgba(255,255,255,0.08)' }}>
@@ -446,13 +441,6 @@ export default function ProductConversionTable({ brandKey, brands = [], onBrandC
                 </TableRow>
               </TableHead>
               <TableBody>
-                {status === 'loading' && (
-                  <TableRow>
-                    <TableCell colSpan={columns.length} align="center" sx={{ py: 4 }}>
-                      <CircularProgress size={24} />
-                    </TableCell>
-                  </TableRow>
-                )}
                 {status !== 'loading' && rows.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={columns.length} align="center" sx={{ py: 3, color: 'text.secondary' }}>
@@ -480,6 +468,36 @@ export default function ProductConversionTable({ brandKey, brands = [], onBrandC
                 ))}
               </TableBody>
             </Table>
+            {error && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  bgcolor: 'rgba(0,0,0,0.16)',
+                  px: 2,
+                }}
+              >
+                <Alert severity="error">Failed to load data</Alert>
+              </Box>
+            )}
+            {status === 'loading' && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  bgcolor: 'rgba(0,0,0,0.12)',
+                  pointerEvents: 'none',
+                }}
+              >
+                <CircularProgress size={24} />
+              </Box>
+            )}
           </TableContainer>
           <Divider />
           <Box sx={{ display: 'flex', justifyContent: 'center' }}>
