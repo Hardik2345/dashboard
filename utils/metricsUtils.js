@@ -14,12 +14,16 @@ async function rawSum(column, { start, end, conn }) {
   return Number(rows[0]?.total || 0);
 }
 
+const IST_OFFSET_MIN = 330;
+const IST_OFFSET_MS = IST_OFFSET_MIN * 60 * 1000;
+
 function isToday(dateStr) {
   if (!dateStr) return false;
-  const now = new Date();
+  const nowUtc = new Date();
+  const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MS);
   const pad2 = (n) => String(n).padStart(2, '0');
-  const today = `${now.getUTCFullYear()}-${pad2(now.getUTCMonth() + 1)}-${pad2(now.getUTCDate())}`;
-  return dateStr === today;
+  const todayIst = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
+  return dateStr === todayIst;
 }
 
 /**
@@ -34,15 +38,16 @@ async function computeMetricDelta({ metricName, range, conn, queryFn }) {
   const rangeStart = start || date;
   const rangeEnd = end || date;
 
-  const IST_OFFSET_MIN = 330;
-  const offsetMs = IST_OFFSET_MIN * 60 * 1000;
   const pad2 = (n) => String(n).padStart(2, '0');
   const nowUtc = new Date();
-  const nowIst = new Date(nowUtc.getTime() + offsetMs);
+  const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MS);
   const yyyy = nowIst.getUTCFullYear();
   const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(nowIst.getUTCDate()).padStart(2, '0');
   const todayIst = `${yyyy}-${mm}-${dd}`;
+  
+  const isRangeIncludesToday = rangeStart === todayIst || rangeEnd === todayIst;
+  
   const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
   const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + nowIst.getUTCSeconds();
   const fullDaySeconds = 24 * 3600;
@@ -55,13 +60,16 @@ async function computeMetricDelta({ metricName, range, conn, queryFn }) {
   };
 
   const targetHour = resolveTargetHour(rangeEnd);
+  // effectiveSeconds is the current time of day in IST (if today) or 24:00 (if past)
   const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
   const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
+  
   const prevWin = previousWindow(rangeStart, rangeEnd);
-  const isCurrentRangeToday = isToday(rangeStart) || isToday(rangeEnd);
-  const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
-  const prevCutoffSeconds = isCurrentRangeToday ? Math.min(fullDaySeconds, (prevCompareHour + 1) * 3600) : effectiveSeconds;
-  const prevCutoffTime = prevCutoffSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(prevCutoffSeconds);
+  
+  // To avoid bias, we should use the SAME cutoff relative time for the previous period.
+  // Previous logic used (targetHour - 1) for prev period if current was today, which caused bias.
+  const prevCompareHour = targetHour; 
+  const prevCutoffTime = cutoffTime;
 
   let curVal = 0;
   let prevVal = 0;
@@ -74,7 +82,7 @@ async function computeMetricDelta({ metricName, range, conn, queryFn }) {
       prevStart: prevWin.prevStart, prevEnd: prevWin.prevEnd,
       targetHour, prevCompareHour,
       cutoffTime, prevCutoffTime,
-      isCurrentRangeToday 
+      isCurrentRangeToday: isRangeIncludesToday 
     });
     curVal = res.currentVal;
     prevVal = res.previousVal;
