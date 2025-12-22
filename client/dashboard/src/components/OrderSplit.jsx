@@ -23,6 +23,7 @@ export default function OrderSplit({ query }) {
   const [data, setData] = useState({ cod_orders: 0, prepaid_orders: 0, partially_paid_orders: 0, total: 0, cod_percent: 0, prepaid_percent: 0, partially_paid_percent: 0 });
   const brandKey = query?.brand_key;
   const refreshKey = query?.refreshKey;
+  const productId = query?.product_id || '';
 
   useEffect(() => {
     let cancelled = false;
@@ -35,6 +36,7 @@ export default function OrderSplit({ query }) {
     const params = brandKey
       ? { start: query.start, end: query.end, brand_key: brandKey }
       : { start: query.start, end: query.end };
+    if (productId) params.product_id = productId;
     getOrderSplit(params)
       .then((res) => {
         if (cancelled) return;
@@ -43,7 +45,7 @@ export default function OrderSplit({ query }) {
       })
       .catch(() => setLoading(false));
     return () => { cancelled = true; };
-  }, [query.start, query.end, brandKey, refreshKey]);
+  }, [query.start, query.end, brandKey, productId, refreshKey]);
 
   const empty = data.total === 0;
 
