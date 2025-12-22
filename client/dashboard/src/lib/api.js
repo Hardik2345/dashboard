@@ -212,6 +212,16 @@ export async function getTotalOrdersDelta(args) {
   };
 }
 
+export async function getDashboardSummary(args) {
+  const params = appendBrandKey({ date: args.end || args.start }, args);
+  const json = await getJSON('/metrics/summary', params);
+  return {
+    metrics: json?.metrics || null,
+    date: json?.date,
+    error: json?.__error
+  };
+}
+
 export async function getProductConversion(args, options = {}) {
   const params = appendBrandKey({
     start: args.start,

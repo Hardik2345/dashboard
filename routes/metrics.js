@@ -1,6 +1,6 @@
 const express = require('express');
 const { requireAuth, requireAuthor } = require('../middlewares/auth');
-const { brandContext } = require('../middlewares/brandContext');
+const { brandContext, authorizeBrandContext } = require('../middlewares/brandContext');
 const { createApiKeyAuthMiddleware } = require('../middlewares/apiKeyAuth');
 const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrandConnection } = require('../lib/brandConnectionManager');
@@ -57,6 +57,8 @@ function buildMetricsRouter(sequelize) {
   router.get('/funnel-stats', ...protectedBrand, controller.funnelStats);
   router.get('/order-split', ...protectedBrand, controller.orderSplit);
   router.get('/payment-sales-split', ...protectedBrand, controller.paymentSalesSplit);
+  // OPTIMIZED: Use authorizeBrandContext (Lazy Connection) for summary
+  router.get('/summary', requireAuth, authorizeBrandContext, controller.dashboardSummary);
   router.get('/top-pdps', authOrApiKey, ensureBrandDb, controller.topProductPages);
   router.get('/top-products', authOrApiKey, ensureBrandDb, controller.topProducts);
   router.get('/product-kpis', authOrApiKey, ensureBrandDb, controller.productKpis);

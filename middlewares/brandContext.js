@@ -1,7 +1,8 @@
 const { resolveBrandFromEmail, getBrands } = require('../config/brands');
 const { getBrandConnection } = require('../lib/brandConnectionManager');
 
-async function brandContext(req, res, next) {
+
+async function authorizeBrandContext(req, res, next) {
   if (!req.user || !req.user.email) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
@@ -30,15 +31,25 @@ async function brandContext(req, res, next) {
       return res.status(403).json({ error: 'Unknown brand for user email' });
     }
   }
-  try {
-    const conn = await getBrandConnection(brandCfg);
-    req.brandKey = brandCfg.key;
-    req.brandDb = conn;
-    next();
-  } catch (e) {
-    console.error(`[brand=${brandCfg.key}] DB connection error`, e.message);
-    return res.status(503).json({ error: 'Brand database unavailable' });
-  }
+  
+  req.brandKey = brandCfg.key;
+  req.brandConfig = brandCfg; // Store config for lazy connection
+  next();
 }
 
-module.exports = { brandContext };
+async function brandContext(req, res, next) {
+  authorizeBrandContext(req, res, async () => {
+     // If authorization passed, connect to DB
+     try {
+       if (!req.brandConfig) return next(); // Should trigger auth error if logic was skipped, but strict following prev logic
+       const conn = await getBrandConnection(req.brandConfig);
+       req.brandDb = conn;
+       next();
+     } catch (e) {
+        console.error(`[brand=${req.brandConfig?.key}] DB connection error`, e.message);
+        return res.status(503).json({ error: 'Brand database unavailable' });
+     }
+  });
+}
+
+module.exports = { brandContext, authorizeBrandContext };

@@ -114,54 +114,92 @@ export default function KPIs({
       const base = brandKey
         ? { start, end, brand_key: brandKey }
         : { start, end };
-      Promise.all([
-        getTotalOrders(base),
-        getTotalOrdersDelta({ ...base, align: "hour" }),
-        getTotalSales(base),
-        getAOV(base),
-        getCVR(base),
-        getCVRDelta({ ...base, align: "hour" }),
-        getFunnelStats(base),
-        getTotalSalesDelta({ ...base, align: "hour" }),
-        getTotalSessionsDelta({ ...base, align: "hour" }),
-        getAtcSessionsDelta({ ...base, align: "hour" }),
-        getAOVDelta({ ...base, align: "hour" }),
-      ])
-        .then(
-          ([
-            orders,
-            ordersDelta,
-            sales,
-            aov,
-            cvr,
-            cvrDelta,
-            funnel,
-            salesDelta,
-            sessDelta,
-            atcDelta,
-            aovDelta,
-          ]) => {
+
+      // Use unified endpoint
+      import("../lib/api.js").then(({ getDashboardSummary }) => {
+        getDashboardSummary(base)
+          .then((resp) => {
             if (cancelled) return;
+            if (resp.error || !resp.metrics) {
+              // Fallback or error state
+              setData({});
+              setLoading(false);
+              return;
+            }
+
+            const m = resp.metrics;
+
+            // Map unified response to existing data structure
+            const orders = { value: m.total_orders?.value ?? 0 };
+            const ordersDelta = {
+              diff_pct: m.total_orders?.diff_pct ?? 0,
+              direction: m.total_orders?.direction ?? 'flat'
+            };
+
+            const sales = { value: m.total_sales?.value ?? 0 };
+            const salesDelta = {
+              diff_pct: m.total_sales?.diff_pct ?? 0,
+              direction: m.total_sales?.direction ?? 'flat'
+            };
+
+            const aov = { aov: m.average_order_value?.value ?? 0 };
+            const aovDelta = {
+              diff_pct: m.average_order_value?.diff_pct ?? 0,
+              direction: m.average_order_value?.direction ?? 'flat'
+            };
+
+            // CVR: backend sends percent value (e.g. 4.25). Frontend expects decimal (0.0425) for formatting.
+            const cvrVal = m.conversion_rate?.value ?? 0;
+            const cvr = {
+              cvr: cvrVal / 100,
+              cvr_percent: cvrVal,
+              total_orders: orders.value,
+              total_sessions: m.total_sessions?.value ?? 0
+            };
+            const cvrDelta = {
+              diff_pct: m.conversion_rate?.diff_pct ?? 0,
+              direction: m.conversion_rate?.direction ?? 'flat'
+            };
+
+            const funnel = {
+              total_sessions: m.total_sessions?.value ?? 0,
+              total_atc_sessions: m.total_atc_sessions?.value ?? 0,
+              total_orders: orders.value
+            };
+
+            const sessDelta = {
+              diff_pct: m.total_sessions?.diff_pct ?? 0,
+              direction: m.total_sessions?.direction ?? 'flat'
+            };
+
+            const atcDelta = {
+              diff_pct: m.total_atc_sessions?.diff_pct ?? 0,
+              direction: m.total_atc_sessions?.direction ?? 'flat'
+            };
+
             setData({
               orders,
               ordersDelta,
               sales,
+              salesDelta,
               aov,
+              aovDelta,
               cvr,
               cvrDelta,
               funnel,
-              salesDelta,
               sessDelta,
-              atcDelta,
-              aovDelta,
+              atcDelta
             });
             setLoading(false);
             if (typeof onLoaded === "function") {
               onLoaded(new Date());
             }
-          }
-        )
-        .catch(() => setLoading(false));
+          })
+          .catch((e) => {
+            console.error(e);
+            setLoading(false);
+          });
+      });
     }
     return () => {
       cancelled = true;
@@ -196,9 +234,9 @@ export default function KPIs({
             delta={
               data.ordersDelta
                 ? {
-                    value: data.ordersDelta.diff_pct,
-                    direction: data.ordersDelta.direction,
-                  }
+                  value: data.ordersDelta.diff_pct,
+                  direction: data.ordersDelta.direction,
+                }
                 : undefined
             }
             onSelect={
@@ -216,9 +254,9 @@ export default function KPIs({
             delta={
               data.salesDelta
                 ? {
-                    value: data.salesDelta.diff_pct,
-                    direction: data.salesDelta.direction,
-                  }
+                  value: data.salesDelta.diff_pct,
+                  direction: data.salesDelta.direction,
+                }
                 : undefined
             }
             onSelect={
@@ -236,9 +274,9 @@ export default function KPIs({
             delta={
               data.aovDelta
                 ? {
-                    value: data.aovDelta.diff_pct,
-                    direction: data.aovDelta.direction,
-                  }
+                  value: data.aovDelta.diff_pct,
+                  direction: data.aovDelta.direction,
+                }
                 : undefined
             }
             onSelect={onSelectMetric ? () => onSelectMetric("aov") : undefined}
@@ -269,9 +307,9 @@ export default function KPIs({
             delta={
               data.sessDelta
                 ? {
-                    value: data.sessDelta.diff_pct,
-                    direction: data.sessDelta.direction,
-                  }
+                  value: data.sessDelta.diff_pct,
+                  direction: data.sessDelta.direction,
+                }
                 : undefined
             }
             onSelect={
@@ -289,9 +327,9 @@ export default function KPIs({
             delta={
               data.atcDelta
                 ? {
-                    value: data.atcDelta.diff_pct,
-                    direction: data.atcDelta.direction,
-                  }
+                  value: data.atcDelta.diff_pct,
+                  direction: data.atcDelta.direction,
+                }
                 : undefined
             }
             onSelect={onSelectMetric ? () => onSelectMetric("atc") : undefined}
