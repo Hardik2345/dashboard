@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, Typography, Skeleton, useTheme } from '@mui/material';
 import { Bar } from 'react-chartjs-2';
-import { getFunnelStats } from '../lib/api.js';
+import { getFunnelStats, getTotalSessionsDelta, getAtcSessionsDelta, getTotalOrdersDelta } from '../lib/api.js';
 import {
   Chart as ChartJS,
   BarElement,
@@ -20,6 +20,7 @@ export default function FunnelChart({ query }) {
   const isDark = theme.palette.mode === 'dark';
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total_sessions: 0, total_atc_sessions: 0, total_orders: 0 });
+  const [deltas, setDeltas] = useState({ sessions: null, atc: null, orders: null });
   const brandKey = query?.brand_key;
   const refreshKey = query?.refreshKey;
   const productId = query?.product_id || '';
@@ -28,20 +29,33 @@ export default function FunnelChart({ query }) {
     let cancelled = false;
     if (!query?.start || !query?.end) {
       setStats({ total_sessions: 0, total_atc_sessions: 0, total_orders: 0 });
+      setDeltas({ sessions: null, atc: null, orders: null });
       setLoading(false);
       return () => { cancelled = true; };
     }
     setLoading(true);
     (async () => {
-    const params = brandKey ? { start: query.start, end: query.end, brand_key: brandKey } : { start: query.start, end: query.end };
-    if (productId) params.product_id = productId;
-    const j = await getFunnelStats(params);
+      const params = brandKey ? { start: query.start, end: query.end, brand_key: brandKey } : { start: query.start, end: query.end };
+      const deltaParams = { ...params, align: 'hour' };
+
+      const [funnel, sessDelta, atcDelta, ordersDelta] = await Promise.all([
+        getFunnelStats(params),
+        getTotalSessionsDelta(deltaParams),
+        getAtcSessionsDelta(deltaParams),
+        getTotalOrdersDelta(deltaParams)
+      ]);
+
       if (cancelled) return;
-      if (!j.error) {
+      if (!funnel.error) {
         setStats({
-          total_sessions: j.total_sessions,
-          total_atc_sessions: j.total_atc_sessions,
-          total_orders: j.total_orders,
+          total_sessions: funnel.total_sessions,
+          total_atc_sessions: funnel.total_atc_sessions,
+          total_orders: funnel.total_orders,
+        });
+        setDeltas({
+          sessions: sessDelta,
+          atc: atcDelta,
+          orders: ordersDelta
         });
       }
       setLoading(false);
@@ -62,7 +76,35 @@ export default function FunnelChart({ query }) {
     ],
   };
 
-  // Custom plugin to render a single-line label: "count (pct%)" just above each bar
+  /**
+   * Helper function to draw trend arrows on canvas
+   */
+  const drawTrendArrow = (ctx, delta, x, y) => {
+    if (!delta || typeof delta.diff_pct !== 'number') return;
+
+    const val = delta.diff_pct;
+    const isUp = delta.direction === 'up';
+    const isDown = delta.direction === 'down';
+
+    ctx.save();
+    ctx.font = '700 11px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+
+    if (isUp) {
+      ctx.fillStyle = theme.palette.success.main;
+      ctx.fillText(`▲ ${Math.abs(val).toFixed(1)}%`, x, y);
+    } else if (isDown) {
+      ctx.fillStyle = theme.palette.error.main;
+      ctx.fillText(`▼ ${Math.abs(val).toFixed(1)}%`, x, y);
+    } else {
+      ctx.fillStyle = theme.palette.text.secondary;
+      ctx.fillText(`${Math.abs(val).toFixed(1)}%`, x, y);
+    }
+    ctx.restore();
+  };
+
+  // Custom plugin to render:
+  // 1. "count (pct%)"
+  // 2. Trend arrow + % change
   const valueLabelPlugin = {
     id: 'valueLabelPlugin',
     afterDatasetsDraw(chart) {
@@ -71,21 +113,30 @@ export default function FunnelChart({ query }) {
       if (!dataset) return;
       const meta = chart.getDatasetMeta(0);
       const totalSessions = stats.total_sessions || 0;
+
+      const deltaList = [deltas.sessions, deltas.atc, deltas.orders];
+
       ctx.save();
       meta.data.forEach((bar, idx) => {
         const raw = dataset.data[idx];
         if (raw == null) return;
         const { x, y } = bar.tooltipPosition();
-        // Percentage relative to sessions (first bar always 100%)
+
+        // --- Line 1: Count (xx%) ---
         const pct = idx === 0 ? 100 : (totalSessions > 0 ? (raw / totalSessions) * 100 : 0);
         const pctText = `${pct.toFixed(pct >= 99.95 || pct === 0 ? 0 : 1)}%`;
         const countText = nfInt.format(raw);
+
         ctx.textAlign = 'center';
-        ctx.fillStyle = isDark ? '#ffffffff' : '#0d47a1';
-        // Single line: count (xx%)
-        ctx.font = '600 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(`${countText} (${pctText})`, x, y - 10);
+        // Main text color
+        ctx.fillStyle = isDark ? '#ffffffff' : '#0d47a1';
+        ctx.font = '600 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+        // Position it a bit higher to make room for the trend line
+        ctx.fillText(`${countText} (${pctText})`, x, y - 20);
+
+        // --- Line 2: Trend Delta via Helper ---
+        drawTrendArrow(ctx, deltaList[idx], x, y - 6);
       });
       ctx.restore();
     }
@@ -94,7 +145,7 @@ export default function FunnelChart({ query }) {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
-  layout: { padding: { top: 30 } }, // reduced space for single-line labels
+    layout: { padding: { top: 45 } }, // increased space for labels
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -104,13 +155,13 @@ export default function FunnelChart({ query }) {
       },
     },
     scales: {
-      x: { 
+      x: {
         grid: { display: false },
         ticks: { color: isDark ? '#e0e0e0' : '#666' }
       },
-      y: { 
-        beginAtZero: true, 
-        grid: { display: false }, 
+      y: {
+        beginAtZero: true,
+        grid: { display: false },
         border: { display: false },
         ticks: { color: isDark ? '#e0e0e0' : '#666' }
       },
