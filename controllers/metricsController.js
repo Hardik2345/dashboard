@@ -1007,7 +1007,7 @@ function buildMetricsController() {
         const ordersSql = `
           SELECT
             COUNT(DISTINCT order_name) AS total_orders,
-            COALESCE(SUM(line_item_price * line_item_quantity), 0) AS total_sales
+            COALESCE(SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity), 0) AS total_sales
           FROM shopify_orders
           WHERE product_id = ?
             AND created_date >= ? AND created_date <= ?
