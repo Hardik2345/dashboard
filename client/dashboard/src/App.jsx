@@ -135,8 +135,9 @@ export default function App() {
     const key = (activeBrandKey || '').toString().trim().toUpperCase();
     if (key) base.brand_key = key;
     if (isAuthor) base.refreshKey = authorRefreshKey;
+    if (productSelection?.id) base.product_id = productSelection.id;
     return base;
-  }, [start, end, activeBrandKey, isAuthor, authorRefreshKey]);
+  }, [start, end, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id]);
 
   const handleAuthorBrandChange = useCallback((nextKeyRaw) => {
     const normalized = (nextKeyRaw || '').toString().trim().toUpperCase();

@@ -22,6 +22,7 @@ export default function FunnelChart({ query }) {
   const [stats, setStats] = useState({ total_sessions: 0, total_atc_sessions: 0, total_orders: 0 });
   const brandKey = query?.brand_key;
   const refreshKey = query?.refreshKey;
+  const productId = query?.product_id || '';
 
   useEffect(() => {
     let cancelled = false;
@@ -32,8 +33,9 @@ export default function FunnelChart({ query }) {
     }
     setLoading(true);
     (async () => {
-      const params = brandKey ? { start: query.start, end: query.end, brand_key: brandKey } : { start: query.start, end: query.end };
-      const j = await getFunnelStats(params);
+    const params = brandKey ? { start: query.start, end: query.end, brand_key: brandKey } : { start: query.start, end: query.end };
+    if (productId) params.product_id = productId;
+    const j = await getFunnelStats(params);
       if (cancelled) return;
       if (!j.error) {
         setStats({
@@ -45,7 +47,7 @@ export default function FunnelChart({ query }) {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [query.start, query.end, brandKey, refreshKey]);
+  }, [query.start, query.end, brandKey, productId, refreshKey]);
 
   const data = {
     labels: ['Sessions', 'Add to Cart', 'Orders'],
