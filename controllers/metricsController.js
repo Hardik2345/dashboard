@@ -667,8 +667,51 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
         const { start, end } = parsed.data;
-        const stats = await computeFunnelStats({ start, end, conn: req.brandDb.sequelize });
-        return res.json({ metric: "FUNNEL_STATS", range: { start: start || null, end: end || null }, total_sessions: stats.total_sessions, total_atc_sessions: stats.total_atc_sessions, total_orders: stats.total_orders });
+        const productIdRaw = (req.query.product_id || '').toString().trim();
+        if (!productIdRaw) {
+          const stats = await computeFunnelStats({ start, end, conn: req.brandDb.sequelize });
+          return res.json({ metric: "FUNNEL_STATS", range: { start: start || null, end: end || null }, total_sessions: stats.total_sessions, total_atc_sessions: stats.total_atc_sessions, total_orders: stats.total_orders });
+        }
+
+        const effectiveStart = start || end;
+        const effectiveEnd = end || start;
+        const startDate = effectiveStart;
+        const endDate = effectiveEnd;
+        const sql = `
+          WITH sess AS (
+            SELECT
+              SUM(sessions) AS total_sessions,
+              SUM(sessions_with_cart_additions) AS total_atc_sessions
+            FROM mv_product_sessions_by_path_daily
+            WHERE date >= ? AND date <= ?
+              AND product_id = ?
+          ),
+          ord AS (
+            SELECT
+              COUNT(DISTINCT order_name) AS total_orders
+            FROM shopify_orders
+            WHERE created_date >= ? AND created_date <= ?
+              AND product_id = ?
+          )
+          SELECT
+            COALESCE(sess.total_sessions, 0) AS total_sessions,
+            COALESCE(sess.total_atc_sessions, 0) AS total_atc_sessions,
+            COALESCE(ord.total_orders, 0) AS total_orders
+          FROM sess CROSS JOIN ord
+        `;
+
+        const rows = await req.brandDb.sequelize.query(sql, {
+          type: QueryTypes.SELECT,
+          replacements: [startDate, endDate, productIdRaw, startDate, endDate, productIdRaw]
+        });
+        const r = rows?.[0] || { total_sessions: 0, total_atc_sessions: 0, total_orders: 0 };
+        return res.json({
+          metric: "FUNNEL_STATS",
+          range: { start: effectiveStart || null, end: effectiveEnd || null, product_id: productIdRaw },
+          total_sessions: Number(r.total_sessions || 0),
+          total_atc_sessions: Number(r.total_atc_sessions || 0),
+          total_orders: Number(r.total_orders || 0)
+        });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
 
@@ -677,6 +720,50 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
         const { start, end } = parsed.data;
+        const productIdRaw = (req.query.product_id || '').toString().trim();
+
+        if (productIdRaw) {
+          if (!start && !end) {
+            return res.json({ metric: "ORDER_SPLIT", range: { start: null, end: null, product_id: productIdRaw }, cod_orders: 0, prepaid_orders: 0, partially_paid_orders: 0, total_orders_from_split: 0, cod_percent: 0, prepaid_percent: 0, partially_paid_percent: 0 });
+          }
+          const effectiveStart = start || end;
+          const effectiveEnd = end || start;
+          const startTs = `${effectiveStart} 00:00:00`;
+          const endTsExclusive = new Date(`${effectiveEnd}T00:00:00Z`);
+          endTsExclusive.setUTCDate(endTsExclusive.getUTCDate() + 1);
+          const endTs = endTsExclusive.toISOString().slice(0,19).replace('T',' ');
+
+          const sql = `
+            SELECT payment_type, COUNT(DISTINCT order_name) AS cnt
+            FROM (
+              SELECT 
+                CASE 
+                  WHEN payment_gateway_names LIKE '%Gokwik PPCOD%' THEN 'Partial'
+                  WHEN payment_gateway_names LIKE '%Cash on Delivery (COD)%' OR payment_gateway_names LIKE '%cash_on_delivery%' OR payment_gateway_names LIKE '%cash_on_delivery%' OR payment_gateway_names IS NULL OR payment_gateway_names = '' THEN 'COD'
+                  ELSE 'Prepaid'
+                END AS payment_type,
+                order_name
+              FROM shopify_orders
+              WHERE created_at >= ? AND created_at < ? AND product_id = ?
+              GROUP BY payment_gateway_names, order_name
+            ) sub
+            GROUP BY payment_type`;
+
+          const rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [startTs, endTs, productIdRaw] });
+
+          let cod_orders = 0; let prepaid_orders = 0; let partially_paid_orders = 0;
+          for (const r of rows) {
+            if (r.payment_type === 'COD') cod_orders = Number(r.cnt || 0);
+            else if (r.payment_type === 'Prepaid') prepaid_orders = Number(r.cnt || 0);
+            else if (r.payment_type === 'Partial') partially_paid_orders = Number(r.cnt || 0);
+          }
+          const total = cod_orders + prepaid_orders + partially_paid_orders;
+          const cod_percent = total > 0 ? (cod_orders / total) * 100 : 0;
+          const prepaid_percent = total > 0 ? (prepaid_orders / total) * 100 : 0;
+          const partially_paid_percent = total > 0 ? (partially_paid_orders / total) * 100 : 0;
+          return res.json({ metric: "ORDER_SPLIT", range: { start: effectiveStart, end: effectiveEnd, product_id: productIdRaw }, cod_orders, prepaid_orders, partially_paid_orders, total_orders_from_split: total, cod_percent, prepaid_percent, partially_paid_percent, sql_used: process.env.NODE_ENV === 'production' ? undefined : sql });
+        }
+
         const [cod_orders, prepaid_orders, partially_paid_orders] = await Promise.all([
           rawSum("cod_orders", { start, end, conn: req.brandDb.sequelize }),
           rawSum("prepaid_orders", { start, end, conn: req.brandDb.sequelize }),
@@ -695,6 +782,8 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
+        const productIdRaw = (req.query.product_id || '').toString().trim();
+        const productFilter = productIdRaw ? 'AND product_id = ?' : '';
 
         if (!start && !end) {
           return res.json({ metric: 'PAYMENT_SPLIT_SALES', range: { start: null, end: null }, cod_sales: 0, prepaid_sales: 0, partial_sales: 0, total_sales_from_split: 0, cod_percent: 0, prepaid_percent: 0, partial_percent: 0 });
@@ -719,13 +808,15 @@ function buildMetricsController() {
           MAX(total_price) AS max_price
         FROM shopify_orders
         WHERE created_at >= ? AND created_at < ?
+        ${productFilter}
         GROUP BY payment_gateway_names, order_name
       ) sub
       GROUP BY payment_type`;
 
         let rows = [];
         try {
-          rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [startTs, endTs] });
+          const replacements = productIdRaw ? [startTs, endTs, productIdRaw] : [startTs, endTs];
+          rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements });
         } catch (e) {
           console.error('[payment-sales-split] query failed', e.message);
           return res.json({ metric: 'PAYMENT_SPLIT_SALES', range: { start: effectiveStart, end: effectiveEnd }, cod_sales: 0, prepaid_sales: 0, partial_sales: 0, total_sales_from_split: 0, cod_percent: 0, prepaid_percent: 0, partial_percent: 0, warning: 'Query failed' });
@@ -1234,10 +1325,14 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         if (start && end && start > end) return res.status(400).json({ error: 'start must be on or before end' });
 
+        const conn = req.brandDb?.sequelize;
+        if (!conn) return res.status(500).json({ error: 'Brand DB connection unavailable' });
+
         const page = Math.max(1, Number(req.query.page) || 1);
         const pageSizeRaw = Number(req.query.page_size) || 10;
         const pageSize = Math.min(Math.max(1, pageSizeRaw), 200);
-        const offset = (page - 1) * pageSize;
+        const sortBy = (req.query.sort_by || 'sessions').toString().toLowerCase();
+        const sortDir = (req.query.sort_dir || 'desc').toString().toLowerCase();
 
         const allowedSort = new Map([
           ['sessions', 'sessions'],
@@ -1247,9 +1342,8 @@ function buildMetricsController() {
           ['cvr', 'cvr'],
           ['landing_page_path', 'landing_page_path'],
         ]);
-        const sortBy = (req.query.sort_by || 'sessions').toString().toLowerCase();
         const sortCol = allowedSort.get(sortBy) || 'sessions';
-        const sortDir = (req.query.sort_dir || 'desc').toString().toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
 
         const replacements = [start, end, start, end];
         const baseCte = `
@@ -1288,8 +1382,8 @@ function buildMetricsController() {
           FROM sessions_60d s
           LEFT JOIN orders_60d o
             ON s.product_id = o.product_id
-          ORDER BY ${sortCol} ${sortDir}
-          LIMIT ${pageSize} OFFSET ${offset}
+          ORDER BY ${sortCol} ${dir}
+          LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
         `;
 
         const countSql = `
@@ -1298,29 +1392,19 @@ function buildMetricsController() {
           FROM sessions_60d s
         `;
 
-        const conn = req.brandDb?.sequelize;
-        if (!conn) return res.status(500).json({ error: 'Brand DB connection unavailable' });
-
         const [rows, countRows] = await Promise.all([
           conn.query(sql, { type: QueryTypes.SELECT, replacements }),
           conn.query(countSql, { type: QueryTypes.SELECT, replacements }),
         ]);
-        const total_count = Number(countRows?.[0]?.total_count || 0);
+        const total = Number(countRows?.[0]?.total_count || 0);
 
         return res.json({
           range: { start, end },
           page,
           page_size: pageSize,
-          total_count,
-          rows: rows.map(r => ({
-            landing_page_path: r.landing_page_path,
-            sessions: Number(r.sessions || 0),
-            atc: Number(r.atc || 0),
-            orders: Number(r.orders || 0),
-            sales: Number(r.sales || 0),
-            cvr: Number(r.cvr || 0),
-          })),
-          sort: { by: sortCol, dir: sortDir.toLowerCase() },
+          total_count: total,
+          rows,
+          sort: { by: sortBy, dir: sortDir },
         });
       } catch (e) {
         console.error('[product-conversion] failed', e);
@@ -1336,6 +1420,12 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         if (start && end && start > end) return res.status(400).json({ error: 'start must be on or before end' });
 
+        const conn = req.brandDb?.sequelize;
+        if (!conn) return res.status(500).json({ error: 'Brand DB connection unavailable' });
+
+        const sortBy = (req.query.sort_by || 'sessions').toString().toLowerCase();
+        const sortDir = (req.query.sort_dir || 'desc').toString().toLowerCase();
+
         const allowedSort = new Map([
           ['sessions', 'sessions'],
           ['atc', 'atc'],
@@ -1344,12 +1434,11 @@ function buildMetricsController() {
           ['cvr', 'cvr'],
           ['landing_page_path', 'landing_page_path'],
         ]);
-        const sortBy = (req.query.sort_by || 'sessions').toString().toLowerCase();
         const sortCol = allowedSort.get(sortBy) || 'sessions';
-        const sortDir = (req.query.sort_dir || 'desc').toString().toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
 
         const replacements = [start, end, start, end];
-        const sql = `
+        const fullSql = `
           WITH orders_60d AS (
             SELECT
               product_id,
@@ -1381,12 +1470,9 @@ function buildMetricsController() {
           FROM sessions_60d s
           LEFT JOIN orders_60d o
             ON s.product_id = o.product_id
-          ORDER BY ${sortCol} ${sortDir}
+          ORDER BY ${sortCol} ${dir}
         `;
-
-        const conn = req.brandDb?.sequelize;
-        if (!conn) return res.status(500).json({ error: 'Brand DB connection unavailable' });
-        const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements });
+        const csvRows = await conn.query(fullSql, { type: QueryTypes.SELECT, replacements });
 
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', 'attachment; filename="product_conversion.csv"');
@@ -1398,7 +1484,7 @@ function buildMetricsController() {
           return str;
         };
         const lines = [headers.join(',')];
-        for (const r of rows) {
+        for (const r of csvRows) {
           lines.push([
             escapeCsv(r.landing_page_path),
             Number(r.sessions || 0),
