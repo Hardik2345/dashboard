@@ -381,9 +381,30 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   }));
 }
 
+// --- User Cache for Performance ---
+const USER_CACHE = new Map();
+const CACHE_TTL = 60 * 1000; // 60 seconds
+
 passport.serializeUser((user, done) => done(null, { id: user.id, email: user.email, brandKey: user.brandKey, isAuthor: !!user.isAuthor, sso: user.sso }));
 passport.deserializeUser(async (obj, done) => {
   try {
+    // 1. Check L1 Memory Cache
+    const cacheKey = `user:${obj.id || 'x'}:${obj.email}`;
+    if (USER_CACHE.has(cacheKey)) {
+      const entry = USER_CACHE.get(cacheKey);
+      if (Date.now() - entry.ts < CACHE_TTL) {
+        return done(null, entry.user);
+      }
+      USER_CACHE.delete(cacheKey);
+    }
+
+    const cacheResult = (user) => {
+      if (user) {
+        USER_CACHE.set(cacheKey, { ts: Date.now(), user });
+      }
+      return done(null, user);
+    };
+
     if (obj.isAuthor) {
       // Support two author modes:
       // 1) Local author (username/password) using AUTHOR_EMAIL and master users table
@@ -404,7 +425,7 @@ passport.deserializeUser(async (obj, done) => {
 
       if (domainOk) {
         // Trust the session and return a minimal author identity; no DB lookup needed
-        return done(null, { id: obj.id, email, role: 'author', brandKey: null, isAuthor: true });
+        return cacheResult({ id: obj.id, email, role: 'author', brandKey: null, isAuthor: true });
       }
 
       // Fallback to legacy local author via master DB user
@@ -412,7 +433,7 @@ passport.deserializeUser(async (obj, done) => {
       if (authorEmail !== email.toLowerCase()) return done(null, false);
       const authorUser = await User.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
       if (!authorUser || !authorUser.is_active || authorUser.role !== 'author') return done(null, false);
-      return done(null, { id: authorUser.id, email: authorUser.email, role: 'author', brandKey: null, isAuthor: true });
+      return cacheResult({ id: authorUser.id, email: authorUser.email, role: 'author', brandKey: null, isAuthor: true });
     }
     let brandCfg = null;
     const storedKey = (obj.brandKey || '').toString().trim().toUpperCase();
@@ -427,7 +448,7 @@ passport.deserializeUser(async (obj, done) => {
     // trust the session and avoid DB lookup (supports just-in-time access by domain).
     const requireBrandDbUser = String(process.env.REQUIRE_BRAND_DB_USER || 'false').toLowerCase() === 'true';
     if (obj.sso === 'google' && !requireBrandDbUser) {
-      return done(null, { id: obj.id, email: obj.email, role: obj.role || 'user', brandKey: brandCfg.key, isAuthor: false });
+      return cacheResult({ id: obj.id, email: obj.email, role: obj.role || 'user', brandKey: brandCfg.key, isAuthor: false });
     }
 
     // Otherwise, look up the brand user in the brand DB. Prefer email lookup for SSO users
@@ -441,7 +462,7 @@ passport.deserializeUser(async (obj, done) => {
       user = await BrandUser.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
     }
     if (!user || !user.is_active) return done(null, false);
-    return done(null, { id: user.id, email: user.email, role: user.role || 'user', brandKey: brandCfg.key, isAuthor: false });
+    return cacheResult({ id: user.id, email: user.email, role: user.role || 'user', brandKey: brandCfg.key, isAuthor: false });
   } catch (e) { done(e); }
 });
 
