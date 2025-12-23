@@ -2,7 +2,7 @@ import { Card, CardContent, Typography, Skeleton, Box } from '@mui/material';
 import ArrowDropUpIcon from '@mui/icons-material/ArrowDropUp';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 
-export default function KPIStat({ label, value, hint, loading, formatter, delta, onSelect, selected }) {
+export default function KPIStat({ label, value, hint, loading, deltaLoading, formatter, delta, onSelect, selected }) {
   const clickable = typeof onSelect === 'function';
 
   const handleKeyDown = (event) => {
@@ -53,7 +53,9 @@ export default function KPIStat({ label, value, hint, loading, formatter, delta,
               )}
             </Box>
             <Box sx={{ mt: 0.5, height: 20, display: 'flex', alignItems: 'center', gap: 0.25 }}>
-              {delta && typeof delta.value === 'number' ? (
+              {deltaLoading ? (
+                <Skeleton variant="text" width={60} height={20} />
+              ) : delta && typeof delta.value === 'number' ? (
                 <>
                   {delta.direction === 'up' ? (
                     <ArrowDropUpIcon fontSize="small" sx={{ color: 'success.main' }} />
