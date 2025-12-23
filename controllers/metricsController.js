@@ -1,4 +1,5 @@
 const { QueryTypes } = require('sequelize');
+const redisClient = require('../lib/redis');
 const { RangeSchema, isoDate } = require('../validation/schemas');
 const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum } = require('../utils/metricsUtils');
 const { previousWindow, prevDayStr, parseIsoDate, formatIsoDate, shiftDays } = require('../utils/dateUtils');
@@ -8,6 +9,123 @@ const { getBrands } = require('../config/brands');
 
 const SHOP_DOMAIN_CACHE = new Map();
 const pad2 = (n) => String(n).padStart(2, '0');
+const MEM_CACHE = new Map();
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+async function fetchCachedMetrics(brandKey, date) {
+  const key = `metrics:${brandKey.toLowerCase()}:${date}`;
+  const now = Date.now();
+
+  // 1. Check in-memory cache
+  if (MEM_CACHE.has(key)) {
+    const entry = MEM_CACHE.get(key);
+    if (now - entry.timestamp < CACHE_TTL_MS) {
+      if (entry.promise) {
+        console.log(`[MEM CACHE] Reuse pending request for ${brandKey} on ${date}`);
+        return entry.promise;
+      }
+      console.log(`[MEM CACHE] Hit for ${brandKey} on ${date}`);
+      return entry.data;
+    }
+    MEM_CACHE.delete(key);
+  }
+
+  // 2. Fetch from Direct Redis
+  const promise = (async () => {
+    try {
+      let data = null;
+      if (redisClient) {
+         // Assuming key format is simple: "brand_date"
+         // If pipeline uses "metrics:brand:date", change here.
+         // Based on previous conversations, sticking to simple key or pipeline.py logic
+         // Let's assume the key is exactly as generated above: `${brandKey.toLowerCase()}_${date}`
+         const raw = await redisClient.get(key);
+         if (raw) {
+           data = JSON.parse(raw);
+           console.log(`[REDIS HIT] ${key}`);
+         } else {
+           console.log(`[REDIS MISS] ${key}`);
+         }
+      } else {
+         console.warn(`[REDIS SKIP] Client not available`);
+      }
+
+      if (data) {
+        // Update cache with actual data
+        MEM_CACHE.set(key, { timestamp: Date.now(), data: data, promise: null });
+        return data;
+      }
+      
+      return null;
+    } catch (error) {
+       console.error(`[REDIS ERROR] Fetch failed for ${key}`, error.message);
+       MEM_CACHE.delete(key);
+       return null;
+    } finally {
+      // If we had a promise in cache, clear it if it failed
+      const entry = MEM_CACHE.get(key);
+      if (entry && entry.promise) {
+        MEM_CACHE.delete(key);
+      }
+    }
+  })();
+
+  MEM_CACHE.set(key, { timestamp: now, data: null, promise });
+  return promise;
+}
+
+async function fetchCachedMetricsBatch(brandKey, dates) {
+  const keys = dates.map(d => `metrics:${brandKey.toLowerCase()}:${d}`);
+  const now = Date.now();
+  const results = new Array(dates.length).fill(null);
+  const missingIndices = [];
+  const missingKeys = [];
+
+  // 1. Check Memory Cache
+  keys.forEach((key, idx) => {
+    if (MEM_CACHE.has(key)) {
+       const entry = MEM_CACHE.get(key);
+       if (now - entry.timestamp < CACHE_TTL_MS && entry.data) {
+           console.log(`[MEM CACHE] Hit for ${key}`);
+           results[idx] = entry.data;
+           return;
+       }
+       if (now - entry.timestamp >= CACHE_TTL_MS) MEM_CACHE.delete(key);
+    }
+    missingIndices.push(idx);
+    missingKeys.push(key);
+  });
+
+  if (missingKeys.length === 0) return results;
+
+  // 2. MGET from Redis
+  try {
+     if (redisClient) {
+        console.log(`[REDIS MGET] Fetching ${missingKeys.length} keys`);
+        const rawValues = await redisClient.mget(missingKeys);
+        
+        rawValues.forEach((raw, i) => {
+           const originalIdx = missingIndices[i];
+           const key = missingKeys[i];
+           
+           if (raw) {
+              const data = JSON.parse(raw);
+              MEM_CACHE.set(key, { timestamp: now, data, promise: null });
+              results[originalIdx] = data;
+              console.log(`[REDIS HIT] ${key}`);
+           } else {
+              console.log(`[REDIS MISS] ${key}`);
+           }
+        });
+     } else {
+        console.warn(`[REDIS SKIP] Client not available`);
+     }
+  } catch (e) {
+     console.error('[REDIS BATCH ERROR]', e.message);
+  }
+  return results;
+}
+
 
 function isToday(dateStr) {
   if (!dateStr) return false;
@@ -47,7 +165,24 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
         const { start, end } = parsed.data;
+        
+        // Cache check
+        if (start && end && start === end) {
+          const cached = await fetchCachedMetrics(req.brandKey, start);
+          if (cached) {
+            console.log(`[CACHE USE] AOV for ${req.brandKey} on ${start} | Value: ${cached.average_order_value}`);
+            return res.json({ 
+              metric: "AOV", 
+              range: { start, end }, 
+              total_sales: cached.total_sales, 
+              total_orders: cached.total_orders, 
+              aov: cached.average_order_value 
+            });
+          }
+        }
+
         const result = await computeAOV({ start, end, conn: req.brandDb.sequelize });
+        console.log(`[DB FETCH] AOV for ${req.brandKey} on range ${start} to ${end} | Result: ${JSON.stringify({ total_sales: result.total_sales, total_orders: result.total_orders, aov: result.aov })}`);
         return res.json({ metric: "AOV", range: { start: start || null, end: end || null }, total_sales: result.total_sales, total_orders: result.total_orders, aov: result.aov });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
@@ -57,7 +192,25 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
         const { start, end } = parsed.data;
+
+        // Cache check
+        if (start && end && start === end) {
+          const cached = await fetchCachedMetrics(req.brandKey, start);
+          if (cached) {
+            console.log(`[CACHE USE] CVR for ${req.brandKey} on ${start} | Value: ${cached.conversion_rate}`);
+            return res.json({ 
+              metric: "CVR", 
+              range: { start, end }, 
+              total_orders: cached.total_orders, 
+              total_sessions: cached.total_sessions, 
+              cvr: cached.conversion_rate / 100, 
+              cvr_percent: cached.conversion_rate
+            });
+          }
+        }
+
         const result = await computeCVR({ start, end, conn: req.brandDb.sequelize });
+        console.log(`[DB FETCH] CVR for ${req.brandKey} on range ${start} to ${end} | Result: ${JSON.stringify({ total_orders: result.total_orders, total_sessions: result.total_sessions, cvr: result.cvr })}`);
         return res.json({ metric: "CVR", range: { start: start || null, end: end || null }, total_orders: result.total_orders, total_sessions: result.total_sessions, cvr: result.cvr, cvr_percent: result.cvr_percent });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
@@ -71,7 +224,55 @@ function buildMetricsController() {
         if (!target) {
           return res.json({ metric: 'CVR_DELTA', date: null, current: null, previous: null, diff_pp: 0, diff_pct: 0, direction: 'flat' });
         }
+        
+        // Cache check
         const align = (req.query.align || '').toString().toLowerCase();
+        // If simple daily query (no range or start==end, and not hourly align)
+        if (target && (!align || align !== 'hour') && (!start || !end || start === end)) {
+          // Parallel fetch for cache
+          const prevDate = prevDayStr(target);
+          const [cached, cachedPrev] = await Promise.all([
+             fetchCachedMetrics(req.brandKey, target),
+             fetchCachedMetrics(req.brandKey, prevDate)
+          ]);
+
+          if (cached) {
+            console.log(`[CACHE USE] CVR_DELTA for ${req.brandKey} on ${target} | Current: ${cached.conversion_rate}`);
+            
+             let previousData;
+             if (cachedPrev) {
+               console.log(`[CACHE USE] CVR_DELTA (prev) for ${req.brandKey} on ${prevDate}`);
+               previousData = {
+                 total_orders: cachedPrev.total_orders,
+                 total_sessions: cachedPrev.total_sessions,
+                 cvr: cachedPrev.conversion_rate / 100,
+                 cvr_percent: cachedPrev.conversion_rate
+               };
+             } else {
+               previousData = await computeCVRForDay(prevDate, req.brandDb.sequelize);
+             }
+             
+             const curCVR = cached.conversion_rate / 100;
+             const delta = computePercentDelta(cached.conversion_rate, previousData.cvr_percent || 0);
+             
+             return res.json({ 
+               metric: 'CVR_DELTA', 
+               date: target, 
+               current: { 
+                 total_orders: cached.total_orders, 
+                 total_sessions: cached.total_sessions, 
+                 cvr: curCVR, 
+                 cvr_percent: cached.conversion_rate 
+               }, 
+               previous: previousData, 
+               diff_pp: delta.diff_pp, 
+               diff_pct: delta.diff_pct, 
+               direction: delta.direction 
+             });
+          }
+        }
+        
+        // align already declared above
         const compare = (req.query.compare || '').toString().toLowerCase();
 
         if (compare === 'prev-range-avg' && start && end) {
@@ -208,6 +409,7 @@ function buildMetricsController() {
           computeCVRForDay(prevStr, conn)
         ]);
         const delta = computePercentDelta(current.cvr_percent || 0, previous.cvr_percent || 0);
+        console.log(`[DB FETCH] CVR_DELTA for ${req.brandKey} on ${target} | Result: ${JSON.stringify({ current, previous, delta })}`);
         return res.json({ metric: 'CVR_DELTA', date: target, current, previous, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
@@ -223,6 +425,30 @@ function buildMetricsController() {
         }
 
         const align = (req.query.align || '').toString().toLowerCase();
+
+        // Cache check
+        if (date && (!align || align !== 'hour') && !start && !end) {
+           const prevDate = prevDayStr(date);
+           const [cached, cachedPrev] = await Promise.all([
+             fetchCachedMetrics(req.brandKey, date),
+             fetchCachedMetrics(req.brandKey, prevDate)
+           ]);
+           
+           if (cached) {
+             console.log(`[CACHE USE] TOTAL_ORDERS_DELTA for ${req.brandKey} on ${date} | Current: ${cached.total_orders}`);
+             let prevVal = 0;
+             if (cachedPrev) {
+               prevVal = cachedPrev.total_orders;
+             } else {
+               prevVal = await rawSum('total_orders', { start: prevDate, end: prevDate, conn: req.brandDb.sequelize });
+             }
+             const current = cached.total_orders;
+             const diff = current - prevVal;
+             const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (current > 0 ? 100 : 0);
+             const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+             return res.json({ metric: 'TOTAL_ORDERS_DELTA', date, current, previous: prevVal, diff_pct, direction });
+           }
+        }
         if (align === 'hour') {
           const conn = req.brandDb.sequelize;
           const rangeStart = start || date;
@@ -266,6 +492,7 @@ function buildMetricsController() {
 
         if (!date) return res.json({ metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
         const delta = await deltaForSum('total_orders', date, req.brandDb.sequelize);
+        console.log(`[DB FETCH] TOTAL_ORDERS_DELTA for ${req.brandKey} on ${date} | Result: ${JSON.stringify(delta)}`);
         return res.json({ metric: 'TOTAL_ORDERS_DELTA', date, ...delta });
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
@@ -290,6 +517,30 @@ function buildMetricsController() {
         }
 
         const align = (req.query.align || '').toString().toLowerCase();
+
+        // Cache check
+        if (date && (!align || align !== 'hour') && !start && !end) {
+           const prevDate = prevDayStr(date);
+           const [cached, cachedPrev] = await Promise.all([
+             fetchCachedMetrics(req.brandKey, date),
+             fetchCachedMetrics(req.brandKey, prevDate)
+           ]);
+
+           if (cached) {
+             console.log(`[CACHE USE] TOTAL_SALES_DELTA for ${req.brandKey} on ${date} | Current: ${cached.total_sales}`);
+             let prevVal = 0;
+             if (cachedPrev) {
+               prevVal = cachedPrev.total_sales;
+             } else {
+               prevVal = await rawSum('total_sales', { start: prevDate, end: prevDate, conn: req.brandDb.sequelize });
+             }
+             const current = cached.total_sales;
+             const diff = current - prevVal;
+             const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (current > 0 ? 100 : 0);
+             const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+             return res.json({ metric: 'TOTAL_SALES_DELTA', date, current, previous: prevVal, diff_pct, direction });
+           }
+        }
         if (align === 'hour') {
           const conn = req.brandDb.sequelize;
           const rangeStart = start || date;
@@ -322,6 +573,7 @@ function buildMetricsController() {
         }
 
         const delta = await deltaForSum('total_sales', date, req.brandDb.sequelize);
+        console.log(`[DB FETCH] TOTAL_SALES_DELTA for ${req.brandKey} on ${date} | Result: ${JSON.stringify(delta)}`);
         return res.json({ metric: 'TOTAL_SALES_DELTA', date, ...delta });
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
@@ -398,6 +650,30 @@ function buildMetricsController() {
         }
 
         const align = (req.query.align || '').toString().toLowerCase();
+
+        // Cache check
+        if (date && (!align || align !== 'hour') && !start && !end) {
+           const prevDate = prevDayStr(date);
+           const [cached, cachedPrev] = await Promise.all([
+             fetchCachedMetrics(req.brandKey, date),
+             fetchCachedMetrics(req.brandKey, prevDate)
+           ]);
+
+           if (cached) {
+             console.log(`[CACHE USE] TOTAL_SESSIONS_DELTA for ${req.brandKey} on ${date} | Current: ${cached.total_sessions}`);
+             let prevVal = 0;
+             if (cachedPrev) {
+               prevVal = cachedPrev.total_sessions;
+             } else {
+               prevVal = await rawSum('total_sessions', { start: prevDate, end: prevDate, conn: req.brandDb.sequelize });
+             }
+             const current = cached.total_sessions;
+             const diff = current - prevVal;
+             const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (current > 0 ? 100 : 0);
+             const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+             return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date, current, previous: prevVal, diff, diff_pct, direction });
+           }
+        }
         if (align === 'hour') {
           const IST_OFFSET_MIN = 330;
           const nowUtc = new Date();
@@ -454,6 +730,7 @@ function buildMetricsController() {
         }
 
         const d = await deltaForSum('total_sessions', date, req.brandDb.sequelize);
+        console.log(`[DB FETCH] TOTAL_SESSIONS_DELTA for ${req.brandKey} on ${date} | Result: ${JSON.stringify(d)}`);
         return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date, ...d });
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
@@ -478,6 +755,30 @@ function buildMetricsController() {
         }
 
         const align = (req.query.align || '').toString().toLowerCase();
+
+        // Cache check
+        if (date && (!align || align !== 'hour') && !start && !end) {
+           const prevDate = prevDayStr(date);
+           const [cached, cachedPrev] = await Promise.all([
+             fetchCachedMetrics(req.brandKey, date),
+             fetchCachedMetrics(req.brandKey, prevDate)
+           ]);
+           
+           if (cached) {
+             console.log(`[CACHE USE] ATC_SESSIONS_DELTA for ${req.brandKey} on ${date} | Current: ${cached.total_atc_sessions}`);
+             let prevVal = 0;
+             if (cachedPrev) {
+               prevVal = cachedPrev.total_atc_sessions;
+             } else {
+               prevVal = await rawSum('total_atc_sessions', { start: prevDate, end: prevDate, conn: req.brandDb.sequelize });
+             }
+             const current = cached.total_atc_sessions;
+             const diff = current - prevVal;
+             const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (current > 0 ? 100 : 0);
+             const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+             return res.json({ metric: 'ATC_SESSIONS_DELTA', date, current, previous: prevVal, diff, diff_pct, direction });
+           }
+        }
         if (align === 'hour') {
           const IST_OFFSET_MIN = 330;
           const nowUtc = new Date();
@@ -534,6 +835,7 @@ function buildMetricsController() {
         }
 
         const d = await deltaForSum('total_atc_sessions', date, req.brandDb.sequelize);
+        console.log(`[DB FETCH] ATC_SESSIONS_DELTA for ${req.brandKey} on ${date} | Result: ${JSON.stringify(d)}`);
         return res.json({ metric: 'ATC_SESSIONS_DELTA', date, ...d });
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
@@ -558,6 +860,33 @@ function buildMetricsController() {
         }
 
         const align = (req.query.align || '').toString().toLowerCase();
+
+        // Cache check
+        if (date && (!align || align !== 'hour') && !start && !end) {
+           const prevDate = prevDayStr(date);
+           const [cached, cachedPrev] = await Promise.all([
+             fetchCachedMetrics(req.brandKey, date),
+             fetchCachedMetrics(req.brandKey, prevDate)
+           ]);
+
+           if (cached) {
+             console.log(`[CACHE USE] AOV_DELTA for ${req.brandKey} on ${date} | Current: ${cached.average_order_value}`);
+             let pAov = 0;
+             if (cachedPrev) {
+               pAov = cachedPrev.average_order_value;
+             } else {
+               const prevAovStats = await aovForRange({ start: prevDate, end: prevDate, conn: req.brandDb.sequelize });
+               if (typeof prevAovStats === 'object' && prevAovStats !== null) pAov = Number(prevAovStats.aov || 0);
+               else pAov = Number(prevAovStats || 0);
+             }
+
+             const current = cached.average_order_value;
+             const diff = current - pAov;
+             const diff_pct = pAov > 0 ? (diff / pAov) * 100 : (current > 0 ? 100 : 0);
+             const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+             return res.json({ metric: 'AOV_DELTA', date, current, previous: pAov, diff, diff_pct, direction });
+           }
+        }
         if (align === 'hour') {
           const IST_OFFSET_MIN = 330;
           const offsetMs = IST_OFFSET_MIN * 60 * 1000;
@@ -638,6 +967,7 @@ function buildMetricsController() {
         }
 
         const d = await deltaForAOV(date, req.brandDb.sequelize);
+        console.log(`[DB FETCH] AOV_DELTA for ${req.brandKey} on ${date} | Result: ${JSON.stringify(d)}`);
         return res.json({ metric: 'AOV_DELTA', date, ...d });
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
@@ -647,7 +977,24 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
         const { start, end } = parsed.data;
+
+        // Cache check
+        if (start && end && start === end) {
+          const cached = await fetchCachedMetrics(req.brandKey, start);
+          if (cached) {
+            return res.json({ metric: "TOTAL_SALES", range: { start, end }, total_sales: cached.total_sales });
+          }
+        }
+
         const total_sales = await computeTotalSales({ start, end, conn: req.brandDb.sequelize });
+        if (start && end && start === end) {
+             const cached = await fetchCachedMetrics(req.brandKey, start);
+             if (cached) {
+                console.log(`[CACHE USE] TOTAL_SALES for ${req.brandKey} on ${start} | Value: ${cached.total_sales}`);
+                return res.json({ metric: "TOTAL_SALES", range: { start: start || null, end: end || null }, total_sales: cached.total_sales });
+             }
+        }
+        console.log(`[DB FETCH] TOTAL_SALES for ${req.brandKey} on range ${start} to ${end} | Result: ${total_sales}`);
         return res.json({ metric: "TOTAL_SALES", range: { start: start || null, end: end || null }, total_sales });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
@@ -657,7 +1004,24 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
         const { start, end } = parsed.data;
+
+        // Cache check
+        if (start && end && start === end) {
+          const cached = await fetchCachedMetrics(req.brandKey, start);
+          if (cached) {
+            return res.json({ metric: "TOTAL_ORDERS", range: { start, end }, total_orders: cached.total_orders });
+          }
+        }
+
         const total_orders = await computeTotalOrders({ start, end, conn: req.brandDb.sequelize });
+        if (start && end && start === end) {
+            const cached = await fetchCachedMetrics(req.brandKey, start);
+            if (cached) {
+              console.log(`[CACHE USE] TOTAL_ORDERS for ${req.brandKey} on ${start} | Value: ${cached.total_orders}`);
+              return res.json({ metric: "TOTAL_ORDERS", range: { start: start || null, end: end || null }, total_orders: cached.total_orders });
+            }
+        }
+        console.log(`[DB FETCH] TOTAL_ORDERS for ${req.brandKey} on range ${start} to ${end} | Result: ${total_orders}`);
         return res.json({ metric: "TOTAL_ORDERS", range: { start: start || null, end: end || null }, total_orders });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
@@ -1565,6 +1929,7 @@ function buildMetricsController() {
       }
     },
 
+
     diagnoseTotalOrders: (sequelize) => async (req, res) => {
       try {
         const start = req.query.start;
@@ -1576,6 +1941,156 @@ function buildMetricsController() {
         const daily = await sequelize.query(sqlDaily, { type: QueryTypes.SELECT, replacements: [start, end] });
         res.json({ connecting_to: envInfo, range: { start, end }, sql_total: sqlTotal, sql_params: [start, end], total_orders: Number(totalRow.total || 0), daily_breakdown: daily.map(r => ({ date: r.date, total_orders: Number(r.total_orders || 0) })) });
       } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+    },
+
+    dashboardSummary: async (req, res) => {
+      try {
+        const brandQuery = (req.query.brand || req.query.brand_key || (req.brandKey)).toString().trim();
+        if (!brandQuery) return res.status(400).json({ error: "Missing brand_key" });
+
+        const todayStr = formatIsoDate(new Date());
+        const start = (req.query.start || req.query.date || todayStr).toString();
+        const end = (req.query.end || req.query.date || start).toString();
+
+        if (start > end) return res.status(400).json({ error: 'start must be on or before end' });
+
+        const traceStart = req._reqStart || Date.now();
+        const spans = [];
+        const mark = (label, since) => spans.push({ label, ms: Date.now() - (since || traceStart) });
+        mark('params');
+
+        const isSingleDay = start === end;
+        const prevWin = previousWindow(start, end);
+        const prevStart = prevWin?.prevStart;
+        const prevEnd = prevWin?.prevEnd;
+
+        console.log(`[SUMMARY] Fetching for ${brandQuery} range ${start} to ${end}${prevStart && prevEnd ? ` (prev: ${prevStart} to ${prevEnd})` : ''}`);
+        const cacheFetchStart = Date.now();
+
+        // Batch fetch from cache when single-day so we can reuse existing cache keys.
+        const [cached, cachedPrev] = isSingleDay
+          ? await fetchCachedMetricsBatch(brandQuery, [start, prevStart || prevDayStr(start)])
+          : [null, null];
+        mark('cache_fetch', cacheFetchStart);
+
+        const getMetricsForRange = async (s, e, cachedData) => {
+          if (!s || !e) return null;
+          if (isSingleDay && cachedData) {
+            return {
+              total_orders: cachedData.total_orders,
+              total_sales: cachedData.total_sales,
+              total_sessions: cachedData.total_sessions,
+              total_atc_sessions: cachedData.total_atc_sessions,
+              average_order_value: cachedData.average_order_value,
+              conversion_rate: cachedData.conversion_rate,
+              conversion_rate_percent: cachedData.conversion_rate,
+              source: 'cache'
+            };
+          }
+
+          // Ensure DB connection
+          if (!req.brandDb && req.brandConfig) {
+            console.log(`[LAZY CONNECT] Connecting to ${req.brandConfig.key} for fallback`);
+            try {
+              req.brandDb = await getBrandConnection(req.brandConfig);
+            } catch (connErr) {
+              console.error("Lazy connection failed", connErr);
+            }
+          }
+          const conn = req.brandDb ? req.brandDb.sequelize : null;
+          if (!conn) throw new Error("Database connection missing for fallback (Cache Miss & DB Fail)");
+
+          const [sales, orders, sessions, atc, cvrObj, aovObj] = await Promise.all([
+            rawSum('total_sales', { start: s, end: e, conn }),
+            rawSum('total_orders', { start: s, end: e, conn }),
+            rawSum('total_sessions', { start: s, end: e, conn }),
+            rawSum('total_atc_sessions', { start: s, end: e, conn }),
+            computeCVR({ start: s, end: e, conn }),
+            aovForRange({ start: s, end: e, conn })
+          ]);
+
+          const aovVal = typeof aovObj === 'object' && aovObj !== null ? Number(aovObj.aov || 0) : Number(aovObj || 0);
+          return {
+            total_orders: orders,
+            total_sales: sales,
+            total_sessions: sessions,
+            total_atc_sessions: atc,
+            average_order_value: aovVal,
+            conversion_rate: cvrObj.cvr,
+            conversion_rate_percent: cvrObj.cvr_percent,
+            source: 'db'
+          };
+        };
+
+        const [current, previous] = await Promise.all([
+          (async () => {
+            const s = Date.now();
+            const resCur = await getMetricsForRange(start, end, cached);
+            mark('current_fetch', s);
+            return resCur;
+          })(),
+          (async () => {
+            const s = Date.now();
+            const resPrev = await getMetricsForRange(prevStart, prevEnd, cachedPrev);
+            mark('previous_fetch', s);
+            return resPrev;
+          })()
+        ]);
+
+        const calcDelta = (cur, prev) => {
+          const diff = cur - prev;
+          const diff_pct = prev > 0 ? (diff / prev) * 100 : (cur > 0 ? 100 : 0);
+          const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+          return { diff, diff_pct, direction };
+        };
+
+        const response = {
+          range: { start, end },
+          prev_range: prevStart && prevEnd ? { start: prevStart, end: prevEnd } : null,
+          metrics: {
+            total_orders: {
+              value: current?.total_orders || 0,
+              previous: previous?.total_orders || 0,
+              ...calcDelta(current?.total_orders || 0, previous?.total_orders || 0)
+            },
+            total_sales: {
+              value: current?.total_sales || 0,
+              previous: previous?.total_sales || 0,
+              ...calcDelta(current?.total_sales || 0, previous?.total_sales || 0)
+            },
+            average_order_value: {
+              value: current?.average_order_value || 0,
+              previous: previous?.average_order_value || 0,
+              ...calcDelta(current?.average_order_value || 0, previous?.average_order_value || 0)
+            },
+            conversion_rate: {
+              value: current?.conversion_rate_percent || 0,
+              previous: previous?.conversion_rate_percent || 0,
+              ...calcDelta(current?.conversion_rate_percent || 0, previous?.conversion_rate_percent || 0)
+            },
+            total_sessions: {
+              value: current?.total_sessions || 0,
+              previous: previous?.total_sessions || 0,
+              ...calcDelta(current?.total_sessions || 0, previous?.total_sessions || 0)
+            },
+            total_atc_sessions: {
+              value: current?.total_atc_sessions || 0,
+              previous: previous?.total_atc_sessions || 0,
+              ...calcDelta(current?.total_atc_sessions || 0, previous?.total_atc_sessions || 0)
+            }
+          },
+          sources: { current: current?.source || 'db', previous: previous?.source || 'db' }
+        };
+
+        console.log(
+          `[SUMMARY TRACE] ${brandQuery} ${start}->${end} steps=${spans.map(s => `${s.label}:${s.ms}ms`).join(' | ')} total=${Date.now() - traceStart}ms`
+        );
+
+        return res.json(response);
+      } catch (e) {
+        console.error('[dashboardSummary] Error:', e);
+        return res.status(500).json({ error: 'Internal server error', details: e.message });
+      }
     },
   };
 }
