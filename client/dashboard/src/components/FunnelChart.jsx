@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, Typography, Skeleton, useTheme } from '@mui/material';
 import { Bar } from 'react-chartjs-2';
-import { getFunnelStats, getTotalSessionsDelta, getAtcSessionsDelta, getTotalOrdersDelta } from '../lib/api.js';
+import { getFunnelStats, getDeltaSummary } from '../lib/api.js';
 import {
   Chart as ChartJS,
   BarElement,
@@ -38,24 +38,23 @@ export default function FunnelChart({ query }) {
       const params = brandKey ? { start: query.start, end: query.end, brand_key: brandKey } : { start: query.start, end: query.end };
       const deltaParams = { ...params, align: 'hour' };
 
-      const [funnel, sessDelta, atcDelta, ordersDelta] = await Promise.all([
+      const [funnel, deltaSum] = await Promise.all([
         getFunnelStats(params),
-        getTotalSessionsDelta(deltaParams),
-        getAtcSessionsDelta(deltaParams),
-        getTotalOrdersDelta(deltaParams)
+        getDeltaSummary(deltaParams)
       ]);
 
       if (cancelled) return;
       if (!funnel.error) {
+        const m = deltaSum?.metrics || {};
         setStats({
           total_sessions: funnel.total_sessions,
           total_atc_sessions: funnel.total_atc_sessions,
           total_orders: funnel.total_orders,
         });
         setDeltas({
-          sessions: sessDelta,
-          atc: atcDelta,
-          orders: ordersDelta
+          sessions: m.total_sessions,
+          atc: m.total_atc_sessions,
+          orders: m.total_orders
         });
       }
       setLoading(false);
@@ -145,7 +144,7 @@ export default function FunnelChart({ query }) {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
-    layout: { padding: { top: 45 } }, // increased space for labels
+    layout: { padding: { top: 55 } }, // increased space for labels
     plugins: {
       legend: { display: false },
       tooltip: {
