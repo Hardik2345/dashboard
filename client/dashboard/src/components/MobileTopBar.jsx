@@ -59,6 +59,25 @@ const DATE_PRESETS = [
     ],
     group: 2,
   },
+  // Month ranges
+  {
+    label: "Last month",
+    getValue: () => {
+      const start = dayjs().subtract(1, 'month').startOf('month').startOf('day');
+      const end = dayjs().subtract(1, 'month').endOf('month').startOf('day');
+      return [start, end];
+    },
+    group: 2,
+  },
+  {
+    label: "Month-to-date",
+    getValue: () => {
+      const start = dayjs().subtract(1, 'month').startOf('month').startOf('day');
+      const end = dayjs().startOf('day');
+      return [start, end];
+    },
+    group: 2,
+  },
   {
     label: "Last 90 days",
     getValue: () => [

@@ -23,6 +23,7 @@ export default function PaymentSalesSplit({ query }) {
   const [data, setData] = useState({ cod_sales: 0, prepaid_sales: 0, partial_sales: 0, total: 0, cod_percent: 0, prepaid_percent: 0, partial_percent: 0 });
   const brandKey = query?.brand_key;
   const refreshKey = query?.refreshKey;
+  const productId = query?.product_id || '';
 
   useEffect(() => {
     let cancelled = false;
@@ -35,11 +36,12 @@ export default function PaymentSalesSplit({ query }) {
     const params = brandKey
       ? { start: query.start, end: query.end, brand_key: brandKey }
       : { start: query.start, end: query.end };
+    if (productId) params.product_id = productId;
     getPaymentSalesSplit(params)
       .then(res => { if (!cancelled) { setData(res); setLoading(false); } })
       .catch(() => setLoading(false));
     return () => { cancelled = true; };
-  }, [query.start, query.end, brandKey, refreshKey]);
+  }, [query.start, query.end, brandKey, productId, refreshKey]);
 
   const empty = data.total === 0;
 

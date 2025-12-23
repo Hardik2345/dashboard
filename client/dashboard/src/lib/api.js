@@ -212,6 +212,36 @@ export async function getTotalOrdersDelta(args) {
   };
 }
 
+export async function getDashboardSummary(args) {
+  const params = appendBrandKey({
+    start: args.start || args.date,
+    end: args.end || args.date || args.start,
+  }, args);
+  const json = await getJSON('/metrics/summary', params);
+  return {
+    metrics: json?.metrics || null,
+    range: json?.range || { start: params.start || null, end: params.end || null },
+    prev_range: json?.prev_range || null,
+    error: json?.__error
+  };
+}
+
+export async function getDeltaSummary(args) {
+  const params = appendBrandKey({
+    start: args.start || args.date,
+    end: args.end || args.date || args.start,
+    align: args.align,
+    compare: args.compare,
+  }, args);
+  const json = await getJSON('/metrics/delta-summary', params);
+  return {
+    metrics: json?.metrics || null,
+    range: json?.range || { start: params.start || null, end: params.end || null },
+    prev_range: json?.prev_range || null,
+    error: json?.__error
+  };
+}
+
 export async function getProductConversion(args, options = {}) {
   const params = appendBrandKey({
     start: args.start,
@@ -312,7 +342,7 @@ export async function getCVRDelta(args) {
 }
 
 export async function getFunnelStats(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const params = appendBrandKey({ start: args.start, end: args.end, product_id: args.product_id }, args);
   const json = await getJSON('/metrics/funnel-stats', params);
   return {
     total_sessions: Number(json?.total_sessions || 0),
@@ -351,7 +381,7 @@ export async function getAtcSessionsDelta(args) {
 }
 
 export async function getOrderSplit(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const params = appendBrandKey({ start: args.start, end: args.end, product_id: args.product_id }, args);
   const json = await getJSON('/metrics/order-split', params);
   const cod_orders = Number(json?.cod_orders || 0);
   const prepaid_orders = Number(json?.prepaid_orders || 0);
@@ -364,7 +394,7 @@ export async function getOrderSplit(args) {
 }
 
 export async function getPaymentSalesSplit(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const params = appendBrandKey({ start: args.start, end: args.end, product_id: args.product_id }, args);
   const json = await getJSON('/metrics/payment-sales-split', params);
   const cod_sales = Number(json?.cod_sales || 0);
   const prepaid_sales = Number(json?.prepaid_sales || 0);
