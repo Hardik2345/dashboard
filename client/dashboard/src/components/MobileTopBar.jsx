@@ -72,7 +72,7 @@ const DATE_PRESETS = [
   {
     label: "Month-to-date",
     getValue: () => {
-      const start = dayjs().subtract(1, 'month').startOf('month').startOf('day');
+      const start = dayjs().startOf('month').startOf('day');
       const end = dayjs().startOf('day');
       return [start, end];
     },
@@ -257,7 +257,7 @@ export default function MobileTopBar({
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
         {/* Mobile: Product filter on its own row */}
-        <Box sx={{ display: { xs: 'block', sm: 'none' }, width: '100%' }}>
+        <Box sx={{ display: { xs: 'block', sm: 'none' }, width: '100%', mb: { xs: 1.5, sm: 0 } }}>
           <FormControl size="small" fullWidth>
             <InputLabel id="mobile-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
             <Select
@@ -271,28 +271,20 @@ export default function MobileTopBar({
               disabled={productLoading || !productOptions?.length}
               sx={{ fontSize: 12, height: 36 }}
               MenuProps={{
-                anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
-                transformOrigin: { vertical: 'top', horizontal: 'left' },
                 PaperProps: {
                   sx: {
-                    maxHeight: { xs: '40vh', sm: '60vh' },
-                    width: '100%',
-                    borderRadius: 0.5,
-                    boxShadow: 6,
-                    bgcolor: isDark ? 'grey.900' : 'background.paper',
-                    border: '2px solid',
-                    borderColor: 'divider',
-                    p: 0,
+                    maxHeight: '60vh',
+                    width: { xs: '100%', sm: 360 },
+                    whiteSpace: 'normal',
                   }
-                },
-                sx: { mt: 0 }
+                }
               }}
             >
               {(productOptions || []).map((opt) => (
                 <MenuItem
                   key={opt.id || 'all'}
                   value={opt.id || ''}
-                  sx={{ fontSize: 15, py: { xs: 0, sm: 0.25 } }}
+                  sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.75 }}
                 >
                   {opt.id ? opt.label : 'All products'}
                 </MenuItem>
@@ -323,9 +315,8 @@ export default function MobileTopBar({
             </Card>
           ) : last.ts ? (
             <Tooltip
-              title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${
-                last.tz ? ` ${last.tz}` : ""
-              }`}
+              title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${last.tz ? ` ${last.tz}` : ""
+                }`}
               arrow
             >
               <Card
@@ -363,7 +354,7 @@ export default function MobileTopBar({
           {/* Right: Product filter (desktop only) + Date picker */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {/* Desktop-only compact product filter */}
-            <FormControl size="small" sx={{ width: { xs: '100%', sm: 420 }, minWidth: { sm: 420 }, maxWidth: { sm: 420 }, display: { xs: 'none', sm: 'flex' } }}>
+            <FormControl size="small" sx={{ width: { xs: '100%', sm: 420 }, display: { xs: 'none', sm: 'flex' } }}>
               <InputLabel id="desktop-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
               <Select
                 labelId="desktop-product-label"
@@ -378,33 +369,25 @@ export default function MobileTopBar({
                   fontSize: 12,
                   height: 32,
                   width: '100%',
-                  boxSizing: 'border-box',
+                  // Ensure the selected value area ellipses long labels instead of expanding the control
                   '& .MuiSelect-select': {
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
-                    display: 'block'
-                  },
-                  '& .MuiInputBase-input': {
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
                   }
-                  }}
-                  MenuProps={{
-                    PaperProps: {
-                      sx: {
-                        maxHeight: '60vh',
-                        width: { xs: '100%', sm: 420 },
-                        whiteSpace: 'normal',
-                        borderRadius: 1,
-                      }
-                    },
-                    sx: { mt: 1 }
-                  }}
+                }}
+                MenuProps={{
+                  PaperProps: {
+                    sx: {
+                      maxHeight: '60vh',
+                      width: { xs: '100%', sm: 420 },
+                      whiteSpace: 'normal',
+                    }
+                  }
+                }}
               >
                 {(productOptions || []).map((opt) => (
-                  <MenuItem key={opt.id || 'all'} value={opt.id || ''} sx={{ fontSize: 12 }}>
+                  <MenuItem key={opt.id || 'all'} value={opt.id || ''} sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.5 }}>
                     {opt.id ? opt.label : 'All products'}
                   </MenuItem>
                 ))}
@@ -467,153 +450,153 @@ export default function MobileTopBar({
                   display: "flex",
                   flexDirection: "row",
                   maxHeight: "80vh",
-              overflowX: "hidden",
-              overflowY: "auto",
-              borderRadius: 1,
-            }}
-          >
-            {/* Presets Panel - Mobile */}
-            <Box
-              sx={{
-                display: { xs: "block", md: "none" },
-                minWidth: 120,
-                maxHeight: 320,
-                overflowY: "auto",
-                borderRight: "1px solid",
-                borderColor: "divider",
-                bgcolor: "background.paper",
-              }}
-            >
-              <List disablePadding>
-                {DATE_PRESETS.map((preset, index) => {
-                  const isSelected = activePreset === preset.label;
-                  const showDivider =
-                    index < DATE_PRESETS.length - 1 &&
-                    DATE_PRESETS[index + 1].group !== preset.group;
-                  return (
-                    <Box key={preset.label}>
-                      <ListItemButton
-                        selected={isSelected}
-                        onClick={() => handlePresetSelect(preset)}
-                        sx={{
-                          py: 1,
-                          px: 1.5,
-                          bgcolor: isSelected
-                            ? (isDark ? 'action.selected' : 'grey.100')
-                            : 'transparent',
-                          '&:hover': {
-                            bgcolor: isDark ? 'action.hover' : 'grey.100',
-                          },
-                          '&.Mui-selected': {
-                            bgcolor: isDark ? 'action.selected' : 'grey.200',
-                            '&:hover': {
-                              bgcolor: isDark ? 'action.selected' : 'grey.200',
-                            },
-                          },
-                        }}
-                      >
-                        <ListItemText
-                          primary={preset.label}
-                          primaryTypographyProps={{
-                            variant: "body2",
-                            fontWeight: isSelected ? 600 : 400,
-                            color: "text.primary",
-                            fontSize: 12,
-                          }}
-                        />
-                        {isSelected && (
-                          <CheckIcon
-                            sx={{ fontSize: 14, color: "text.primary", ml: 0.5 }}
-                          />
-                        )}
-                      </ListItemButton>
-                      {showDivider && <Divider />}
-                    </Box>
-                  );
-                })}
-              </List>
-            </Box>
+                  overflowX: "hidden",
+                  overflowY: "auto",
+                  borderRadius: 1,
+                }}
+              >
+                {/* Presets Panel - Mobile */}
+                <Box
+                  sx={{
+                    display: { xs: "block", md: "none" },
+                    minWidth: 120,
+                    maxHeight: 320,
+                    overflowY: "auto",
+                    borderRight: "1px solid",
+                    borderColor: "divider",
+                    bgcolor: "background.paper",
+                  }}
+                >
+                  <List disablePadding>
+                    {DATE_PRESETS.map((preset, index) => {
+                      const isSelected = activePreset === preset.label;
+                      const showDivider =
+                        index < DATE_PRESETS.length - 1 &&
+                        DATE_PRESETS[index + 1].group !== preset.group;
+                      return (
+                        <Box key={preset.label}>
+                          <ListItemButton
+                            selected={isSelected}
+                            onClick={() => handlePresetSelect(preset)}
+                            sx={{
+                              py: 1,
+                              px: 1.5,
+                              bgcolor: isSelected
+                                ? (isDark ? 'action.selected' : 'grey.100')
+                                : 'transparent',
+                              '&:hover': {
+                                bgcolor: isDark ? 'action.hover' : 'grey.100',
+                              },
+                              '&.Mui-selected': {
+                                bgcolor: isDark ? 'action.selected' : 'grey.200',
+                                '&:hover': {
+                                  bgcolor: isDark ? 'action.selected' : 'grey.200',
+                                },
+                              },
+                            }}
+                          >
+                            <ListItemText
+                              primary={preset.label}
+                              primaryTypographyProps={{
+                                variant: "body2",
+                                fontWeight: isSelected ? 600 : 400,
+                                color: "text.primary",
+                                fontSize: 12,
+                              }}
+                            />
+                            {isSelected && (
+                              <CheckIcon
+                                sx={{ fontSize: 14, color: "text.primary", ml: 0.5 }}
+                              />
+                            )}
+                          </ListItemButton>
+                          {showDivider && <Divider />}
+                        </Box>
+                      );
+                    })}
+                  </List>
+                </Box>
 
-            {/* Presets Panel - Desktop Only (All options) */}
-            <Box
-              sx={{
-                display: { xs: "none", md: "block" },
-                minWidth: 160,
-                maxHeight: 320,
-                overflowY: "auto",
-                borderRight: "1px solid",
-                borderColor: "divider",
-                bgcolor: "background.paper",
-              }}
-            >
-              <List disablePadding>
-                {DATE_PRESETS.map((preset, index) => {
-                  const isSelected = activePreset === preset.label;
-                  const showDivider =
-                    index < DATE_PRESETS.length - 1 &&
-                    DATE_PRESETS[index + 1].group !== preset.group;
+                {/* Presets Panel - Desktop Only (All options) */}
+                <Box
+                  sx={{
+                    display: { xs: "none", md: "block" },
+                    minWidth: 160,
+                    maxHeight: 320,
+                    overflowY: "auto",
+                    borderRight: "1px solid",
+                    borderColor: "divider",
+                    bgcolor: "background.paper",
+                  }}
+                >
+                  <List disablePadding>
+                    {DATE_PRESETS.map((preset, index) => {
+                      const isSelected = activePreset === preset.label;
+                      const showDivider =
+                        index < DATE_PRESETS.length - 1 &&
+                        DATE_PRESETS[index + 1].group !== preset.group;
 
-                  return (
-                    <Box key={preset.label}>
-                      <ListItemButton
-                        selected={isSelected}
-                        onClick={() => handlePresetSelect(preset)}
-                        sx={{
-                          py: 1,
-                          px: 1.5,
-                          bgcolor: isSelected
-                            ? (isDark ? 'action.selected' : 'grey.100')
-                            : 'transparent',
-                          '&:hover': {
-                            bgcolor: isDark ? 'action.hover' : 'grey.100',
-                          },
-                          '&.Mui-selected': {
-                            bgcolor: isDark ? 'action.selected' : 'grey.200',
-                            '&:hover': {
-                              bgcolor: isDark ? 'action.selected' : 'grey.200',
-                            },
-                          },
-                        }}
-                      >
-                        <ListItemText
-                          primary={preset.label}
-                          primaryTypographyProps={{
-                            variant: "body2",
-                            fontWeight: isSelected ? 600 : 400,
-                            color: "text.primary",
-                          }}
-                        />
-                        {isSelected && (
-                          <CheckIcon
-                            sx={{ fontSize: 18, color: "text.primary", ml: 1 }}
-                          />
-                        )}
-                      </ListItemButton>
-                      {showDivider && <Divider />}
-                    </Box>
-                  );
-                })}
-              </List>
-            </Box>
+                      return (
+                        <Box key={preset.label}>
+                          <ListItemButton
+                            selected={isSelected}
+                            onClick={() => handlePresetSelect(preset)}
+                            sx={{
+                              py: 1,
+                              px: 1.5,
+                              bgcolor: isSelected
+                                ? (isDark ? 'action.selected' : 'grey.100')
+                                : 'transparent',
+                              '&:hover': {
+                                bgcolor: isDark ? 'action.hover' : 'grey.100',
+                              },
+                              '&.Mui-selected': {
+                                bgcolor: isDark ? 'action.selected' : 'grey.200',
+                                '&:hover': {
+                                  bgcolor: isDark ? 'action.selected' : 'grey.200',
+                                },
+                              },
+                            }}
+                          >
+                            <ListItemText
+                              primary={preset.label}
+                              primaryTypographyProps={{
+                                variant: "body2",
+                                fontWeight: isSelected ? 600 : 400,
+                                color: "text.primary",
+                              }}
+                            />
+                            {isSelected && (
+                              <CheckIcon
+                                sx={{ fontSize: 18, color: "text.primary", ml: 1 }}
+                              />
+                            )}
+                          </ListItemButton>
+                          {showDivider && <Divider />}
+                        </Box>
+                      );
+                    })}
+                  </List>
+                </Box>
 
-            {/* Calendar Panel */}
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: "background.paper",
-                minWidth: 200,
-              }}
-            >
-              <DatePicker
-                month={month}
-                year={year}
-                onChange={handleRangeChange}
-                onMonthChange={handleMonthChange}
-                selected={selectedRange}
-                allowRange
-              />
-            </Box>
-          </Box>
+                {/* Calendar Panel */}
+                <Box
+                  sx={{
+                    p: 1,
+                    bgcolor: "background.paper",
+                    minWidth: 200,
+                  }}
+                >
+                  <DatePicker
+                    month={month}
+                    year={year}
+                    onChange={handleRangeChange}
+                    onMonthChange={handleMonthChange}
+                    selected={selectedRange}
+                    allowRange
+                  />
+                </Box>
+              </Box>
             </Popover>
           </Box>
         </Box>
