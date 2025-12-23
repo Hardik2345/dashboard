@@ -267,15 +267,15 @@ export default function App() {
 
         const mapped = Array.isArray(products)
           ? products.map((p) => {
-              const rawPath = (p.landing_page_path || '').toString();
-              const slug = rawPath.includes('/products/')
-                ? rawPath.split('/products/')[1] || rawPath
-                : rawPath || p.product_id;
-              const label = slug || p.product_id || 'Unknown product';
-              const sessions = Number(p.sessions || 0);
-              const detail = `${sessions.toLocaleString()} sessions`;
-              return { id: p.product_id, label, detail };
-            })
+            const rawPath = (p.landing_page_path || '').toString();
+            const slug = rawPath.includes('/products/')
+              ? rawPath.split('/products/')[1] || rawPath
+              : rawPath || p.product_id;
+            const label = slug || p.product_id || 'Unknown product';
+            const sessions = Number(p.sessions || 0);
+            const detail = `${sessions.toLocaleString()} sessions`;
+            return { id: p.product_id, label, detail };
+          })
           : [];
 
         const nextOptions = [DEFAULT_PRODUCT_OPTION, ...mapped];
@@ -514,7 +514,7 @@ export default function App() {
             >
               <Header user={user} onLogout={handleLogout} onMenuClick={handleSidebarOpen} showMenuButton darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
               <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: { xs: 1.5, sm: 2 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
-                <Stack spacing={1}>
+                <Stack spacing={{ xs: 2, sm: 1 }}>
                   <AuthorBrandSelector
                     brands={authorBrands}
                     value={authorBrandKey}
