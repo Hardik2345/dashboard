@@ -5,6 +5,7 @@ if (!process.env.NODE_ENV) {
 const express = require("express");
 const cors = require("cors");
 const session = require('express-session');
+const { RedisStore } = require('connect-redis');
 const SequelizeStoreFactory = require('connect-session-sequelize');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
@@ -49,26 +50,36 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // ---- DB: Sequelize -----------------------------------------------------------
+const DB_HOST = process.env.DB_PROXY_HOST || process.env.DB_HOST;
+const DB_PORT = Number(process.env.DB_PROXY_PORT || process.env.DB_PORT || 3306);
+
 const sequelize = new Sequelize(
   process.env.DB_NAME,
   process.env.DB_USER,
   process.env.DB_PASS,
   {
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT || 3306),
+    host: DB_HOST,
+    port: DB_PORT,
     dialect: "mysql",
     dialectModule: require("mysql2"),
     // NOTE: keep timezone if you need it for DATETIME columns. It doesn't affect DATEONLY reads,
     // but we still remove ORM ambiguity by using raw SQL for date filters.
     timezone: "+00:00",
     pool: {
-      max: Number(process.env.DB_POOL_MAX || 2),  // Very conservative
-      min: Number(process.env.DB_POOL_MIN || 0), // 0 = release all idle connections
-      idle: Number(process.env.DB_POOL_IDLE || 10000), // 10 seconds
+      max: Number(process.env.DB_POOL_MAX || 1),  // keep tiny when using RDS Proxy
+      min: Number(process.env.DB_POOL_MIN || 0),
+      idle: Number(process.env.DB_POOL_IDLE || 2000),
       acquire: Number(process.env.DB_POOL_ACQUIRE || 30000),
       evict: Number(process.env.DB_POOL_EVICT || 1000),
     },
     logging: false,
+    dialectOptions: {
+      connectAttributes: {
+        program_name: 'dashboard-main',
+        service: 'dashboard-api',
+        env: process.env.NODE_ENV || 'development',
+      },
+    },
   }
 );
 
@@ -232,10 +243,13 @@ sequelize.define('api_keys', {
 
 const { resolveBrandFromEmail, getBrands } = require('./config/brands');
 const { getBrandConnection } = require('./lib/brandConnectionManager');
+const redisClient = require('./lib/redis');
 
 // ---- Session & Passport -----------------------------------------------------
 const SequelizeStore = SequelizeStoreFactory(session.Store);
-const sessionStore = new SequelizeStore({ db: sequelize, tableName: 'sessions' });
+const redisStore = redisClient ? new RedisStore({ client: redisClient, prefix: 'sess:' }) : null;
+const sessionStore = redisStore || new SequelizeStore({ db: sequelize, tableName: 'sessions' });
+console.log('Using session store:', redisStore ? 'RedisStore' : 'SequelizeStore');
 
 const isProd = process.env.NODE_ENV === 'production';
 // Default to cross-site=true so SameSite=None/secure cookies work when frontend is on a different host (e.g., Vercel -> Render).
@@ -515,7 +529,9 @@ app.use('/shopify', buildShopifyRouter(sequelize));
 // ---- Init -------------------------------------------------------------------
 async function init() {
   await sequelize.authenticate();
-  await sessionStore.sync();
+  if (sessionStore && typeof sessionStore.sync === 'function') {
+    await sessionStore.sync();
+  }
   await User.sync(); // optionally use migrations in real app
   // Ensure author tables exist if not created via manual DDL
   try { await SessionAdjustmentBucket.sync(); } catch (e) { console.warn('Bucket sync skipped', e?.message); }

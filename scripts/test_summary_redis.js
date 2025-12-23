@@ -1,4 +1,4 @@
-import http from 'http';
+const http = require('http');
 
 const BRAND = 'PTS';
 const DATE = '2025-12-19';

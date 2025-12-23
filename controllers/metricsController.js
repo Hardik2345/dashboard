@@ -1,5 +1,4 @@
 const { QueryTypes } = require('sequelize');
-const axios = require('axios');
 const redisClient = require('../lib/redis');
 const { RangeSchema, isoDate } = require('../validation/schemas');
 const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum } = require('../utils/metricsUtils');
@@ -204,11 +203,6 @@ function buildMetricsController() {
               range: { start, end }, 
               total_orders: cached.total_orders, 
               total_sessions: cached.total_sessions, 
-              cvr: cached.conversion_rate / 100, // CVR usually 0-1 range here? Validation needed. 
-              // Wait, API returns 4.29 (percent). controller expects decimal? 
-              // Original 'computeCVR' returns { cvr: orders/sessions, cvr_percent: (orders/sessions)*100 }
-              // Cache "conversion_rate" is likely percent (4.29).
-              // Let's assume cache 'conversion_rate' is percentage.
               cvr: cached.conversion_rate / 100, 
               cvr_percent: cached.conversion_rate
             });
@@ -1953,56 +1947,69 @@ function buildMetricsController() {
       try {
         const brandQuery = (req.query.brand || req.query.brand_key || (req.brandKey)).toString().trim();
         if (!brandQuery) return res.status(400).json({ error: "Missing brand_key" });
-        
-        const date = (req.query.date || req.query.start || req.query.end || new Date().toISOString().slice(0,10)).toString();
-        const prevDate = prevDayStr(date);
-        
 
-        console.log(`[SUMMARY] Fetching for ${brandQuery} on ${date} (prev: ${prevDate})`);
+        const todayStr = formatIsoDate(new Date());
+        const start = (req.query.start || req.query.date || todayStr).toString();
+        const end = (req.query.end || req.query.date || start).toString();
 
-        // Batch fetch from cache (MGET)
-        const [cached, cachedPrev] = await fetchCachedMetricsBatch(brandQuery, [date, prevDate]);
-        
-        const getMetricsForDate = async (d, cData) => {
-          if (cData) {
+        if (start > end) return res.status(400).json({ error: 'start must be on or before end' });
+
+        const traceStart = req._reqStart || Date.now();
+        const spans = [];
+        const mark = (label, since) => spans.push({ label, ms: Date.now() - (since || traceStart) });
+        mark('params');
+
+        const isSingleDay = start === end;
+        const prevWin = previousWindow(start, end);
+        const prevStart = prevWin?.prevStart;
+        const prevEnd = prevWin?.prevEnd;
+
+        console.log(`[SUMMARY] Fetching for ${brandQuery} range ${start} to ${end}${prevStart && prevEnd ? ` (prev: ${prevStart} to ${prevEnd})` : ''}`);
+        const cacheFetchStart = Date.now();
+
+        // Batch fetch from cache when single-day so we can reuse existing cache keys.
+        const [cached, cachedPrev] = isSingleDay
+          ? await fetchCachedMetricsBatch(brandQuery, [start, prevStart || prevDayStr(start)])
+          : [null, null];
+        mark('cache_fetch', cacheFetchStart);
+
+        const getMetricsForRange = async (s, e, cachedData) => {
+          if (!s || !e) return null;
+          if (isSingleDay && cachedData) {
             return {
-              total_orders: cData.total_orders,
-              total_sales: cData.total_sales,
-              total_sessions: cData.total_sessions,
-              total_atc_sessions: cData.total_atc_sessions,
-              average_order_value: cData.average_order_value,
-              conversion_rate: cData.conversion_rate,
-              conversion_rate_percent: cData.conversion_rate, 
+              total_orders: cachedData.total_orders,
+              total_sales: cachedData.total_sales,
+              total_sessions: cachedData.total_sessions,
+              total_atc_sessions: cachedData.total_atc_sessions,
+              average_order_value: cachedData.average_order_value,
+              conversion_rate: cachedData.conversion_rate,
+              conversion_rate_percent: cachedData.conversion_rate,
               source: 'cache'
             };
           }
-          
-          // Lazy load DB connection if strictly needed (Cache Miss)
-          if (!req.brandDb && req.brandConfig) {
-             console.log(`[LAZY CONNECT] Connecting to ${req.brandConfig.key} for fallback`);
-             try {
-                req.brandDb = await getBrandConnection(req.brandConfig);
-             } catch (e) {
-                console.error("Lazy connection failed", e);
-             }
-          }
 
+          // Ensure DB connection
+          if (!req.brandDb && req.brandConfig) {
+            console.log(`[LAZY CONNECT] Connecting to ${req.brandConfig.key} for fallback`);
+            try {
+              req.brandDb = await getBrandConnection(req.brandConfig);
+            } catch (connErr) {
+              console.error("Lazy connection failed", connErr);
+            }
+          }
           const conn = req.brandDb ? req.brandDb.sequelize : null;
           if (!conn) throw new Error("Database connection missing for fallback (Cache Miss & DB Fail)");
-          
-          const [sales, orders, sessions, atc, cvrObj, aovObj] = await Promise.all([
-             rawSum('total_sales', { start: d, end: d, conn }),
-             rawSum('total_orders', { start: d, end: d, conn }),
-             rawSum('total_sessions', { start: d, end: d, conn }),
-             rawSum('total_atc_sessions', { start: d, end: d, conn }),
-             computeCVRForDay(d, conn),
-             aovForRange({ start: d, end: d, conn }) 
-          ]);
-          
-          let aovVal = 0;
-          if (typeof aovObj === 'object' && aovObj !== null) aovVal = Number(aovObj.aov || 0);
-          else aovVal = Number(aovObj || 0);
 
+          const [sales, orders, sessions, atc, cvrObj, aovObj] = await Promise.all([
+            rawSum('total_sales', { start: s, end: e, conn }),
+            rawSum('total_orders', { start: s, end: e, conn }),
+            rawSum('total_sessions', { start: s, end: e, conn }),
+            rawSum('total_atc_sessions', { start: s, end: e, conn }),
+            computeCVR({ start: s, end: e, conn }),
+            aovForRange({ start: s, end: e, conn })
+          ]);
+
+          const aovVal = typeof aovObj === 'object' && aovObj !== null ? Number(aovObj.aov || 0) : Number(aovObj || 0);
           return {
             total_orders: orders,
             total_sales: sales,
@@ -2016,54 +2023,68 @@ function buildMetricsController() {
         };
 
         const [current, previous] = await Promise.all([
-          getMetricsForDate(date, cached),
-          getMetricsForDate(prevDate, cachedPrev)
+          (async () => {
+            const s = Date.now();
+            const resCur = await getMetricsForRange(start, end, cached);
+            mark('current_fetch', s);
+            return resCur;
+          })(),
+          (async () => {
+            const s = Date.now();
+            const resPrev = await getMetricsForRange(prevStart, prevEnd, cachedPrev);
+            mark('previous_fetch', s);
+            return resPrev;
+          })()
         ]);
-        
+
         const calcDelta = (cur, prev) => {
-           const diff = cur - prev;
-           const diff_pct = prev > 0 ? (diff / prev) * 100 : (cur > 0 ? 100 : 0);
-           const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-           return { diff, diff_pct, direction };
+          const diff = cur - prev;
+          const diff_pct = prev > 0 ? (diff / prev) * 100 : (cur > 0 ? 100 : 0);
+          const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+          return { diff, diff_pct, direction };
         };
 
         const response = {
-          date,
-          prev_date: prevDate,
+          range: { start, end },
+          prev_range: prevStart && prevEnd ? { start: prevStart, end: prevEnd } : null,
           metrics: {
             total_orders: {
-              value: current.total_orders,
-              previous: previous.total_orders,
-              ...calcDelta(current.total_orders, previous.total_orders)
+              value: current?.total_orders || 0,
+              previous: previous?.total_orders || 0,
+              ...calcDelta(current?.total_orders || 0, previous?.total_orders || 0)
             },
             total_sales: {
-              value: current.total_sales,
-              previous: previous.total_sales,
-              ...calcDelta(current.total_sales, previous.total_sales)
+              value: current?.total_sales || 0,
+              previous: previous?.total_sales || 0,
+              ...calcDelta(current?.total_sales || 0, previous?.total_sales || 0)
             },
             average_order_value: {
-              value: current.average_order_value,
-              previous: previous.average_order_value,
-              ...calcDelta(current.average_order_value, previous.average_order_value)
+              value: current?.average_order_value || 0,
+              previous: previous?.average_order_value || 0,
+              ...calcDelta(current?.average_order_value || 0, previous?.average_order_value || 0)
             },
             conversion_rate: {
-              value: current.conversion_rate_percent, 
-              previous: previous.conversion_rate_percent,
-              ...calcDelta(current.conversion_rate_percent, previous.conversion_rate_percent)
+              value: current?.conversion_rate_percent || 0,
+              previous: previous?.conversion_rate_percent || 0,
+              ...calcDelta(current?.conversion_rate_percent || 0, previous?.conversion_rate_percent || 0)
             },
             total_sessions: {
-              value: current.total_sessions,
-              previous: previous.total_sessions,
-              ...calcDelta(current.total_sessions, previous.total_sessions)
+              value: current?.total_sessions || 0,
+              previous: previous?.total_sessions || 0,
+              ...calcDelta(current?.total_sessions || 0, previous?.total_sessions || 0)
             },
             total_atc_sessions: {
-              value: current.total_atc_sessions,
-              previous: previous.total_atc_sessions,
-              ...calcDelta(current.total_atc_sessions, previous.total_atc_sessions)
+              value: current?.total_atc_sessions || 0,
+              previous: previous?.total_atc_sessions || 0,
+              ...calcDelta(current?.total_atc_sessions || 0, previous?.total_atc_sessions || 0)
             }
           },
-          sources: { current: current.source, previous: previous.source }
+          sources: { current: current?.source || 'db', previous: previous?.source || 'db' }
         };
+
+        console.log(
+          `[SUMMARY TRACE] ${brandQuery} ${start}->${end} steps=${spans.map(s => `${s.label}:${s.ms}ms`).join(' | ')} total=${Date.now() - traceStart}ms`
+        );
 
         return res.json(response);
       } catch (e) {
