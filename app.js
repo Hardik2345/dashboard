@@ -5,6 +5,7 @@ if (!process.env.NODE_ENV) {
 const express = require("express");
 const cors = require("cors");
 const session = require('express-session');
+const { RedisStore } = require('connect-redis');
 const SequelizeStoreFactory = require('connect-session-sequelize');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
@@ -49,26 +50,36 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // ---- DB: Sequelize -----------------------------------------------------------
+const DB_HOST = process.env.DB_PROXY_HOST || process.env.DB_HOST;
+const DB_PORT = Number(process.env.DB_PROXY_PORT || process.env.DB_PORT || 3306);
+
 const sequelize = new Sequelize(
   process.env.DB_NAME,
   process.env.DB_USER,
   process.env.DB_PASS,
   {
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT || 3306),
+    host: DB_HOST,
+    port: DB_PORT,
     dialect: "mysql",
     dialectModule: require("mysql2"),
     // NOTE: keep timezone if you need it for DATETIME columns. It doesn't affect DATEONLY reads,
     // but we still remove ORM ambiguity by using raw SQL for date filters.
     timezone: "+00:00",
     pool: {
-      max: Number(process.env.DB_POOL_MAX || 2),  // Very conservative
-      min: Number(process.env.DB_POOL_MIN || 0), // 0 = release all idle connections
-      idle: Number(process.env.DB_POOL_IDLE || 10000), // 10 seconds
+      max: Number(process.env.DB_POOL_MAX || 1),  // keep tiny when using RDS Proxy
+      min: Number(process.env.DB_POOL_MIN || 0),
+      idle: Number(process.env.DB_POOL_IDLE || 2000),
       acquire: Number(process.env.DB_POOL_ACQUIRE || 30000),
       evict: Number(process.env.DB_POOL_EVICT || 1000),
     },
     logging: false,
+    dialectOptions: {
+      connectAttributes: {
+        program_name: 'dashboard-main',
+        service: 'dashboard-api',
+        env: process.env.NODE_ENV || 'development',
+      },
+    },
   }
 );
 
@@ -232,10 +243,13 @@ sequelize.define('api_keys', {
 
 const { resolveBrandFromEmail, getBrands } = require('./config/brands');
 const { getBrandConnection } = require('./lib/brandConnectionManager');
+const redisClient = require('./lib/redis');
 
 // ---- Session & Passport -----------------------------------------------------
 const SequelizeStore = SequelizeStoreFactory(session.Store);
-const sessionStore = new SequelizeStore({ db: sequelize, tableName: 'sessions' });
+const redisStore = redisClient ? new RedisStore({ client: redisClient, prefix: 'sess:' }) : null;
+const sessionStore = redisStore || new SequelizeStore({ db: sequelize, tableName: 'sessions' });
+console.log('Using session store:', redisStore ? 'RedisStore' : 'SequelizeStore');
 
 const isProd = process.env.NODE_ENV === 'production';
 // Default to cross-site=true so SameSite=None/secure cookies work when frontend is on a different host (e.g., Vercel -> Render).
@@ -381,9 +395,30 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   }));
 }
 
+// --- User Cache for Performance ---
+const USER_CACHE = new Map();
+const CACHE_TTL = 60 * 1000; // 60 seconds
+
 passport.serializeUser((user, done) => done(null, { id: user.id, email: user.email, brandKey: user.brandKey, isAuthor: !!user.isAuthor, sso: user.sso }));
 passport.deserializeUser(async (obj, done) => {
   try {
+    // 1. Check L1 Memory Cache
+    const cacheKey = `user:${obj.id || 'x'}:${obj.email}`;
+    if (USER_CACHE.has(cacheKey)) {
+      const entry = USER_CACHE.get(cacheKey);
+      if (Date.now() - entry.ts < CACHE_TTL) {
+        return done(null, entry.user);
+      }
+      USER_CACHE.delete(cacheKey);
+    }
+
+    const cacheResult = (user) => {
+      if (user) {
+        USER_CACHE.set(cacheKey, { ts: Date.now(), user });
+      }
+      return done(null, user);
+    };
+
     if (obj.isAuthor) {
       // Support two author modes:
       // 1) Local author (username/password) using AUTHOR_EMAIL and master users table
@@ -404,7 +439,7 @@ passport.deserializeUser(async (obj, done) => {
 
       if (domainOk) {
         // Trust the session and return a minimal author identity; no DB lookup needed
-        return done(null, { id: obj.id, email, role: 'author', brandKey: null, isAuthor: true });
+        return cacheResult({ id: obj.id, email, role: 'author', brandKey: null, isAuthor: true });
       }
 
       // Fallback to legacy local author via master DB user
@@ -412,7 +447,7 @@ passport.deserializeUser(async (obj, done) => {
       if (authorEmail !== email.toLowerCase()) return done(null, false);
       const authorUser = await User.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
       if (!authorUser || !authorUser.is_active || authorUser.role !== 'author') return done(null, false);
-      return done(null, { id: authorUser.id, email: authorUser.email, role: 'author', brandKey: null, isAuthor: true });
+      return cacheResult({ id: authorUser.id, email: authorUser.email, role: 'author', brandKey: null, isAuthor: true });
     }
     let brandCfg = null;
     const storedKey = (obj.brandKey || '').toString().trim().toUpperCase();
@@ -427,7 +462,7 @@ passport.deserializeUser(async (obj, done) => {
     // trust the session and avoid DB lookup (supports just-in-time access by domain).
     const requireBrandDbUser = String(process.env.REQUIRE_BRAND_DB_USER || 'false').toLowerCase() === 'true';
     if (obj.sso === 'google' && !requireBrandDbUser) {
-      return done(null, { id: obj.id, email: obj.email, role: obj.role || 'user', brandKey: brandCfg.key, isAuthor: false });
+      return cacheResult({ id: obj.id, email: obj.email, role: obj.role || 'user', brandKey: brandCfg.key, isAuthor: false });
     }
 
     // Otherwise, look up the brand user in the brand DB. Prefer email lookup for SSO users
@@ -441,7 +476,7 @@ passport.deserializeUser(async (obj, done) => {
       user = await BrandUser.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
     }
     if (!user || !user.is_active) return done(null, false);
-    return done(null, { id: user.id, email: user.email, role: user.role || 'user', brandKey: brandCfg.key, isAuthor: false });
+    return cacheResult({ id: user.id, email: user.email, role: user.role || 'user', brandKey: brandCfg.key, isAuthor: false });
   } catch (e) { done(e); }
 });
 
@@ -494,7 +529,9 @@ app.use('/shopify', buildShopifyRouter(sequelize));
 // ---- Init -------------------------------------------------------------------
 async function init() {
   await sequelize.authenticate();
-  await sessionStore.sync();
+  if (sessionStore && typeof sessionStore.sync === 'function') {
+    await sessionStore.sync();
+  }
   await User.sync(); // optionally use migrations in real app
   // Ensure author tables exist if not created via manual DDL
   try { await SessionAdjustmentBucket.sync(); } catch (e) { console.warn('Bucket sync skipped', e?.message); }
