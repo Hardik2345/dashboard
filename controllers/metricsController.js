@@ -11,6 +11,489 @@ const SHOP_DOMAIN_CACHE = new Map();
 const pad2 = (n) => String(n).padStart(2, '0');
 const MEM_CACHE = new Map();
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds
+const IST_OFFSET_MIN = 330;
+
+async function calcTotalOrdersDelta({ start, end, align, compare, conn }) {
+  const date = end || start;
+  if (!date && !(start && end)) {
+    return { metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
+  }
+
+  if (align === 'hour') {
+    const rangeStart = start || date;
+    const rangeEnd = end || date;
+    if (!rangeStart || !rangeEnd) return { error: 'Invalid date range' };
+
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const nowUtc = new Date();
+    const nowIstMs = nowUtc.getTime() + (IST_OFFSET_MIN * 60 * 1000);
+    const nowIst = new Date(nowIstMs);
+    const todayIst = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
+    const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + (nowIst.getUTCSeconds());
+    const fullDaySeconds = 24 * 3600;
+    const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
+    const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
+
+    const secondsToTime = (secs) => {
+      const hh = Math.floor(secs / 3600);
+      const mm = Math.floor((secs % 3600) / 60);
+      const ss = secs % 60;
+      return `${pad2(hh)}:${pad2(mm)}:${pad2(ss)}`;
+    };
+
+    const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
+    const rangeFilter = `created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+    const prevWin = previousWindow(rangeStart, rangeEnd);
+    const countSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE ${rangeFilter}`;
+    const currPromise = conn.query(countSql, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] });
+    const prevPromise = prevWin ? conn.query(countSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }) : Promise.resolve([{ cnt: 0 }]);
+    const [currRows, prevRows] = await Promise.all([currPromise, prevPromise]);
+    const current = Number(currRows?.[0]?.cnt || 0);
+    const previous = Number(prevRows?.[0]?.cnt || 0);
+    const diff = current - previous;
+    const diff_pct = previous > 0 ? (diff / previous) * 100 : (current > 0 ? 100 : 0);
+    const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+    return start && end
+      ? { metric: 'TOTAL_ORDERS_DELTA', range: { start, end }, current, previous, diff_pct, direction, align: 'hour', cutoff_time: cutoffTime }
+      : { metric: 'TOTAL_ORDERS_DELTA', date: rangeEnd, current, previous, diff_pct, direction, align: 'hour', cutoff_time: cutoffTime };
+  }
+
+  if (!date) return { metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
+  const delta = await deltaForSum('total_orders', date, conn);
+  return { metric: 'TOTAL_ORDERS_DELTA', date, ...delta };
+}
+
+async function calcTotalSalesDelta({ start, end, align, compare, conn }) {
+  const date = end || start;
+  if (!date && !(start && end)) return { metric: 'TOTAL_SALES_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
+
+  if (compare === 'prev-range-avg' && start && end) {
+    const currAvg = await avgForRange('total_sales', { start, end, conn });
+    const prevWin = previousWindow(start, end);
+    const prevAvg = await avgForRange('total_sales', { start: prevWin.prevStart, end: prevWin.prevEnd, conn });
+    const diff = currAvg - prevAvg;
+    const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
+    const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+    return { metric: 'TOTAL_SALES_DELTA', range: { start, end }, current: currAvg, previous: prevAvg, diff_pct, direction, compare: 'prev-range-avg' };
+  }
+
+  if (align === 'hour') {
+    const rangeStart = start || date;
+    const rangeEnd = end || date;
+    if (!rangeStart || !rangeEnd) return { error: 'Invalid date range' };
+
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const nowUtc = new Date();
+    const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
+    const todayIst = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
+    const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + (nowIst.getUTCSeconds());
+    const fullDaySeconds = 24 * 3600;
+    const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
+    const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
+    const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : `${pad2(Math.floor(effectiveSeconds / 3600))}:${pad2(Math.floor((effectiveSeconds % 3600) / 60))}:${pad2(effectiveSeconds % 60)}`;
+    const prevWin = previousWindow(rangeStart, rangeEnd);
+    const salesSql = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+    const currentPromise = conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] });
+    const previousPromise = prevWin ? conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }) : Promise.resolve([{ total: 0 }]);
+    const [currRow, prevRow] = await Promise.all([currentPromise, previousPromise]);
+    const curr = Number(currRow?.[0]?.total || 0);
+    const prevVal = Number(prevRow?.[0]?.total || 0);
+    const diff = curr - prevVal;
+    const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+    const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+    return start && end
+      ? { metric: 'TOTAL_SALES_DELTA', range: { start, end }, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', cutoff_time: cutoffTime }
+      : { metric: 'TOTAL_SALES_DELTA', date: rangeEnd, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', cutoff_time: cutoffTime };
+  }
+
+  const delta = await deltaForSum('total_sales', date, conn);
+  return { metric: 'TOTAL_SALES_DELTA', date, ...delta };
+}
+
+async function calcTotalSessionsDelta({ start, end, align, compare, conn }) {
+  const date = end || start;
+  if (!date && !(start && end)) return { metric: 'TOTAL_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
+
+  if (compare === 'prev-range-avg' && start && end) {
+    const currAvg = await avgForRange('total_sessions', { start, end, conn });
+    const prevWin = previousWindow(start, end);
+    const prevAvg = await avgForRange('total_sessions', { start: prevWin.prevStart, end: prevWin.prevEnd, conn });
+    const diff = currAvg - prevAvg;
+    const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
+    const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+    return { metric: 'TOTAL_SESSIONS_DELTA', range: { start, end }, current: currAvg, previous: prevAvg, diff_pct, direction, compare: 'prev-range-avg' };
+  }
+
+  const alignLower = (align || '').toString().toLowerCase();
+  if (alignLower === 'hour') {
+    const nowUtc = new Date();
+    const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
+    const yyyy = nowIst.getUTCFullYear();
+    const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(nowIst.getUTCDate()).padStart(2, '0');
+    const todayIst = `${yyyy}-${mm}-${dd}`;
+    const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
+
+    if (start && end) {
+      const targetHour = resolveTargetHour(end);
+      const prevWin = previousWindow(start, end);
+      const isCurrentRangeToday = isToday(start) || isToday(end);
+      const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
+      const sqlRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
+      const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
+      const [currRow, prevRow, overallCurrRow] = await Promise.all([
+        conn.query(sqlRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
+        conn.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, prevCompareHour] }),
+        isCurrentRangeToday ? conn.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [start, end] }) : Promise.resolve(null),
+      ]);
+      let curr = Number(currRow?.[0]?.total || 0);
+      if (overallCurrRow) {
+        curr = Number(overallCurrRow?.[0]?.total || 0);
+      }
+      const prevVal = Number(prevRow?.[0]?.total || 0);
+      const diff = curr - prevVal;
+      const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+      return { metric: 'TOTAL_SESSIONS_DELTA', range: { start, end }, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour };
+    } else {
+      const targetHour = resolveTargetHour(date);
+      const prev = prevDayStr(date);
+      const isCurrentToday = isToday(date);
+      const prevCompareHour = isCurrentToday ? Math.max(0, targetHour - 1) : targetHour;
+      const sql = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date = ? AND hour <= ?`;
+      const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date = ?`;
+      const [currRow, prevRow, overallCurrRow] = await Promise.all([
+        conn.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
+        conn.query(sql, { type: QueryTypes.SELECT, replacements: [prev, prevCompareHour] }),
+        isCurrentToday ? conn.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [date] }) : Promise.resolve(null),
+      ]);
+      let curr = Number(currRow?.[0]?.total || 0);
+      if (overallCurrRow) {
+        curr = Number(overallCurrRow?.[0]?.total || 0);
+      }
+      const prevVal = Number(prevRow?.[0]?.total || 0);
+      const diff = curr - prevVal;
+      const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+      return { metric: 'TOTAL_SESSIONS_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour };
+    }
+  }
+
+  const d = await deltaForSum('total_sessions', date, conn);
+  return { metric: 'TOTAL_SESSIONS_DELTA', date, ...d };
+}
+
+async function calcAtcSessionsDelta({ start, end, align, compare, conn }) {
+  const date = end || start;
+  if (!date && !(start && end)) return { metric: 'ATC_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
+
+  if (compare === 'prev-range-avg' && start && end) {
+    const currAvg = await avgForRange('total_atc_sessions', { start, end, conn });
+    const prevWin = previousWindow(start, end);
+    const prevAvg = await avgForRange('total_atc_sessions', { start: prevWin.prevStart, end: prevWin.prevEnd, conn });
+    const diff = currAvg - prevAvg;
+    const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
+    const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+    return { metric: 'ATC_SESSIONS_DELTA', range: { start, end }, current: currAvg, previous: prevAvg, diff_pct, direction, compare: 'prev-range-avg' };
+  }
+
+  if ((align || '').toString().toLowerCase() === 'hour') {
+    const nowUtc = new Date();
+    const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
+    const yyyy = nowIst.getUTCFullYear();
+    const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(nowIst.getUTCDate()).padStart(2, '0');
+    const todayIst = `${yyyy}-${mm}-${dd}`;
+    const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
+
+    if (start && end) {
+      const targetHour = resolveTargetHour(end);
+      const prevWin = previousWindow(start, end);
+      const isCurrentRangeToday = isToday(start) || isToday(end);
+      const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
+      const sqlRange = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
+      const sqlOverallAtc = `SELECT COALESCE(SUM(total_atc_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
+      const [currRow, prevRow, overallCurrRow] = await Promise.all([
+        conn.query(sqlRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
+        conn.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, prevCompareHour] }),
+        isCurrentRangeToday ? conn.query(sqlOverallAtc, { type: QueryTypes.SELECT, replacements: [start, end] }) : Promise.resolve(null),
+      ]);
+      let curr = Number(currRow?.[0]?.total || 0);
+      if (overallCurrRow) {
+        curr = Number(overallCurrRow?.[0]?.total || 0);
+      }
+      const prevVal = Number(prevRow?.[0]?.total || 0);
+      const diff = curr - prevVal;
+      const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+      return { metric: 'ATC_SESSIONS_DELTA', range: { start, end }, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour };
+    } else {
+      const targetHour = resolveTargetHour(date);
+      const prev = prevDayStr(date);
+      const isCurrentToday = isToday(date);
+      const prevCompareHour = isCurrentToday ? Math.max(0, targetHour - 1) : targetHour;
+      const sql = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date = ? AND hour <= ?`;
+      const sqlOverallAtc = `SELECT COALESCE(SUM(total_atc_sessions),0) AS total FROM overall_summary WHERE date = ?`;
+      const [currRow, prevRow, overallCurrRow] = await Promise.all([
+        conn.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
+        conn.query(sql, { type: QueryTypes.SELECT, replacements: [prev, prevCompareHour] }),
+        isCurrentToday ? conn.query(sqlOverallAtc, { type: QueryTypes.SELECT, replacements: [date] }) : Promise.resolve(null),
+      ]);
+      let curr = Number(currRow?.[0]?.total || 0);
+      if (overallCurrRow) {
+        curr = Number(overallCurrRow?.[0]?.total || 0);
+      }
+      const prevVal = Number(prevRow?.[0]?.total || 0);
+      const diff = curr - prevVal;
+      const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+      return { metric: 'ATC_SESSIONS_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour };
+    }
+  }
+
+  const d = await deltaForSum('total_atc_sessions', date, conn);
+  return { metric: 'ATC_SESSIONS_DELTA', date, ...d };
+}
+
+async function calcAovDelta({ start, end, align, compare, conn, debug }) {
+  const date = end || start;
+  if (!date && !(start && end)) return { metric: 'AOV_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
+
+  if ((compare || '').toString().toLowerCase() === 'prev-range-avg' && start && end) {
+    const curr = await aovForRange({ start, end, conn });
+    const prevWin = previousWindow(start, end);
+    const prev = await aovForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn });
+    const diff = curr - prev;
+    const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
+    const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+    return { metric: 'AOV_DELTA', range: { start, end }, current: curr, previous: prev, diff_pct, direction, compare: 'prev-range-avg' };
+  }
+
+  if ((align || '').toString().toLowerCase() === 'hour') {
+    const offsetMs = IST_OFFSET_MIN * 60 * 1000;
+    const nowUtc = new Date();
+    const nowIst = new Date(nowUtc.getTime() + offsetMs);
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const todayIst = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
+    const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
+    const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + (nowIst.getUTCSeconds());
+    const fullDaySeconds = 24 * 3600;
+    const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
+    const secondsToTime = (secs) => `${pad2(Math.floor(secs / 3600))}:${pad2(Math.floor((secs % 3600) / 60))}:${pad2(secs % 60)}`;
+    const salesSqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+    const salesSql = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+    const ordersSqlRange = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+    const ordersSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+
+    if (start && end) {
+      const targetHour = resolveTargetHour(end);
+      const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(end)));
+      const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
+      const prevWin = previousWindow(start, end);
+
+      const [salesCurRows, salesPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
+        conn.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [start, end, cutoffTime] }),
+        conn.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }),
+        conn.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [start, end, cutoffTime] }),
+        conn.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }),
+      ]);
+
+      const curSales = Number(salesCurRows?.[0]?.total || 0);
+      const prevSales = Number(salesPrevRows?.[0]?.total || 0);
+      const curOrders = Number(ordersCurRows?.[0]?.cnt || 0);
+      const prevOrders = Number(ordersPrevRows?.[0]?.cnt || 0);
+
+      const curAov = curOrders > 0 ? curSales / curOrders : 0;
+      const prevAov = prevOrders > 0 ? prevSales / prevOrders : 0;
+      const diff = curAov - prevAov;
+      const diff_pct = prevAov > 0 ? (diff / prevAov) * 100 : (curAov > 0 ? 100 : 0);
+      const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+      const resp = { metric: 'AOV_DELTA', range: { start, end }, current: curAov, previous: prevAov, diff_pct, direction, align: 'hour', hour: targetHour, cutoff_time: cutoffTime };
+      if (debug) {
+        resp.sales = { current: curSales, previous: prevSales };
+        resp.orders = { current: curOrders, previous: prevOrders };
+      }
+      return resp;
+    }
+
+    const targetHour = resolveTargetHour(date);
+    const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(date)));
+    const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
+    const prev = prevDayStr(date);
+
+    const [salesCurRows, salesPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
+      conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [date, date, cutoffTime] }),
+      conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [prev, prev, cutoffTime] }),
+      conn.query(ordersSql, { type: QueryTypes.SELECT, replacements: [date, date, cutoffTime] }),
+      conn.query(ordersSql, { type: QueryTypes.SELECT, replacements: [prev, prev, cutoffTime] }),
+    ]);
+
+    const curSales = Number(salesCurRows?.[0]?.total || 0);
+    const prevSales = Number(salesPrevRows?.[0]?.total || 0);
+    const curOrders = Number(ordersCurRows?.[0]?.cnt || 0);
+    const prevOrders = Number(ordersPrevRows?.[0]?.cnt || 0);
+
+    const curAov = curOrders > 0 ? curSales / curOrders : 0;
+    const prevAov = prevOrders > 0 ? prevSales / prevOrders : 0;
+    const diff = curAov - prevAov;
+    const diff_pct = prevAov > 0 ? (diff / prevAov) * 100 : (curAov > 0 ? 100 : 0);
+    const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+    const resp = { metric: 'AOV_DELTA', date, current: curAov, previous: prevAov, diff_pct, direction, align: 'hour', hour: targetHour, cutoff_time: cutoffTime };
+    if (debug) {
+      resp.sales = { current: curSales, previous: prevSales };
+      resp.orders = { current: curOrders, previous: prevOrders };
+    }
+    return resp;
+  }
+
+  const d = await deltaForAOV(date, conn);
+  return { metric: 'AOV_DELTA', date, ...d };
+}
+
+async function calcCvrDelta({ start, end, align, compare, conn }) {
+  const date = end || start;
+  const target = end || start;
+  if (!target && !(start && end)) {
+    return { metric: 'CVR_DELTA', date: null, current: null, previous: null, diff_pp: 0, diff_pct: 0, direction: 'flat' };
+  }
+
+  const alignLower = (align || '').toString().toLowerCase();
+  const compareLower = (compare || '').toString().toLowerCase();
+
+  if (compareLower === 'prev-range-avg' && start && end) {
+    const curr = await cvrForRange({ start, end, conn });
+    const prevWin = previousWindow(start, end);
+    const prev = await cvrForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn });
+    const delta = computePercentDelta(curr.cvr_percent || 0, prev.cvr_percent || 0);
+    return { metric: 'CVR_DELTA', range: { start, end }, current: curr, previous: prev, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction, compare: 'prev-range-avg' };
+  }
+
+  const base = new Date(`${target}T00:00:00Z`);
+  const prev = new Date(base.getTime() - 24 * 3600_000);
+  const prevStr = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth()+1).padStart(2,'0')}-${String(prev.getUTCDate()).padStart(2,'0')}`;
+
+  if (alignLower === 'hour') {
+    const offsetMs = IST_OFFSET_MIN * 60 * 1000;
+    const pad2Local = (n) => String(n).padStart(2, '0');
+    const nowUtc = new Date();
+    const nowIst = new Date(nowUtc.getTime() + offsetMs);
+    const yyyy = nowIst.getUTCFullYear();
+    const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(nowIst.getUTCDate() + 0).padStart(2, '0');
+    const todayIst = `${yyyy}-${mm}-${dd}`;
+    const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
+    const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + nowIst.getUTCSeconds();
+    const fullDaySeconds = 24 * 3600;
+    const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
+    const secondsToTime = (secs) => {
+      const hh = Math.floor(secs / 3600);
+      const mm2 = Math.floor((secs % 3600) / 60);
+      const ss = secs % 60;
+      return `${pad2Local(hh)}:${pad2Local(mm2)}:${pad2Local(ss)}`;
+    };
+
+    if (start && end) {
+      const rangeStart = start;
+      const rangeEnd = end;
+      const targetHour = resolveTargetHour ? resolveTargetHour(end) : (end === todayIst ? nowIst.getUTCHours() : 23);
+      const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
+      const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
+      const isCurrentRangeToday = isToday(rangeStart) || isToday(rangeEnd);
+      const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
+      const prevCutoffSeconds = isCurrentRangeToday ? Math.min(fullDaySeconds, (prevCompareHour + 1) * 3600) : effectiveSeconds;
+      const prevCutoffTime = prevCutoffSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(prevCutoffSeconds);
+
+      const sqlSessRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
+      const orderRangeSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+      const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
+
+      const prevWin = previousWindow(rangeStart, rangeEnd);
+
+      const [sessCurRows, sessPrevRows, ordCurRows, ordPrevRows, overallCurrSess] = await Promise.all([
+        conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, targetHour] }),
+        conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, prevCompareHour] }),
+        conn.query(orderRangeSql, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
+        conn.query(orderRangeSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, prevCutoffTime] }),
+        (isToday(rangeStart) || isToday(rangeEnd)) ? conn.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd] }) : Promise.resolve(null),
+      ]);
+
+      let curSessions = Number(sessCurRows?.[0]?.total || 0);
+      if (overallCurrSess) {
+        curSessions = Number(overallCurrSess?.[0]?.total || 0);
+      }
+      const prevSessions = Number(sessPrevRows?.[0]?.total || 0);
+      const curOrders = Number(ordCurRows?.[0]?.cnt || 0);
+      const prevOrders = Number(ordPrevRows?.[0]?.cnt || 0);
+
+      const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
+      const prevCVR = prevSessions > 0 ? (prevOrders / prevSessions) : 0;
+      const delta = computePercentDelta(curCVR * 100, prevCVR * 100);
+      return {
+        metric: 'CVR_DELTA',
+        range: { start, end },
+        current: { total_orders: curOrders, total_sessions: curSessions, cvr: curCVR, cvr_percent: curCVR * 100 },
+        previous: { total_orders: prevOrders, total_sessions: prevSessions, cvr: prevCVR, cvr_percent: prevCVR * 100 },
+        diff_pp: delta.diff_pp,
+        diff_pct: delta.diff_pct,
+        direction: delta.direction,
+        align: 'hour',
+        hour: targetHour,
+        cutoff_time: cutoffTime
+      };
+    }
+
+    const targetHour = resolveTargetHour ? resolveTargetHour(target) : (target === todayIst ? nowIst.getUTCHours() : 23);
+    const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(target)));
+    const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
+    const isCurrentToday = isToday(target);
+    const prevCompareHour = isCurrentToday ? Math.max(0, targetHour - 1) : targetHour;
+    const prevCutoffSeconds = isCurrentToday ? Math.min(fullDaySeconds, (prevCompareHour + 1) * 3600) : effectiveSeconds;
+    const prevCutoffTime = prevCutoffSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(prevCutoffSeconds);
+
+    const sqlSess = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date = ? AND hour <= ?`;
+    const orderSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+    const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date = ?`;
+
+    const [sessCurRows, sessPrevRows, ordersCurRows, ordersPrevRows, overallCurrSess] = await Promise.all([
+      conn.query(sqlSess, { type: QueryTypes.SELECT, replacements: [target, targetHour] }),
+      conn.query(sqlSess, { type: QueryTypes.SELECT, replacements: [prevStr, prevCompareHour] }),
+      conn.query(orderSql, { type: QueryTypes.SELECT, replacements: [target, target, cutoffTime] }),
+      conn.query(orderSql, { type: QueryTypes.SELECT, replacements: [prevStr, prevStr, prevCutoffTime] }),
+      isCurrentToday ? conn.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [target] }) : Promise.resolve(null),
+    ]);
+
+    let curSessions = Number(sessCurRows?.[0]?.total || 0);
+    if (overallCurrSess) {
+      curSessions = Number(overallCurrSess?.[0]?.total || 0);
+    }
+    const prevSessions = Number(sessPrevRows?.[0]?.total || 0);
+    const curOrders = Number(ordersCurRows?.[0]?.cnt || 0);
+    const prevOrders = Number(ordersPrevRows?.[0]?.cnt || 0);
+
+    const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
+    const prevCVR = prevSessions > 0 ? (prevOrders / prevSessions) : 0;
+    const delta = computePercentDelta(curCVR * 100, prevCVR * 100);
+    return {
+      metric: 'CVR_DELTA',
+      date: target,
+      current: { total_orders: curOrders, total_sessions: curSessions, cvr: curCVR, cvr_percent: curCVR * 100 },
+      previous: { total_orders: prevOrders, total_sessions: prevSessions, cvr: prevCVR, cvr_percent: prevCVR * 100 },
+      diff_pp: delta.diff_pp,
+      diff_pct: delta.diff_pct,
+      direction: delta.direction,
+      align: 'hour',
+      hour: targetHour,
+      cutoff_time: cutoffTime
+    };
+  }
+
+  const [current, previous] = await Promise.all([
+    computeCVRForDay(target, conn),
+    computeCVRForDay(prevStr, conn)
+  ]);
+  const delta = computePercentDelta(current.cvr_percent || 0, previous.cvr_percent || 0);
+  return { metric: 'CVR_DELTA', date: target, current, previous, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction };
+}
 
 async function fetchCachedMetrics(brandKey, date) {
   const key = `metrics:${brandKey.toLowerCase()}:${date}`;
@@ -220,197 +703,10 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
         const { start, end } = parsed.data;
-        const target = end || start;
-        if (!target) {
-          return res.json({ metric: 'CVR_DELTA', date: null, current: null, previous: null, diff_pp: 0, diff_pct: 0, direction: 'flat' });
-        }
-        
-        // Cache check
         const align = (req.query.align || '').toString().toLowerCase();
-        // If simple daily query (no range or start==end, and not hourly align)
-        if (target && (!align || align !== 'hour') && (!start || !end || start === end)) {
-          // Parallel fetch for cache
-          const prevDate = prevDayStr(target);
-          const [cached, cachedPrev] = await Promise.all([
-             fetchCachedMetrics(req.brandKey, target),
-             fetchCachedMetrics(req.brandKey, prevDate)
-          ]);
-
-          if (cached) {
-            console.log(`[CACHE USE] CVR_DELTA for ${req.brandKey} on ${target} | Current: ${cached.conversion_rate}`);
-            
-             let previousData;
-             if (cachedPrev) {
-               console.log(`[CACHE USE] CVR_DELTA (prev) for ${req.brandKey} on ${prevDate}`);
-               previousData = {
-                 total_orders: cachedPrev.total_orders,
-                 total_sessions: cachedPrev.total_sessions,
-                 cvr: cachedPrev.conversion_rate / 100,
-                 cvr_percent: cachedPrev.conversion_rate
-               };
-             } else {
-               previousData = await computeCVRForDay(prevDate, req.brandDb.sequelize);
-             }
-             
-             const curCVR = cached.conversion_rate / 100;
-             const delta = computePercentDelta(cached.conversion_rate, previousData.cvr_percent || 0);
-             
-             return res.json({ 
-               metric: 'CVR_DELTA', 
-               date: target, 
-               current: { 
-                 total_orders: cached.total_orders, 
-                 total_sessions: cached.total_sessions, 
-                 cvr: curCVR, 
-                 cvr_percent: cached.conversion_rate 
-               }, 
-               previous: previousData, 
-               diff_pp: delta.diff_pp, 
-               diff_pct: delta.diff_pct, 
-               direction: delta.direction 
-             });
-          }
-        }
-        
-        // align already declared above
         const compare = (req.query.compare || '').toString().toLowerCase();
-
-        if (compare === 'prev-range-avg' && start && end) {
-          const curr = await cvrForRange({ start, end, conn: req.brandDb.sequelize });
-          const prevWin = previousWindow(start, end);
-          const prev = await cvrForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn: req.brandDb.sequelize });
-          const delta = computePercentDelta(curr.cvr_percent || 0, prev.cvr_percent || 0);
-          return res.json({ metric: 'CVR_DELTA', range: { start, end }, current: curr, previous: prev, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction, compare: 'prev-range-avg' });
-        }
-
-        const base = new Date(`${target}T00:00:00Z`);
-        const prev = new Date(base.getTime() - 24 * 3600_000);
-        const prevStr = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth()+1).padStart(2,'0')}-${String(prev.getUTCDate()).padStart(2,'0')}`;
-
-        const conn = req.brandDb.sequelize;
-        if (align === 'hour') {
-          const IST_OFFSET_MIN = 330;
-          const offsetMs = IST_OFFSET_MIN * 60 * 1000;
-          const pad2 = (n) => String(n).padStart(2, '0');
-          const nowUtc = new Date();
-          const nowIst = new Date(nowUtc.getTime() + offsetMs);
-          const yyyy = nowIst.getUTCFullYear();
-          const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
-          const dd = String(nowIst.getUTCDate()).padStart(2, '0');
-          const todayIst = `${yyyy}-${mm}-${dd}`;
-          const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
-          const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + nowIst.getUTCSeconds();
-          const fullDaySeconds = 24 * 3600;
-          const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
-          const secondsToTime = (secs) => {
-            const hh = Math.floor(secs / 3600);
-            const mm2 = Math.floor((secs % 3600) / 60);
-            const ss = secs % 60;
-            return `${pad2(hh)}:${pad2(mm2)}:${pad2(ss)}`;
-          };
-
-          if (start && end) {
-            const rangeStart = start;
-            const rangeEnd = end;
-            const targetHour = resolveTargetHour ? resolveTargetHour(end) : (end === todayIst ? nowIst.getUTCHours() : 23);
-            const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
-            const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
-            const isCurrentRangeToday = isToday(rangeStart) || isToday(rangeEnd);
-            const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
-            const prevCutoffSeconds = isCurrentRangeToday ? Math.min(fullDaySeconds, (prevCompareHour + 1) * 3600) : effectiveSeconds;
-            const prevCutoffTime = prevCutoffSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(prevCutoffSeconds);
-
-            const sqlSessRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
-            const orderRangeSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-            const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
-
-            const prevWin = previousWindow(rangeStart, rangeEnd);
-
-            const [sessCurRows, sessPrevRows, ordCurRows, ordPrevRows, overallCurrSess] = await Promise.all([
-              conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, targetHour] }),
-              conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, prevCompareHour] }),
-              conn.query(orderRangeSql, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
-              conn.query(orderRangeSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, prevCutoffTime] }),
-              (isToday(rangeStart) || isToday(rangeEnd)) ? conn.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd] }) : Promise.resolve(null),
-            ]);
-
-            let curSessions = Number(sessCurRows?.[0]?.total || 0);
-            if (overallCurrSess) {
-              curSessions = Number(overallCurrSess?.[0]?.total || 0);
-            }
-            const prevSessions = Number(sessPrevRows?.[0]?.total || 0);
-            const curOrders = Number(ordCurRows?.[0]?.cnt || 0);
-            const prevOrders = Number(ordPrevRows?.[0]?.cnt || 0);
-
-            const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
-            const prevCVR = prevSessions > 0 ? (prevOrders / prevSessions) : 0;
-            const delta = computePercentDelta(curCVR * 100, prevCVR * 100);
-            return res.json({
-              metric: 'CVR_DELTA',
-              range: { start, end },
-              current: { total_orders: curOrders, total_sessions: curSessions, cvr: curCVR, cvr_percent: curCVR * 100 },
-              previous: { total_orders: prevOrders, total_sessions: prevSessions, cvr: prevCVR, cvr_percent: prevCVR * 100 },
-              diff_pp: delta.diff_pp,
-              diff_pct: delta.diff_pct,
-              direction: delta.direction,
-              align: 'hour',
-              hour: targetHour,
-              cutoff_time: cutoffTime
-            });
-          }
-
-          const targetHour = resolveTargetHour ? resolveTargetHour(target) : (target === todayIst ? nowIst.getUTCHours() : 23);
-          const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(target)));
-          const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
-          const isCurrentToday = isToday(target);
-          const prevCompareHour = isCurrentToday ? Math.max(0, targetHour - 1) : targetHour;
-          const prevCutoffSeconds = isCurrentToday ? Math.min(fullDaySeconds, (prevCompareHour + 1) * 3600) : effectiveSeconds;
-          const prevCutoffTime = prevCutoffSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(prevCutoffSeconds);
-
-          const sqlSess = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date = ? AND hour <= ?`;
-          const orderSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-          const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date = ?`;
-
-          const [sessCurRows, sessPrevRows, ordersCurRows, ordersPrevRows, overallCurrSess] = await Promise.all([
-            conn.query(sqlSess, { type: QueryTypes.SELECT, replacements: [target, targetHour] }),
-            conn.query(sqlSess, { type: QueryTypes.SELECT, replacements: [prevStr, prevCompareHour] }),
-            conn.query(orderSql, { type: QueryTypes.SELECT, replacements: [target, target, cutoffTime] }),
-            conn.query(orderSql, { type: QueryTypes.SELECT, replacements: [prevStr, prevStr, prevCutoffTime] }),
-            isCurrentToday ? conn.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [target] }) : Promise.resolve(null),
-          ]);
-
-          let curSessions = Number(sessCurRows?.[0]?.total || 0);
-          if (overallCurrSess) {
-            curSessions = Number(overallCurrSess?.[0]?.total || 0);
-          }
-          const prevSessions = Number(sessPrevRows?.[0]?.total || 0);
-          const curOrders = Number(ordersCurRows?.[0]?.cnt || 0);
-          const prevOrders = Number(ordersPrevRows?.[0]?.cnt || 0);
-
-          const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
-          const prevCVR = prevSessions > 0 ? (prevOrders / prevSessions) : 0;
-          const delta = computePercentDelta(curCVR * 100, prevCVR * 100);
-          return res.json({
-            metric: 'CVR_DELTA',
-            date: target,
-            current: { total_orders: curOrders, total_sessions: curSessions, cvr: curCVR, cvr_percent: curCVR * 100 },
-            previous: { total_orders: prevOrders, total_sessions: prevSessions, cvr: prevCVR, cvr_percent: prevCVR * 100 },
-            diff_pp: delta.diff_pp,
-            diff_pct: delta.diff_pct,
-            direction: delta.direction,
-            align: 'hour',
-            hour: targetHour,
-            cutoff_time: cutoffTime
-          });
-        }
-
-        const [current, previous] = await Promise.all([
-          computeCVRForDay(target, conn),
-          computeCVRForDay(prevStr, conn)
-        ]);
-        const delta = computePercentDelta(current.cvr_percent || 0, previous.cvr_percent || 0);
-        console.log(`[DB FETCH] CVR_DELTA for ${req.brandKey} on ${target} | Result: ${JSON.stringify({ current, previous, delta })}`);
-        return res.json({ metric: 'CVR_DELTA', date: target, current, previous, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction });
+        const result = await calcCvrDelta({ start, end, align, compare, conn: req.brandDb.sequelize });
+        return res.json(result);
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
 
@@ -419,81 +715,10 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
-        const date = end || start;
-        if (!date && !(start && end)) {
-          return res.json({ metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
-        }
-
         const align = (req.query.align || '').toString().toLowerCase();
-
-        // Cache check
-        if (date && (!align || align !== 'hour') && !start && !end) {
-           const prevDate = prevDayStr(date);
-           const [cached, cachedPrev] = await Promise.all([
-             fetchCachedMetrics(req.brandKey, date),
-             fetchCachedMetrics(req.brandKey, prevDate)
-           ]);
-           
-           if (cached) {
-             console.log(`[CACHE USE] TOTAL_ORDERS_DELTA for ${req.brandKey} on ${date} | Current: ${cached.total_orders}`);
-             let prevVal = 0;
-             if (cachedPrev) {
-               prevVal = cachedPrev.total_orders;
-             } else {
-               prevVal = await rawSum('total_orders', { start: prevDate, end: prevDate, conn: req.brandDb.sequelize });
-             }
-             const current = cached.total_orders;
-             const diff = current - prevVal;
-             const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (current > 0 ? 100 : 0);
-             const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-             return res.json({ metric: 'TOTAL_ORDERS_DELTA', date, current, previous: prevVal, diff_pct, direction });
-           }
-        }
-        if (align === 'hour') {
-          const conn = req.brandDb.sequelize;
-          const rangeStart = start || date;
-          const rangeEnd = end || date;
-          if (!rangeStart || !rangeEnd) return res.status(400).json({ error: 'Invalid date range' });
-
-          const pad2 = (n) => String(n).padStart(2, '0');
-          const nowUtc = new Date();
-          const nowIstMs = nowUtc.getTime() + (330 * 60 * 1000);
-          const nowIst = new Date(nowIstMs);
-          const todayIst = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
-          const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + (nowIst.getUTCSeconds());
-          const fullDaySeconds = 24 * 3600;
-          const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
-          const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
-
-          const secondsToTime = (secs) => {
-            const hh = Math.floor(secs / 3600);
-            const mm = Math.floor((secs % 3600) / 60);
-            const ss = secs % 60;
-            return `${pad2(hh)}:${pad2(mm)}:${pad2(ss)}`;
-          };
-
-          const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
-          const rangeFilter = `created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-          const prevWindow = previousWindow(rangeStart, rangeEnd);
-          const countSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE ${rangeFilter}`;
-          const currPromise = conn.query(countSql, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] });
-          const prevPromise = prevWindow ? conn.query(countSql, { type: QueryTypes.SELECT, replacements: [prevWindow.prevStart, prevWindow.prevEnd, cutoffTime] }) : Promise.resolve([{ cnt: 0 }]);
-          const [currRows, prevRows] = await Promise.all([currPromise, prevPromise]);
-          const current = Number(currRows?.[0]?.cnt || 0);
-          const previous = Number(prevRows?.[0]?.cnt || 0);
-          const diff = current - previous;
-          const diff_pct = previous > 0 ? (diff / previous) * 100 : (current > 0 ? 100 : 0);
-          const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-          const response = start && end
-            ? { metric: 'TOTAL_ORDERS_DELTA', range: { start, end }, current, previous, diff_pct, direction, align: 'hour', cutoff_time: cutoffTime }
-            : { metric: 'TOTAL_ORDERS_DELTA', date: rangeEnd, current, previous, diff_pct, direction, align: 'hour', cutoff_time: cutoffTime };
-          return res.json(response);
-        }
-
-        if (!date) return res.json({ metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
-        const delta = await deltaForSum('total_orders', date, req.brandDb.sequelize);
-        console.log(`[DB FETCH] TOTAL_ORDERS_DELTA for ${req.brandKey} on ${date} | Result: ${JSON.stringify(delta)}`);
-        return res.json({ metric: 'TOTAL_ORDERS_DELTA', date, ...delta });
+        const compare = (req.query.compare || '').toString().toLowerCase();
+        const result = await calcTotalOrdersDelta({ start, end, align, compare, conn: req.brandDb.sequelize });
+        return res.json(result);
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
@@ -502,79 +727,10 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
-        const date = end || start;
-        if (!date && !(start && end)) return res.json({ metric: 'TOTAL_SALES_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
-
-        const compare = (req.query.compare || '').toString().toLowerCase();
-        if (compare === 'prev-range-avg' && start && end) {
-          const currAvg = await avgForRange('total_sales', { start, end, conn: req.brandDb.sequelize });
-          const prevWin = previousWindow(start, end);
-          const prevAvg = await avgForRange('total_sales', { start: prevWin.prevStart, end: prevWin.prevEnd, conn: req.brandDb.sequelize });
-          const diff = currAvg - prevAvg;
-          const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
-          const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-          return res.json({ metric: 'TOTAL_SALES_DELTA', range: { start, end }, current: currAvg, previous: prevAvg, diff_pct, direction, compare: 'prev-range-avg' });
-        }
-
         const align = (req.query.align || '').toString().toLowerCase();
-
-        // Cache check
-        if (date && (!align || align !== 'hour') && !start && !end) {
-           const prevDate = prevDayStr(date);
-           const [cached, cachedPrev] = await Promise.all([
-             fetchCachedMetrics(req.brandKey, date),
-             fetchCachedMetrics(req.brandKey, prevDate)
-           ]);
-
-           if (cached) {
-             console.log(`[CACHE USE] TOTAL_SALES_DELTA for ${req.brandKey} on ${date} | Current: ${cached.total_sales}`);
-             let prevVal = 0;
-             if (cachedPrev) {
-               prevVal = cachedPrev.total_sales;
-             } else {
-               prevVal = await rawSum('total_sales', { start: prevDate, end: prevDate, conn: req.brandDb.sequelize });
-             }
-             const current = cached.total_sales;
-             const diff = current - prevVal;
-             const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (current > 0 ? 100 : 0);
-             const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-             return res.json({ metric: 'TOTAL_SALES_DELTA', date, current, previous: prevVal, diff_pct, direction });
-           }
-        }
-        if (align === 'hour') {
-          const conn = req.brandDb.sequelize;
-          const rangeStart = start || date;
-          const rangeEnd = end || date;
-          if (!rangeStart || !rangeEnd) return res.status(400).json({ error: 'Invalid date range' });
-
-          const pad2 = (n) => String(n).padStart(2, '0');
-          const nowUtc = new Date();
-          const nowIst = new Date(nowUtc.getTime() + 330 * 60 * 1000);
-          const todayIst = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
-          const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + (nowIst.getUTCSeconds());
-          const fullDaySeconds = 24 * 3600;
-          const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
-          const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
-          const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : `${pad2(Math.floor(effectiveSeconds / 3600))}:${pad2(Math.floor((effectiveSeconds % 3600) / 60))}:${pad2(effectiveSeconds % 60)}`;
-          const prevWin = previousWindow(rangeStart, rangeEnd);
-          const salesSql = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-          const currentPromise = conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] });
-          const previousPromise = prevWin ? conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }) : Promise.resolve([{ total: 0 }]);
-          const [currRow, prevRow] = await Promise.all([currentPromise, previousPromise]);
-          const curr = Number(currRow?.[0]?.total || 0);
-          const prevVal = Number(prevRow?.[0]?.total || 0);
-          const diff = curr - prevVal;
-          const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
-          const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-          const response = start && end
-            ? { metric: 'TOTAL_SALES_DELTA', range: { start, end }, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', cutoff_time: cutoffTime }
-            : { metric: 'TOTAL_SALES_DELTA', date: rangeEnd, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', cutoff_time: cutoffTime };
-          return res.json(response);
-        }
-
-        const delta = await deltaForSum('total_sales', date, req.brandDb.sequelize);
-        console.log(`[DB FETCH] TOTAL_SALES_DELTA for ${req.brandKey} on ${date} | Result: ${JSON.stringify(delta)}`);
-        return res.json({ metric: 'TOTAL_SALES_DELTA', date, ...delta });
+        const compare = (req.query.compare || '').toString().toLowerCase();
+        const result = await calcTotalSalesDelta({ start, end, align, compare, conn: req.brandDb.sequelize });
+        return res.json(result);
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
@@ -635,103 +791,10 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
-        const date = end || start;
-        if (!date && !(start && end)) return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
-
-        const compare = (req.query.compare || '').toString().toLowerCase();
-        if (compare === 'prev-range-avg' && start && end) {
-          const currAvg = await avgForRange('total_sessions', { start, end, conn: req.brandDb.sequelize });
-          const prevWin = previousWindow(start, end);
-          const prevAvg = await avgForRange('total_sessions', { start: prevWin.prevStart, end: prevWin.prevEnd, conn: req.brandDb.sequelize });
-          const diff = currAvg - prevAvg;
-          const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
-          const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-          return res.json({ metric: 'TOTAL_SESSIONS_DELTA', range: { start, end }, current: currAvg, previous: prevAvg, diff_pct, direction, compare: 'prev-range-avg' });
-        }
-
         const align = (req.query.align || '').toString().toLowerCase();
-
-        // Cache check
-        if (date && (!align || align !== 'hour') && !start && !end) {
-           const prevDate = prevDayStr(date);
-           const [cached, cachedPrev] = await Promise.all([
-             fetchCachedMetrics(req.brandKey, date),
-             fetchCachedMetrics(req.brandKey, prevDate)
-           ]);
-
-           if (cached) {
-             console.log(`[CACHE USE] TOTAL_SESSIONS_DELTA for ${req.brandKey} on ${date} | Current: ${cached.total_sessions}`);
-             let prevVal = 0;
-             if (cachedPrev) {
-               prevVal = cachedPrev.total_sessions;
-             } else {
-               prevVal = await rawSum('total_sessions', { start: prevDate, end: prevDate, conn: req.brandDb.sequelize });
-             }
-             const current = cached.total_sessions;
-             const diff = current - prevVal;
-             const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (current > 0 ? 100 : 0);
-             const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-             return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date, current, previous: prevVal, diff, diff_pct, direction });
-           }
-        }
-        if (align === 'hour') {
-          const IST_OFFSET_MIN = 330;
-          const nowUtc = new Date();
-          const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
-          const yyyy = nowIst.getUTCFullYear();
-          const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
-          const dd = String(nowIst.getUTCDate()).padStart(2, '0');
-          const todayIst = `${yyyy}-${mm}-${dd}`;
-          const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
-
-          if (start && end) {
-            const targetHour = resolveTargetHour(end);
-            const prevWin = previousWindow(start, end);
-            const isCurrentRangeToday = isToday(start) || isToday(end);
-            const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
-            const sqlRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
-            const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
-            const [currRow, prevRow, overallCurrRow] = await Promise.all([
-              req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
-              req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, prevCompareHour] }),
-              isCurrentRangeToday ? req.brandDb.sequelize.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [start, end] }) : Promise.resolve(null),
-            ]);
-            let curr = Number(currRow?.[0]?.total || 0);
-            if (overallCurrRow) {
-              curr = Number(overallCurrRow?.[0]?.total || 0);
-            }
-            const prevVal = Number(prevRow?.[0]?.total || 0);
-            const diff = curr - prevVal;
-            const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
-            const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-            return res.json({ metric: 'TOTAL_SESSIONS_DELTA', range: { start, end }, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
-          } else {
-            const targetHour = resolveTargetHour(date);
-            const prev = prevDayStr(date);
-            const isCurrentToday = isToday(date);
-            const prevCompareHour = isCurrentToday ? Math.max(0, targetHour - 1) : targetHour;
-            const sql = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date = ? AND hour <= ?`;
-            const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date = ?`;
-            const [currRow, prevRow, overallCurrRow] = await Promise.all([
-              req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
-              req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, prevCompareHour] }),
-              isCurrentToday ? req.brandDb.sequelize.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [date] }) : Promise.resolve(null),
-            ]);
-            let curr = Number(currRow?.[0]?.total || 0);
-            if (overallCurrRow) {
-              curr = Number(overallCurrRow?.[0]?.total || 0);
-            }
-            const prevVal = Number(prevRow?.[0]?.total || 0);
-            const diff = curr - prevVal;
-            const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
-            const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-            return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
-          }
-        }
-
-        const d = await deltaForSum('total_sessions', date, req.brandDb.sequelize);
-        console.log(`[DB FETCH] TOTAL_SESSIONS_DELTA for ${req.brandKey} on ${date} | Result: ${JSON.stringify(d)}`);
-        return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date, ...d });
+        const compare = (req.query.compare || '').toString().toLowerCase();
+        const result = await calcTotalSessionsDelta({ start, end, align, compare, conn: req.brandDb.sequelize });
+        return res.json(result);
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
@@ -740,103 +803,10 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
-        const date = end || start;
-        if (!date && !(start && end)) return res.json({ metric: 'ATC_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
-
-        const compare = (req.query.compare || '').toString().toLowerCase();
-        if (compare === 'prev-range-avg' && start && end) {
-          const currAvg = await avgForRange('total_atc_sessions', { start, end, conn: req.brandDb.sequelize });
-          const prevWin = previousWindow(start, end);
-          const prevAvg = await avgForRange('total_atc_sessions', { start: prevWin.prevStart, end: prevWin.prevEnd, conn: req.brandDb.sequelize });
-          const diff = currAvg - prevAvg;
-          const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
-          const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-          return res.json({ metric: 'ATC_SESSIONS_DELTA', range: { start, end }, current: currAvg, previous: prevAvg, diff_pct, direction, compare: 'prev-range-avg' });
-        }
-
         const align = (req.query.align || '').toString().toLowerCase();
-
-        // Cache check
-        if (date && (!align || align !== 'hour') && !start && !end) {
-           const prevDate = prevDayStr(date);
-           const [cached, cachedPrev] = await Promise.all([
-             fetchCachedMetrics(req.brandKey, date),
-             fetchCachedMetrics(req.brandKey, prevDate)
-           ]);
-           
-           if (cached) {
-             console.log(`[CACHE USE] ATC_SESSIONS_DELTA for ${req.brandKey} on ${date} | Current: ${cached.total_atc_sessions}`);
-             let prevVal = 0;
-             if (cachedPrev) {
-               prevVal = cachedPrev.total_atc_sessions;
-             } else {
-               prevVal = await rawSum('total_atc_sessions', { start: prevDate, end: prevDate, conn: req.brandDb.sequelize });
-             }
-             const current = cached.total_atc_sessions;
-             const diff = current - prevVal;
-             const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (current > 0 ? 100 : 0);
-             const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-             return res.json({ metric: 'ATC_SESSIONS_DELTA', date, current, previous: prevVal, diff, diff_pct, direction });
-           }
-        }
-        if (align === 'hour') {
-          const IST_OFFSET_MIN = 330;
-          const nowUtc = new Date();
-          const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
-          const yyyy = nowIst.getUTCFullYear();
-          const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
-          const dd = String(nowIst.getUTCDate()).padStart(2, '0');
-          const todayIst = `${yyyy}-${mm}-${dd}`;
-          const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
-
-          if (start && end) {
-            const targetHour = resolveTargetHour(end);
-            const prevWin = previousWindow(start, end);
-            const isCurrentRangeToday = isToday(start) || isToday(end);
-            const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
-            const sqlRange = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
-            const sqlOverallAtc = `SELECT COALESCE(SUM(total_atc_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
-            const [currRow, prevRow, overallCurrRow] = await Promise.all([
-              req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [start, end, targetHour] }),
-              req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, prevCompareHour] }),
-              isCurrentRangeToday ? req.brandDb.sequelize.query(sqlOverallAtc, { type: QueryTypes.SELECT, replacements: [start, end] }) : Promise.resolve(null),
-            ]);
-            let curr = Number(currRow?.[0]?.total || 0);
-            if (overallCurrRow) {
-              curr = Number(overallCurrRow?.[0]?.total || 0);
-            }
-            const prevVal = Number(prevRow?.[0]?.total || 0);
-            const diff = curr - prevVal;
-            const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
-            const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-            return res.json({ metric: 'ATC_SESSIONS_DELTA', range: { start, end }, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
-          } else {
-            const targetHour = resolveTargetHour(date);
-            const prev = prevDayStr(date);
-            const isCurrentToday = isToday(date);
-            const prevCompareHour = isCurrentToday ? Math.max(0, targetHour - 1) : targetHour;
-            const sql = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date = ? AND hour <= ?`;
-            const sqlOverallAtc = `SELECT COALESCE(SUM(total_atc_sessions),0) AS total FROM overall_summary WHERE date = ?`;
-            const [currRow, prevRow, overallCurrRow] = await Promise.all([
-              req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [date, targetHour] }),
-              req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prev, prevCompareHour] }),
-              isCurrentToday ? req.brandDb.sequelize.query(sqlOverallAtc, { type: QueryTypes.SELECT, replacements: [date] }) : Promise.resolve(null),
-            ]);
-            let curr = Number(currRow?.[0]?.total || 0);
-            if (overallCurrRow) {
-              curr = Number(overallCurrRow?.[0]?.total || 0);
-            }
-            const prevVal = Number(prevRow?.[0]?.total || 0);
-            const diff = curr - prevVal;
-            const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (curr > 0 ? 100 : 0);
-            const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-            return res.json({ metric: 'ATC_SESSIONS_DELTA', date, current: curr, previous: prevVal, diff_pct, direction, align: 'hour', hour: targetHour });
-          }
-        }
-
-        const d = await deltaForSum('total_atc_sessions', date, req.brandDb.sequelize);
-        console.log(`[DB FETCH] ATC_SESSIONS_DELTA for ${req.brandKey} on ${date} | Result: ${JSON.stringify(d)}`);
-        return res.json({ metric: 'ATC_SESSIONS_DELTA', date, ...d });
+        const compare = (req.query.compare || '').toString().toLowerCase();
+        const result = await calcAtcSessionsDelta({ start, end, align, compare, conn: req.brandDb.sequelize });
+        return res.json(result);
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
@@ -845,130 +815,11 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
-        const date = end || start;
-        if (!date && !(start && end)) return res.json({ metric: 'AOV_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
-
-        const compare = (req.query.compare || '').toString().toLowerCase();
-        if (compare === 'prev-range-avg' && start && end) {
-          const curr = await aovForRange({ start, end, conn: req.brandDb.sequelize });
-          const prevWin = previousWindow(start, end);
-          const prev = await aovForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn: req.brandDb.sequelize });
-          const diff = curr - prev;
-          const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
-          const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-          return res.json({ metric: 'AOV_DELTA', range: { start, end }, current: curr, previous: prev, diff_pct, direction, compare: 'prev-range-avg' });
-        }
-
         const align = (req.query.align || '').toString().toLowerCase();
-
-        // Cache check
-        if (date && (!align || align !== 'hour') && !start && !end) {
-           const prevDate = prevDayStr(date);
-           const [cached, cachedPrev] = await Promise.all([
-             fetchCachedMetrics(req.brandKey, date),
-             fetchCachedMetrics(req.brandKey, prevDate)
-           ]);
-
-           if (cached) {
-             console.log(`[CACHE USE] AOV_DELTA for ${req.brandKey} on ${date} | Current: ${cached.average_order_value}`);
-             let pAov = 0;
-             if (cachedPrev) {
-               pAov = cachedPrev.average_order_value;
-             } else {
-               const prevAovStats = await aovForRange({ start: prevDate, end: prevDate, conn: req.brandDb.sequelize });
-               if (typeof prevAovStats === 'object' && prevAovStats !== null) pAov = Number(prevAovStats.aov || 0);
-               else pAov = Number(prevAovStats || 0);
-             }
-
-             const current = cached.average_order_value;
-             const diff = current - pAov;
-             const diff_pct = pAov > 0 ? (diff / pAov) * 100 : (current > 0 ? 100 : 0);
-             const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-             return res.json({ metric: 'AOV_DELTA', date, current, previous: pAov, diff, diff_pct, direction });
-           }
-        }
-        if (align === 'hour') {
-          const IST_OFFSET_MIN = 330;
-          const offsetMs = IST_OFFSET_MIN * 60 * 1000;
-          const nowUtc = new Date();
-          const nowIst = new Date(nowUtc.getTime() + offsetMs);
-          const pad2 = (n) => String(n).padStart(2, '0');
-          const todayIst = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
-          const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
-          const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + (nowIst.getUTCSeconds());
-          const fullDaySeconds = 24 * 3600;
-          const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
-          const secondsToTime = (secs) => `${pad2(Math.floor(secs / 3600))}:${pad2(Math.floor((secs % 3600) / 60))}:${pad2(secs % 60)}`;
-          const conn = req.brandDb.sequelize;
-          const salesSqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-          const salesSql = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-          const ordersSqlRange = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-          const ordersSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-
-          if (start && end) {
-            const targetHour = resolveTargetHour(end);
-            const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(end)));
-            const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
-            const prevWin = previousWindow(start, end);
-
-            const [salesCurRows, salesPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
-              conn.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [start, end, cutoffTime] }),
-              conn.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }),
-              conn.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [start, end, cutoffTime] }),
-              conn.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }),
-            ]);
-
-            const curSales = Number(salesCurRows?.[0]?.total || 0);
-            const prevSales = Number(salesPrevRows?.[0]?.total || 0);
-            const curOrders = Number(ordersCurRows?.[0]?.cnt || 0);
-            const prevOrders = Number(ordersPrevRows?.[0]?.cnt || 0);
-
-            const curAov = curOrders > 0 ? curSales / curOrders : 0;
-            const prevAov = prevOrders > 0 ? prevSales / prevOrders : 0;
-            const diff = curAov - prevAov;
-            const diff_pct = prevAov > 0 ? (diff / prevAov) * 100 : (curAov > 0 ? 100 : 0);
-            const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-            const resp = { metric: 'AOV_DELTA', range: { start, end }, current: curAov, previous: prevAov, diff_pct, direction, align: 'hour', hour: targetHour, cutoff_time: cutoffTime };
-            if ((req.query.debug || '').toString() === '1' || process.env.NODE_ENV !== 'production') {
-              resp.sales = { current: curSales, previous: prevSales };
-              resp.orders = { current: curOrders, previous: prevOrders };
-            }
-            return res.json(resp);
-          }
-
-          const targetHour = resolveTargetHour(date);
-          const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(date)));
-          const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
-          const prev = prevDayStr(date);
-
-          const [salesCurRows, salesPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
-            conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [date, date, cutoffTime] }),
-            conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [prev, prev, cutoffTime] }),
-            conn.query(ordersSql, { type: QueryTypes.SELECT, replacements: [date, date, cutoffTime] }),
-            conn.query(ordersSql, { type: QueryTypes.SELECT, replacements: [prev, prev, cutoffTime] }),
-          ]);
-
-          const curSales = Number(salesCurRows?.[0]?.total || 0);
-          const prevSales = Number(salesPrevRows?.[0]?.total || 0);
-          const curOrders = Number(ordersCurRows?.[0]?.cnt || 0);
-          const prevOrders = Number(ordersPrevRows?.[0]?.cnt || 0);
-
-          const curAov = curOrders > 0 ? curSales / curOrders : 0;
-          const prevAov = prevOrders > 0 ? prevSales / prevOrders : 0;
-          const diff = curAov - prevAov;
-          const diff_pct = prevAov > 0 ? (diff / prevAov) * 100 : (curAov > 0 ? 100 : 0);
-          const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-          const resp = { metric: 'AOV_DELTA', date, current: curAov, previous: prevAov, diff_pct, direction, align: 'hour', hour: targetHour, cutoff_time: cutoffTime };
-          if ((req.query.debug || '').toString() === '1' || process.env.NODE_ENV !== 'production') {
-            resp.sales = { current: curSales, previous: prevSales };
-            resp.orders = { current: curOrders, previous: prevOrders };
-          }
-          return res.json(resp);
-        }
-
-        const d = await deltaForAOV(date, req.brandDb.sequelize);
-        console.log(`[DB FETCH] AOV_DELTA for ${req.brandKey} on ${date} | Result: ${JSON.stringify(d)}`);
-        return res.json({ metric: 'AOV_DELTA', date, ...d });
+        const compare = (req.query.compare || '').toString().toLowerCase();
+        const debug = (req.query.debug || '').toString() === '1' || process.env.NODE_ENV !== 'production';
+        const result = await calcAovDelta({ start, end, align, compare, conn: req.brandDb.sequelize, debug });
+        return res.json(result);
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
@@ -1941,6 +1792,59 @@ function buildMetricsController() {
         const daily = await sequelize.query(sqlDaily, { type: QueryTypes.SELECT, replacements: [start, end] });
         res.json({ connecting_to: envInfo, range: { start, end }, sql_total: sqlTotal, sql_params: [start, end], total_orders: Number(totalRow.total || 0), daily_breakdown: daily.map(r => ({ date: r.date, total_orders: Number(r.total_orders || 0) })) });
       } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+    },
+
+    deltaSummary: async (req, res) => {
+      try {
+        const brandQuery = (req.query.brand || req.query.brand_key || (req.brandKey)).toString().trim();
+        if (!brandQuery) return res.status(400).json({ error: "Missing brand_key" });
+
+        const todayStr = formatIsoDate(new Date());
+        const start = (req.query.start || req.query.date || todayStr).toString();
+        const end = (req.query.end || req.query.date || start).toString();
+        if (start > end) return res.status(400).json({ error: 'start must be on or before end' });
+
+        if (!req.brandDb && req.brandConfig) {
+          try {
+            req.brandDb = await getBrandConnection(req.brandConfig);
+          } catch (connErr) {
+            console.error("Lazy connection failed", connErr);
+          }
+        }
+        const conn = req.brandDb ? req.brandDb.sequelize : null;
+        if (!conn) throw new Error("Database connection missing for delta summary");
+
+        const align = (req.query.align || '').toString().toLowerCase();
+        const compare = (req.query.compare || '').toString().toLowerCase();
+
+        const [orders, sales, sessions, atc, aov, cvr] = await Promise.all([
+          calcTotalOrdersDelta({ start, end, align, compare, conn }),
+          calcTotalSalesDelta({ start, end, align, compare, conn }),
+          calcTotalSessionsDelta({ start, end, align, compare, conn }),
+          calcAtcSessionsDelta({ start, end, align, compare, conn }),
+          calcAovDelta({ start, end, align, compare, conn }),
+          calcCvrDelta({ start, end, align, compare, conn })
+        ]);
+
+        const prevWin = previousWindow(start, end);
+        const response = {
+          range: { start, end },
+          prev_range: prevWin ? { start: prevWin.prevStart, end: prevWin.prevEnd } : null,
+          metrics: {
+            total_orders: orders,
+            total_sales: sales,
+            total_sessions: sessions,
+            total_atc_sessions: atc,
+            average_order_value: aov,
+            conversion_rate: cvr
+          }
+        };
+
+        return res.json(response);
+      } catch (e) {
+        console.error('[deltaSummary] Error:', e);
+        return res.status(500).json({ error: 'Internal server error', details: e.message });
+      }
     },
 
     dashboardSummary: async (req, res) => {
