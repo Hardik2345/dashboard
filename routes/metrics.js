@@ -8,6 +8,22 @@ const { buildMetricsController } = require('../controllers/metricsController');
 
 function buildMetricsRouter(sequelize) {
   const router = express.Router();
+  // Record arrival time for simple tracing
+  router.use((req, _res, next) => {
+    if (!req._reqStart) req._reqStart = Date.now();
+    // Add X-Response-Time header for downstream visibility
+    const start = req._reqStart;
+    const origEnd = _res.end;
+    _res.end = function patchedEnd(...args) {
+      const duration = Date.now() - start;
+      if (!_res.headersSent) {
+        _res.setHeader('X-Response-Time', `${duration}ms`);
+      }
+      _res.end = origEnd;
+      return _res.end(...args);
+    };
+    next();
+  });
   const controller = buildMetricsController();
   const apiKeyAuth = createApiKeyAuthMiddleware(sequelize, ['metrics:read']);
   const protectedBrand = [requireAuth, brandContext];

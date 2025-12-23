@@ -1,6 +1,5 @@
 
-import axios from 'axios';
-
+/* eslint-disable */
 // We can't directly test the internal memory cache of the running server from an external script 
 // without an endpoint that exposes it or looking at logs.
 // However, we can simulate the "burst" behavior and look at the SERVER logs.
