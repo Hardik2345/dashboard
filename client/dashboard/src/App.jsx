@@ -267,15 +267,15 @@ export default function App() {
 
         const mapped = Array.isArray(products)
           ? products.map((p) => {
-              const rawPath = (p.landing_page_path || '').toString();
-              const slug = rawPath.includes('/products/')
-                ? rawPath.split('/products/')[1] || rawPath
-                : rawPath || p.product_id;
-              const label = slug || p.product_id || 'Unknown product';
-              const sessions = Number(p.sessions || 0);
-              const detail = `${sessions.toLocaleString()} sessions`;
-              return { id: p.product_id, label, detail };
-            })
+            const rawPath = (p.landing_page_path || '').toString();
+            const slug = rawPath.includes('/products/')
+              ? rawPath.split('/products/')[1] || rawPath
+              : rawPath || p.product_id;
+            const label = slug || p.product_id || 'Unknown product';
+            const sessions = Number(p.sessions || 0);
+            const detail = `${sessions.toLocaleString()} sessions`;
+            return { id: p.product_id, label, detail };
+          })
           : [];
 
         const nextOptions = [DEFAULT_PRODUCT_OPTION, ...mapped];
