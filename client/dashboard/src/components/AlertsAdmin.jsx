@@ -61,7 +61,7 @@ import { toast } from "react-toastify";
 import axios from "axios";
 
 // defined base metrics that cannot be derived
-const BASE_METRICS = ['total_orders', 'total_sales', 'total_sessions', 'atc_sessions'];
+const BASE_METRICS = ['total_orders', 'total_sales', 'total_sessions', 'atc_sessions', 'performance'];
 
 const METRIC_TYPES = [
   { value: 'base', label: 'Base' },
@@ -69,7 +69,6 @@ const METRIC_TYPES = [
 ];
 
 const THRESHOLD_TYPES = [
-  { value: 'absolute', label: 'Absolute' },
   { value: 'percentage_drop', label: 'Percentage Drop' },
   { value: 'percentage_rise', label: 'Percentage Rise' },
   { value: 'less_than', label: 'Less Than' },
@@ -93,7 +92,7 @@ function buildInitialForm(defaultBrand = '') {
     metric_name: '',
     metric_type: 'base',
     formula: '',
-    threshold_type: 'absolute',
+    threshold_type: 'percentage_drop',
     threshold_value: '',
     critical_threshold: '',
     severity: 'low',
@@ -240,11 +239,18 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
 
     // Logic for restricting metric type
     if (field === 'metric_name') {
-      if (BASE_METRICS.includes(value)) {
-        setForm(prev => ({ ...prev, [field]: value, metric_type: 'base' }));
-      } else {
-        setForm(prev => ({ ...prev, [field]: value }));
-      }
+      const isBase = BASE_METRICS.includes(value);
+      const isPerformance = value === 'performance';
+
+      setForm(prev => {
+        const next = { ...prev, [field]: value };
+        if (isBase) next.metric_type = 'base';
+        if (isPerformance) {
+          next.threshold_type = 'more_than'; // Default to one of the allowed types
+          next.lookback_days = ''; // Clear lookback days
+        }
+        return next;
+      });
     } else {
       setForm((prev) => ({ ...prev, [field]: value }));
     }
@@ -333,7 +339,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
       cooldown_minutes: form.cooldown_minutes === '' ? null : Number(form.cooldown_minutes),
       lookback_start: null,
       lookback_end: null,
-      lookback_days: lookbackDays,
+      lookback_days: form.metric_name === 'performance' ? null : lookbackDays,
       quiet_hours_start: form.quiet_hours_start || null,
       quiet_hours_end: form.quiet_hours_end || null,
       recipients: parseRecipients(form.recipients),
@@ -352,6 +358,11 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
     }
     if (form.threshold_value === '' || form.threshold_value == null) {
       errors.threshold_value = "Threshold value is required";
+    }
+    if (form.threshold_type === 'less_than' && form.critical_threshold !== '' && form.critical_threshold !== null) {
+      if (Number(form.critical_threshold) >= Number(form.threshold_value)) {
+        errors.critical_threshold = "Critical threshold must be less than warning threshold";
+      }
     }
     if (!form.recipients || (Array.isArray(form.recipients) && form.recipients.length === 0)) {
       errors.recipients = "At least one recipient is required";
@@ -562,7 +573,6 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                   fullWidth
                   multiline
                   minRows={2}
-                  helperText="Example: (sales / visits) * 100"
                   helperText={validationErrors.formula || "Example: (sales / visits) * 100"}
                   error={!!validationErrors.formula}
                   sx={{ '& .MuiOutlinedInput-root': { fontFamily: 'monospace' } }}
@@ -578,7 +588,12 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                   onChange={handleInputChange('threshold_type')}
                   label="Condition"
                 >
-                  {THRESHOLD_TYPES.map((option) => (
+                  {THRESHOLD_TYPES.filter(opt => {
+                    if (form.metric_name === 'performance') {
+                      return ['more_than', 'less_than'].includes(opt.value);
+                    }
+                    return true;
+                  }).map((option) => (
                     <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
                   ))}
                 </Select>
@@ -594,11 +609,6 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 value={form.threshold_value}
                 onChange={handleInputChange('threshold_value')}
                 fullWidth
-                size="small"
-                inputProps={{ step: 'any' }}
-                InputProps={{
-                  endAdornment: <InputAdornment position="end">Val</InputAdornment>,
-                }}
                 size="small"
                 inputProps={{ step: 'any' }}
                 InputProps={{
@@ -656,6 +666,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 size="small"
                 helperText="Data range to analyze"
                 sx={{ '& input': { colorScheme: theme.palette.mode } }}
+                disabled={form.metric_name === 'performance'}
               />
             </Grid>
             <Grid item xs={12} md={6}>
