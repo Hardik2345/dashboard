@@ -142,6 +142,15 @@ const AlertSchema = z.object({
       path: ['quiet_hours_start'],
     });
   }
+  if (data.threshold_type === 'less_than' && data.critical_threshold !== undefined && data.critical_threshold !== null) {
+    if (data.critical_threshold >= data.threshold_value) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Critical threshold must be less than warning threshold for "Less Than" condition',
+        path: ['critical_threshold'],
+      });
+    }
+  }
 });
 
 const AlertStatusSchema = z.object({
