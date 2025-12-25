@@ -33,6 +33,7 @@ async function authorizeBrandContext(req, res, next) {
   }
   
   req.brandKey = brandCfg.key;
+  req.brandDbName = brandCfg.dbName || brandCfg.key;
   req.brandConfig = brandCfg; // Store config for lazy connection
   next();
 }
