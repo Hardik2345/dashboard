@@ -5,4 +5,5 @@ export const KPI_METRICS = [
   { value: 'conversion_rate', label: 'Conversion Rate' },
   { value: 'total_sessions', label: 'Total Sessions' },
   { value: 'atc_sessions', label: 'Add to Cart Sessions' },
+  { value: 'performance', label: 'Performance' },
 ];
