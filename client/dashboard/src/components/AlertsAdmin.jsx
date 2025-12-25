@@ -15,6 +15,7 @@ import {
   Divider,
   FormControl,
   FormControlLabel,
+  FormHelperText,
   Grid,
   IconButton,
   InputAdornment,
@@ -59,13 +60,15 @@ import {
 import { toast } from "react-toastify";
 import axios from "axios";
 
+// defined base metrics that cannot be derived
+const BASE_METRICS = ['total_orders', 'total_sales', 'total_sessions', 'atc_sessions', 'performance'];
+
 const METRIC_TYPES = [
   { value: 'base', label: 'Base' },
   { value: 'derived', label: 'Derived' },
 ];
 
 const THRESHOLD_TYPES = [
-  { value: 'absolute', label: 'Absolute' },
   { value: 'percentage_drop', label: 'Percentage Drop' },
   { value: 'percentage_rise', label: 'Percentage Rise' },
   { value: 'less_than', label: 'Less Than' },
@@ -89,14 +92,14 @@ function buildInitialForm(defaultBrand = '') {
     metric_name: '',
     metric_type: 'base',
     formula: '',
-    threshold_type: 'absolute',
+    threshold_type: 'percentage_drop',
     threshold_value: '',
     critical_threshold: '',
     severity: 'low',
     cooldown_minutes: 30,
     lookback_days: 7,
-    quiet_hours_start: '',
-    quiet_hours_end: '',
+    quiet_hours_start: '00:00',
+    quiet_hours_end: '00:00',
     recipients: '',
     is_active: true,
   };
@@ -144,6 +147,9 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  // Validation State
+  const [validationErrors, setValidationErrors] = useState({});
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState('');
@@ -230,7 +236,29 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
 
   const handleInputChange = (field) => (event) => {
     const value = event.target.type === 'number' ? event.target.value : event.target.value;
-    setForm((prev) => ({ ...prev, [field]: value }));
+
+    // Logic for restricting metric type
+    if (field === 'metric_name') {
+      const isBase = BASE_METRICS.includes(value);
+      const isPerformance = value === 'performance';
+
+      setForm(prev => {
+        const next = { ...prev, [field]: value };
+        if (isBase) next.metric_type = 'base';
+        if (isPerformance) {
+          next.threshold_type = 'more_than'; // Default to one of the allowed types
+          next.lookback_days = ''; // Clear lookback days
+        }
+        return next;
+      });
+    } else {
+      setForm((prev) => ({ ...prev, [field]: value }));
+    }
+
+    // Clear validation error for field
+    if (validationErrors[field]) {
+      setValidationErrors(prev => ({ ...prev, [field]: undefined }));
+    }
   };
 
   const handleToggleActive = async (alert) => {
@@ -251,6 +279,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
   const resetForm = useCallback(() => {
     setForm(buildInitialForm(defaultBrandKey || (brandOptions[0]?.value || '')));
     setError(null);
+    setValidationErrors({});
   }, [defaultBrandKey, brandOptions]);
 
   const fillFormForEdit = (alert) => {
@@ -290,6 +319,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
         : alert.recipient_emails || alert.recipients || '',
       is_active: Boolean(alert.is_active ?? true),
     });
+    setValidationErrors({});
     setError(null);
   };
 
@@ -309,7 +339,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
       cooldown_minutes: form.cooldown_minutes === '' ? null : Number(form.cooldown_minutes),
       lookback_start: null,
       lookback_end: null,
-      lookback_days: lookbackDays,
+      lookback_days: form.metric_name === 'performance' ? null : lookbackDays,
       quiet_hours_start: form.quiet_hours_start || null,
       quiet_hours_end: form.quiet_hours_end || null,
       recipients: parseRecipients(form.recipients),
@@ -318,8 +348,37 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
     return payload;
   };
 
+  const validate = () => {
+    const errors = {};
+    if (!form.name?.trim()) errors.name = "Alert Name is required";
+    if (!form.brand_key) errors.brand_key = "Brand is required";
+    if (!form.metric_name) errors.metric_name = "Metric is required";
+    if (form.metric_type === 'derived' && !form.formula?.trim()) {
+      errors.formula = "Formula is required for derived metrics";
+    }
+    if (form.threshold_value === '' || form.threshold_value == null) {
+      errors.threshold_value = "Threshold value is required";
+    }
+    if (form.threshold_type === 'less_than' && form.critical_threshold !== '' && form.critical_threshold !== null) {
+      if (Number(form.critical_threshold) >= Number(form.threshold_value)) {
+        errors.critical_threshold = "Critical threshold must be less than warning threshold";
+      }
+    }
+    if (!form.recipients || (Array.isArray(form.recipients) && form.recipients.length === 0)) {
+      errors.recipients = "At least one recipient is required";
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (!validate()) {
+      toast.error("Please fix the errors in the form");
+      return;
+    }
+
     setSaving(true);
     setError(null);
     const payload = buildPayload();
@@ -443,10 +502,13 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 placeholder="e.g. High API Latency"
                 variant="outlined"
                 size="small"
+                error={!!validationErrors.name}
+                helperText={validationErrors.name}
               />
             </Grid>
             <Grid item xs={12} md={6}>
-              <FormControl fullWidth size="small" disabled={!brandOptions.length}>
+
+              <FormControl fullWidth size="small" disabled={!brandOptions.length} error={!!validationErrors.brand_key}>
                 <InputLabel>Brand</InputLabel>
                 <Select
                   value={form.brand_key}
@@ -457,6 +519,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                     <MenuItem key={brand.value} value={brand.value}>{brand.label}</MenuItem>
                   ))}
                 </Select>
+                {validationErrors.brand_key && <FormHelperText>{validationErrors.brand_key}</FormHelperText>}
               </FormControl>
             </Grid>
 
@@ -469,7 +532,8 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
               />
             </Grid>
             <Grid item xs={12} md={6}>
-              <FormControl fullWidth size="small">
+
+              <FormControl fullWidth size="small" error={!!validationErrors.metric_name}>
                 <InputLabel>Metric</InputLabel>
                 <Select
                   value={form.metric_name}
@@ -480,20 +544,23 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                     <MenuItem key={metric.value} value={metric.value}>{metric.label}</MenuItem>
                   ))}
                 </Select>
+                {validationErrors.metric_name && <FormHelperText>{validationErrors.metric_name}</FormHelperText>}
               </FormControl>
             </Grid>
             <Grid item xs={12} md={6}>
-              <FormControl fullWidth size="small">
+              <FormControl fullWidth size="small" error={!!validationErrors.metric_type}>
                 <InputLabel>Logic Type</InputLabel>
                 <Select
                   value={form.metric_type}
                   onChange={handleInputChange('metric_type')}
                   label="Logic Type"
+                  disabled={BASE_METRICS.includes(form.metric_name)}
                 >
                   {METRIC_TYPES.map((option) => (
                     <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
                   ))}
                 </Select>
+                {validationErrors.metric_type && <FormHelperText>{validationErrors.metric_type}</FormHelperText>}
               </FormControl>
             </Grid>
 
@@ -506,7 +573,8 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                   fullWidth
                   multiline
                   minRows={2}
-                  helperText="Example: (sales / visits) * 100"
+                  helperText={validationErrors.formula || "Example: (sales / visits) * 100"}
+                  error={!!validationErrors.formula}
                   sx={{ '& .MuiOutlinedInput-root': { fontFamily: 'monospace' } }}
                 />
               </Grid>
@@ -520,7 +588,12 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                   onChange={handleInputChange('threshold_type')}
                   label="Condition"
                 >
-                  {THRESHOLD_TYPES.map((option) => (
+                  {THRESHOLD_TYPES.filter(opt => {
+                    if (form.metric_name === 'performance') {
+                      return ['more_than', 'less_than'].includes(opt.value);
+                    }
+                    return true;
+                  }).map((option) => (
                     <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
                   ))}
                 </Select>
@@ -541,6 +614,9 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 InputProps={{
                   endAdornment: <InputAdornment position="end">Val</InputAdornment>,
                 }}
+                error={!!validationErrors.threshold_value}
+                helperText={validationErrors.threshold_value}
+                sx={{ '& input': { colorScheme: theme.palette.mode } }}
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -556,6 +632,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 InputProps={{
                   endAdornment: <InputAdornment position="end">Val</InputAdornment>,
                 }}
+                sx={{ '& input': { colorScheme: theme.palette.mode } }}
               />
             </Grid>
 
@@ -589,6 +666,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 size="small"
                 helperText="Data range to analyze"
                 sx={{ '& input': { colorScheme: theme.palette.mode } }}
+                disabled={form.metric_name === 'performance'}
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -699,8 +777,9 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 multiline
                 minRows={1}
                 placeholder="email@example.com, ..."
-                helperText="Comma separated list"
+                helperText={validationErrors.recipients || "Comma separated list"}
                 size="small"
+                error={!!validationErrors.recipients}
               />
             </Grid>
 

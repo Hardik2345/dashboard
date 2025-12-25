@@ -1,7 +1,7 @@
 const { QueryTypes } = require('sequelize');
 const redisClient = require('../lib/redis');
 const { RangeSchema, isoDate } = require('../validation/schemas');
-const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum } = require('../utils/metricsUtils');
+const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta } = require('../utils/metricsUtils');
 const { previousWindow, prevDayStr, parseIsoDate, formatIsoDate, shiftDays } = require('../utils/dateUtils');
 const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrandConnection } = require('../lib/brandConnectionManager');
@@ -705,8 +705,65 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         const align = (req.query.align || '').toString().toLowerCase();
         const compare = (req.query.compare || '').toString().toLowerCase();
-        const result = await calcCvrDelta({ start, end, align, compare, conn: req.brandDb.sequelize });
-        return res.json(result);
+
+        if (compare === 'prev-range-avg' && start && end) {
+          const curr = await cvrForRange({ start, end, conn: req.brandDb.sequelize });
+          const prevWin = previousWindow(start, end);
+          const prev = await cvrForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn: req.brandDb.sequelize });
+          const delta = computePercentDelta(curr.cvr_percent || 0, prev.cvr_percent || 0);
+          return res.json({ metric: 'CVR_DELTA', range: { start, end }, current: curr, previous: prev, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction, compare: 'prev-range-avg' });
+        }
+
+        const base = new Date(`${target}T00:00:00Z`);
+        const prev = new Date(base.getTime() - 24 * 3600_000);
+        const prevStr = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth()+1).padStart(2,'0')}-${String(prev.getUTCDate()).padStart(2,'0')}`;
+
+        const conn = req.brandDb.sequelize;
+        if (align === 'hour') {
+          return res.json(await computeMetricDelta({
+            metricName: 'CVR_DELTA',
+            range: { start: start || target, end: end || target },
+            conn,
+            queryFn: async ({ rangeStart, rangeEnd, prevStart, prevEnd, cutoffTime, prevCutoffTime, targetHour, prevCompareHour, isCurrentRangeToday }) => {
+              const sqlSessRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
+              const orderRangeSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+              const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
+
+              const [sessCurRows, sessPrevRows, ordCurRows, ordPrevRows, overallCurrSess] = await Promise.all([
+                conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, targetHour] }),
+                conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCompareHour] }),
+                conn.query(orderRangeSql, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
+                conn.query(orderRangeSql, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
+                isCurrentRangeToday ? conn.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd] }) : Promise.resolve(null),
+              ]);
+
+              let curSessions = Number(sessCurRows?.[0]?.total || 0);
+              if (overallCurrSess) {
+                curSessions = Number(overallCurrSess?.[0]?.total || 0);
+              }
+              const prevSessions = Number(sessPrevRows?.[0]?.total || 0);
+              const curOrders = Number(ordCurRows?.[0]?.cnt || 0);
+              const prevOrders = Number(ordPrevRows?.[0]?.cnt || 0);
+              const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
+              const prevCVR = prevSessions > 0 ? (prevOrders / prevSessions) : 0;
+              
+              return { 
+                currentVal: curCVR * 100, 
+                previousVal: prevCVR * 100,
+                currentMeta: { total_orders: curOrders, total_sessions: curSessions, cvr: curCVR, cvr_percent: curCVR * 100 },
+                previousMeta: { total_orders: prevOrders, total_sessions: prevSessions, cvr: prevCVR, cvr_percent: prevCVR * 100 }
+              };
+            }
+          }));
+        }
+
+        const prevWin = previousWindow(target, target); // Handles single date same as range
+        const [current, previous] = await Promise.all([
+          computeCVRForDay(target, conn),
+          computeCVRForDay(prevWin.prevStart, conn)
+        ]);
+        const delta = computePercentDelta(current.cvr_percent || 0, previous.cvr_percent || 0);
+        return res.json({ metric: 'CVR_DELTA', date: target, current, previous, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
 
@@ -716,9 +773,25 @@ function buildMetricsController() {
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
         const align = (req.query.align || '').toString().toLowerCase();
-        const compare = (req.query.compare || '').toString().toLowerCase();
-        const result = await calcTotalOrdersDelta({ start, end, align, compare, conn: req.brandDb.sequelize });
-        return res.json(result);
+        if (align === 'hour') {
+          return res.json(await computeMetricDelta({
+            metricName: 'TOTAL_ORDERS_DELTA',
+            range: { start: start || date, end: end || date },
+            conn: req.brandDb.sequelize,
+            queryFn: async ({ rangeStart, rangeEnd, prevStart, prevEnd, cutoffTime, prevCutoffTime }) => {
+              const sqlRange = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+              const [currRows, prevRows] = await Promise.all([
+                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
+                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
+              ]);
+              return { currentVal: Number(currRows?.[0]?.cnt || 0), previousVal: Number(prevRows?.[0]?.cnt || 0) };
+            }
+          }));
+        }
+
+        if (!date) return res.json({ metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
+        const delta = await deltaForSum('total_orders', date, req.brandDb.sequelize);
+        return res.json({ metric: 'TOTAL_ORDERS_DELTA', date, ...delta });
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
@@ -728,9 +801,24 @@ function buildMetricsController() {
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
         const align = (req.query.align || '').toString().toLowerCase();
-        const compare = (req.query.compare || '').toString().toLowerCase();
-        const result = await calcTotalSalesDelta({ start, end, align, compare, conn: req.brandDb.sequelize });
-        return res.json(result);
+        if (align === 'hour') {
+          return res.json(await computeMetricDelta({
+            metricName: 'TOTAL_SALES_DELTA',
+            range: { start: start || date, end: end || date },
+            conn: req.brandDb.sequelize,
+            queryFn: async ({ rangeStart, rangeEnd, prevStart, prevEnd, cutoffTime, prevCutoffTime }) => {
+              const sqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+              const [currRows, prevRows] = await Promise.all([
+                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
+                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
+              ]);
+              return { currentVal: Number(currRows?.[0]?.total || 0), previousVal: Number(prevRows?.[0]?.total || 0) };
+            }
+          }));
+        }
+
+        const delta = await deltaForSum('total_sales', date, req.brandDb.sequelize);
+        return res.json({ metric: 'TOTAL_SALES_DELTA', date, ...delta });
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
@@ -792,9 +880,31 @@ function buildMetricsController() {
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
         const align = (req.query.align || '').toString().toLowerCase();
-        const compare = (req.query.compare || '').toString().toLowerCase();
-        const result = await calcTotalSessionsDelta({ start, end, align, compare, conn: req.brandDb.sequelize });
-        return res.json(result);
+        if (align === 'hour') {
+          return res.json(await computeMetricDelta({
+            metricName: 'TOTAL_SESSIONS_DELTA',
+            range: { start: start || date, end: end || date },
+            conn: req.brandDb.sequelize,
+            queryFn: async ({ rangeStart, rangeEnd, prevStart, prevEnd, targetHour, prevCompareHour, isCurrentRangeToday }) => {
+              const sqlRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
+              const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
+              const [currRow, prevRow, overallCurrRow] = await Promise.all([
+                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, targetHour] }),
+                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCompareHour] }),
+                isCurrentRangeToday ? req.brandDb.sequelize.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd] }) : Promise.resolve(null),
+              ]);
+              let curr = Number(currRow?.[0]?.total || 0);
+              if (overallCurrRow) {
+                curr = Number(overallCurrRow?.[0]?.total || 0);
+              }
+              const prevVal = Number(prevRow?.[0]?.total || 0);
+              return { currentVal: curr, previousVal: prevVal };
+            }
+          }));
+        }
+
+        const d = await deltaForSum('total_sessions', date, req.brandDb.sequelize);
+        return res.json({ metric: 'TOTAL_SESSIONS_DELTA', date, ...d });
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
@@ -804,9 +914,31 @@ function buildMetricsController() {
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
         const align = (req.query.align || '').toString().toLowerCase();
-        const compare = (req.query.compare || '').toString().toLowerCase();
-        const result = await calcAtcSessionsDelta({ start, end, align, compare, conn: req.brandDb.sequelize });
-        return res.json(result);
+        if (align === 'hour') {
+          return res.json(await computeMetricDelta({
+            metricName: 'ATC_SESSIONS_DELTA',
+            range: { start: start || date, end: end || date },
+            conn: req.brandDb.sequelize,
+            queryFn: async ({ rangeStart, rangeEnd, prevStart, prevEnd, targetHour, prevCompareHour, isCurrentRangeToday }) => {
+              const sqlRange = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
+              const sqlOverallAtc = `SELECT COALESCE(SUM(total_atc_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
+              const [currRow, prevRow, overallCurrRow] = await Promise.all([
+                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, targetHour] }),
+                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCompareHour] }),
+                isCurrentRangeToday ? req.brandDb.sequelize.query(sqlOverallAtc, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd] }) : Promise.resolve(null),
+              ]);
+              let curr = Number(currRow?.[0]?.total || 0);
+              if (overallCurrRow) {
+                curr = Number(overallCurrRow?.[0]?.total || 0);
+              }
+              const prevVal = Number(prevRow?.[0]?.total || 0);
+              return { currentVal: curr, previousVal: prevVal };
+            }
+          }));
+        }
+
+        const d = await deltaForSum('total_atc_sessions', date, req.brandDb.sequelize);
+        return res.json({ metric: 'ATC_SESSIONS_DELTA', date, ...d });
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
@@ -816,10 +948,36 @@ function buildMetricsController() {
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
         const align = (req.query.align || '').toString().toLowerCase();
-        const compare = (req.query.compare || '').toString().toLowerCase();
-        const debug = (req.query.debug || '').toString() === '1' || process.env.NODE_ENV !== 'production';
-        const result = await calcAovDelta({ start, end, align, compare, conn: req.brandDb.sequelize, debug });
-        return res.json(result);
+        if (align === 'hour') {
+          return res.json(await computeMetricDelta({
+            metricName: 'AOV_DELTA',
+            range: { start: start || date, end: end || date },
+            conn: req.brandDb.sequelize,
+            queryFn: async ({ rangeStart, rangeEnd, prevStart, prevEnd, cutoffTime, prevCutoffTime }) => {
+              const salesSqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+              const ordersSqlRange = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+
+              const [salesCurRows, salesPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
+                req.brandDb.sequelize.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
+                req.brandDb.sequelize.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
+                req.brandDb.sequelize.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
+                req.brandDb.sequelize.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
+              ]);
+
+              const curSales = Number(salesCurRows?.[0]?.total || 0);
+              const prevSales = Number(salesPrevRows?.[0]?.total || 0);
+              const curOrders = Number(ordersCurRows?.[0]?.cnt || 0);
+              const prevOrders = Number(ordersPrevRows?.[0]?.cnt || 0);
+
+              const curAov = curOrders > 0 ? curSales / curOrders : 0;
+              const prevAov = prevOrders > 0 ? prevSales / prevOrders : 0;
+              return { currentVal: curAov, previousVal: prevAov };
+            }
+          }));
+        }
+
+        const d = await deltaForAOV(date, req.brandDb.sequelize);
+        return res.json({ metric: 'AOV_DELTA', date, ...d });
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
@@ -1291,9 +1449,10 @@ function buildMetricsController() {
         const rowMap = new Map();
         for (const row of rows) {
           if (!row?.date) continue;
+          const dateStr = row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date);
           const hourVal = typeof row.hour === 'number' ? row.hour : Number(row.hour);
           if (!Number.isFinite(hourVal) || hourVal < 0 || hourVal > 23) continue;
-          const key = `${row.date}#${hourVal}`;
+          const key = `${dateStr}#${hourVal}`;
           rowMap.set(key, {
             sales: Number(row.total_sales || 0),
             sessions: Number(row.raw_number_of_sessions || 0),
@@ -1807,6 +1966,7 @@ function buildMetricsController() {
         if (!req.brandDb && req.brandConfig) {
           try {
             req.brandDb = await getBrandConnection(req.brandConfig);
+            req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
           } catch (connErr) {
             console.error("Lazy connection failed", connErr);
           }
@@ -1897,6 +2057,7 @@ function buildMetricsController() {
             console.log(`[LAZY CONNECT] Connecting to ${req.brandConfig.key} for fallback`);
             try {
               req.brandDb = await getBrandConnection(req.brandConfig);
+              req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
             } catch (connErr) {
               console.error("Lazy connection failed", connErr);
             }
