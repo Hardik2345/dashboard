@@ -52,6 +52,7 @@ function buildMetricsRouter(sequelize) {
       const conn = await getBrandConnection(brandCheck.cfg);
       req.brandKey = brandCheck.key;
       req.brandDb = conn;
+      req.brandDbName = brandCheck.cfg.dbName || brandCheck.key;
       return next();
     } catch (e) {
       console.error(`[brand=${brandCheck.key}] DB connection error`, e.message);
