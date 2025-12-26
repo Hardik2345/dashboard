@@ -452,6 +452,20 @@ export async function getDailyTrend(args) {
   };
 }
 
+export async function getMonthlyTrend(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const json = await getJSON('/metrics/monthly-trend', params);
+  return {
+    points: Array.isArray(json?.points) ? json.points : [],
+    comparison: json?.comparison && Array.isArray(json?.comparison?.points)
+      ? { range: json.comparison.range || null, points: json.comparison.points }
+      : null,
+    range: json?.range || null,
+    timezone: json?.timezone || 'IST',
+    error: json?.__error,
+  };
+}
+
 export async function getTopProducts(args = {}) {
   const params = appendBrandKey({ start: args.start, end: args.end, limit: args.limit }, args);
   const json = await getJSON('/metrics/top-products', params);
