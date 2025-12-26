@@ -69,7 +69,7 @@ const AlertSchema = z.object({
     }
     return val;
   }, z.union([z.string().max(4000), z.null()])).optional(),
-  threshold_type: z.enum(['absolute', 'percentage_drop', 'percentage_rise', 'less_than', 'more_than']),
+  threshold_type: z.enum(['absolute', 'percentage_drop', 'percentage_rise', 'less_than', 'more_than', 'greater_than']),
   threshold_value: requiredNumber(),
   critical_threshold: numberOrNull().optional(),
   severity: z.enum(['low', 'medium', 'high']).default('low'),

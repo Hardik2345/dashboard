@@ -200,7 +200,6 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel }) {
           channel_type: 'email',
           channel_config: {
             to: data.recipients,
-            subject: `${data.name || data.metric_name} Alert - ${brandInfo.key}`,
             smtp_pass: "vqbvrbnezcwqgruw",
             smtp_user: "projects.techit@gmail.com"
           }
@@ -243,7 +242,6 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel }) {
       if (data.have_recipients) {
         const config = {
           to: data.recipients || [],
-          subject: `${data.name || data.metric_name} Alert - ${brandInfo.key}`,
           smtp_pass: "vqbvrbnezcwqgruw",
           smtp_user: "projects.techit@gmail.com"
         };
