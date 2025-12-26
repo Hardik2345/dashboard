@@ -14,7 +14,7 @@ import {
   BarElement,
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
-import { getHourlyTrend, getDailyTrend, getMonthlyTrend } from '../lib/api.js';
+import { getHourlyTrend, getDailyTrend, getMonthlyTrend, getHourlySalesSummary } from '../lib/api.js';
 
 function hexToRgba(hex, alpha) {
   if (!hex || typeof hex !== 'string') return `rgba(0,0,0,${alpha || 1})`;
@@ -406,88 +406,132 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       return () => { cancelled = true; };
     }
     setLoading(true);
-    const fetcher = viewMode === 'monthly' ? getMonthlyTrend : (viewMode === 'daily' ? getDailyTrend : getHourlyTrend);
-    const base = (viewMode === 'daily' || viewMode === 'monthly')
-      ? { start, end }
-      : { start, end, aggregate: 'avg-by-hour' };
-    const params = brandKey ? { ...base, brand_key: brandKey } : base;
-    fetcher(params).then((res) => {
+
+    const loadData = async () => {
+      // optimization: use cached hourly summary if sales + hourly view + single day match
+      if (viewMode === 'hourly' && (metric === 'sales' || metric === 'total_sales') && start === end) {
+        try {
+          const res = await getHourlySalesSummary({ brand_key: brandKey });
+          if (!cancelled && res.data && res.data.today && res.data.today.date === start) {
+            const todayPoints = res.data.today.data.map(d => ({
+              hour: d.hour,
+              metrics: {
+                sales: d.total_sales,
+                orders: d.number_of_orders,
+                sessions: d.number_of_sessions,
+                atc: d.number_of_atc_sessions
+              }
+            }));
+            const yesterdayPoints = res.data.yesterday.data.map(d => ({
+              hour: d.hour,
+              metrics: {
+                sales: d.total_sales,
+                orders: d.number_of_orders,
+                sessions: d.number_of_sessions,
+                atc: d.number_of_atc_sessions
+              }
+            }));
+
+            const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+            setState({
+              labels: todayPoints.map(p => formatHourLabel(p.hour)),
+              values: todayPoints.map(p => configNext.accessor(p.metrics)),
+              comparisonValues: yesterdayPoints.map(p => configNext.accessor(p.metrics)),
+              points: todayPoints,
+              comparisonPoints: yesterdayPoints,
+              timezone: 'IST',
+              rangeLabel: formatRangeLabel({ start: res.data.today.date, end: res.data.today.date }),
+              comparisonLabel: formatRangeLabel({ start: res.data.yesterday.date, end: res.data.yesterday.date }),
+              error: null
+            });
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          console.warn('Optimized fetch failed, falling back', e);
+        }
+      }
+
       if (cancelled) return;
-      if (res?.error) {
+
+      const fetcher = viewMode === 'monthly' ? getMonthlyTrend : (viewMode === 'daily' ? getDailyTrend : getHourlyTrend);
+      const base = (viewMode === 'daily' || viewMode === 'monthly')
+        ? { start, end }
+        : { start, end, aggregate: 'avg-by-hour' };
+      const params = brandKey ? { ...base, brand_key: brandKey } : base;
+
+      try {
+        const res = await fetcher(params);
+        if (cancelled) return;
+        if (res?.error) {
+          throw new Error('Fetch failed');
+        }
+
+        const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+        let labels = [];
+        let values = [];
+        let comparisonValues = [];
+        let points = [];
+        let comparisonPoints = [];
+
+        if (viewMode === 'daily') {
+          const days = Array.isArray(res.days) ? res.days : [];
+          const compDays = Array.isArray(res?.comparison?.days) ? res.comparison.days : [];
+          const n = Math.min(days.length, compDays.length || days.length);
+          const daysAligned = days.slice(0, n);
+          const compAligned = compDays.slice(0, n);
+          points = daysAligned;
+          labels = daysAligned.map((d) => d.date);
+          values = daysAligned.map((d) => (configNext.accessor(d?.metrics || {}) || 0));
+          comparisonPoints = compAligned;
+          comparisonValues = compAligned.map((d) => (configNext.accessor(d?.metrics || {}) || 0));
+        } else if (viewMode === 'monthly') {
+          points = Array.isArray(res.points) ? res.points : [];
+          labels = points.map((p) => p.date);
+          values = points.map((p) => configNext.accessor(p.metrics || {}));
+          comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
+          comparisonValues = comparisonPoints.map((p) => configNext.accessor(p.metrics || {}));
+        } else {
+          points = Array.isArray(res.points) ? res.points : [];
+          labels = points.map((p) => formatHourLabel(p.hour));
+          values = points.map((p) => configNext.accessor(p.metrics || {}));
+          comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
+          comparisonValues = comparisonPoints.map((p) => configNext.accessor(p.metrics || {}));
+        }
+
         setState({
-          labels: [],
-          values: [],
-          comparisonValues: [],
-          points: [],
-          comparisonPoints: [],
-          timezone: 'IST',
-          rangeLabel: '',
-          comparisonLabel: '',
-          error: true,
+          labels,
+          values,
+          comparisonValues,
+          points,
+          comparisonPoints,
+          timezone: res.timezone || 'IST',
+          rangeLabel: formatRangeLabel(res.range),
+          comparisonLabel: formatRangeLabel(res?.comparison?.range),
+          error: null,
         });
         setLoading(false);
-        return;
+
+      } catch (err) {
+        if (!cancelled) {
+          setState({
+            labels: [],
+            values: [],
+            comparisonValues: [],
+            points: [],
+            comparisonPoints: [],
+            timezone: 'IST',
+            rangeLabel: '',
+            comparisonLabel: '',
+            error: true,
+          });
+          setLoading(false);
+        }
       }
-      const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
-      let labels = [];
-      let values = [];
-      let comparisonValues = [];
-      let points = [];
-      let comparisonPoints = [];
-      if (viewMode === 'daily') {
-        const days = Array.isArray(res.days) ? res.days : [];
-        const compDays = Array.isArray(res?.comparison?.days) ? res.comparison.days : [];
-        // Align by index (day 1 with previous window day 1, etc.) and trim to shortest length
-        const n = Math.min(days.length, compDays.length || days.length);
-        const daysAligned = days.slice(0, n);
-        const compAligned = compDays.slice(0, n);
-        points = daysAligned; // reuse naming for simplicity
-        labels = daysAligned.map((d) => d.date);
-        // Use selected metric for daily view
-        values = daysAligned.map((d) => (configNext.accessor(d?.metrics || {}) || 0));
-        comparisonPoints = compAligned;
-        comparisonValues = compAligned.map((d) => (configNext.accessor(d?.metrics || {}) || 0));
-      } else if (viewMode === 'monthly') {
-        points = Array.isArray(res.points) ? res.points : [];
-        labels = points.map((p) => p.date);
-        values = points.map((p) => configNext.accessor(p.metrics || {}));
-        comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
-        comparisonValues = comparisonPoints.map((p) => configNext.accessor(p.metrics || {}));
-      } else {
-        points = Array.isArray(res.points) ? res.points : [];
-        labels = points.map((p) => formatHourLabel(p.hour));
-        values = points.map((p) => configNext.accessor(p.metrics || {}));
-        comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
-        comparisonValues = comparisonPoints.map((p) => configNext.accessor(p.metrics || {}));
-      }
-      setState({
-        labels,
-        values,
-        comparisonValues,
-        points,
-        comparisonPoints,
-        timezone: res.timezone || 'IST',
-        rangeLabel: formatRangeLabel(res.range),
-        comparisonLabel: formatRangeLabel(res?.comparison?.range),
-        error: null,
-      });
-      setLoading(false);
-    }).catch(() => {
-      if (!cancelled) {
-        setState({
-          labels: [],
-          values: [],
-          comparisonValues: [],
-          points: [],
-          comparisonPoints: [],
-          timezone: 'IST',
-          rangeLabel: '',
-          comparisonLabel: '',
-          error: true,
-        });
-        setLoading(false);
-      }
-    });
+    };
+
+    loadData();
+
     return () => { cancelled = true; };
   }, [start, end, metric, viewMode, brandKey, refreshKey]);
 
