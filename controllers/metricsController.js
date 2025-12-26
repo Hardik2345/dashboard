@@ -1690,6 +1690,102 @@ function buildMetricsController() {
       } catch (e) { console.error('[daily-trend] failed', e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
+    monthlyTrend: async (req, res) => {
+      try {
+        const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+        if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+        const { start, end } = parsed.data;
+        if (!start || !end) return res.status(400).json({ error: 'Both start and end dates are required' });
+
+        const sql = `
+          SELECT 
+            DATE_FORMAT(date, '%Y-%m-01') AS month_start,
+            MIN(date) AS start_date,
+            MAX(date) AS end_date,
+            SUM(total_sales) AS sales,
+            SUM(number_of_orders) AS orders,
+            SUM(number_of_atc_sessions) AS atc
+          FROM hour_wise_sales
+          WHERE date >= ? AND date <= ?
+          GROUP BY month_start
+          ORDER BY month_start ASC`;
+        
+        const sessionsSql = `
+          SELECT 
+            DATE_FORMAT(date, '%Y-%m-01') AS month_start,
+            SUM(total_sessions) AS total_sessions,
+            SUM(adjusted_total_sessions) AS adjusted_total_sessions
+          FROM overall_summary
+          WHERE date >= ? AND date <= ?
+          GROUP BY month_start
+          ORDER BY month_start ASC`;
+
+        const [rows, sessionsRows] = await Promise.all([
+          req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [start, end] }),
+          req.brandDb.sequelize.query(sessionsSql, { type: QueryTypes.SELECT, replacements: [start, end] })
+        ]);
+
+        const sessionsMap = new Map(sessionsRows.map(r => [r.month_start, r]));
+
+        const points = rows.map(r => {
+          const s = sessionsMap.get(r.month_start);
+          const bestSession = s && s.adjusted_total_sessions != null ? Number(s.adjusted_total_sessions) : Number(s?.total_sessions || 0);
+          const orders = Number(r.orders || 0);
+          const cvrRatio = bestSession > 0 ? orders / bestSession : 0;
+          return {
+            date: r.month_start,
+            startDate: r.start_date,
+            endDate: r.end_date,
+            metrics: {
+              sales: Number(r.sales || 0),
+              orders,
+              sessions: bestSession,
+              atc: Number(r.atc || 0),
+              cvr_ratio: cvrRatio,
+              cvr_percent: cvrRatio * 100
+            }
+          };
+        });
+
+        let comparison = null;
+        const prevWin = previousWindow(start, end);
+        if (prevWin?.prevStart && prevWin?.prevEnd) {
+           const [rowsPrev, sessionsRowsPrev] = await Promise.all([
+            req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] }),
+            req.brandDb.sequelize.query(sessionsSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] })
+          ]);
+          const sessionsMapPrev = new Map(sessionsRowsPrev.map(r => [r.month_start, r]));
+          const prevPoints = rowsPrev.map(r => {
+            const s = sessionsMapPrev.get(r.month_start);
+            const bestSession = s && s.adjusted_total_sessions != null ? Number(s.adjusted_total_sessions) : Number(s?.total_sessions || 0);
+            const orders = Number(r.orders || 0);
+            const cvrRatio = bestSession > 0 ? orders / bestSession : 0;
+            return {
+              date: r.month_start,
+              startDate: r.start_date,
+              endDate: r.end_date,
+              metrics: {
+                sales: Number(r.sales || 0),
+                orders,
+                sessions: bestSession,
+                atc: Number(r.atc || 0),
+                cvr_ratio: cvrRatio,
+                cvr_percent: cvrRatio * 100
+              }
+            };
+          });
+          comparison = { range: { start: prevWin.prevStart, end: prevWin.prevEnd }, points: prevPoints };
+        }
+
+        return res.json({
+          range: { start, end },
+          points,
+          months: points,
+          comparison: comparison ? { ...comparison, months: comparison.points } : null,
+        });
+      } catch (e) { console.error('[monthly-trend] failed', e); return res.status(500).json({ error: 'Internal server error' }); }
+    },
+
     productConversion: async (req, res) => {
       try {
         const todayStr = formatIsoDate(new Date());
