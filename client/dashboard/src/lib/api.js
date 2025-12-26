@@ -419,6 +419,15 @@ export async function getHourlySalesCompare(args = {}) {
   };
 }
 
+export async function getHourlySalesSummary(args = {}) {
+  const params = appendBrandKey({}, args);
+  const json = await getJSON('/metrics/hourly-sales-summary', params);
+  return {
+    data: json?.data || null,
+    error: json?.__error,
+  };
+}
+
 export async function getHourlyTrend(args) {
   const params = appendBrandKey({ start: args.start, end: args.end, aggregate: args.aggregate }, args);
   const json = await getJSON('/metrics/hourly-trend', params);

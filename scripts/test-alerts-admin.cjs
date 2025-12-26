@@ -245,7 +245,7 @@ async function run() {
       metric_name: 'RPS Spike',
       metric_type: 'derived',
       formula: 'total_revenue / sessions',
-      threshold_type: 'more_than',
+      threshold_type: 'greater_than',
       threshold_value: 120,
       severity: 'low',
       cooldown_minutes: 30,

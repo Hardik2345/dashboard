@@ -147,7 +147,7 @@ const Alert = sequelize.define('alerts', {
   metric_name: { type: DataTypes.STRING(255), allowNull: true },
   metric_type: { type: DataTypes.ENUM('base', 'derived'), allowNull: false, defaultValue: 'base' },
   formula: { type: DataTypes.TEXT, allowNull: true },
-  threshold_type: { type: DataTypes.ENUM('absolute', 'percentage_drop', 'percentage_rise', 'less_than', 'more_than'), allowNull: false },
+  threshold_type: { type: DataTypes.ENUM('absolute', 'percentage_drop', 'percentage_rise', 'less_than', 'more_than', 'greater_than'), allowNull: false },
   threshold_value: { type: DataTypes.DOUBLE, allowNull: false },
   critical_threshold: { type: DataTypes.FLOAT, allowNull: true },
   severity: { type: DataTypes.ENUM('low', 'medium', 'high'), allowNull: false, defaultValue: 'low' },

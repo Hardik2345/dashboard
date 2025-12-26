@@ -2034,6 +2034,106 @@ function buildMetricsController() {
       }
     },
 
+    hourlySalesSummary: async (req, res) => {
+      try {
+        const brandKey = (req.brandKey || req.query.brand_key || '').toString().trim().toUpperCase();
+        if (!brandKey) return res.status(400).json({ error: 'Brand key required' });
+
+        const IST_OFFSET_MIN = 330;
+        const nowUtc = new Date();
+        const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
+        
+        const pad2 = (n) => String(n).padStart(2, '0');
+        const formatDate = (d) => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+        
+        const todayStr = formatDate(nowIst);
+        const yesterdayIst = new Date(nowIst.getTime() - 24 * 60 * 60 * 1000);
+        const yesterdayStr = formatDate(yesterdayIst);
+
+        const keyToday = `hourly_metrics:${brandKey.toLowerCase()}:${todayStr}`;
+        const keyYesterday = `hourly_metrics:${brandKey.toLowerCase()}:${yesterdayStr}`;
+
+        let todayData = null;
+        let yesterdayData = null;
+        let todaySource = 'db';
+        let yesterdaySource = 'db';
+
+        if (redisClient) {
+            try {
+              const results = await redisClient.mget(keyToday, keyYesterday);
+              if (results[0]) {
+                todayData = JSON.parse(results[0]);
+                todaySource = 'redis';
+              }
+              if (results[1]) {
+                yesterdayData = JSON.parse(results[1]);
+                yesterdaySource = 'redis';
+              }
+              if (todayData) console.log(`[REDIS HIT] ${keyToday}`);
+              else console.log(`[REDIS MISS] ${keyToday}`);
+              if (yesterdayData) console.log(`[REDIS HIT] ${keyYesterday}`);
+              else console.log(`[REDIS MISS] ${keyYesterday}`);
+            } catch (err) {
+              console.error('[hourlySalesSummary] Redis fetch failed', err.message);
+            }
+        }
+
+        // Fallback to DB if missing
+        if (!todayData || !yesterdayData) {
+          const conn = req.brandDb.sequelize;
+          const sql = `
+            SELECT 
+              hour,
+              total_sales,
+              number_of_orders,
+              COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
+              number_of_atc_sessions
+            FROM hour_wise_sales
+            WHERE date = ?
+            ORDER BY hour ASC
+          `;
+          
+          if (!todayData) {
+             const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements: [todayStr] });
+             todayData = rows.map(r => ({
+               hour: r.hour,
+               total_sales: Number(r.total_sales || 0),
+               number_of_orders: Number(r.number_of_orders || 0),
+               number_of_sessions: Number(r.number_of_sessions || 0),
+               number_of_atc_sessions: Number(r.number_of_atc_sessions || 0)
+             }));
+             console.log(`[DB FETCH] hourly sales for ${brandKey} on ${todayStr}`);
+          }
+
+          if (!yesterdayData) {
+            const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements: [yesterdayStr] });
+            yesterdayData = rows.map(r => ({
+              hour: r.hour,
+              total_sales: Number(r.total_sales || 0),
+              number_of_orders: Number(r.number_of_orders || 0),
+              number_of_sessions: Number(r.number_of_sessions || 0),
+              number_of_atc_sessions: Number(r.number_of_atc_sessions || 0)
+            }));
+            console.log(`[DB FETCH] hourly sales for ${brandKey} on ${yesterdayStr}`);
+          }
+        }
+
+        return res.json({
+            metric: "HOURLY_SALES_SUMMARY",
+            brand: brandKey,
+            source: (todaySource === 'redis' && yesterdaySource === 'redis') ? 'redis' : (todaySource === 'redis' || yesterdaySource === 'redis' ? 'mixed' : 'db'),
+            data: {
+              today: { date: todayStr, source: todaySource, data: todayData || [] },
+              yesterday: { date: yesterdayStr, source: yesterdaySource, data: yesterdayData || [] }
+            }
+        });
+
+      } catch (e) {
+        console.error('[hourlySalesSummary] failed', e);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
 
     diagnoseTotalOrders: (sequelize) => async (req, res) => {
       try {
