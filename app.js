@@ -155,6 +155,7 @@ const Alert = sequelize.define('alerts', {
   is_active: { type: DataTypes.TINYINT, allowNull: true, defaultValue: 1 },
   created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
   lookback_days: { type: DataTypes.INTEGER, allowNull: true },
+  have_recipients: { type: DataTypes.TINYINT, allowNull: true, defaultValue: 0 },
   quiet_hours_start: { type: DataTypes.INTEGER, allowNull: true },
   quiet_hours_end: { type: DataTypes.INTEGER, allowNull: true }
 }, { tableName: 'alerts', timestamps: false });
@@ -162,6 +163,7 @@ const Alert = sequelize.define('alerts', {
 const AlertChannel = sequelize.define('alert_channels', {
   id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
   alert_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  brand_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
   channel_type: { type: DataTypes.ENUM('slack', 'email', 'webhook'), allowNull: false },
   channel_config: { type: DataTypes.JSON, allowNull: false },
 }, { tableName: 'alert_channels', timestamps: false });
@@ -557,6 +559,8 @@ async function init() {
   try { await SessionAdjustmentBucket.sync(); } catch (e) { console.warn('Bucket sync skipped', e?.message); }
   try { await SessionAdjustmentAudit.sync(); } catch (e) { console.warn('Audit sync skipped', e?.message); }
   try { await sequelize.models.api_keys.sync(); } catch (e) { console.warn('API keys sync skipped', e?.message); }
+  try { await Alert.sync(); } catch (e) { console.warn('Alert sync skipped', e?.message); }
+  try { await AlertChannel.sync(); } catch (e) { console.warn('AlertChannel sync skipped', e?.message); }
   // seed admin if none
   if (!(await User.findOne({ where: { email: process.env.ADMIN_EMAIL || 'admin@example.com' } }))) {
     const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'ChangeMe123!', 12);

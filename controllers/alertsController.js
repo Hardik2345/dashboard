@@ -2,7 +2,7 @@ const { AlertSchema, AlertStatusSchema } = require('../validation/schemas');
 const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrandById } = require('../config/brands');
 
-function buildAlertsController({ Alert, BrandAlertChannel }) {
+function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel }) {
   function hourToDisplay(value) {
     if (value === null || value === undefined) return '';
     const num = Number(value);
@@ -57,8 +57,16 @@ function buildAlertsController({ Alert, BrandAlertChannel }) {
   function formatAlertRow(row, options = {}) {
     const src = typeof row.toJSON === 'function' ? row.toJSON() : row;
     const brandMeta = getBrandById(src.brand_id);
-    const channelConfig = options.channelConfig || null;
-    const recipients = Array.isArray(channelConfig?.to) ? channelConfig.to : [];
+    let recipients = [];
+    
+    if (src.have_recipients && options.individualChannel) {
+      recipients = Array.isArray(options.individualChannel.channel_config?.to) 
+        ? options.individualChannel.channel_config.to 
+        : [];
+    } else if (options.channelConfig) {
+      recipients = Array.isArray(options.channelConfig?.to) ? options.channelConfig.to : [];
+    }
+
     return {
       id: src.id,
       name: src.name || null,
@@ -75,6 +83,7 @@ function buildAlertsController({ Alert, BrandAlertChannel }) {
       lookback_start: null,
       lookback_end: null,
       lookback_days: src.lookback_days != null ? Number(src.lookback_days) : null,
+      have_recipients: src.have_recipients ? 1 : 0,
       quiet_hours_start: hourToDisplay(src.quiet_hours_start),
       quiet_hours_end: hourToDisplay(src.quiet_hours_end),
       recipients,
@@ -114,6 +123,7 @@ function buildAlertsController({ Alert, BrandAlertChannel }) {
       severity: payload.severity,
       cooldown_minutes: cooldown,
       lookback_days: resolvedLookback,
+      have_recipients: payload.have_recipients ? 1 : 0,
       quiet_hours_start: quietStart,
       quiet_hours_end: quietEnd,
       is_active: isActive ? 1 : 0,
@@ -143,9 +153,23 @@ function buildAlertsController({ Alert, BrandAlertChannel }) {
         }
       }
 
+      // Load individual recipients if needed
+      const individualChannelMap = new Map();
+      const haveRecipAlertIds = alerts.filter(a => a.have_recipients).map(a => a.id);
+      if (AlertChannel && haveRecipAlertIds.length) {
+        const individualChannels = await AlertChannel.findAll({
+          where: { alert_id: haveRecipAlertIds, channel_type: 'email' }
+        });
+        for (const ic of individualChannels) {
+          individualChannelMap.set(ic.alert_id, ic);
+        }
+      }
+
       const payload = alerts.map((alert) => {
-        // Use the brand's config for each alert
-        return formatAlertRow(alert, { channelConfig: channelMap.get(alert.brand_id) });
+        return formatAlertRow(alert, { 
+          channelConfig: channelMap.get(alert.brand_id),
+          individualChannel: individualChannelMap.get(alert.id)
+        });
       });
       return res.json({ alerts: payload });
     } catch (err) {
@@ -167,14 +191,30 @@ function buildAlertsController({ Alert, BrandAlertChannel }) {
       
       const created = await Alert.create(values);
       
-      // Fetch recipients for display
+      // If individual recipients toggled on, create AlertChannel
+      let individualChannel = null;
+      if (data.have_recipients && data.recipients?.length) {
+        individualChannel = await AlertChannel.create({
+          alert_id: created.id,
+          brand_id: brandInfo.brandId,
+          channel_type: 'email',
+          channel_config: {
+            to: data.recipients,
+            subject: `${data.name || data.metric_name} Alert - ${brandInfo.key}`,
+            smtp_pass: "vqbvrbnezcwqgruw",
+            smtp_user: "projects.techit@gmail.com"
+          }
+        });
+      }
+
+      // Fetch brand-level recipients for display fallback
       let channelConfig = null;
       if (BrandAlertChannel) {
         const bc = await BrandAlertChannel.findOne({ where: { brand_id: brandInfo.brandId, is_active: 1, channel_type: 'email' } });
         if (bc) channelConfig = parseChannelConfig(bc.channel_config);
       }
 
-      return res.status(201).json({ alert: formatAlertRow(created, { channelConfig }) });
+      return res.status(201).json({ alert: formatAlertRow(created, { channelConfig, individualChannel }) });
     } catch (err) {
       console.error('[alerts] create failed', err);
       return res.status(500).json({ error: 'Failed to create alert' });
@@ -198,14 +238,37 @@ function buildAlertsController({ Alert, BrandAlertChannel }) {
       
       const updated = await existing.update(values);
 
-      // Fetch recipients for display
+      // Manage AlertChannel for individual recipients
+      let individualChannel = null;
+      if (data.have_recipients) {
+        const config = {
+          to: data.recipients || [],
+          subject: `${data.name || data.metric_name} Alert - ${brandInfo.key}`,
+          smtp_pass: "vqbvrbnezcwqgruw",
+          smtp_user: "projects.techit@gmail.com"
+        };
+        const [ic, created] = await AlertChannel.findOrCreate({
+          where: { alert_id: id, channel_type: 'email' },
+          defaults: { brand_id: brandInfo.brandId, channel_config: config }
+        });
+        if (!created) {
+          ic.channel_config = config;
+          await ic.save();
+        }
+        individualChannel = ic;
+      } else {
+        // Toggled off: remove custom recipients
+        await AlertChannel.destroy({ where: { alert_id: id, channel_type: 'email' } });
+      }
+
+      // Fetch brand-level recipients for display fallback
       let channelConfig = null;
       if (BrandAlertChannel) {
         const bc = await BrandAlertChannel.findOne({ where: { brand_id: brandInfo.brandId, is_active: 1, channel_type: 'email' } });
         if (bc) channelConfig = parseChannelConfig(bc.channel_config);
       }
 
-      return res.json({ alert: formatAlertRow(updated, { channelConfig }) });
+      return res.json({ alert: formatAlertRow(updated, { channelConfig, individualChannel }) });
     } catch (err) {
       console.error('[alerts] update failed', err);
       return res.status(500).json({ error: 'Failed to update alert' });
@@ -217,7 +280,11 @@ function buildAlertsController({ Alert, BrandAlertChannel }) {
       const id = Number(req.params.id);
       if (!id) return res.status(400).json({ error: 'Invalid id' });
 
-      // No need for transaction since we don't delete dependent channels anymore
+      // Delete associated individual channels first
+      if (AlertChannel) {
+        await AlertChannel.destroy({ where: { alert_id: id, channel_type: 'email' } });
+      }
+
       const deleted = await Alert.destroy({ where: { id } });
       if (!deleted) return res.status(404).json({ error: 'Alert not found' });
 
@@ -241,14 +308,20 @@ function buildAlertsController({ Alert, BrandAlertChannel }) {
       existing.is_active = parsed.data.is_active ? 1 : 0;
       await existing.save();
 
-      // Fetch recipients for display
+      // Fetch individual recipients if needed
+      let individualChannel = null;
+      if (existing.have_recipients) {
+        individualChannel = await AlertChannel.findOne({ where: { alert_id: existing.id, channel_type: 'email' } });
+      }
+
+      // Fetch brand-level recipients for display fallback
       let channelConfig = null;
       if (BrandAlertChannel) {
         const bc = await BrandAlertChannel.findOne({ where: { brand_id: existing.brand_id, is_active: 1, channel_type: 'email' } });
         if (bc) channelConfig = parseChannelConfig(bc.channel_config);
       }
 
-      return res.json({ alert: formatAlertRow(existing, { channelConfig }) });
+      return res.json({ alert: formatAlertRow(existing, { channelConfig, individualChannel }) });
     } catch (err) {
       console.error('[alerts] status update failed', err);
       return res.status(500).json({ error: 'Failed to update status' });
