@@ -29,6 +29,8 @@ const { buildExternalRouter } = require('./routes/external');
 const { buildUploadsRouter } = require('./routes/uploads');
 const { buildApiKeysRouter } = require('./routes/apiKeys');
 const { buildShopifyRouter } = require('./routes/shopify');
+const { buildWebhooksRouter } = require('./routes/webhooks');
+const { buildNotificationsRouter } = require('./routes/notifications'); // [NEW]
 
 const app = express();
 app.use(helmet());
@@ -157,7 +159,8 @@ const Alert = sequelize.define('alerts', {
   lookback_days: { type: DataTypes.INTEGER, allowNull: true },
   have_recipients: { type: DataTypes.TINYINT, allowNull: true, defaultValue: 0 },
   quiet_hours_start: { type: DataTypes.INTEGER, allowNull: true },
-  quiet_hours_end: { type: DataTypes.INTEGER, allowNull: true }
+  quiet_hours_end: { type: DataTypes.INTEGER, allowNull: true },
+  last_triggered_at: { type: DataTypes.DATE, allowNull: true }
 }, { tableName: 'alerts', timestamps: false });
 
 const AlertChannel = sequelize.define('alert_channels', {
@@ -300,7 +303,7 @@ app.use(session({
     secure: isProd || crossSite, // must be true for SameSite=None
     sameSite: crossSite ? 'none' : 'lax',
     domain: process.env.COOKIE_DOMAIN || undefined, // set if you serve API on subdomain
-    maxAge: 1000 * 60 * 60 * 8,
+    maxAge: 1000 * 60 * 60 * 24 * 7, // 1 Week
   }
 }));
 
@@ -547,6 +550,8 @@ app.use('/external', buildExternalRouter());
 app.use('/', buildUploadsRouter());
 app.use('/', buildApiKeysRouter(sequelize));
 app.use('/shopify', buildShopifyRouter(sequelize));
+app.use('/webhooks', buildWebhooksRouter({ Alert, AlertChannel, BrandAlertChannel }));
+app.use('/notifications', buildNotificationsRouter()); // [NEW]
 
 // ---- Init -------------------------------------------------------------------
 async function init() {
