@@ -13,7 +13,7 @@ const LocalStrategy = require('passport-local').Strategy;
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const helmet = require('helmet');
-const { Sequelize, DataTypes } = require("sequelize");
+const { Sequelize, DataTypes, QueryTypes } = require("sequelize");
 const { createAccessControlService } = require('./services/accessControlService');
 const { createSessionActivityService } = require('./services/sessionActivityService');
 const { buildAuthRouter } = require('./routes/auth');
@@ -247,6 +247,34 @@ const { resolveBrandFromEmail, getBrands } = require('./config/brands');
 const { getBrandConnection } = require('./lib/brandConnectionManager');
 const redisClient = require('./lib/redis');
 
+async function fetchBrandUserByEmail(brandConn, email) {
+  const rows = await brandConn.sequelize.query(
+    'SELECT id, email, password_hash, role, is_active FROM users WHERE email = ? LIMIT 1',
+    { type: QueryTypes.SELECT, replacements: [email] }
+  );
+  return Array.isArray(rows) ? rows[0] : rows;
+}
+
+async function fetchBrandUserById(brandConn, id) {
+  const rows = await brandConn.sequelize.query(
+    'SELECT id, email, password_hash, role, is_active FROM users WHERE id = ? LIMIT 1',
+    { type: QueryTypes.SELECT, replacements: [id] }
+  );
+  return Array.isArray(rows) ? rows[0] : rows;
+}
+
+async function createBrandUser(brandConn, { email, password_hash, role = 'user', is_active = true }) {
+  try {
+    await brandConn.sequelize.query(
+      'INSERT INTO users (email, password_hash, role, is_active, createdAt, updatedAt) VALUES (?, ?, ?, ?, NOW(), NOW())',
+      { type: QueryTypes.INSERT, replacements: [email, password_hash, role, is_active ? 1 : 0] }
+    );
+  } catch (_) {
+    // Ignore duplicate errors and fall back to fetch
+  }
+  return fetchBrandUserByEmail(brandConn, email);
+}
+
 // ---- Session & Passport -----------------------------------------------------
 const SequelizeStore = SequelizeStoreFactory(session.Store);
 const redisStore = redisClient ? new RedisStore({ client: redisClient, prefix: 'sess:' }) : null;
@@ -303,9 +331,8 @@ passport.use(new LocalStrategy({ usernameField: 'email', passwordField: 'passwor
     console.log(`Authenticating brand user ${email} with brand config:`, brandCfg);
     if (!brandCfg) return done(null, false, { message: 'Unknown brand' });
     const brandConn = await getBrandConnection(brandCfg);
-    const BrandUser = brandConn.models.User;
-    const user = await BrandUser.findOne({ where: { email, is_active: true } });
-    if (!user) return done(null, false, { message: 'Invalid credentials' });
+    const user = await fetchBrandUserByEmail(brandConn, email);
+    if (!user || user.is_active === false) return done(null, false, { message: 'Invalid credentials' });
     const ok = await bcrypt.compare(password, user.password_hash);
     if (!ok) return done(null, false, { message: 'Invalid credentials' });
     return done(null, { id: user.id, email: user.email, role: user.role, brandKey: brandCfg.key, isAuthor: false });
@@ -362,25 +389,19 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         brandCfg = map[key] || null;
       }
       if (!brandCfg) brandCfg = resolveBrandFromEmail(email);
-  if (!brandCfg) return done(null, false, { message: settings.mode === 'whitelist' ? 'Brand not resolved for whitelisted email' : 'Your email domain is not authorized', reason: settings.mode === 'whitelist' ? 'brand_unknown' : 'not_authorized_domain' });
+      if (!brandCfg) return done(null, false, { message: settings.mode === 'whitelist' ? 'Brand not resolved for whitelisted email' : 'Your email domain is not authorized', reason: settings.mode === 'whitelist' ? 'brand_unknown' : 'not_authorized_domain' });
 
       // Enforce or auto-provision brand user as configured
       if (requireBrandDbUser || settings.autoProvision) {
         try {
           const { getBrandConnection } = require('./lib/brandConnectionManager');
           const conn = await getBrandConnection(brandCfg);
-          const BrandUser = conn.models.User;
-          let userRow = await BrandUser.findOne({ where: { email } });
+          let userRow = await fetchBrandUserByEmail(conn, email);
           if (!userRow) {
             if (settings.autoProvision) {
               const secret = crypto.randomBytes(32).toString('hex');
               const hash = await bcrypt.hash(secret, 10);
-              try {
-                userRow = await BrandUser.create({ email, password_hash: hash, role: 'user', is_active: true });
-              } catch (ce) {
-                // Unique race -> re-fetch
-                userRow = await BrandUser.findOne({ where: { email } });
-              }
+              userRow = await createBrandUser(conn, { email, password_hash: hash, role: 'user', is_active: true });
             } else {
               return done(null, false, { message: 'User not provisioned for this brand', reason: 'user_not_provisioned' });
             }
@@ -470,12 +491,11 @@ passport.deserializeUser(async (obj, done) => {
     // Otherwise, look up the brand user in the brand DB. Prefer email lookup for SSO users
     // (since SSO sessions may not have a numeric PK), and PK lookup for local-auth users.
     const brandConn = await getBrandConnection(brandCfg);
-    const BrandUser = brandConn.models.User;
     let user = null;
     if (obj.sso === 'google') {
-      user = await BrandUser.findOne({ where: { email: obj.email, is_active: true }, attributes: ['id','email','role','is_active'] });
+      user = await fetchBrandUserByEmail(brandConn, obj.email);
     } else {
-      user = await BrandUser.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
+      user = await fetchBrandUserById(brandConn, obj.id);
     }
     if (!user || !user.is_active) return done(null, false);
     return cacheResult({ id: user.id, email: user.email, role: user.role || 'user', brandKey: brandCfg.key, isAuthor: false });

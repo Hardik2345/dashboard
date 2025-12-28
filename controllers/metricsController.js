@@ -1449,9 +1449,10 @@ function buildMetricsController() {
         const rowMap = new Map();
         for (const row of rows) {
           if (!row?.date) continue;
+          const dateStr = row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date);
           const hourVal = typeof row.hour === 'number' ? row.hour : Number(row.hour);
           if (!Number.isFinite(hourVal) || hourVal < 0 || hourVal > 23) continue;
-          const key = `${row.date}#${hourVal}`;
+          const key = `${dateStr}#${hourVal}`;
           rowMap.set(key, {
             sales: Number(row.total_sales || 0),
             sessions: Number(row.raw_number_of_sessions || 0),
@@ -2161,6 +2162,7 @@ function buildMetricsController() {
         if (!req.brandDb && req.brandConfig) {
           try {
             req.brandDb = await getBrandConnection(req.brandConfig);
+            req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
           } catch (connErr) {
             console.error("Lazy connection failed", connErr);
           }
@@ -2251,6 +2253,7 @@ function buildMetricsController() {
             console.log(`[LAZY CONNECT] Connecting to ${req.brandConfig.key} for fallback`);
             try {
               req.brandDb = await getBrandConnection(req.brandConfig);
+              req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
             } catch (connErr) {
               console.error("Lazy connection failed", connErr);
             }
