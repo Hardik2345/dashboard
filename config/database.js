@@ -11,6 +11,12 @@ function initSequelize() {
       port: Number(process.env.DB_PORT || 3306),
       dialect: "mysql",
       dialectModule: mysql2,
+      dialectOptions: {
+        ssl: {
+          require: true,
+          rejectUnauthorized: false
+        }
+      },
       timezone: "+00:00",
       pool: { max: 3, min: 1, idle: 30000 },
       logging: false,

@@ -1,7 +1,5 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AppProvider } from '@shopify/polaris';
-import enTranslations from '@shopify/polaris/locales/en.json';
 import '@shopify/polaris/build/esm/styles.css';
 import './index.css';
 import App from './App.jsx';
@@ -13,12 +11,8 @@ import 'react-toastify/dist/ReactToastify.css';
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <Provider store={store}>
-      <AppProvider i18n={enTranslations}>
-        <>
-          <App />
-          <ToastContainer position="top-center" delay={5000} />
-        </>
-      </AppProvider>
+      <App />
+      <ToastContainer position="top-center" delay={5000} />
     </Provider>
   </StrictMode>,
 );

@@ -50,7 +50,13 @@ async function main() {
       dialect: 'mysql',
       dialectModule: require('mysql2'),
       logging: false,
-      timezone: '+00:00'
+      timezone: '+00:00',
+      dialectOptions: {
+        ssl: {
+          require: true,
+          rejectUnauthorized: false
+        }
+      }
     }
   );
 
