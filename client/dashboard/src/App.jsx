@@ -1,5 +1,7 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import dayjs from 'dayjs';
+import { AppProvider } from '@shopify/polaris';
+import enTranslations from '@shopify/polaris/locales/en.json';
 import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, useMediaQuery } from '@mui/material';
 import Header from './components/Header.jsx';
 import MobileTopBar from './components/MobileTopBar.jsx';
@@ -602,168 +604,170 @@ export default function App() {
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Box sx={{ display: 'flex', minHeight: '100svh', bgcolor: 'background.default' }}>
-          {/* Sidebar Navigation */}
-          <Sidebar
-            open={sidebarOpen}
-            onClose={handleSidebarClose}
-            activeTab={authorTab}
-            onTabChange={handleSidebarTabChange}
-            darkMode={darkMode === 'dark'}
-          />
+        <AppProvider i18n={enTranslations} theme={{ colorScheme: darkMode === 'dark' ? 'dark' : 'light' }}>
+          <Box sx={{ display: 'flex', minHeight: '100svh', bgcolor: 'background.default' }}>
+            {/* Sidebar Navigation */}
+            <Sidebar
+              open={sidebarOpen}
+              onClose={handleSidebarClose}
+              activeTab={authorTab}
+              onTabChange={handleSidebarTabChange}
+              darkMode={darkMode === 'dark'}
+            />
 
-          {/* Main content area */}
-          <Box
-            component="main"
-            sx={{
-              flexGrow: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              minHeight: '100svh',
-              width: { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` },
-            }}
-          >
-            {/* Sticky Top Panel (mobile only) */}
+            {/* Main content area */}
             <Box
+              component="main"
               sx={{
-                position: { xs: 'sticky', md: 'static' },
-                top: 0,
-                zIndex: (theme) => theme.zIndex.appBar,
-                bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
-                pb: 1,
-                borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
-                borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-                transition: 'border-color 0.2s ease',
+                flexGrow: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: '100svh',
+                width: { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` },
               }}
             >
-              <Header user={user} onLogout={handleLogout} onMenuClick={handleSidebarOpen} showMenuButton darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
-              <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: { xs: 1.5, sm: 2 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
-                <Stack spacing={{ xs: 2, sm: 1 }}>
-                  <AuthorBrandSelector
-                    brands={authorBrands}
-                    value={authorBrandKey}
-                    loading={authorBrandsLoading}
-                    onChange={handleAuthorBrandChange}
-                  />
-                  {authorTab === 'dashboard' && hasAuthorBrand && (
-                    <MobileTopBar
-                      value={range}
-                      onChange={setRange}
-                      brandKey={authorBrandKey}
-                      productOptions={productOptions}
-                      productValue={productSelection}
-                      onProductChange={handleProductChange}
-                      productLoading={productOptionsLoading}
+              {/* Sticky Top Panel (mobile only) */}
+              <Box
+                sx={{
+                  position: { xs: 'sticky', md: 'static' },
+                  top: 0,
+                  zIndex: (theme) => theme.zIndex.appBar,
+                  bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
+                  pb: 1,
+                  borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
+                  borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+                  transition: 'border-color 0.2s ease',
+                }}
+              >
+                <Header user={user} onLogout={handleLogout} onMenuClick={handleSidebarOpen} showMenuButton darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
+                <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: { xs: 1.5, sm: 2 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
+                  <Stack spacing={{ xs: 2, sm: 1 }}>
+                    <AuthorBrandSelector
+                      brands={authorBrands}
+                      value={authorBrandKey}
+                      loading={authorBrandsLoading}
+                      onChange={handleAuthorBrandChange}
                     />
+                    {authorTab === 'dashboard' && hasAuthorBrand && (
+                      <MobileTopBar
+                        value={range}
+                        onChange={setRange}
+                        brandKey={authorBrandKey}
+                        productOptions={productOptions}
+                        productValue={productSelection}
+                        onProductChange={handleProductChange}
+                        productLoading={productOptionsLoading}
+                      />
+                    )}
+                  </Stack>
+                </Box>
+              </Box>
+
+              <Box
+                sx={{
+                  flex: 1,
+                  width: '100%',
+                  maxWidth: 1200,
+                  mx: 'auto',
+                  px: { xs: 1.5, sm: 2.5, md: 4 },
+                  py: { xs: 1, md: 2 },
+                }}
+              >
+                <Stack spacing={{ xs: 1, md: 2 }}>
+                  {authorTab === 'dashboard' && (
+                    hasAuthorBrand ? (
+                      <Stack spacing={{ xs: 1, md: 1.5 }}>
+                        <KPIs
+                          query={metricsQuery}
+                          selectedMetric={selectedMetric}
+                          onSelectMetric={handleSelectMetric}
+                          onLoaded={handleAuthorDataLoaded}
+                          productId={productSelection.id}
+                          productLabel={productSelection.label}
+                        />
+                        <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+                        <WebVitals query={metricsQuery} />
+                        <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
+                        <FunnelChart query={metricsQuery} />
+                        <OrderSplit query={metricsQuery} />
+                        <PaymentSalesSplit query={metricsQuery} />
+                      </Stack>
+                    ) : (
+                      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                        <Typography variant="body2" color="text.secondary">
+                          Select a brand to load dashboard metrics.
+                        </Typography>
+                      </Paper>
+                    )
+                  )}
+
+                  {authorTab === 'access' && (
+                    <Stack spacing={{ xs: 2, md: 3 }}>
+                      <AccessControlCard />
+                      <WhitelistTable />
+                    </Stack>
+                  )}
+
+                  {authorTab === 'adjustments' && (
+                    hasAuthorBrand ? (
+                      <AuthorAdjustments
+                        brandKey={authorBrandKey}
+                        onBrandKeyChange={handleAuthorBrandChange}
+                        brands={authorBrands}
+                      />
+                    ) : (
+                      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                        <Typography variant="body2" color="text.secondary">
+                          Choose a brand to manage session adjustments.
+                        </Typography>
+                      </Paper>
+                    )
+                  )}
+
+                  {authorTab === 'product-conversion' && (
+                    hasAuthorBrand ? (
+                      <ProductConversionTable
+                        brandKey={authorBrandKey}
+                        brands={authorBrands}
+                        onBrandChange={handleAuthorBrandChange}
+                        brandsLoading={authorBrandsLoading}
+                      />
+                    ) : (
+                      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                        <Typography variant="body2" color="text.secondary">
+                          Select a brand to load product conversion data.
+                        </Typography>
+                      </Paper>
+                    )
+                  )}
+
+                  {authorTab === 'brands' && (
+                    <Stack spacing={{ xs: 2, md: 3 }}>
+                      <AuthorBrandForm />
+                      <AuthorBrandList />
+                    </Stack>
+                  )}
+
+                  {authorTab === 'alerts' && (
+                    authorBrands.length ? (
+                      <AlertsAdmin
+                        brands={authorBrands}
+                        defaultBrandKey={authorBrandKey}
+                      />
+                    ) : (
+                      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                        <Typography variant="body2" color="text.secondary">
+                          Add at least one brand to start configuring alerts.
+                        </Typography>
+                      </Paper>
+                    )
                   )}
                 </Stack>
               </Box>
+              <Footer />
             </Box>
-
-            <Box
-              sx={{
-                flex: 1,
-                width: '100%',
-                maxWidth: 1200,
-                mx: 'auto',
-                px: { xs: 1.5, sm: 2.5, md: 4 },
-                py: { xs: 1, md: 2 },
-              }}
-            >
-              <Stack spacing={{ xs: 1, md: 2 }}>
-                {authorTab === 'dashboard' && (
-                  hasAuthorBrand ? (
-                    <Stack spacing={{ xs: 1, md: 1.5 }}>
-                      <KPIs
-                        query={metricsQuery}
-                        selectedMetric={selectedMetric}
-                        onSelectMetric={handleSelectMetric}
-                        onLoaded={handleAuthorDataLoaded}
-                        productId={productSelection.id}
-                        productLabel={productSelection.label}
-                      />
-                      <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-                      <WebVitals query={metricsQuery} />
-                      <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-                      <FunnelChart query={metricsQuery} />
-                      <OrderSplit query={metricsQuery} />
-                      <PaymentSalesSplit query={metricsQuery} />
-                    </Stack>
-                  ) : (
-                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Select a brand to load dashboard metrics.
-                      </Typography>
-                    </Paper>
-                  )
-                )}
-
-                {authorTab === 'access' && (
-                  <Stack spacing={{ xs: 2, md: 3 }}>
-                    <AccessControlCard />
-                    <WhitelistTable />
-                  </Stack>
-                )}
-
-                {authorTab === 'adjustments' && (
-                  hasAuthorBrand ? (
-                    <AuthorAdjustments
-                      brandKey={authorBrandKey}
-                      onBrandKeyChange={handleAuthorBrandChange}
-                      brands={authorBrands}
-                    />
-                  ) : (
-                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Choose a brand to manage session adjustments.
-                      </Typography>
-                    </Paper>
-                  )
-                )}
-
-                {authorTab === 'product-conversion' && (
-                  hasAuthorBrand ? (
-                    <ProductConversionTable
-                      brandKey={authorBrandKey}
-                      brands={authorBrands}
-                      onBrandChange={handleAuthorBrandChange}
-                      brandsLoading={authorBrandsLoading}
-                    />
-                  ) : (
-                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Select a brand to load product conversion data.
-                      </Typography>
-                    </Paper>
-                  )
-                )}
-
-                {authorTab === 'brands' && (
-                  <Stack spacing={{ xs: 2, md: 3 }}>
-                    <AuthorBrandForm />
-                    <AuthorBrandList />
-                  </Stack>
-                )}
-
-                {authorTab === 'alerts' && (
-                  authorBrands.length ? (
-                    <AlertsAdmin
-                      brands={authorBrands}
-                      defaultBrandKey={authorBrandKey}
-                    />
-                  ) : (
-                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Add at least one brand to start configuring alerts.
-                      </Typography>
-                    </Paper>
-                  )
-                )}
-              </Stack>
-            </Box>
-            <Footer />
           </Box>
-        </Box>
+        </AppProvider>
       </ThemeProvider>
     );
   }
