@@ -75,8 +75,14 @@ function loadInitialRange() {
 
 export default function App() {
   const dispatch = useAppDispatch();
-  const { user, initialized, loginStatus, loginError } = useAppSelector((state) => state.auth);
-  const globalBrandKey = useAppSelector((state) => state.brand.brand);
+  const {
+    user, initialized, loginStatus, loginError,
+    GlobalBrandKey: globalBrandKey,
+    expiresAt
+  } = useAppSelector((state) => ({
+    ...state.auth,
+    GlobalBrandKey: state.brand.brand
+  }));
   const loggingIn = loginStatus === 'loading';
   const [range, setRange] = useState(loadInitialRange);
   const [start, end] = range;
@@ -395,6 +401,29 @@ export default function App() {
     dispatch(fetchCurrentUser());
   }, [dispatch]);
 
+  // Session Expiry Notification
+  useEffect(() => {
+    if (!user || !expiresAt) return; // 'expiresAt' needs to be selected from state
+
+    const expiryTime = new Date(expiresAt).getTime();
+    const now = Date.now();
+    const tenMinutes = 10 * 60 * 1000;
+    const timeUntilWarning = expiryTime - now - tenMinutes;
+
+    if (timeUntilWarning > 0) {
+      console.log(`[Session] Warning scheduled in ${(timeUntilWarning / 60000).toFixed(1)} minutes`);
+      const timer = setTimeout(() => {
+        if (Notification.permission === 'granted') {
+          new Notification('Session Expiring soon ⏳', {
+            body: 'Your session will expire in 10 minutes. Please refresh or save your work.',
+            icon: '/favicon.png'
+          });
+        }
+      }, timeUntilWarning);
+      return () => clearTimeout(timer);
+    }
+  }, [user, expiresAt]);
+
   async function handleLogin(e) {
     e.preventDefault();
     const action = await dispatch(loginUser({ email: loginForm.email, password: loginForm.password }));
@@ -503,18 +532,19 @@ export default function App() {
   }, [user]); // Re-run if user changes (e.g. login)
 
   // [NEW] Effect to manage subscriptions when Token and Brands are available
-  // [NEW] Effect to manage subscriptions when Token and Brands are available
   useEffect(() => {
     if (!fcmToken) return;
 
     const performSubscription = async (topics) => {
       if (!topics.length) return;
+      console.log('[App] Subscribing to topics:', topics);
       try {
         await fetch('/api/notifications/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token: fcmToken, topics })
         });
+        console.log('[App] Subscription request sent.');
       } catch (e) { console.error('Subscription failed', e); }
     };
 
@@ -526,7 +556,7 @@ export default function App() {
       // User: Subscribe to own brand
       performSubscription([`brand-${user.brandKey.toUpperCase()}-alerts`]);
     }
-  }, [isAuthor, brandsLoaded, authorBrands, user]);
+  }, [isAuthor, brandsLoaded, authorBrands, user, fcmToken]);
 
 
 

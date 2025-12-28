@@ -58,7 +58,12 @@ function googleCallback(passport, successRedirect, failureRedirect) {
 
 function me() {
   return (req, res) => {
-    if (req.isAuthenticated && req.isAuthenticated()) return res.json({ user: req.user });
+    if (req.isAuthenticated && req.isAuthenticated()) {
+      return res.json({ 
+        user: req.user,
+        expiresAt: req.session?.cookie?.expires 
+      });
+    }
     return res.status(401).json({ error: 'Unauthorized' });
   };
 }

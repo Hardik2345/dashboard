@@ -365,11 +365,8 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel }) {
       try {
         const brandConn = await getBrandConnection(brandInfo);
         // Query brand DB using raw SQL to be safe about table names
-        const [results] = await brandConn.sequelize.query(
-          `SELECT * FROM overall_summary ORDER BY date DESC LIMIT :limit`,
-          {
-            replacements: { limit: 5 }
-          }
+        const results = await brandConn.sequelize.query(
+          `SELECT * FROM overall_summary ORDER BY date DESC LIMIT 5`
         );
         history = results;
       } catch (dbErr) {
@@ -566,16 +563,27 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel }) {
 
       // [New] Detailed Server Logging
       console.log('--- Alert Processing Summary ---');
-      debugLogs.forEach(log => {
-          console.log(`[Alert: ${log.name}] Action: ${log.action}`);
-          if (log.action === 'Not Sent') {
-             const reasons = [];
-             if (!log.triggeredCondition) reasons.push(`Condition not met (Current: ${log.currentVal?.toFixed(2)}, avg: ${log.avgVal?.toFixed(2)})`);
-             if (log.isQuiet && !log.criticalOverride) reasons.push('Quiet Hours Active');
-             if (log.cooldownActive) reasons.push('Cooldown Active');
-             console.log(`   Reason: ${reasons.join(', ')}`);
+      debugLogs.forEach(entry => {
+          if (typeof entry === 'string') {
+              console.log(entry);
           } else {
-             console.log(`   Triggered! Current: ${log.currentVal?.toFixed(2)}% (Threshold: ${log.threshold})`);
+              const log = entry;
+              console.log(`[Alert: ${log.name}] Action: ${log.action}`);
+              if (log.action === 'Not Sent') {
+                 const reasons = [];
+                 if (!log.triggeredCondition) {
+                     reasons.push(`Condition not met`);
+                     reasons.push(`Type: ${log.thresholdType}`);
+                     reasons.push(`Current: ${log.currentVal?.toFixed(2)}%`);
+                     reasons.push(`Avg: ${log.avgVal?.toFixed(2)}%`);
+                     reasons.push(`Diff: ${log.percentDiff?.toFixed(2)}%`);
+                 }
+                 if (log.isQuiet && !log.criticalOverride) reasons.push('Quiet Hours Active');
+                 if (log.cooldownActive) reasons.push('Cooldown Active');
+                 console.log(`   Details: ${reasons.join(', ')}`);
+              } else {
+                 console.log(`   Triggered! Current: ${log.currentVal?.toFixed(2)}% (Threshold: ${log.threshold})`);
+              }
           }
       });
       console.log('--------------------------------');
