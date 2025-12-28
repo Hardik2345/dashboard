@@ -14,19 +14,19 @@ import {
   BarElement,
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
-import { getHourlyTrend, getDailyTrend } from '../lib/api.js';
+import { getHourlyTrend, getDailyTrend, getMonthlyTrend, getHourlySalesSummary } from '../lib/api.js';
 
 function hexToRgba(hex, alpha) {
   if (!hex || typeof hex !== 'string') return `rgba(0,0,0,${alpha || 1})`;
-  const clean = hex.replace('#','');
-  const bigint = parseInt(clean.length === 3 ? clean.split('').map(c=>c+c).join('') : clean, 16);
+  const clean = hex.replace('#', '');
+  const bigint = parseInt(clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean, 16);
   const r = (bigint >> 16) & 255;
   const g = (bigint >> 8) & 255;
   const b = bigint & 255;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-  ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, BarElement, ChartDataLabels);
+ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, BarElement, ChartDataLabels);
 // Configure datalabels defaults (adapted from StackOverflow suggestion)
 if (!ChartJS.defaults.plugins) ChartJS.defaults.plugins = {};
 ChartJS.defaults.plugins.datalabels = ChartJS.defaults.plugins.datalabels || {};
@@ -203,7 +203,7 @@ function formatHourLabel(hour) {
   return `${normalized}${suffix}`;
 }
 
-const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // Resolve Chart.js instance from different react-chartjs-2 ref shapes
 const resolveChart = (ref) => {
@@ -249,7 +249,7 @@ function CustomLegend({ chartRef, dataKey }) {
 
       build();
       const originalUpdate = chart.update.bind(chart);
-      chart.update = function() {
+      chart.update = function () {
         const ret = originalUpdate(...arguments);
         try { build(); } catch (e) { /* ignore */ }
         return ret;
@@ -306,9 +306,9 @@ function CustomLegend({ chartRef, dataKey }) {
     return null;
   }
   return (
-    <Stack 
-      direction={{ xs: 'column', sm: 'row' }} 
-      spacing={{ xs: 0, sm: 1 }} 
+    <Stack
+      direction={{ xs: 'column', sm: 'row' }}
+      spacing={{ xs: 0, sm: 1 }}
       sx={{ flexWrap: 'wrap', mb: 1, alignItems: { xs: 'flex-start', sm: 'center' } }}
     >
       {items.map((item) => (
@@ -365,7 +365,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     comparisonLabel: '',
     error: null,
   });
-  const [viewMode, setViewMode] = useState('hourly'); // 'hourly' | 'daily'
+  const [viewMode, setViewMode] = useState('hourly'); // 'hourly' | 'daily' | 'monthly'
   const start = query?.start;
   const end = query?.end;
   const brandKey = query?.brand_key;
@@ -381,6 +381,12 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
     return diffDays + 1;
   }, [start, end]);
+
+  useEffect(() => {
+    if (viewMode === 'monthly' && totalDaysSelected < 30) {
+      setViewMode('daily');
+    }
+  }, [totalDaysSelected, viewMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -400,88 +406,138 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       return () => { cancelled = true; };
     }
     setLoading(true);
-    const fetcher = viewMode === 'daily' ? getDailyTrend : getHourlyTrend;
-    const base = viewMode === 'daily'
-      ? { start, end }
-      : { start, end, aggregate: 'avg-by-hour' };
-    const params = brandKey ? { ...base, brand_key: brandKey } : base;
-  fetcher(params).then((res) => {
+
+    const loadData = async () => {
+      // optimization: use cached hourly summary if sales + hourly view + single day match
+      if (viewMode === 'hourly' && (metric === 'sales' || metric === 'total_sales') && start === end) {
+        try {
+          const res = await getHourlySalesSummary({ brand_key: brandKey });
+          if (!cancelled && res.data && res.data.today && res.data.today.date === start) {
+            const todayPoints = res.data.today.data.map(d => ({
+              hour: d.hour,
+              metrics: {
+                sales: d.total_sales,
+                orders: d.number_of_orders,
+                sessions: d.number_of_sessions,
+                atc: d.number_of_atc_sessions
+              }
+            }));
+            const yesterdayPoints = res.data.yesterday.data.map(d => ({
+              hour: d.hour,
+              metrics: {
+                sales: d.total_sales,
+                orders: d.number_of_orders,
+                sessions: d.number_of_sessions,
+                atc: d.number_of_atc_sessions
+              }
+            }));
+
+            const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+            setState({
+              labels: todayPoints.map(p => formatHourLabel(p.hour)),
+              values: todayPoints.map(p => configNext.accessor(p.metrics)),
+              comparisonValues: yesterdayPoints.map(p => configNext.accessor(p.metrics)),
+              points: todayPoints,
+              comparisonPoints: yesterdayPoints,
+              timezone: 'IST',
+              rangeLabel: formatRangeLabel({ start: res.data.today.date, end: res.data.today.date }),
+              comparisonLabel: formatRangeLabel({ start: res.data.yesterday.date, end: res.data.yesterday.date }),
+              error: null
+            });
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          console.warn('Optimized fetch failed, falling back', e);
+        }
+      }
+
       if (cancelled) return;
-      if (res?.error) {
+
+      const fetcher = viewMode === 'monthly' ? getMonthlyTrend : (viewMode === 'daily' ? getDailyTrend : getHourlyTrend);
+      const base = (viewMode === 'daily' || viewMode === 'monthly')
+        ? { start, end }
+        : { start, end, aggregate: 'avg-by-hour' };
+      const params = brandKey ? { ...base, brand_key: brandKey } : base;
+
+      try {
+        const res = await fetcher(params);
+        if (cancelled) return;
+        if (res?.error) {
+          throw new Error('Fetch failed');
+        }
+
+        const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+        let labels = [];
+        let values = [];
+        let comparisonValues = [];
+        let points = [];
+        let comparisonPoints = [];
+
+        if (viewMode === 'daily') {
+          const days = Array.isArray(res.days) ? res.days : [];
+          const compDays = Array.isArray(res?.comparison?.days) ? res.comparison.days : [];
+          const n = Math.min(days.length, compDays.length || days.length);
+          const daysAligned = days.slice(0, n);
+          const compAligned = compDays.slice(0, n);
+          points = daysAligned;
+          labels = daysAligned.map((d) => d.date);
+          values = daysAligned.map((d) => (configNext.accessor(d?.metrics || {}) || 0));
+          comparisonPoints = compAligned;
+          comparisonValues = compAligned.map((d) => (configNext.accessor(d?.metrics || {}) || 0));
+        } else if (viewMode === 'monthly') {
+          points = Array.isArray(res.points) ? res.points : [];
+          labels = points.map((p) => p.date);
+          values = points.map((p) => configNext.accessor(p.metrics || {}));
+          comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
+          comparisonValues = comparisonPoints.map((p) => configNext.accessor(p.metrics || {}));
+        } else {
+          points = Array.isArray(res.points) ? res.points : [];
+          labels = points.map((p) => formatHourLabel(p.hour));
+          values = points.map((p) => configNext.accessor(p.metrics || {}));
+          comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
+          comparisonValues = comparisonPoints.map((p) => configNext.accessor(p.metrics || {}));
+        }
+
         setState({
-          labels: [],
-          values: [],
-          comparisonValues: [],
-          points: [],
-          comparisonPoints: [],
-          timezone: 'IST',
-          rangeLabel: '',
-          comparisonLabel: '',
-          error: true,
+          labels,
+          values,
+          comparisonValues,
+          points,
+          comparisonPoints,
+          timezone: res.timezone || 'IST',
+          rangeLabel: formatRangeLabel(res.range),
+          comparisonLabel: formatRangeLabel(res?.comparison?.range),
+          error: null,
         });
         setLoading(false);
-        return;
+
+      } catch (err) {
+        if (!cancelled) {
+          setState({
+            labels: [],
+            values: [],
+            comparisonValues: [],
+            points: [],
+            comparisonPoints: [],
+            timezone: 'IST',
+            rangeLabel: '',
+            comparisonLabel: '',
+            error: true,
+          });
+          setLoading(false);
+        }
       }
-  const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
-      let labels = [];
-      let values = [];
-      let comparisonValues = [];
-      let points = [];
-      let comparisonPoints = [];
-      if (viewMode === 'daily') {
-        const days = Array.isArray(res.days) ? res.days : [];
-        const compDays = Array.isArray(res?.comparison?.days) ? res.comparison.days : [];
-        // Align by index (day 1 with previous window day 1, etc.) and trim to shortest length
-        const n = Math.min(days.length, compDays.length || days.length);
-        const daysAligned = days.slice(0, n);
-        const compAligned = compDays.slice(0, n);
-        points = daysAligned; // reuse naming for simplicity
-        labels = daysAligned.map((d) => d.date);
-        // Use selected metric for daily view
-        values = daysAligned.map((d) => (configNext.accessor(d?.metrics || {}) || 0));
-        comparisonPoints = compAligned;
-        comparisonValues = compAligned.map((d) => (configNext.accessor(d?.metrics || {}) || 0));
-      } else {
-        points = Array.isArray(res.points) ? res.points : [];
-        labels = points.map((p) => formatHourLabel(p.hour));
-        values = points.map((p) => configNext.accessor(p.metrics || {}));
-        comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
-        comparisonValues = comparisonPoints.map((p) => configNext.accessor(p.metrics || {}));
-      }
-      setState({
-        labels,
-        values,
-        comparisonValues,
-        points,
-        comparisonPoints,
-        timezone: res.timezone || 'IST',
-        rangeLabel: formatRangeLabel(res.range),
-        comparisonLabel: formatRangeLabel(res?.comparison?.range),
-        error: null,
-      });
-      setLoading(false);
-    }).catch(() => {
-      if (!cancelled) {
-        setState({
-          labels: [],
-          values: [],
-          comparisonValues: [],
-          points: [],
-          comparisonPoints: [],
-          timezone: 'IST',
-          rangeLabel: '',
-          comparisonLabel: '',
-          error: true,
-        });
-        setLoading(false);
-      }
-    });
+    };
+
+    loadData();
+
     return () => { cancelled = true; };
   }, [start, end, metric, viewMode, brandKey, refreshKey]);
 
   const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
 
-  const showBarLabels = viewMode === 'daily' && totalDaysSelected > 0 && totalDaysSelected <= 5;
+  const showBarLabels = (viewMode === 'daily' || viewMode === 'monthly') && totalDaysSelected > 0 && totalDaysSelected <= 31;
   const barLabelColor = theme.palette.mode === 'dark'
     ? theme.palette.grey[100]
     : theme.palette.text.primary;
@@ -493,8 +549,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     {
       label: primaryLabel,
       data: state.values,
-  borderColor: config.color,
-  backgroundColor: config.bg,
+      borderColor: config.color,
+      backgroundColor: config.bg,
       borderWidth: 2,
       pointRadius: 2,
       pointHoverRadius: 4,
@@ -506,7 +562,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     datasets.push({
       label: comparisonLabel,
       data: state.comparisonValues,
-  borderColor: config.color,
+      borderColor: config.color,
       backgroundColor: 'transparent',
       borderWidth: 2,
       borderDash: [6, 4],
@@ -525,10 +581,38 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   // Stable key for legend effect dependency (avoids re-running on every render)
   const dataKey = `${state.labels.length}|${state.values.length}|${state.comparisonValues.length}|${primaryLabel}|${comparisonLabel}`;
 
-  function formatDay(dateStr) {
+  function formatDay(dateStr, isMonthly = false, point = null) {
     if (!dateStr) return '';
+
+    if (isMonthly && point?.startDate && point?.endDate) {
+      const s = new Date(`${point.startDate}T00:00:00Z`);
+      const e = new Date(`${point.endDate}T00:00:00Z`);
+      if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime())) {
+        const sMonth = MONTH_NAMES[s.getUTCMonth()];
+        const eMonth = MONTH_NAMES[e.getUTCMonth()];
+        const sDay = s.getUTCDate();
+        const eDay = e.getUTCDate();
+        const sYear = s.getUTCFullYear();
+        const eYear = e.getUTCFullYear();
+
+        // If same month and year: "Nov 27 – 30, 2025"
+        if (sMonth === eMonth && sYear === eYear) {
+          return `${sMonth} ${sDay} – ${eDay}, ${sYear}`;
+        }
+        // If same year: "Nov 27 – Dec 26, 2025"
+        if (sYear === eYear) {
+          return `${sMonth} ${sDay} – ${eMonth} ${eDay}, ${sYear}`;
+        }
+        // Different years: "Dec 27, 2024 – Jan 26, 2025"
+        return `${sMonth} ${sDay}, ${sYear} – ${eMonth} ${eDay}, ${eYear}`;
+      }
+    }
+
     const dt = new Date(`${dateStr}T00:00:00Z`);
     if (Number.isNaN(dt.getTime())) return dateStr;
+    if (isMonthly) {
+      return `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCFullYear()}`;
+    }
     return `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
   }
 
@@ -560,10 +644,10 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           title: (items) => {
             if (!items || !items.length) return '';
             const idx = items[0].dataIndex;
-            if (viewMode === 'daily') {
+            if (viewMode === 'daily' || viewMode === 'monthly') {
               const ds = items[0].datasetIndex;
-              const dateStr = ds === 0 ? state.points[idx]?.date : state.comparisonPoints[idx]?.date;
-              return formatDay(dateStr);
+              const point = ds === 0 ? state.points[idx] : state.comparisonPoints[idx];
+              return formatDay(point?.date, viewMode === 'monthly', point);
             }
             const point = typeof idx === 'number' ? state.points[idx] : null;
             return point?.label || '';
@@ -571,7 +655,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           label: (ctx) => {
             const value = config.formatter(ctx.parsed.y || 0);
             const datasetLabel = ctx.dataset?.label || config.label;
-            if (viewMode === 'daily') {
+            if (viewMode === 'daily' || viewMode === 'monthly') {
               return `${datasetLabel}: ${value}`;
             }
             const idx = ctx.dataIndex;
@@ -597,8 +681,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       },
       y: {
         grid: { color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' },
-        ticks: { 
-          padding: 4, 
+        ticks: {
+          padding: 4,
           callback: (v) => config.formatter(v),
           color: theme.palette.mode === 'dark' ? '#e0e0e0' : '#666',
         }
@@ -617,7 +701,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 1 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column' }}>
             <Typography variant="subtitle2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
-              {viewMode === 'daily' ? 'Day-wise trend' : 'Hour-wise trend'} · {config.label}
+              {viewMode === 'daily' ? 'Day-wise trend' : viewMode === 'monthly' ? 'Month-wise trend' : 'Hour-wise trend'} · {config.label}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
               Timezone: {state.timezone}
@@ -647,6 +731,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
             >
               <MenuItem value="hourly" sx={{ fontSize: 12, py: 0.5 }}>Hourly</MenuItem>
               <MenuItem value="daily" sx={{ fontSize: 12, py: 0.5 }}>Day wise</MenuItem>
+              {totalDaysSelected >= 30 && (
+                <MenuItem value="monthly" sx={{ fontSize: 12, py: 0.5 }}>Month wise</MenuItem>
+              )}
             </Select>
           </FormControl>
         </Box>
@@ -660,12 +747,15 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           <Typography variant="body2" color="text.secondary">No data available.</Typography>
         ) : (
           <div style={{ position: 'relative', flexGrow: 1 }}>
-            {viewMode === 'daily' ? (
+            {(viewMode === 'daily' || viewMode === 'monthly') ? (
               <Bar
                 ref={chartRef}
                 data={{
                   labels: state.labels.map(d => {
                     const dt = new Date(`${d}T00:00:00Z`);
+                    if (viewMode === 'monthly') {
+                      return `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCFullYear()}`;
+                    }
                     return `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
                   }),
                   datasets: [
@@ -720,18 +810,18 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   },
                   layout: options.layout,
                   scales: {
-                    x: { 
-                      stacked: false, 
+                    x: {
+                      stacked: false,
                       grid: { color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' },
                       ticks: { color: theme.palette.mode === 'dark' ? '#e0e0e0' : '#666' },
                     },
-                    y: { 
-                      stacked: false, 
-                      grid: { display: false }, 
-                      ticks: { 
+                    y: {
+                      stacked: false,
+                      grid: { display: false },
+                      ticks: {
                         callback: (v) => config.formatter(v),
                         color: theme.palette.mode === 'dark' ? '#e0e0e0' : '#666',
-                      } 
+                      }
                     },
                   },
                 }}

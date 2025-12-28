@@ -6,6 +6,7 @@
 # sessions CSV export and export script in scripts/
 /scripts/sessions_2025-11-17.csv
 /scripts/sessions_export.js
+/service-account.json
 
 # macOS finder artifacts
 .DS_Store

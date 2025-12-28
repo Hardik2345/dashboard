@@ -1691,6 +1691,102 @@ function buildMetricsController() {
       } catch (e) { console.error('[daily-trend] failed', e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
+    monthlyTrend: async (req, res) => {
+      try {
+        const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+        if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
+        const { start, end } = parsed.data;
+        if (!start || !end) return res.status(400).json({ error: 'Both start and end dates are required' });
+
+        const sql = `
+          SELECT 
+            DATE_FORMAT(date, '%Y-%m-01') AS month_start,
+            MIN(date) AS start_date,
+            MAX(date) AS end_date,
+            SUM(total_sales) AS sales,
+            SUM(number_of_orders) AS orders,
+            SUM(number_of_atc_sessions) AS atc
+          FROM hour_wise_sales
+          WHERE date >= ? AND date <= ?
+          GROUP BY month_start
+          ORDER BY month_start ASC`;
+        
+        const sessionsSql = `
+          SELECT 
+            DATE_FORMAT(date, '%Y-%m-01') AS month_start,
+            SUM(total_sessions) AS total_sessions,
+            SUM(adjusted_total_sessions) AS adjusted_total_sessions
+          FROM overall_summary
+          WHERE date >= ? AND date <= ?
+          GROUP BY month_start
+          ORDER BY month_start ASC`;
+
+        const [rows, sessionsRows] = await Promise.all([
+          req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [start, end] }),
+          req.brandDb.sequelize.query(sessionsSql, { type: QueryTypes.SELECT, replacements: [start, end] })
+        ]);
+
+        const sessionsMap = new Map(sessionsRows.map(r => [r.month_start, r]));
+
+        const points = rows.map(r => {
+          const s = sessionsMap.get(r.month_start);
+          const bestSession = s && s.adjusted_total_sessions != null ? Number(s.adjusted_total_sessions) : Number(s?.total_sessions || 0);
+          const orders = Number(r.orders || 0);
+          const cvrRatio = bestSession > 0 ? orders / bestSession : 0;
+          return {
+            date: r.month_start,
+            startDate: r.start_date,
+            endDate: r.end_date,
+            metrics: {
+              sales: Number(r.sales || 0),
+              orders,
+              sessions: bestSession,
+              atc: Number(r.atc || 0),
+              cvr_ratio: cvrRatio,
+              cvr_percent: cvrRatio * 100
+            }
+          };
+        });
+
+        let comparison = null;
+        const prevWin = previousWindow(start, end);
+        if (prevWin?.prevStart && prevWin?.prevEnd) {
+           const [rowsPrev, sessionsRowsPrev] = await Promise.all([
+            req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] }),
+            req.brandDb.sequelize.query(sessionsSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] })
+          ]);
+          const sessionsMapPrev = new Map(sessionsRowsPrev.map(r => [r.month_start, r]));
+          const prevPoints = rowsPrev.map(r => {
+            const s = sessionsMapPrev.get(r.month_start);
+            const bestSession = s && s.adjusted_total_sessions != null ? Number(s.adjusted_total_sessions) : Number(s?.total_sessions || 0);
+            const orders = Number(r.orders || 0);
+            const cvrRatio = bestSession > 0 ? orders / bestSession : 0;
+            return {
+              date: r.month_start,
+              startDate: r.start_date,
+              endDate: r.end_date,
+              metrics: {
+                sales: Number(r.sales || 0),
+                orders,
+                sessions: bestSession,
+                atc: Number(r.atc || 0),
+                cvr_ratio: cvrRatio,
+                cvr_percent: cvrRatio * 100
+              }
+            };
+          });
+          comparison = { range: { start: prevWin.prevStart, end: prevWin.prevEnd }, points: prevPoints };
+        }
+
+        return res.json({
+          range: { start, end },
+          points,
+          months: points,
+          comparison: comparison ? { ...comparison, months: comparison.points } : null,
+        });
+      } catch (e) { console.error('[monthly-trend] failed', e); return res.status(500).json({ error: 'Internal server error' }); }
+    },
+
     productConversion: async (req, res) => {
       try {
         const todayStr = formatIsoDate(new Date());
@@ -1935,6 +2031,106 @@ function buildMetricsController() {
         return res.json({ labels, series: { current, yesterday }, tz: 'IST' });
       } catch (e) {
         console.error('[hourly-sales-compare] failed', e);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    hourlySalesSummary: async (req, res) => {
+      try {
+        const brandKey = (req.brandKey || req.query.brand_key || '').toString().trim().toUpperCase();
+        if (!brandKey) return res.status(400).json({ error: 'Brand key required' });
+
+        const IST_OFFSET_MIN = 330;
+        const nowUtc = new Date();
+        const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
+        
+        const pad2 = (n) => String(n).padStart(2, '0');
+        const formatDate = (d) => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+        
+        const todayStr = formatDate(nowIst);
+        const yesterdayIst = new Date(nowIst.getTime() - 24 * 60 * 60 * 1000);
+        const yesterdayStr = formatDate(yesterdayIst);
+
+        const keyToday = `hourly_metrics:${brandKey.toLowerCase()}:${todayStr}`;
+        const keyYesterday = `hourly_metrics:${brandKey.toLowerCase()}:${yesterdayStr}`;
+
+        let todayData = null;
+        let yesterdayData = null;
+        let todaySource = 'db';
+        let yesterdaySource = 'db';
+
+        if (redisClient) {
+            try {
+              const results = await redisClient.mget(keyToday, keyYesterday);
+              if (results[0]) {
+                todayData = JSON.parse(results[0]);
+                todaySource = 'redis';
+              }
+              if (results[1]) {
+                yesterdayData = JSON.parse(results[1]);
+                yesterdaySource = 'redis';
+              }
+              if (todayData) console.log(`[REDIS HIT] ${keyToday}`);
+              else console.log(`[REDIS MISS] ${keyToday}`);
+              if (yesterdayData) console.log(`[REDIS HIT] ${keyYesterday}`);
+              else console.log(`[REDIS MISS] ${keyYesterday}`);
+            } catch (err) {
+              console.error('[hourlySalesSummary] Redis fetch failed', err.message);
+            }
+        }
+
+        // Fallback to DB if missing
+        if (!todayData || !yesterdayData) {
+          const conn = req.brandDb.sequelize;
+          const sql = `
+            SELECT 
+              hour,
+              total_sales,
+              number_of_orders,
+              COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
+              number_of_atc_sessions
+            FROM hour_wise_sales
+            WHERE date = ?
+            ORDER BY hour ASC
+          `;
+          
+          if (!todayData) {
+             const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements: [todayStr] });
+             todayData = rows.map(r => ({
+               hour: r.hour,
+               total_sales: Number(r.total_sales || 0),
+               number_of_orders: Number(r.number_of_orders || 0),
+               number_of_sessions: Number(r.number_of_sessions || 0),
+               number_of_atc_sessions: Number(r.number_of_atc_sessions || 0)
+             }));
+             console.log(`[DB FETCH] hourly sales for ${brandKey} on ${todayStr}`);
+          }
+
+          if (!yesterdayData) {
+            const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements: [yesterdayStr] });
+            yesterdayData = rows.map(r => ({
+              hour: r.hour,
+              total_sales: Number(r.total_sales || 0),
+              number_of_orders: Number(r.number_of_orders || 0),
+              number_of_sessions: Number(r.number_of_sessions || 0),
+              number_of_atc_sessions: Number(r.number_of_atc_sessions || 0)
+            }));
+            console.log(`[DB FETCH] hourly sales for ${brandKey} on ${yesterdayStr}`);
+          }
+        }
+
+        return res.json({
+            metric: "HOURLY_SALES_SUMMARY",
+            brand: brandKey,
+            source: (todaySource === 'redis' && yesterdaySource === 'redis') ? 'redis' : (todaySource === 'redis' || yesterdaySource === 'redis' ? 'mixed' : 'db'),
+            data: {
+              today: { date: todayStr, source: todaySource, data: todayData || [] },
+              yesterday: { date: yesterdayStr, source: yesterdaySource, data: yesterdayData || [] }
+            }
+        });
+
+      } catch (e) {
+        console.error('[hourlySalesSummary] failed', e);
         return res.status(500).json({ error: 'Internal server error' });
       }
     },

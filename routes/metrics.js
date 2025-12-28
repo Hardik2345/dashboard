@@ -82,10 +82,12 @@ function buildMetricsRouter(sequelize) {
   router.get('/product-kpis', authOrApiKey, ensureBrandDb, controller.productKpis);
   router.get('/hourly-trend', ...protectedBrand, controller.hourlyTrend);
   router.get('/daily-trend', ...protectedBrand, controller.dailyTrend);
+  router.get('/monthly-trend', ...protectedBrand, controller.monthlyTrend);
   router.get('/product-conversion', requireAuthor, brandContext, controller.productConversion);
   router.get('/product-conversion/export', requireAuthor, brandContext, controller.productConversionCsv);
 
   router.get('/hourly-sales-compare', requireAuth, controller.hourlySalesCompare);
+  router.get('/hourly-sales-summary', ...protectedBrand, controller.hourlySalesSummary);
   router.get('/diagnose/total-orders', requireAuth, controller.diagnoseTotalOrders(sequelize));
 
   return router;

@@ -29,6 +29,8 @@ const { buildExternalRouter } = require('./routes/external');
 const { buildUploadsRouter } = require('./routes/uploads');
 const { buildApiKeysRouter } = require('./routes/apiKeys');
 const { buildShopifyRouter } = require('./routes/shopify');
+const { buildWebhooksRouter } = require('./routes/webhooks');
+const { buildNotificationsRouter } = require('./routes/notifications'); // [NEW]
 
 const app = express();
 app.use(helmet());
@@ -74,6 +76,10 @@ const sequelize = new Sequelize(
     },
     logging: false,
     dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false
+      },
       connectAttributes: {
         program_name: 'dashboard-main',
         service: 'dashboard-api',
@@ -147,7 +153,7 @@ const Alert = sequelize.define('alerts', {
   metric_name: { type: DataTypes.STRING(255), allowNull: true },
   metric_type: { type: DataTypes.ENUM('base', 'derived'), allowNull: false, defaultValue: 'base' },
   formula: { type: DataTypes.TEXT, allowNull: true },
-  threshold_type: { type: DataTypes.ENUM('absolute', 'percentage_drop', 'percentage_rise', 'less_than', 'more_than'), allowNull: false },
+  threshold_type: { type: DataTypes.ENUM('absolute', 'percentage_drop', 'percentage_rise', 'less_than', 'more_than', 'greater_than'), allowNull: false },
   threshold_value: { type: DataTypes.DOUBLE, allowNull: false },
   critical_threshold: { type: DataTypes.FLOAT, allowNull: true },
   severity: { type: DataTypes.ENUM('low', 'medium', 'high'), allowNull: false, defaultValue: 'low' },
@@ -155,13 +161,16 @@ const Alert = sequelize.define('alerts', {
   is_active: { type: DataTypes.TINYINT, allowNull: true, defaultValue: 1 },
   created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
   lookback_days: { type: DataTypes.INTEGER, allowNull: true },
+  have_recipients: { type: DataTypes.TINYINT, allowNull: true, defaultValue: 0 },
   quiet_hours_start: { type: DataTypes.INTEGER, allowNull: true },
-  quiet_hours_end: { type: DataTypes.INTEGER, allowNull: true }
+  quiet_hours_end: { type: DataTypes.INTEGER, allowNull: true },
+  last_triggered_at: { type: DataTypes.DATE, allowNull: true }
 }, { tableName: 'alerts', timestamps: false });
 
 const AlertChannel = sequelize.define('alert_channels', {
   id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
   alert_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+  brand_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
   channel_type: { type: DataTypes.ENUM('slack', 'email', 'webhook'), allowNull: false },
   channel_config: { type: DataTypes.JSON, allowNull: false },
 }, { tableName: 'alert_channels', timestamps: false });
@@ -298,7 +307,7 @@ app.use(session({
     secure: isProd || crossSite, // must be true for SameSite=None
     sameSite: crossSite ? 'none' : 'lax',
     domain: process.env.COOKIE_DOMAIN || undefined, // set if you serve API on subdomain
-    maxAge: 1000 * 60 * 60 * 8,
+    maxAge: 1000 * 60 * 60 * 24 * 7, // 1 Week
   }
 }));
 
@@ -545,6 +554,8 @@ app.use('/external', buildExternalRouter());
 app.use('/', buildUploadsRouter());
 app.use('/', buildApiKeysRouter(sequelize));
 app.use('/shopify', buildShopifyRouter(sequelize));
+app.use('/webhooks', buildWebhooksRouter({ Alert, AlertChannel, BrandAlertChannel }));
+app.use('/notifications', buildNotificationsRouter()); // [NEW]
 
 // ---- Init -------------------------------------------------------------------
 async function init() {
@@ -557,6 +568,8 @@ async function init() {
   try { await SessionAdjustmentBucket.sync(); } catch (e) { console.warn('Bucket sync skipped', e?.message); }
   try { await SessionAdjustmentAudit.sync(); } catch (e) { console.warn('Audit sync skipped', e?.message); }
   try { await sequelize.models.api_keys.sync(); } catch (e) { console.warn('API keys sync skipped', e?.message); }
+  try { await Alert.sync(); } catch (e) { console.warn('Alert sync skipped', e?.message); }
+  try { await AlertChannel.sync(); } catch (e) { console.warn('AlertChannel sync skipped', e?.message); }
   // seed admin if none
   if (!(await User.findOne({ where: { email: process.env.ADMIN_EMAIL || 'admin@example.com' } }))) {
     const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'ChangeMe123!', 12);

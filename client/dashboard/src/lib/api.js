@@ -419,6 +419,15 @@ export async function getHourlySalesCompare(args = {}) {
   };
 }
 
+export async function getHourlySalesSummary(args = {}) {
+  const params = appendBrandKey({}, args);
+  const json = await getJSON('/metrics/hourly-sales-summary', params);
+  return {
+    data: json?.data || null,
+    error: json?.__error,
+  };
+}
+
 export async function getHourlyTrend(args) {
   const params = appendBrandKey({ start: args.start, end: args.end, aggregate: args.aggregate }, args);
   const json = await getJSON('/metrics/hourly-trend', params);
@@ -445,6 +454,20 @@ export async function getDailyTrend(args) {
     days: Array.isArray(json?.days) ? json.days : [],
     comparison: json?.comparison && Array.isArray(json?.comparison?.days)
       ? { range: json.comparison.range || null, days: json.comparison.days }
+      : null,
+    range: json?.range || null,
+    timezone: json?.timezone || 'IST',
+    error: json?.__error,
+  };
+}
+
+export async function getMonthlyTrend(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const json = await getJSON('/metrics/monthly-trend', params);
+  return {
+    points: Array.isArray(json?.points) ? json.points : [],
+    comparison: json?.comparison && Array.isArray(json?.comparison?.points)
+      ? { range: json.comparison.range || null, points: json.comparison.points }
       : null,
     range: json?.range || null,
     timezone: json?.timezone || 'IST',

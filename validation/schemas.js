@@ -69,7 +69,7 @@ const AlertSchema = z.object({
     }
     return val;
   }, z.union([z.string().max(4000), z.null()])).optional(),
-  threshold_type: z.enum(['absolute', 'percentage_drop', 'percentage_rise', 'less_than', 'more_than']),
+  threshold_type: z.enum(['absolute', 'percentage_drop', 'percentage_rise', 'less_than', 'more_than', 'greater_than']),
   threshold_value: requiredNumber(),
   critical_threshold: numberOrNull().optional(),
   severity: z.enum(['low', 'medium', 'high']).default('low'),
@@ -95,6 +95,11 @@ const AlertSchema = z.object({
     if (val === null || val === '') return null;
     return val;
   }, z.union([z.string().regex(TIME_HH_MM, 'Use HH:MM (24h)'), z.null()])).optional(),
+  have_recipients: z.preprocess((val) => {
+    if (val === undefined) return undefined;
+    if (val === null || val === '') return 0;
+    return Number(val) ? 1 : 0;
+  }, z.union([z.number().int().min(0).max(1), z.null()])).optional(),
   recipients: z.preprocess((val) => {
     if (val === undefined) return undefined;
     if (val === null || val === '') return [];

@@ -22,6 +22,8 @@ import {
   InputLabel,
   MenuItem,
   Paper,
+  Radio,
+  RadioGroup,
   Select,
   Stack,
   Switch,
@@ -72,7 +74,7 @@ const THRESHOLD_TYPES = [
   { value: 'percentage_drop', label: 'Percentage Drop' },
   { value: 'percentage_rise', label: 'Percentage Rise' },
   { value: 'less_than', label: 'Less Than' },
-  { value: 'more_than', label: 'More Than' },
+  { value: 'greater_than', label: 'More Than' },
 ];
 
 const SEVERITY_OPTIONS = [
@@ -96,8 +98,9 @@ function buildInitialForm(defaultBrand = '') {
     threshold_value: '',
     critical_threshold: '',
     severity: 'low',
-    cooldown_minutes: 30,
-    lookback_days: 7,
+    cooldown_minutes: '30',
+    lookback_days: '1',
+    have_recipients: 0,
     quiet_hours_start: '00:00',
     quiet_hours_end: '00:00',
     recipients: '',
@@ -135,8 +138,9 @@ function formatCondition(type, value) {
   switch (type) {
     case 'percentage_drop': return `Drops by ${value}%`;
     case 'percentage_rise': return `Rises by ${value}%`;
-    case 'less_than': return `< ${value}`;
-    case 'more_than': return `> ${value}`;
+    case 'less_than': return `less than ${value}`;
+    case 'greater_than':
+    case 'more_than': return `more than ${value}`;
     case 'absolute': return `Absolute: ${value}`;
     default: return `${type?.replace(/_/g, ' ')} ${value}`;
   }
@@ -246,7 +250,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
         const next = { ...prev, [field]: value };
         if (isBase) next.metric_type = 'base';
         if (isPerformance) {
-          next.threshold_type = 'more_than'; // Default to one of the allowed types
+          next.threshold_type = 'greater_than'; // Default to one of the allowed types
           next.lookback_days = ''; // Clear lookback days
         }
         return next;
@@ -310,13 +314,12 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
       threshold_value: alert.threshold_value ?? '',
       critical_threshold: alert.critical_threshold ?? '',
       severity: alert.severity || 'low',
-      cooldown_minutes: alert.cooldown_minutes ?? 30,
-      lookback_days: deriveLookbackDays(),
+      cooldown_minutes: String(alert.cooldown_minutes ?? 30),
+      lookback_days: String(deriveLookbackDays() ?? ''),
       quiet_hours_start: formatTimeValue(alert.quiet_hours_start),
       quiet_hours_end: formatTimeValue(alert.quiet_hours_end),
-      recipients: Array.isArray(alert.recipients)
-        ? alert.recipients.join(', ')
-        : alert.recipient_emails || alert.recipients || '',
+      have_recipients: alert.have_recipients ? 1 : 0,
+      recipients: Array.isArray(alert.recipients) ? alert.recipients.join(', ') : '',
       is_active: Boolean(alert.is_active ?? true),
     });
     setValidationErrors({});
@@ -342,7 +345,8 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
       lookback_days: form.metric_name === 'performance' ? null : lookbackDays,
       quiet_hours_start: form.quiet_hours_start || null,
       quiet_hours_end: form.quiet_hours_end || null,
-      recipients: parseRecipients(form.recipients),
+      have_recipients: form.have_recipients,
+      recipients: form.have_recipients === 1 ? parseRecipients(form.recipients) : [],
       is_active: form.is_active ? 1 : 0,
     };
     return payload;
@@ -364,8 +368,8 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
         errors.critical_threshold = "Critical threshold must be less than warning threshold";
       }
     }
-    if (!form.recipients || (Array.isArray(form.recipients) && form.recipients.length === 0)) {
-      errors.recipients = "At least one recipient is required";
+    if (Number(form.have_recipients) === 1 && (!form.recipients || (Array.isArray(form.recipients) && form.recipients.length === 0))) {
+      errors.recipients = "At least one recipient is required for custom recipients";
     }
 
     setValidationErrors(errors);
@@ -590,7 +594,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 >
                   {THRESHOLD_TYPES.filter(opt => {
                     if (form.metric_name === 'performance') {
-                      return ['more_than', 'less_than'].includes(opt.value);
+                      return ['greater_than', 'less_than'].includes(opt.value);
                     }
                     return true;
                   }).map((option) => (
@@ -769,18 +773,33 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
               </FormControl>
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField
-                label="Recipients"
-                value={form.recipients}
-                onChange={handleInputChange('recipients')}
-                fullWidth
-                multiline
-                minRows={1}
-                placeholder="email@example.com, ..."
-                helperText={validationErrors.recipients || "Comma separated list"}
-                size="small"
-                error={!!validationErrors.recipients}
-              />
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Email Recipients
+                </Typography>
+                <RadioGroup
+                  row
+                  value={form.have_recipients}
+                  onChange={(e) => setForm((prev) => ({ ...prev, have_recipients: Number(e.target.value) }))}
+                  sx={{ mb: 1 }}
+                >
+                  <FormControlLabel value={0} control={<Radio size="small" />} label="Use Brand Default" />
+                  <FormControlLabel value={1} control={<Radio size="small" />} label="Custom Recipients" />
+                </RadioGroup>
+
+                {Number(form.have_recipients) === 1 && (
+                  <TextField
+                    fullWidth
+                    label="Recipients (comma separated emails)"
+                    placeholder="e.g. dev@example.com, boss@example.com"
+                    value={form.recipients}
+                    onChange={handleInputChange('recipients')}
+                    size="small"
+                    helperText={validationErrors.recipients || "If specified, these will receive notifications instead of brand defaults."}
+                    error={!!validationErrors.recipients}
+                  />
+                )}
+              </Box>
             </Grid>
 
             {/* --- Actions --- */}
