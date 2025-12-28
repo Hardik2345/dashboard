@@ -144,8 +144,10 @@ export default function App() {
     const base = { start: formatDate(start), end: formatDate(end) };
     const key = (activeBrandKey || '').toString().trim().toUpperCase();
     if (key) base.brand_key = key;
-    if (isAuthor) base.refreshKey = authorRefreshKey;
-    if (productSelection?.id) base.product_id = productSelection.id;
+    if (isAuthor) {
+      base.refreshKey = authorRefreshKey;
+      if (productSelection?.id) base.product_id = productSelection.id;
+    }
     return base;
   }, [start, end, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id]);
 
@@ -236,6 +238,14 @@ export default function App() {
   }, [isAuthor, initialized]);
 
   useEffect(() => {
+    // Only authors should see/use product filters; reset for everyone else.
+    if (!isAuthor) {
+      setProductOptions([DEFAULT_PRODUCT_OPTION]);
+      setProductSelection(DEFAULT_PRODUCT_OPTION);
+      setProductOptionsLoading(false);
+      return;
+    }
+
     if (!start || !end) {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
       setProductSelection(DEFAULT_PRODUCT_OPTION);
@@ -249,7 +259,7 @@ export default function App() {
       return;
     }
 
-    if (isAuthor && !activeBrandKey) {
+    if (!activeBrandKey) {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
       setProductSelection(DEFAULT_PRODUCT_OPTION);
       setProductOptionsLoading(false);
@@ -263,8 +273,8 @@ export default function App() {
       start: formatDate(start),
       end: formatDate(end),
       limit: 50,
+      brand_key: activeBrandKey,
     };
-    if (activeBrandKey) params.brand_key = activeBrandKey;
 
     getTopProducts(params)
       .then(({ products, error }) => {
@@ -437,100 +447,110 @@ export default function App() {
     dispatch(logoutUser());
   }
 
-  // [NEW] Request Notification Permission on mount and Subscribe - DISABLED per user request 
-  // useEffect(() => {
-  //   async function setupNotifications() {
-  //     if ('Notification' in window && 'serviceWorker' in navigator) {
-  //       try {
-  //         const permission = await Notification.requestPermission();
-  //         if (permission === 'granted') {
-  //           console.log('Notification permission granted.');
-  //
-  //           // Dynamic import to avoid SSR/build issues if not needed
-  //           const { initializeApp } = await import('firebase/app');
-  //           const { getMessaging, getToken, onMessage } = await import('firebase/messaging');
-  //
-  //           // Config from env
-  //           const firebaseConfig = {
-  //             apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  //             authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  //             projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  //             storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  //             messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  //             appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  //           };
-  //
-  //           // Initialize
-  //           const app = initializeApp(firebaseConfig);
-  //           const messaging = getMessaging(app);
-  //
-  //           // Get Token
-  //           // VAPID key should be in env or hardcoded if user provided
-  //           const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
-  //           const token = await getToken(messaging, { vapidKey });
-  //
-  //           if (token) {
-  //             console.log('FCM Token:', token);
-  //
-  //             // Subscribe to topics
-  //             // Strategy:
-  //             // 1. If Author (Admin): Subscribe to ALL accessible brands.
-  //             // 2. If Normal User: Subscribe to their specific brand.
-  //             // Topic format: `brand-{KEY}-alerts` (KEY must be uppercase)
-  //
-  //             let topicsToSubscribe = [];
-  //
-  //             if (isAuthor) {
-  //               // Wait for authorBrands loop to populate or use what's available?
-  //               // `authorBrands` is populated by useEffect [isAuthor].
-  //               // We need to be sure it's loaded.
-  //               // Ideally, we trigger subscription when `authorBrands` changes if isAuthor.
-  //               // But here we are inside setupNotifications ON MOUNT.
-  //               // If authorBrands is empty initially, we might miss it.
-  //               // Better: decouple subscription from this setup?
-  //               // OR: fetch brands here if author?
-  //               // Since `authorBrands` might take time, let's defer subscription or try to fetch list.
-  //               // However, we can use a separate effect for subscription.
-  //               // Let's keep it simple: subscription should happen when dependencies change.
-  //               // But `setupNotifications` requests permission first.
-  //
-  //               // If we are Author, we want all brands.
-  //               // The `authorBrands` state is updated by another effect.
-  //               // Let's subscribe to a generic 'admin-alerts' ? No, user wants specific brand alerts.
-  //               // We will move the subscription call to a dedicated useEffect that watches `token` AND `authorBrands`.
-  //             } else {
-  //               if (user?.brandKey) {
-  //                 topicsToSubscribe.push(`brand-${user.brandKey.toUpperCase()}-alerts`);
-  //               }
-  //             }
-  //
-  //             // Store token in state to allow specific effect to handle subscription
-  //             // setFcmToken(token); // We don't have this state yet, maybe just Ref?
-  //             // Store token in state to allow specific effect to handle subscription
-  //             setFcmToken(token);
-  //
-  //           }
-  //
-  //           // Foreground listener
-  //           onMessage(messaging, (payload) => {
-  //             console.log('Message received. ', payload);
-  //             // Show system notification even in foreground if desired, or use a toast.
-  //             // Note: native Notification might be suppressed in some browsers if tab is active, 
-  //             // but usually works if permission granted.
-  //             new Notification(payload.notification.title, {
-  //               body: payload.notification.body,
-  //               icon: '/favicon.png' // Ensure this path exists or remove
-  //             });
-  //           });
-  //         }
-  //       } catch (err) {
-  //         console.error('Notification setup failed:', err);
-  //       }
-  //     }
-  //   }
-  //
-  //   setupNotifications();
-  // }, [user]); // Re-run if user changes (e.g. login)
+  // [NEW] Request Notification Permission on mount and Subscribe
+  useEffect(() => {
+    async function setupNotifications() {
+      if ('Notification' in window && 'serviceWorker' in navigator) {
+        try {
+          const permission = await Notification.requestPermission();
+          if (permission === 'granted') {
+            console.log('Notification permission granted.');
+
+            // Dynamic import to avoid SSR/build issues if not needed
+            const { initializeApp } = await import('firebase/app');
+            const { getMessaging, getToken, onMessage } = await import('firebase/messaging');
+
+            // Config from env
+            const firebaseConfig = {
+              apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+              authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+              projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+              storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+              messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+              appId: import.meta.env.VITE_FIREBASE_APP_ID,
+            };
+
+            const missing = Object.entries(firebaseConfig).filter(([, v]) => !v).map(([k]) => k);
+            if (missing.length) {
+              console.warn('[notifications] Skipping FCM setup; missing config:', missing.join(', '));
+              return;
+            }
+
+            // Initialize
+            const app = initializeApp(firebaseConfig);
+            const messaging = getMessaging(app);
+
+            // Get Token
+            // VAPID key should be in env or hardcoded if user provided
+            const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+            if (!vapidKey) {
+              console.warn('[notifications] Skipping FCM setup; missing VAPID key');
+              return;
+            }
+            const token = await getToken(messaging, { vapidKey });
+
+            if (token) {
+              console.log('FCM Token:', token);
+
+              // Subscribe to topics
+              // Strategy:
+              // 1. If Author (Admin): Subscribe to ALL accessible brands.
+              // 2. If Normal User: Subscribe to their specific brand.
+              // Topic format: `brand-{KEY}-alerts` (KEY must be uppercase)
+
+              let topicsToSubscribe = [];
+
+              if (isAuthor) {
+                // Wait for authorBrands loop to populate or use what's available?
+                // `authorBrands` is populated by useEffect [isAuthor].
+                // We need to be sure it's loaded.
+                // Ideally, we trigger subscription when `authorBrands` changes if isAuthor.
+                // But here we are inside setupNotifications ON MOUNT.
+                // If authorBrands is empty initially, we might miss it.
+                // Better: decouple subscription from this setup?
+                // OR: fetch brands here if author?
+                // Since `authorBrands` might take time, let's defer subscription or try to fetch list.
+                // However, we can use a separate effect for subscription.
+                // Let's keep it simple: subscription should happen when dependencies change.
+                // But `setupNotifications` requests permission first.
+
+                // If we are Author, we want all brands.
+                // The `authorBrands` state is updated by another effect.
+                // Let's subscribe to a generic 'admin-alerts' ? No, user wants specific brand alerts.
+                // We will move the subscription call to a dedicated useEffect that watches `token` AND `authorBrands`.
+              } else {
+                if (user?.brandKey) {
+                  topicsToSubscribe.push(`brand-${user.brandKey.toUpperCase()}-alerts`);
+                }
+              }
+
+              // Store token in state to allow specific effect to handle subscription
+              // setFcmToken(token); // We don't have this state yet, maybe just Ref?
+              // Store token in state to allow specific effect to handle subscription
+              setFcmToken(token);
+
+            }
+
+            // Foreground listener
+            onMessage(messaging, (payload) => {
+              console.log('Message received. ', payload);
+              // Show system notification even in foreground if desired, or use a toast.
+              // Note: native Notification might be suppressed in some browsers if tab is active, 
+              // but usually works if permission granted.
+              new Notification(payload.notification.title, {
+                body: payload.notification.body,
+                icon: '/favicon.png' // Ensure this path exists or remove
+              });
+            });
+          }
+        } catch (err) {
+          console.error('Notification setup failed:', err);
+        }
+      }
+    }
+
+    setupNotifications();
+  }, [user]); // Re-run if user changes (e.g. login)
 
   // [NEW] Effect to manage subscriptions when Token and Brands are available - DISABLED per user request
   // useEffect(() => {
@@ -823,15 +843,16 @@ export default function App() {
           >
             <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
             <Container maxWidth="sm" sx={{ pt: { xs: 2.5, sm: 3 } }}>
-              <MobileTopBar
-                value={range}
-                onChange={setRange}
-                brandKey={activeBrandKey}
-                productOptions={productOptions}
-                productValue={productSelection}
-                onProductChange={handleProductChange}
-                productLoading={productOptionsLoading}
-              />
+            <MobileTopBar
+              value={range}
+              onChange={setRange}
+              brandKey={activeBrandKey}
+              showProductFilter={false}
+              productOptions={productOptions}
+              productValue={productSelection}
+              onProductChange={handleProductChange}
+              productLoading={productOptionsLoading}
+            />
             </Container>
           </Box>
           <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>

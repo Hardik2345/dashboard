@@ -91,6 +91,7 @@ export default function MobileTopBar({
   value,
   onChange,
   brandKey,
+  showProductFilter = true,
   productOptions = [],
   productValue = null,
   onProductChange,
@@ -249,45 +250,47 @@ export default function MobileTopBar({
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
-      {/* Mobile: Product filter on its own row */}
-      <Box sx={{ display: { xs: 'block', sm: 'none' }, width: '100%', mb: { xs: 1.5, sm: 0 } }}>
-        <FormControl size="small" fullWidth>
-          <InputLabel id="mobile-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
-          <Select
-            labelId="mobile-product-label"
-            label="Product"
-            value={productValue?.id ?? ''}
-            onChange={(e) => {
-              const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
-              if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
-            }}
-            disabled={productLoading || !productOptions?.length}
-            sx={{ fontSize: 12, height: 36 }}
-            MenuProps={{
-              PaperProps: {
-                sx: {
-                  maxHeight: '60vh',
-                  width: { xs: '100%', sm: 360 },
-                  whiteSpace: 'normal',
+      {/* Mobile: Product filter on its own row (authors only) */}
+      {showProductFilter && (
+        <Box sx={{ display: { xs: 'block', sm: 'none' }, width: '100%', mb: { xs: 1.5, sm: 0 } }}>
+          <FormControl size="small" fullWidth>
+            <InputLabel id="mobile-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
+            <Select
+              labelId="mobile-product-label"
+              label="Product"
+              value={productValue?.id ?? ''}
+              onChange={(e) => {
+                const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
+                if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
+              }}
+              disabled={productLoading || !productOptions?.length}
+              sx={{ fontSize: 12, height: 36 }}
+              MenuProps={{
+                PaperProps: {
+                  sx: {
+                    maxHeight: '60vh',
+                    width: { xs: '100%', sm: 360 },
+                    whiteSpace: 'normal',
+                  }
                 }
-              }
-            }}
-          >
-            {(productOptions || []).map((opt) => (
-              <MenuItem
-                key={opt.id || 'all'}
-                value={opt.id || ''}
-                sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.75 }}
-              >
-                {opt.id ? opt.label : 'All products'}
-              </MenuItem>
-            ))}
-          </Select>
-          {productLoading && (
-            <CircularProgress size={14} sx={{ position: 'absolute', top: 11, right: 28 }} />
-          )}
-        </FormControl>
-      </Box>
+              }}
+            >
+              {(productOptions || []).map((opt) => (
+                <MenuItem
+                  key={opt.id || 'all'}
+                  value={opt.id || ''}
+                  sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.75 }}
+                >
+                  {opt.id ? opt.label : 'All products'}
+                </MenuItem>
+              ))}
+            </Select>
+            {productLoading && (
+              <CircularProgress size={14} sx={{ position: 'absolute', top: 11, right: 28 }} />
+            )}
+          </FormControl>
+        </Box>
+      )}
 
       {/* Main row: Updated chip | (desktop: product filter) | Date picker */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
@@ -347,48 +350,50 @@ export default function MobileTopBar({
         {/* Right: Product filter (desktop only) + Date picker */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {/* Desktop-only compact product filter */}
-          <FormControl size="small" sx={{ width: { xs: '100%', sm: 420 }, display: { xs: 'none', sm: 'flex' } }}>
-            <InputLabel id="desktop-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
-            <Select
-              labelId="desktop-product-label"
-              label="Product"
-              value={productValue?.id ?? ''}
-              onChange={(e) => {
-                const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
-                if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
-              }}
-              disabled={productLoading || !productOptions?.length}
-              sx={{
-                fontSize: 12,
-                height: 32,
-                width: '100%',
-                // Ensure the selected value area ellipses long labels instead of expanding the control
-                '& .MuiSelect-select': {
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }
-              }}
-              MenuProps={{
-                PaperProps: {
-                  sx: {
-                    maxHeight: '60vh',
-                    width: { xs: '100%', sm: 420 },
-                    whiteSpace: 'normal',
+          {showProductFilter && (
+            <FormControl size="small" sx={{ width: { xs: '100%', sm: 420 }, display: { xs: 'none', sm: 'flex' } }}>
+              <InputLabel id="desktop-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
+              <Select
+                labelId="desktop-product-label"
+                label="Product"
+                value={productValue?.id ?? ''}
+                onChange={(e) => {
+                  const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
+                  if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
+                }}
+                disabled={productLoading || !productOptions?.length}
+                sx={{
+                  fontSize: 12,
+                  height: 32,
+                  width: '100%',
+                  // Ensure the selected value area ellipses long labels instead of expanding the control
+                  '& .MuiSelect-select': {
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
                   }
-                }
-              }}
-            >
-              {(productOptions || []).map((opt) => (
-                <MenuItem key={opt.id || 'all'} value={opt.id || ''} sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.5 }}>
-                  {opt.id ? opt.label : 'All products'}
-                </MenuItem>
-              ))}
-            </Select>
-            {productLoading && (
-              <CircularProgress size={14} sx={{ position: 'absolute', top: 9, right: 28 }} />
-            )}
-          </FormControl>
+                }}
+                MenuProps={{
+                  PaperProps: {
+                    sx: {
+                      maxHeight: '60vh',
+                      width: { xs: '100%', sm: 420 },
+                      whiteSpace: 'normal',
+                    }
+                  }
+                }}
+              >
+                {(productOptions || []).map((opt) => (
+                  <MenuItem key={opt.id || 'all'} value={opt.id || ''} sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.5 }}>
+                    {opt.id ? opt.label : 'All products'}
+                  </MenuItem>
+                ))}
+              </Select>
+              {productLoading && (
+                <CircularProgress size={14} sx={{ position: 'absolute', top: 9, right: 28 }} />
+              )}
+            </FormControl>
+          )}
 
           <Popover
             active={popoverActive}
