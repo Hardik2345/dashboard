@@ -76,6 +76,10 @@ const sequelize = new Sequelize(
     },
     logging: false,
     dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false
+      },
       connectAttributes: {
         program_name: 'dashboard-main',
         service: 'dashboard-api',

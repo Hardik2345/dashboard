@@ -15,8 +15,7 @@ import {
   useTheme,
 } from '@mui/material';
 import CheckIcon from "@mui/icons-material/Check";
-import { AppProvider, Popover, DatePicker } from "@shopify/polaris";
-import enTranslations from '@shopify/polaris/locales/en.json'
+import { Popover, DatePicker } from "@shopify/polaris";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
@@ -249,92 +248,70 @@ export default function MobileTopBar({
   );
 
   return (
-    <AppProvider
-      theme={{
-        colorScheme: isDark ? 'dark' : 'light',
-      }}
-      i18n={enTranslations}
-    >
-      <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
-        {/* Mobile: Product filter on its own row */}
-        <Box sx={{ display: { xs: 'block', sm: 'none' }, width: '100%', mb: { xs: 1.5, sm: 0 } }}>
-          <FormControl size="small" fullWidth>
-            <InputLabel id="mobile-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
-            <Select
-              labelId="mobile-product-label"
-              label="Product"
-              value={productValue?.id ?? ''}
-              onChange={(e) => {
-                const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
-                if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
-              }}
-              disabled={productLoading || !productOptions?.length}
-              sx={{ fontSize: 12, height: 36 }}
-              MenuProps={{
-                PaperProps: {
-                  sx: {
-                    maxHeight: '60vh',
-                    width: { xs: '100%', sm: 360 },
-                    whiteSpace: 'normal',
-                  }
+    <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
+      {/* Mobile: Product filter on its own row */}
+      <Box sx={{ display: { xs: 'block', sm: 'none' }, width: '100%', mb: { xs: 1.5, sm: 0 } }}>
+        <FormControl size="small" fullWidth>
+          <InputLabel id="mobile-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
+          <Select
+            labelId="mobile-product-label"
+            label="Product"
+            value={productValue?.id ?? ''}
+            onChange={(e) => {
+              const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
+              if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
+            }}
+            disabled={productLoading || !productOptions?.length}
+            sx={{ fontSize: 12, height: 36 }}
+            MenuProps={{
+              PaperProps: {
+                sx: {
+                  maxHeight: '60vh',
+                  width: { xs: '100%', sm: 360 },
+                  whiteSpace: 'normal',
                 }
-              }}
-            >
-              {(productOptions || []).map((opt) => (
-                <MenuItem
-                  key={opt.id || 'all'}
-                  value={opt.id || ''}
-                  sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.75 }}
-                >
-                  {opt.id ? opt.label : 'All products'}
-                </MenuItem>
-              ))}
-            </Select>
-            {productLoading && (
-              <CircularProgress size={14} sx={{ position: 'absolute', top: 11, right: 28 }} />
-            )}
-          </FormControl>
-        </Box>
-
-        {/* Main row: Updated chip | (desktop: product filter) | Date picker */}
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
-          {/* Left: Updated chip */}
-          {last.loading ? (
-            <Card
-              elevation={0}
-              sx={{
-                px: 0.75,
-                height: 32,
-                display: "flex",
-                alignItems: "center",
-                bgcolor: "background.paper",
-                fontSize: 13,
-              }}
-            >
-              Updating…
-            </Card>
-          ) : last.ts ? (
-            <Tooltip
-              title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${last.tz ? ` ${last.tz}` : ""
-                }`}
-              arrow
-            >
-              <Card
-                elevation={0}
-                sx={{
-                  border: "1px solid",
-                  borderColor: "divider",
-                  px: 0.75,
-                  height: 32,
-                  display: "flex",
-                  alignItems: "center",
-                  fontSize: 13,
-                }}
+              }
+            }}
+          >
+            {(productOptions || []).map((opt) => (
+              <MenuItem
+                key={opt.id || 'all'}
+                value={opt.id || ''}
+                sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.75 }}
               >
-                Updated {last.ts.fromNow()}
-              </Card>
-            </Tooltip>
-          ) : (
+                {opt.id ? opt.label : 'All products'}
+              </MenuItem>
+            ))}
+          </Select>
+          {productLoading && (
+            <CircularProgress size={14} sx={{ position: 'absolute', top: 11, right: 28 }} />
+          )}
+        </FormControl>
+      </Box>
+
+      {/* Main row: Updated chip | (desktop: product filter) | Date picker */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
+        {/* Left: Updated chip */}
+        {last.loading ? (
+          <Card
+            elevation={0}
+            sx={{
+              px: 0.75,
+              height: 32,
+              display: "flex",
+              alignItems: "center",
+              bgcolor: "background.paper",
+              fontSize: 13,
+            }}
+          >
+            Updating…
+          </Card>
+        ) : last.ts ? (
+          <Tooltip
+            title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${last.tz ? ` ${last.tz}` : ""
+              }`}
+            arrow
+          >
             <Card
               elevation={0}
               sx={{
@@ -347,260 +324,275 @@ export default function MobileTopBar({
                 fontSize: 13,
               }}
             >
-              Updated: unavailable
+              Updated {last.ts.fromNow()}
             </Card>
-          )}
+          </Tooltip>
+        ) : (
+          <Card
+            elevation={0}
+            sx={{
+              border: "1px solid",
+              borderColor: "divider",
+              px: 0.75,
+              height: 32,
+              display: "flex",
+              alignItems: "center",
+              fontSize: 13,
+            }}
+          >
+            Updated: unavailable
+          </Card>
+        )}
 
-          {/* Right: Product filter (desktop only) + Date picker */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {/* Desktop-only compact product filter */}
-            <FormControl size="small" sx={{ width: { xs: '100%', sm: 420 }, display: { xs: 'none', sm: 'flex' } }}>
-              <InputLabel id="desktop-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
-              <Select
-                labelId="desktop-product-label"
-                label="Product"
-                value={productValue?.id ?? ''}
-                onChange={(e) => {
-                  const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
-                  if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
+        {/* Right: Product filter (desktop only) + Date picker */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {/* Desktop-only compact product filter */}
+          <FormControl size="small" sx={{ width: { xs: '100%', sm: 420 }, display: { xs: 'none', sm: 'flex' } }}>
+            <InputLabel id="desktop-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
+            <Select
+              labelId="desktop-product-label"
+              label="Product"
+              value={productValue?.id ?? ''}
+              onChange={(e) => {
+                const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
+                if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
+              }}
+              disabled={productLoading || !productOptions?.length}
+              sx={{
+                fontSize: 12,
+                height: 32,
+                width: '100%',
+                // Ensure the selected value area ellipses long labels instead of expanding the control
+                '& .MuiSelect-select': {
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }
+              }}
+              MenuProps={{
+                PaperProps: {
+                  sx: {
+                    maxHeight: '60vh',
+                    width: { xs: '100%', sm: 420 },
+                    whiteSpace: 'normal',
+                  }
+                }
+              }}
+            >
+              {(productOptions || []).map((opt) => (
+                <MenuItem key={opt.id || 'all'} value={opt.id || ''} sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.5 }}>
+                  {opt.id ? opt.label : 'All products'}
+                </MenuItem>
+              ))}
+            </Select>
+            {productLoading && (
+              <CircularProgress size={14} sx={{ position: 'absolute', top: 9, right: 28 }} />
+            )}
+          </FormControl>
+
+          <Popover
+            active={popoverActive}
+            activator={
+              <Card
+                elevation={0}
+                onClick={togglePopover}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    togglePopover();
+                  }
                 }}
-                disabled={productLoading || !productOptions?.length}
                 sx={{
-                  fontSize: 12,
+                  px: 1,
                   height: 32,
-                  width: '100%',
-                  // Ensure the selected value area ellipses long labels instead of expanding the control
-                  '& .MuiSelect-select': {
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }
-                }}
-                MenuProps={{
-                  PaperProps: {
-                    sx: {
-                      maxHeight: '60vh',
-                      width: { xs: '100%', sm: 420 },
-                      whiteSpace: 'normal',
-                    }
-                  }
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  bgcolor: "primary.main",
+                  color: "primary.contrastText",
+                  minWidth: { xs: 120, sm: 140 },
+                  textAlign: "center",
+                  userSelect: "none",
+                  fontSize: 13,
+                  "&:hover": { filter: "brightness(0.98)" },
                 }}
               >
-                {(productOptions || []).map((opt) => (
-                  <MenuItem key={opt.id || 'all'} value={opt.id || ''} sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.5 }}>
-                    {opt.id ? opt.label : 'All products'}
-                  </MenuItem>
-                ))}
-              </Select>
-              {productLoading && (
-                <CircularProgress size={14} sx={{ position: 'absolute', top: 9, right: 28 }} />
-              )}
-            </FormControl>
-
-            <Popover
-              active={popoverActive}
-              activator={
-                <Card
-                  elevation={0}
-                  onClick={togglePopover}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      togglePopover();
-                    }
-                  }}
-                  sx={{
-                    px: 1,
-                    height: 32,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "pointer",
-                    bgcolor: "primary.main",
-                    color: "primary.contrastText",
-                    minWidth: { xs: 120, sm: 140 },
-                    textAlign: "center",
-                    userSelect: "none",
-                    fontSize: 13,
-                    "&:hover": { filter: "brightness(0.98)" },
+                <span
+                  style={{
+                    display: "inline-block",
+                    maxWidth: "100%",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
                   }}
                 >
-                  <span
-                    style={{
-                      display: "inline-block",
-                      maxWidth: "100%",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {dateLabel}
-                  </span>
-                </Card>
-              }
-              onClose={handleClose}
-              fullWidth={false}
-              preferInputActivator={false}
-              preferredAlignment="right"
+                  {dateLabel}
+                </span>
+              </Card>
+            }
+            onClose={handleClose}
+            fullWidth={false}
+            preferInputActivator={false}
+            preferredAlignment="right"
+          >
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "row",
+                maxHeight: "80vh",
+                overflowX: "hidden",
+                overflowY: "auto",
+                borderRadius: 1,
+              }}
             >
+              {/* Presets Panel - Mobile */}
               <Box
                 sx={{
-                  display: "flex",
-                  flexDirection: "row",
-                  maxHeight: "80vh",
-                  overflowX: "hidden",
+                  display: { xs: "block", md: "none" },
+                  minWidth: 120,
+                  maxHeight: 320,
                   overflowY: "auto",
-                  borderRadius: 1,
+                  borderRight: "1px solid",
+                  borderColor: "divider",
+                  bgcolor: "background.paper",
                 }}
               >
-                {/* Presets Panel - Mobile */}
-                <Box
-                  sx={{
-                    display: { xs: "block", md: "none" },
-                    minWidth: 120,
-                    maxHeight: 320,
-                    overflowY: "auto",
-                    borderRight: "1px solid",
-                    borderColor: "divider",
-                    bgcolor: "background.paper",
-                  }}
-                >
-                  <List disablePadding>
-                    {DATE_PRESETS.map((preset, index) => {
-                      const isSelected = activePreset === preset.label;
-                      const showDivider =
-                        index < DATE_PRESETS.length - 1 &&
-                        DATE_PRESETS[index + 1].group !== preset.group;
-                      return (
-                        <Box key={preset.label}>
-                          <ListItemButton
-                            selected={isSelected}
-                            onClick={() => handlePresetSelect(preset)}
-                            sx={{
-                              py: 1,
-                              px: 1.5,
-                              bgcolor: isSelected
-                                ? (isDark ? 'action.selected' : 'grey.100')
-                                : 'transparent',
+                <List disablePadding>
+                  {DATE_PRESETS.map((preset, index) => {
+                    const isSelected = activePreset === preset.label;
+                    const showDivider =
+                      index < DATE_PRESETS.length - 1 &&
+                      DATE_PRESETS[index + 1].group !== preset.group;
+                    return (
+                      <Box key={preset.label}>
+                        <ListItemButton
+                          selected={isSelected}
+                          onClick={() => handlePresetSelect(preset)}
+                          sx={{
+                            py: 1,
+                            px: 1.5,
+                            bgcolor: isSelected
+                              ? (isDark ? 'action.selected' : 'grey.100')
+                              : 'transparent',
+                            '&:hover': {
+                              bgcolor: isDark ? 'action.hover' : 'grey.100',
+                            },
+                            '&.Mui-selected': {
+                              bgcolor: isDark ? 'action.selected' : 'grey.200',
                               '&:hover': {
-                                bgcolor: isDark ? 'action.hover' : 'grey.100',
-                              },
-                              '&.Mui-selected': {
                                 bgcolor: isDark ? 'action.selected' : 'grey.200',
-                                '&:hover': {
-                                  bgcolor: isDark ? 'action.selected' : 'grey.200',
-                                },
                               },
+                            },
+                          }}
+                        >
+                          <ListItemText
+                            primary={preset.label}
+                            primaryTypographyProps={{
+                              variant: "body2",
+                              fontWeight: isSelected ? 600 : 400,
+                              color: "text.primary",
+                              fontSize: 12,
                             }}
-                          >
-                            <ListItemText
-                              primary={preset.label}
-                              primaryTypographyProps={{
-                                variant: "body2",
-                                fontWeight: isSelected ? 600 : 400,
-                                color: "text.primary",
-                                fontSize: 12,
-                              }}
+                          />
+                          {isSelected && (
+                            <CheckIcon
+                              sx={{ fontSize: 14, color: "text.primary", ml: 0.5 }}
                             />
-                            {isSelected && (
-                              <CheckIcon
-                                sx={{ fontSize: 14, color: "text.primary", ml: 0.5 }}
-                              />
-                            )}
-                          </ListItemButton>
-                          {showDivider && <Divider />}
-                        </Box>
-                      );
-                    })}
-                  </List>
-                </Box>
-
-                {/* Presets Panel - Desktop Only (All options) */}
-                <Box
-                  sx={{
-                    display: { xs: "none", md: "block" },
-                    minWidth: 160,
-                    maxHeight: 320,
-                    overflowY: "auto",
-                    borderRight: "1px solid",
-                    borderColor: "divider",
-                    bgcolor: "background.paper",
-                  }}
-                >
-                  <List disablePadding>
-                    {DATE_PRESETS.map((preset, index) => {
-                      const isSelected = activePreset === preset.label;
-                      const showDivider =
-                        index < DATE_PRESETS.length - 1 &&
-                        DATE_PRESETS[index + 1].group !== preset.group;
-
-                      return (
-                        <Box key={preset.label}>
-                          <ListItemButton
-                            selected={isSelected}
-                            onClick={() => handlePresetSelect(preset)}
-                            sx={{
-                              py: 1,
-                              px: 1.5,
-                              bgcolor: isSelected
-                                ? (isDark ? 'action.selected' : 'grey.100')
-                                : 'transparent',
-                              '&:hover': {
-                                bgcolor: isDark ? 'action.hover' : 'grey.100',
-                              },
-                              '&.Mui-selected': {
-                                bgcolor: isDark ? 'action.selected' : 'grey.200',
-                                '&:hover': {
-                                  bgcolor: isDark ? 'action.selected' : 'grey.200',
-                                },
-                              },
-                            }}
-                          >
-                            <ListItemText
-                              primary={preset.label}
-                              primaryTypographyProps={{
-                                variant: "body2",
-                                fontWeight: isSelected ? 600 : 400,
-                                color: "text.primary",
-                              }}
-                            />
-                            {isSelected && (
-                              <CheckIcon
-                                sx={{ fontSize: 18, color: "text.primary", ml: 1 }}
-                              />
-                            )}
-                          </ListItemButton>
-                          {showDivider && <Divider />}
-                        </Box>
-                      );
-                    })}
-                  </List>
-                </Box>
-
-                {/* Calendar Panel */}
-                <Box
-                  sx={{
-                    p: 1,
-                    bgcolor: "background.paper",
-                    minWidth: 200,
-                  }}
-                >
-                  <DatePicker
-                    month={month}
-                    year={year}
-                    onChange={handleRangeChange}
-                    onMonthChange={handleMonthChange}
-                    selected={selectedRange}
-                    allowRange
-                  />
-                </Box>
+                          )}
+                        </ListItemButton>
+                        {showDivider && <Divider />}
+                      </Box>
+                    );
+                  })}
+                </List>
               </Box>
-            </Popover>
-          </Box>
+
+              {/* Presets Panel - Desktop Only (All options) */}
+              <Box
+                sx={{
+                  display: { xs: "none", md: "block" },
+                  minWidth: 160,
+                  maxHeight: 320,
+                  overflowY: "auto",
+                  borderRight: "1px solid",
+                  borderColor: "divider",
+                  bgcolor: "background.paper",
+                }}
+              >
+                <List disablePadding>
+                  {DATE_PRESETS.map((preset, index) => {
+                    const isSelected = activePreset === preset.label;
+                    const showDivider =
+                      index < DATE_PRESETS.length - 1 &&
+                      DATE_PRESETS[index + 1].group !== preset.group;
+
+                    return (
+                      <Box key={preset.label}>
+                        <ListItemButton
+                          selected={isSelected}
+                          onClick={() => handlePresetSelect(preset)}
+                          sx={{
+                            py: 1,
+                            px: 1.5,
+                            bgcolor: isSelected
+                              ? (isDark ? 'action.selected' : 'grey.100')
+                              : 'transparent',
+                            '&:hover': {
+                              bgcolor: isDark ? 'action.hover' : 'grey.100',
+                            },
+                            '&.Mui-selected': {
+                              bgcolor: isDark ? 'action.selected' : 'grey.200',
+                              '&:hover': {
+                                bgcolor: isDark ? 'action.selected' : 'grey.200',
+                              },
+                            },
+                          }}
+                        >
+                          <ListItemText
+                            primary={preset.label}
+                            primaryTypographyProps={{
+                              variant: "body2",
+                              fontWeight: isSelected ? 600 : 400,
+                              color: "text.primary",
+                            }}
+                          />
+                          {isSelected && (
+                            <CheckIcon
+                              sx={{ fontSize: 18, color: "text.primary", ml: 1 }}
+                            />
+                          )}
+                        </ListItemButton>
+                        {showDivider && <Divider />}
+                      </Box>
+                    );
+                  })}
+                </List>
+              </Box>
+
+              {/* Calendar Panel */}
+              <Box
+                sx={{
+                  p: 1,
+                  bgcolor: "background.paper",
+                  minWidth: 200,
+                }}
+              >
+                <DatePicker
+                  month={month}
+                  year={year}
+                  onChange={handleRangeChange}
+                  onMonthChange={handleMonthChange}
+                  selected={selectedRange}
+                  allowRange
+                />
+              </Box>
+            </Box>
+          </Popover>
         </Box>
       </Box>
-    </AppProvider>
+    </Box>
   );
 }
