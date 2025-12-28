@@ -74,7 +74,7 @@ const THRESHOLD_TYPES = [
   { value: 'percentage_drop', label: 'Percentage Drop' },
   { value: 'percentage_rise', label: 'Percentage Rise' },
   { value: 'less_than', label: 'Less Than' },
-  { value: 'more_than', label: 'More Than' },
+  { value: 'greater_than', label: 'More Than' },
 ];
 
 const SEVERITY_OPTIONS = [
@@ -138,8 +138,9 @@ function formatCondition(type, value) {
   switch (type) {
     case 'percentage_drop': return `Drops by ${value}%`;
     case 'percentage_rise': return `Rises by ${value}%`;
-    case 'less_than': return `< ${value}`;
-    case 'more_than': return `> ${value}`;
+    case 'less_than': return `less than ${value}`;
+    case 'greater_than':
+    case 'more_than': return `more than ${value}`;
     case 'absolute': return `Absolute: ${value}`;
     default: return `${type?.replace(/_/g, ' ')} ${value}`;
   }
@@ -249,7 +250,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
         const next = { ...prev, [field]: value };
         if (isBase) next.metric_type = 'base';
         if (isPerformance) {
-          next.threshold_type = 'more_than'; // Default to one of the allowed types
+          next.threshold_type = 'greater_than'; // Default to one of the allowed types
           next.lookback_days = ''; // Clear lookback days
         }
         return next;
@@ -593,7 +594,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 >
                   {THRESHOLD_TYPES.filter(opt => {
                     if (form.metric_name === 'performance') {
-                      return ['more_than', 'less_than'].includes(opt.value);
+                      return ['greater_than', 'less_than'].includes(opt.value);
                     }
                     return true;
                   }).map((option) => (
