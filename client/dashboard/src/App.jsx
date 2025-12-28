@@ -137,8 +137,10 @@ export default function App() {
     const base = { start: formatDate(start), end: formatDate(end) };
     const key = (activeBrandKey || '').toString().trim().toUpperCase();
     if (key) base.brand_key = key;
-    if (isAuthor) base.refreshKey = authorRefreshKey;
-    if (productSelection?.id) base.product_id = productSelection.id;
+    if (isAuthor) {
+      base.refreshKey = authorRefreshKey;
+      if (productSelection?.id) base.product_id = productSelection.id;
+    }
     return base;
   }, [start, end, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id]);
 
@@ -229,6 +231,14 @@ export default function App() {
   }, [isAuthor, initialized]);
 
   useEffect(() => {
+    // Only authors should see/use product filters; reset for everyone else.
+    if (!isAuthor) {
+      setProductOptions([DEFAULT_PRODUCT_OPTION]);
+      setProductSelection(DEFAULT_PRODUCT_OPTION);
+      setProductOptionsLoading(false);
+      return;
+    }
+
     if (!start || !end) {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
       setProductSelection(DEFAULT_PRODUCT_OPTION);
@@ -242,7 +252,7 @@ export default function App() {
       return;
     }
 
-    if (isAuthor && !activeBrandKey) {
+    if (!activeBrandKey) {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
       setProductSelection(DEFAULT_PRODUCT_OPTION);
       setProductOptionsLoading(false);
@@ -256,8 +266,8 @@ export default function App() {
       start: formatDate(start),
       end: formatDate(end),
       limit: 50,
+      brand_key: activeBrandKey,
     };
-    if (activeBrandKey) params.brand_key = activeBrandKey;
 
     getTopProducts(params)
       .then(({ products, error }) => {
@@ -430,6 +440,12 @@ export default function App() {
               appId: import.meta.env.VITE_FIREBASE_APP_ID,
             };
 
+            const missing = Object.entries(firebaseConfig).filter(([, v]) => !v).map(([k]) => k);
+            if (missing.length) {
+              console.warn('[notifications] Skipping FCM setup; missing config:', missing.join(', '));
+              return;
+            }
+
             // Initialize
             const app = initializeApp(firebaseConfig);
             const messaging = getMessaging(app);
@@ -437,6 +453,10 @@ export default function App() {
             // Get Token
             // VAPID key should be in env or hardcoded if user provided
             const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+            if (!vapidKey) {
+              console.warn('[notifications] Skipping FCM setup; missing VAPID key');
+              return;
+            }
             const token = await getToken(messaging, { vapidKey });
 
             if (token) {
@@ -775,52 +795,55 @@ export default function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
-        {/* Sticky Top Panel (mobile only) */}
-        <Box
-          sx={{
-            position: { xs: 'sticky', md: 'static' },
-            top: 0,
-            zIndex: (theme) => theme.zIndex.appBar,
-            bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
-            pb: 1,
-            borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
-            borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-            transition: 'border-color 0.2s ease',
-          }}
-        >
-          <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
-          <Container maxWidth="sm" sx={{ pt: { xs: 2.5, sm: 3 } }}>
+      <AppProvider i18n={enTranslations} theme={{ colorScheme: darkMode === 'dark' ? 'dark' : 'light' }}>
+        <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
+          {/* Sticky Top Panel (mobile only) */}
+          <Box
+            sx={{
+              position: { xs: 'sticky', md: 'static' },
+              top: 0,
+              zIndex: (theme) => theme.zIndex.appBar,
+              bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
+              pb: 1,
+              borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
+              borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+              transition: 'border-color 0.2s ease',
+            }}
+          >
+            <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
+            <Container maxWidth="sm" sx={{ pt: { xs: 2.5, sm: 3 } }}>
             <MobileTopBar
               value={range}
               onChange={setRange}
               brandKey={activeBrandKey}
+              showProductFilter={false}
               productOptions={productOptions}
               productValue={productSelection}
               onProductChange={handleProductChange}
               productLoading={productOptionsLoading}
             />
+            </Container>
+          </Box>
+          <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
+            <Stack spacing={{ xs: 1, sm: 1.25 }}>
+              <KPIs
+                query={metricsQuery}
+                selectedMetric={selectedMetric}
+                onSelectMetric={handleSelectMetric}
+                productId={productSelection.id}
+                productLabel={productSelection.label}
+              />
+              <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+              <WebVitals query={metricsQuery} />
+              <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
+              <FunnelChart query={metricsQuery} />
+              <OrderSplit query={metricsQuery} />
+              <PaymentSalesSplit query={metricsQuery} />
+            </Stack>
           </Container>
+          <Footer />
         </Box>
-        <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
-          <Stack spacing={{ xs: 1, sm: 1.25 }}>
-            <KPIs
-              query={metricsQuery}
-              selectedMetric={selectedMetric}
-              onSelectMetric={handleSelectMetric}
-              productId={productSelection.id}
-              productLabel={productSelection.label}
-            />
-            <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-            <WebVitals query={metricsQuery} />
-            <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-            <FunnelChart query={metricsQuery} />
-            <OrderSplit query={metricsQuery} />
-            <PaymentSalesSplit query={metricsQuery} />
-          </Stack>
-        </Container>
-        <Footer />
-      </Box>
+      </AppProvider>
     </ThemeProvider>
   );
 }
