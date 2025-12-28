@@ -149,7 +149,7 @@ export async function me() {
     const res = await fetch(`${API_BASE}/auth/me`, { credentials: 'include' });
     if (!res.ok) return { authenticated: false };
     const json = await res.json();
-    return { authenticated: true, user: json.user };
+    return { authenticated: true, user: json.user, expiresAt: json.expiresAt };
   } catch { return { authenticated: false }; }
 }
 

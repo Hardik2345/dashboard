@@ -5,7 +5,7 @@ export const fetchCurrentUser = createAsyncThunk('auth/fetchCurrentUser', async 
   const r = await me();
   if (!r.authenticated) return { user: null };
   if (!r.user) return rejectWithValue('Missing user payload');
-  return { user: r.user };
+  return { user: r.user, expiresAt: r.expiresAt };
 });
 
 export const loginUser = createAsyncThunk('auth/loginUser', async ({ email, password }, { rejectWithValue }) => {
@@ -24,6 +24,7 @@ export const logoutUser = createAsyncThunk('auth/logoutUser', async () => {
 
 const initialState = {
   user: null,
+  expiresAt: null,
   initialized: false,
   meStatus: 'idle',
   loginStatus: 'idle',
@@ -51,6 +52,7 @@ const authSlice = createSlice({
         state.meStatus = 'succeeded';
         state.initialized = true;
         state.user = action.payload?.user || null;
+        state.expiresAt = action.payload?.expiresAt || null;
       })
       .addCase(fetchCurrentUser.rejected, (state) => {
         state.meStatus = 'failed';
