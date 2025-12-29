@@ -532,18 +532,18 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel }) {
           }
 
           if (triggered) {
-            // F. Send Notification
-            const title = `${brandName}: ${alert.metric_name}`;
-            const body = `📉 condition hit: ${alert.threshold_type} by ${alert.threshold_value}%. Current: ${currentVal.toFixed(2)}%`;
+            // F. Send Notification - DISABLED per user request
+            // const title = `${brandName}: ${alert.metric_name}`;
+            // const body = `📉 condition hit: ${alert.threshold_type} by ${alert.threshold_value}%. Current: ${currentVal.toFixed(2)}%`;
             
              // Send to topic
             // Use Brand Key for easier frontend subscription (e.g. brand-BBB-alerts)
-            const topicKey = (brandConfig.key || '').trim().toUpperCase() || `ID${brand_id}`; 
-            await notificationService.sendTopicNotification(`brand-${topicKey}-alerts`, title, body, {
-                brandId: String(brand_id),
-                alertId: String(alert.id),
-                type: 'alert'
-            });
+            // const topicKey = (brandConfig.key || '').trim().toUpperCase() || `ID${brand_id}`; 
+            // await notificationService.sendTopicNotification(`brand-${topicKey}-alerts`, title, body, {
+            //     brandId: String(brand_id),
+            //     alertId: String(alert.id),
+            //     type: 'alert'
+            // });
 
             // G. Update last_triggered_at
             await Alert.update({ last_triggered_at: istTime }, { where: { id: alert.id } });
