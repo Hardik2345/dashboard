@@ -857,19 +857,18 @@ export default function App() {
           </Box>
           <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
             <Stack spacing={{ xs: 1, sm: 1.25 }}>
-              <KPIs
-                query={metricsQuery}
-                selectedMetric={selectedMetric}
-                onSelectMetric={handleSelectMetric}
-                productId={productSelection.id}
-                productLabel={productSelection.label}
-              />
-              <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-              <WebVitals query={metricsQuery} />
-              <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-              <FunnelChart query={metricsQuery} />
-              <OrderSplit query={metricsQuery} />
-              <PaymentSalesSplit query={metricsQuery} />
+            <KPIs
+              query={metricsQuery}
+              selectedMetric={selectedMetric}
+              onSelectMetric={handleSelectMetric}
+              productId={productSelection.id}
+              productLabel={productSelection.label}
+            />
+            <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+            <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
+            <FunnelChart query={metricsQuery} />
+            <OrderSplit query={metricsQuery} />
+            <PaymentSalesSplit query={metricsQuery} />
             </Stack>
           </Container>
           <Footer />
