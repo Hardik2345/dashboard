@@ -119,8 +119,8 @@ export default function App() {
   const [productOptions, setProductOptions] = useState([DEFAULT_PRODUCT_OPTION]);
   const [productSelection, setProductSelection] = useState(DEFAULT_PRODUCT_OPTION);
   const [productOptionsLoading, setProductOptionsLoading] = useState(false);
-
-  // const [fcmToken, setFcmToken] = useState(null);
+  const [fcmToken, setFcmToken] = useState(null);
+  const [funnelData, setFunnelData] = useState({ stats: null, deltas: null, loading: true });
 
   // Keep a data attribute on the body so global CSS (e.g., Polaris overrides) can react to theme changes.
   useEffect(() => {
@@ -733,13 +733,14 @@ export default function App() {
                           selectedMetric={selectedMetric}
                           onSelectMetric={handleSelectMetric}
                           onLoaded={handleAuthorDataLoaded}
+                          onFunnelData={setFunnelData}
                           productId={productSelection.id}
                           productLabel={productSelection.label}
                         />
                         <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
                         <WebVitals query={metricsQuery} />
                         <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-                        <FunnelChart query={metricsQuery} />
+                        <FunnelChart funnelData={funnelData} />
                         <OrderSplit query={metricsQuery} />
                         <PaymentSalesSplit query={metricsQuery} />
                       </Stack>
@@ -861,12 +862,13 @@ export default function App() {
               query={metricsQuery}
               selectedMetric={selectedMetric}
               onSelectMetric={handleSelectMetric}
+              onFunnelData={setFunnelData}
               productId={productSelection.id}
               productLabel={productSelection.label}
             />
             <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
             <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-            <FunnelChart query={metricsQuery} />
+            <FunnelChart funnelData={funnelData} />
             <OrderSplit query={metricsQuery} />
             <PaymentSalesSplit query={metricsQuery} />
             </Stack>
