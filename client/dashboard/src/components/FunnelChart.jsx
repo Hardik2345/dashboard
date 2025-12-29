@@ -1,7 +1,5 @@
-import { useEffect, useState } from 'react';
 import { Card, CardContent, Typography, Skeleton, useTheme } from '@mui/material';
 import { Bar } from 'react-chartjs-2';
-import { getFunnelStats, getDeltaSummary } from '../lib/api.js';
 import {
   Chart as ChartJS,
   BarElement,
@@ -15,52 +13,18 @@ ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
-export default function FunnelChart({ query }) {
+/**
+ * FunnelChart displays session drop-off visualization.
+ * Data is passed from parent via funnelData prop (from KPIs component)
+ * to avoid redundant API calls.
+ */
+export default function FunnelChart({ funnelData }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ total_sessions: 0, total_atc_sessions: 0, total_orders: 0 });
-  const [deltas, setDeltas] = useState({ sessions: null, atc: null, orders: null });
-  const brandKey = query?.brand_key;
-  const refreshKey = query?.refreshKey;
-  const productId = query?.product_id || '';
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!query?.start || !query?.end) {
-      setStats({ total_sessions: 0, total_atc_sessions: 0, total_orders: 0 });
-      setDeltas({ sessions: null, atc: null, orders: null });
-      setLoading(false);
-      return () => { cancelled = true; };
-    }
-    setLoading(true);
-    (async () => {
-      const params = brandKey ? { start: query.start, end: query.end, brand_key: brandKey } : { start: query.start, end: query.end };
-      const deltaParams = { ...params, align: 'hour' };
-
-      const [funnel, deltaSum] = await Promise.all([
-        getFunnelStats(params),
-        getDeltaSummary(deltaParams)
-      ]);
-
-      if (cancelled) return;
-      if (!funnel.error) {
-        const m = deltaSum?.metrics || {};
-        setStats({
-          total_sessions: funnel.total_sessions,
-          total_atc_sessions: funnel.total_atc_sessions,
-          total_orders: funnel.total_orders,
-        });
-        setDeltas({
-          sessions: m.total_sessions,
-          atc: m.total_atc_sessions,
-          orders: m.total_orders
-        });
-      }
-      setLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, [query.start, query.end, brandKey, productId, refreshKey]);
+  const loading = funnelData?.loading ?? true;
+  const stats = funnelData?.stats || { total_sessions: 0, total_atc_sessions: 0, total_orders: 0 };
+  const deltas = funnelData?.deltas || { sessions: null, atc: null, orders: null };
 
   const data = {
     labels: ['Sessions', 'Add to Cart', 'Orders'],
