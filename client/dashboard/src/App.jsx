@@ -412,28 +412,28 @@ export default function App() {
     dispatch(fetchCurrentUser());
   }, [dispatch]);
 
-  // Session Expiry Notification
-  useEffect(() => {
-    if (!user || !expiresAt) return; // 'expiresAt' needs to be selected from state
-
-    const expiryTime = new Date(expiresAt).getTime();
-    const now = Date.now();
-    const tenMinutes = 10 * 60 * 1000;
-    const timeUntilWarning = expiryTime - now - tenMinutes;
-
-    if (timeUntilWarning > 0) {
-      console.log(`[Session] Warning scheduled in ${(timeUntilWarning / 60000).toFixed(1)} minutes`);
-      const timer = setTimeout(() => {
-        if (Notification.permission === 'granted') {
-          new Notification('Session Expiring soon ⏳', {
-            body: 'Your session will expire in 10 minutes. Please refresh or save your work.',
-            icon: '/favicon.png'
-          });
-        }
-      }, timeUntilWarning);
-      return () => clearTimeout(timer);
-    }
-  }, [user, expiresAt]);
+  // Session Expiry Notification - DISABLED per user request
+  // useEffect(() => {
+  //   if (!user || !expiresAt) return; // 'expiresAt' needs to be selected from state
+  //
+  //   const expiryTime = new Date(expiresAt).getTime();
+  //   const now = Date.now();
+  //   const tenMinutes = 10 * 60 * 1000;
+  //   const timeUntilWarning = expiryTime - now - tenMinutes;
+  //
+  //   if (timeUntilWarning > 0) {
+  //     console.log(`[Session] Warning scheduled in ${(timeUntilWarning / 60000).toFixed(1)} minutes`);
+  //     const timer = setTimeout(() => {
+  //       if (Notification.permission === 'granted') {
+  //         new Notification('Session Expiring soon ⏳', {
+  //           body: 'Your session will expire in 10 minutes. Please refresh or save your work.',
+  //           icon: '/favicon.png'
+  //         });
+  //       }
+  //     }, timeUntilWarning);
+  //     return () => clearTimeout(timer);
+  //   }
+  // }, [user, expiresAt]);
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -552,32 +552,32 @@ export default function App() {
     setupNotifications();
   }, [user]); // Re-run if user changes (e.g. login)
 
-  // [NEW] Effect to manage subscriptions when Token and Brands are available
-  useEffect(() => {
-    if (!fcmToken) return;
-
-    const performSubscription = async (topics) => {
-      if (!topics.length) return;
-      console.log('[App] Subscribing to topics:', topics);
-      try {
-        await fetch('/api/notifications/subscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: fcmToken, topics })
-        });
-        console.log('[App] Subscription request sent.');
-      } catch (e) { console.error('Subscription failed', e); }
-    };
-
-    if (isAuthor && brandsLoaded && authorBrands.length > 0) {
-      // Admin: Subscribe to ALL brands
-      const allTopics = authorBrands.map(b => `brand-${b.key}-alerts`);
-      performSubscription(allTopics);
-    } else if (!isAuthor && user?.brandKey) {
-      // User: Subscribe to own brand
-      performSubscription([`brand-${user.brandKey.toUpperCase()}-alerts`]);
-    }
-  }, [isAuthor, brandsLoaded, authorBrands, user, fcmToken]);
+  // [NEW] Effect to manage subscriptions when Token and Brands are available - DISABLED per user request
+  // useEffect(() => {
+  //   if (!fcmToken) return;
+  //
+  //   const performSubscription = async (topics) => {
+  //     if (!topics.length) return;
+  //     console.log('[App] Subscribing to topics:', topics);
+  //     try {
+  //       await fetch('/api/notifications/subscribe', {
+  //         method: 'POST',
+  //         headers: { 'Content-Type': 'application/json' },
+  //         body: JSON.stringify({ token: fcmToken, topics })
+  //       });
+  //       console.log('[App] Subscription request sent.');
+  //     } catch (e) { console.error('Subscription failed', e); }
+  //   };
+  //
+  //   if (isAuthor && brandsLoaded && authorBrands.length > 0) {
+  //     // Admin: Subscribe to ALL brands
+  //     const allTopics = authorBrands.map(b => `brand-${b.key}-alerts`);
+  //     performSubscription(allTopics);
+  //   } else if (!isAuthor && user?.brandKey) {
+  //     // User: Subscribe to own brand
+  //     performSubscription([`brand-${user.brandKey.toUpperCase()}-alerts`]);
+  //   }
+  // }, [isAuthor, brandsLoaded, authorBrands, user, fcmToken]);
 
 
 
