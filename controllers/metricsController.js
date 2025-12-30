@@ -1944,8 +1944,13 @@ function buildMetricsController() {
         `;
         const csvRows = await conn.query(fullSql, { type: QueryTypes.SELECT, replacements });
 
+        const dateTag = (start && end)
+          ? (start === end ? start : `${start}_to_${end}`)
+          : formatIsoDate(new Date());
+        const filename = `product_conversion_${dateTag}.csv`;
+
         res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', 'attachment; filename="product_conversion.csv"');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         const headers = ['landing_page_path', 'sessions', 'atc', 'orders', 'sales', 'cvr'];
         const escapeCsv = (val) => {
           if (val === null || val === undefined) return '';
