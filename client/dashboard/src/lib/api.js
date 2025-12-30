@@ -35,6 +35,28 @@ function appendBrandKey(params, source) {
   return params;
 }
 
+function formatDateRangeSuffix(start, end) {
+  const s = (start || '').toString().trim();
+  const e = (end || '').toString().trim();
+  if (s && e) return s === e ? s : `${s}_to_${e}`;
+  if (s) return s;
+  if (e) return e;
+  return '';
+}
+
+function filenameFromDisposition(disposition) {
+  if (!disposition) return null;
+  const match = disposition.match(/filename\*?=(?:UTF-8''|\"?)([^\";]+)/i);
+  if (match?.[1]) {
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return match[1];
+    }
+  }
+  return null;
+}
+
 async function getJSON(path, params) {
   const url = `${API_BASE}${path}${qs(params || {})}`;
   try {
@@ -271,12 +293,15 @@ export async function exportProductConversionCsv(args) {
     sort_by: args.sortBy,
     sort_dir: args.sortDir,
   }, args);
+  const dateSuffix = formatDateRangeSuffix(params.start, params.end);
+  const fallbackName = dateSuffix ? `product_conversion_${dateSuffix}.csv` : 'product_conversion.csv';
   const url = `${resolveApiBase()}/metrics/product-conversion/export${qs(params)}`;
   try {
     const res = await fetch(url, { credentials: 'include' });
     if (!res.ok) return { error: true, status: res.status };
     const blob = await res.blob();
-    return { error: false, blob, filename: 'product_conversion.csv' };
+    const fromHeader = filenameFromDisposition(res.headers.get('Content-Disposition'));
+    return { error: false, blob, filename: fromHeader || fallbackName };
   } catch (e) {
     console.error('API error product-conversion csv', e);
     return { error: true };
