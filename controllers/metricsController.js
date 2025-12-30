@@ -1821,7 +1821,7 @@ function buildMetricsController() {
             SELECT
               product_id,
               COUNT(DISTINCT order_name) AS orders,
-              SUM(line_item_price * line_item_quantity) AS sales
+              SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity) AS sales
             FROM shopify_orders
             WHERE created_date >= ? AND created_date <= ?
               AND product_id IS NOT NULL
@@ -1913,7 +1913,7 @@ function buildMetricsController() {
             SELECT
               product_id,
               COUNT(DISTINCT order_name) AS orders,
-              SUM(line_item_price * line_item_quantity) AS sales
+              SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity) AS sales
             FROM shopify_orders
             WHERE created_date >= ? AND created_date <= ?
               AND product_id IS NOT NULL
