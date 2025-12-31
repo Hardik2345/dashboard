@@ -11,11 +11,11 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
   // Prefer explicit brand fields if present; fallback to derived brand from email
   const brandName = user?.activeBrand?.name || user?.brandName || brand;
   return (
-    <AppBar 
-      position="static" 
-      color="transparent" 
-      elevation={0} 
-      sx={{ 
+    <AppBar
+      position="static"
+      color="transparent"
+      elevation={0}
+      sx={{
         borderColor: 'grey.100',
         bgcolor: 'transparent',
       }}
@@ -32,17 +32,14 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
               <MenuIcon />
             </IconButton>
           )}
-          {!user?.isAuthor && brand && (
-            <Chip size="small" label={brand} color="primary" variant="outlined" sx={{ fontWeight: 600 }} />
-          )}
         </Box>
 
         {/* Center: Brand image (replaces typography) */}
-        <Box 
-          sx={{ 
-            position: 'absolute', 
-            left: '50%', 
-            transform: 'translateX(-50%)', 
+        <Box
+          sx={{
+            position: 'absolute',
+            left: '50%',
+            transform: 'translateX(-50%)',
             pointerEvents: 'none',
             borderRadius: 1,
             p: 0.5,
@@ -62,11 +59,11 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
               width: 'auto',
               ...(darkMode
                 ? {
-                    filter: 'invert(1) hue-rotate(180deg) brightness(1.2)',
-                  }
+                  filter: 'invert(1) hue-rotate(180deg) brightness(1.2)',
+                }
                 : {
-                    filter: 'none',
-                  }),
+                  filter: 'none',
+                }),
             }}
           />
         </Box>
@@ -96,9 +93,9 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
               </IconButton>
             </Tooltip>
             <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-              <Button 
-                size="small" 
-                variant="outlined" 
+              <Button
+                size="small"
+                variant="outlined"
                 onClick={onLogout}
                 sx={{
                   color: darkMode ? '#f0f0f0' : 'inherit',
@@ -113,11 +110,11 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
               </Button>
             </Box>
             <Box sx={{ display: { xs: 'flex', sm: 'none' } }}>
-              <IconButton 
-                size="small" 
-                aria-label="logout" 
-                onClick={onLogout} 
-                sx={{ 
+              <IconButton
+                size="small"
+                aria-label="logout"
+                onClick={onLogout}
+                sx={{
                   color: darkMode ? '#f0f0f0' : 'inherit',
                 }}
               >
