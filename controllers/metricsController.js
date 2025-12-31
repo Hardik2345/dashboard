@@ -1821,7 +1821,7 @@ function buildMetricsController() {
             SELECT
               product_id,
               COUNT(DISTINCT order_name) AS orders,
-              SUM(line_item_price * line_item_quantity) AS sales
+              SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity) AS sales
             FROM shopify_orders
             WHERE created_date >= ? AND created_date <= ?
               AND product_id IS NOT NULL
@@ -1913,7 +1913,7 @@ function buildMetricsController() {
             SELECT
               product_id,
               COUNT(DISTINCT order_name) AS orders,
-              SUM(line_item_price * line_item_quantity) AS sales
+              SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity) AS sales
             FROM shopify_orders
             WHERE created_date >= ? AND created_date <= ?
               AND product_id IS NOT NULL
@@ -1944,8 +1944,13 @@ function buildMetricsController() {
         `;
         const csvRows = await conn.query(fullSql, { type: QueryTypes.SELECT, replacements });
 
+        const dateTag = (start && end)
+          ? (start === end ? start : `${start}_to_${end}`)
+          : formatIsoDate(new Date());
+        const filename = `product_conversion_${dateTag}.csv`;
+
         res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', 'attachment; filename="product_conversion.csv"');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         const headers = ['landing_page_path', 'sessions', 'atc', 'orders', 'sales', 'cvr'];
         const escapeCsv = (val) => {
           if (val === null || val === undefined) return '';
