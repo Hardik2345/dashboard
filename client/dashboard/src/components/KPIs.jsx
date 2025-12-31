@@ -29,6 +29,7 @@ export default function KPIs({
   selectedMetric,
   onSelectMetric,
   onLoaded,
+  onFunnelData,
   productId,
   productLabel,
 }) {
@@ -261,6 +262,21 @@ export default function KPIs({
   const cvrDeltaValue = data.cvrDelta
     ? data.cvrDelta.diff_pct ?? data.cvrDelta.diff_pp
     : undefined;
+
+  // Emit funnel data to parent for FunnelChart (avoids redundant API call)
+  useEffect(() => {
+    if (typeof onFunnelData !== 'function') return;
+    if (!data.funnel) return;
+    onFunnelData({
+      stats: data.funnel,
+      deltas: {
+        sessions: data.sessDelta || null,
+        atc: data.atcDelta || null,
+        orders: data.ordersDelta || null,
+      },
+      loading: loading || deltaLoading,
+    });
+  }, [data.funnel, data.sessDelta, data.atcDelta, data.ordersDelta, loading, deltaLoading, onFunnelData]);
 
   return (
     <>
