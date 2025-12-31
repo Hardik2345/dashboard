@@ -32,24 +32,6 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
               <MenuIcon />
             </IconButton>
           )}
-          {!user?.isAuthor && brandName && (
-            <Chip
-              size="small"
-              label={brandName}
-              color="primary"
-              variant="outlined"
-              sx={{
-                fontWeight: 600,
-                maxWidth: { xs: 80, sm: 120, md: 160 },
-                '& .MuiChip-label': {
-                  display: 'block',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }
-              }}
-            />
-          )}
         </Box>
 
         {/* Center: Brand image (replaces typography) */}
