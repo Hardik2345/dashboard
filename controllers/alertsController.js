@@ -1,6 +1,7 @@
 const { AlertSchema, AlertStatusSchema } = require('../validation/schemas');
 const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrandById } = require('../config/brands');
+const logger = require('../utils/logger');
 
 function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel }) {
   function hourToDisplay(value) {
@@ -343,8 +344,7 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel }) {
 
       const { getBrandById } = require('../config/brands');
       const { getBrandConnection } = require('../lib/brandConnectionManager');
-      const notificationService = require('../services/notificationService');
-
+      
       // 1. Fetch active alerts for this brand (Master DB)
       const alerts = await Alert.findAll({
         where: { brand_id, is_active: 1 }
@@ -387,10 +387,6 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel }) {
       const debugLogs = [];
       debugLogs.push(`Found ${alerts.length} active alerts`);
       debugLogs.push(`Current IST Hour: ${currentIstHour}`);
-
-      // Fetch brand details for notification title
-      const brandConfig = getBrandById(brand_id) || {};
-      const brandName = brandConfig.name || brandConfig.key || `Brand ${brand_id}`;
 
       for (const alert of alerts) {
         let logEntry = { name: alert.name, id: alert.id };
@@ -562,13 +558,13 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel }) {
       }
 
       // [New] Detailed Server Logging
-      console.log('--- Alert Processing Summary ---');
+      logger.debug('--- Alert Processing Summary ---');
       debugLogs.forEach(entry => {
           if (typeof entry === 'string') {
-              console.log(entry);
+              logger.debug(entry);
           } else {
               const log = entry;
-              console.log(`[Alert: ${log.name}] Action: ${log.action}`);
+              logger.debug(`[Alert: ${log.name}] Action: ${log.action}`);
               if (log.action === 'Not Sent') {
                  const reasons = [];
                  if (!log.triggeredCondition) {
@@ -580,13 +576,13 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel }) {
                  }
                  if (log.isQuiet && !log.criticalOverride) reasons.push('Quiet Hours Active');
                  if (log.cooldownActive) reasons.push('Cooldown Active');
-                 console.log(`   Details: ${reasons.join(', ')}`);
+                 logger.debug(`   Details: ${reasons.join(', ')}`);
               } else {
-                 console.log(`   Triggered! Current: ${log.currentVal?.toFixed(2)}% (Threshold: ${log.threshold})`);
+                 logger.debug(`   Triggered! Current: ${log.currentVal?.toFixed(2)}% (Threshold: ${log.threshold})`);
               }
           }
       });
-      console.log('--------------------------------');
+      logger.debug('--------------------------------');
 
       return res.json({ success: true, triggered: triggeredCount });
     } catch (err) {

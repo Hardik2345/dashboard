@@ -13,7 +13,8 @@ app.use('/auth', authRoutes);
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
 // Standard error handler
-app.use((err, req, res, next) => {
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
     console.error(err.stack);
     res.status(500).json({ error: 'Something went wrong!' });
 });

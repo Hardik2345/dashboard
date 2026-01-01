@@ -1,3 +1,5 @@
+const logger = require('../utils/logger');
+
 function createAccessControlService(sequelize) {
   const accessCache = { data: null, fetchedAt: 0 };
 
@@ -30,7 +32,7 @@ function createAccessControlService(sequelize) {
         await sequelize.query("INSERT INTO access_control_settings (mode, auto_provision_brand_user) VALUES ('domain', 0)");
       }
     } catch (e) {
-      console.error('[access-control] ensure tables failed', e);
+      logger.error('[access-control] ensure tables failed', e);
     }
   }
 

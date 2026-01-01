@@ -5,3 +5,4 @@ test('Crypto logic works', () => {
     expect(id).toBeDefined();
     expect(typeof id).toBe('string');
 });
+/* eslint-env jest */

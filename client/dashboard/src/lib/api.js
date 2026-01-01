@@ -46,7 +46,7 @@ function formatDateRangeSuffix(start, end) {
 
 function filenameFromDisposition(disposition) {
   if (!disposition) return null;
-  const match = disposition.match(/filename\*?=(?:UTF-8''|\"?)([^\";]+)/i);
+  const match = disposition.match(/filename\*?=(?:UTF-8''|"?)([^";]+)/i);
   if (match?.[1]) {
     try {
       return decodeURIComponent(match[1]);
@@ -77,7 +77,9 @@ async function doGet(path, params, options = {}) {
     const json = await res.json().catch(() => ({}));
     if (!res.ok) return { error: true, status: res.status, data: json };
     return { error: false, data: json };
-  } catch (e) { return { error: true }; }
+  } catch {
+    return { error: true };
+  }
 }
 
 async function doPost(path, body) {
@@ -92,7 +94,9 @@ async function doPost(path, body) {
     const json = await res.json().catch(() => ({}));
     if (!res.ok) return { error: true, status: res.status, data: json };
     return { error: false, data: json };
-  } catch (e) { return { error: true }; }
+  } catch {
+    return { error: true };
+  }
 }
 
 async function doPut(path, body) {
@@ -107,7 +111,7 @@ async function doPut(path, body) {
     const json = await res.json().catch(() => ({}));
     if (!res.ok) return { error: true, status: res.status, data: json };
     return { error: false, data: json };
-  } catch (e) {
+  } catch {
     return { error: true };
   }
 }
@@ -118,10 +122,14 @@ async function doDelete(path) {
     const res = await fetch(url, { method: 'DELETE', credentials: 'include' });
     // Some deletes return 204 with no JSON
     let json = {};
-    try { json = await res.json(); } catch {}
+    try { json = await res.json(); } catch {
+      // Ignore empty JSON bodies on delete
+    }
     if (!res.ok) return { error: true, status: res.status, data: json };
     return { error: false, data: json };
-  } catch (e) { return { error: true }; }
+  } catch {
+    return { error: true };
+  }
 }
 
 // ---- Auth helpers -----------------------------------------------------------
@@ -135,13 +143,17 @@ export async function login(email, password) {
     });
     if (!res.ok) return { error: true, status: res.status, data: await res.json().catch(()=>({})) };
     return { error: false, data: await res.json() };
-  } catch (e) { return { error: true }; }
+  } catch {
+    return { error: true };
+  }
 }
 
 export async function logout() {
   try {
     await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
-  } catch {}
+  } catch {
+    // ignore logout errors
+  }
 }
 
 export async function me() {
@@ -150,7 +162,9 @@ export async function me() {
     if (!res.ok) return { authenticated: false };
     const json = await res.json();
     return { authenticated: true, user: json.user, expiresAt: json.expiresAt };
-  } catch { return { authenticated: false }; }
+  } catch {
+    return { authenticated: false };
+  }
 }
 
 export async function sendHeartbeat(meta = null) {
@@ -186,52 +200,6 @@ export async function addWhitelist(email, brand_key, notes) {
 }
 export async function removeWhitelist(id) {
   return doDelete(`/author/access-control/whitelist/${id}`);
-}
-
-export async function getTotalSales(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end }, args);
-  const json = await getJSON('/metrics/total-sales', params);
-  return { value: Number(json?.total_sales || 0), error: json?.__error };
-}
-
-export async function getTotalSalesDelta(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end, align: args.align, compare: args.compare }, args);
-  const json = await getJSON('/metrics/total-sales-delta', params);
-  return {
-    date: json?.date || null,
-    current: Number(json?.current || 0),
-    previous: Number(json?.previous || 0),
-    diff_pct: Number(json?.diff_pct || 0),
-    direction: json?.direction || 'flat',
-    cutoff_time: json?.cutoff_time || null,
-    compare: json?.compare,
-    error: json?.__error,
-  };
-}
-
-export async function getTotalOrders(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end }, args);
-  const json = await getJSON('/metrics/total-orders', params);
-  return { value: Number(json?.total_orders || 0), error: json?.__error };
-}
-
-export async function getTotalOrdersDelta(args) {
-  const params = appendBrandKey({
-    start: args.start,
-    end: args.end,
-    align: args.align,
-    compare: args.compare,
-  }, args);
-  const json = await getJSON('/metrics/total-orders-delta', params);
-  return {
-    date: json?.date || null,
-    current: Number(json?.current || 0),
-    previous: Number(json?.previous || 0),
-    diff_pct: Number(json?.diff_pct || 0),
-    direction: json?.direction || 'flat',
-    cutoff_time: json?.cutoff_time || null,
-    error: json?.__error,
-  };
 }
 
 export async function getDashboardSummary(args) {
@@ -308,103 +276,6 @@ export async function exportProductConversionCsv(args) {
   }
 }
 
-export async function getAOV(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end }, args);
-  const json = await getJSON('/metrics/aov', params);
-  return {
-    aov: Number(json?.aov || 0),
-    total_sales: Number(json?.total_sales || 0),
-    total_orders: Number(json?.total_orders || 0),
-    error: json?.__error,
-  };
-}
-
-export async function getAOVDelta(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end, align: args.align, compare: args.compare }, args);
-  const json = await getJSON('/metrics/aov-delta', params);
-  return {
-    date: json?.date || null,
-    current: Number(json?.current || 0),
-    previous: Number(json?.previous || 0),
-    diff_pct: Number(json?.diff_pct || 0),
-    direction: json?.direction || 'flat',
-    align: json?.align,
-    hour: typeof json?.hour === 'number' ? json.hour : undefined,
-    compare: json?.compare,
-    error: json?.__error,
-  };
-}
-
-export async function getCVR(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end }, args);
-  const json = await getJSON('/metrics/cvr', params);
-  return {
-    cvr: Number(json?.cvr || 0),
-    cvr_percent: Number(json?.cvr_percent || 0),
-    total_orders: Number(json?.total_orders || 0),
-    total_sessions: Number(json?.total_sessions || 0),
-    error: json?.__error,
-  };
-}
-
-export async function getCVRDelta(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end, align: args.align, compare: args.compare }, args);
-  const json = await getJSON('/metrics/cvr-delta', params);
-  const hasDiffPct = json && Object.prototype.hasOwnProperty.call(json, 'diff_pct');
-  const diff_pct = hasDiffPct ? Number(json?.diff_pct || 0) : undefined;
-  return {
-    date: json?.date || null,
-    current: json?.current || null,
-    previous: json?.previous || null,
-    diff_pp: Number(json?.diff_pp || 0),
-    diff_pct,
-    direction: json?.direction || 'flat',
-    align: json?.align || undefined,
-    hour: typeof json?.hour === 'number' ? json.hour : undefined,
-    compare: json?.compare,
-    error: json?.__error,
-  };
-}
-
-export async function getFunnelStats(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end, product_id: args.product_id }, args);
-  const json = await getJSON('/metrics/funnel-stats', params);
-  return {
-    total_sessions: Number(json?.total_sessions || 0),
-    total_atc_sessions: Number(json?.total_atc_sessions || 0),
-    total_orders: Number(json?.total_orders || 0),
-    error: json?.__error,
-  };
-}
-
-export async function getTotalSessionsDelta(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end, align: args.align, compare: args.compare }, args);
-  const json = await getJSON('/metrics/total-sessions-delta', params);
-  return {
-    date: json?.date || null,
-    current: Number(json?.current || 0),
-    previous: Number(json?.previous || 0),
-    diff_pct: Number(json?.diff_pct || 0),
-    direction: json?.direction || 'flat',
-    compare: json?.compare,
-    error: json?.__error,
-  };
-}
-
-export async function getAtcSessionsDelta(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end, align: args.align, compare: args.compare }, args);
-  const json = await getJSON('/metrics/atc-sessions-delta', params);
-  return {
-    date: json?.date || null,
-    current: Number(json?.current || 0),
-    previous: Number(json?.previous || 0),
-    diff_pct: Number(json?.diff_pct || 0),
-    direction: json?.direction || 'flat',
-    compare: json?.compare,
-    error: json?.__error,
-  };
-}
-
 export async function getOrderSplit(args) {
   const params = appendBrandKey({ start: args.start, end: args.end, product_id: args.product_id }, args);
   const json = await getJSON('/metrics/order-split', params);
@@ -430,18 +301,6 @@ export async function getPaymentSalesSplit(args) {
   const partial_percent = Number(json?.partial_percent || (total > 0 ? (partial_sales / total) * 100 : 0));
   // Backward-compatible return shape with new fields appended
   return { cod_sales, prepaid_sales, partial_sales, total, cod_percent, prepaid_percent, partial_percent, error: json?.__error };
-}
-
-export async function getHourlySalesCompare(args = {}) {
-  const base = { hours: args.hours ?? 6 };
-  const params = appendBrandKey(base, args);
-  const json = await getJSON('/metrics/hourly-sales-compare', params);
-  return {
-    labels: Array.isArray(json?.labels) ? json.labels : [],
-    current: json?.series?.current || [],
-    yesterday: json?.series?.yesterday || [],
-    error: json?.__error,
-  };
 }
 
 export async function getHourlySalesSummary(args = {}) {
@@ -583,7 +442,7 @@ export async function createAdjustmentBucket(payload) {
     const json = await res.json().catch(()=>({}));
     if (!res.ok) return { error: true, data: json };
     return { error: false, data: json };
-  } catch (e) { return { error: true }; }
+  } catch { return { error: true }; }
 }
 
 export async function updateAdjustmentBucket(id, payload) {
@@ -597,7 +456,7 @@ export async function updateAdjustmentBucket(id, payload) {
     const json = await res.json().catch(()=>({}));
     if (!res.ok) return { error: true, data: json };
     return { error: false, data: json };
-  } catch (e) { return { error: true }; }
+  } catch { return { error: true }; }
 }
 
 export async function deactivateAdjustmentBucket(id, { brandKey, start, end, scope }) {
@@ -611,7 +470,7 @@ export async function deactivateAdjustmentBucket(id, { brandKey, start, end, sco
     const json = await res.json().catch(()=>({}));
     if (!res.ok) return { error: true, data: json };
     return { error: false, data: json };
-  } catch (e) { return { error: true }; }
+  } catch { return { error: true }; }
 }
 
 export async function activateAdjustmentBucket(id, { brandKey, start, end, onlyThisBucket = false }) {
@@ -625,7 +484,7 @@ export async function activateAdjustmentBucket(id, { brandKey, start, end, onlyT
     const json = await res.json().catch(()=>({}));
     if (!res.ok) return { error: true, data: json };
     return { error: false, data: json };
-  } catch (e) { return { error: true }; }
+  } catch { return { error: true }; }
 }
 
 // Legacy preview/apply endpoints removed from UI; keep server endpoints until deprecated.

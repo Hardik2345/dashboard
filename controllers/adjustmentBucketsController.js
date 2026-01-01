@@ -2,6 +2,7 @@ const { QueryTypes } = require('sequelize');
 const { BucketSchema, RangeSchema } = require('../validation/schemas');
 const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrandConnection } = require('../lib/brandConnectionManager');
+const logger = require('../utils/logger');
 
 function buildAdjustmentBucketsController({ SessionAdjustmentBucket, SessionAdjustmentAudit }) {
   async function listBuckets(req, res) {
@@ -13,7 +14,7 @@ function buildAdjustmentBucketsController({ SessionAdjustmentBucket, SessionAdju
       if (active === '1' || active === '0') where.active = active === '1' ? 1 : 0;
       const buckets = await SessionAdjustmentBucket.findAll({ where, order: [['priority','ASC'], ['id','ASC']] });
       return res.json({ buckets });
-    } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to list buckets' }); }
+    } catch (e) { logger.error(e); return res.status(500).json({ error: 'Failed to list buckets' }); }
   }
 
   async function createBucket(req, res) {
@@ -101,12 +102,12 @@ function buildAdjustmentBucketsController({ SessionAdjustmentBucket, SessionAdju
           }
           return res.status(201).json({ bucket, auto_applied_rows: autoApplied, auto_applied_matches: matchedDays });
         } catch (applyErr) {
-          console.error('[bucket-create] auto-apply failed', applyErr);
+          logger.error('[bucket-create] auto-apply failed', applyErr);
           return res.status(201).json({ bucket, auto_applied_rows: 0, auto_applied_matches: 0, warning: 'Auto-apply failed' });
         }
       }
       return res.status(201).json({ bucket, auto_applied_rows: 0, auto_applied_matches: 0 });
-    } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to create bucket' }); }
+    } catch (e) { logger.error(e); return res.status(500).json({ error: 'Failed to create bucket' }); }
   }
 
   async function updateBucket(req, res) {
@@ -145,7 +146,7 @@ function buildAdjustmentBucketsController({ SessionAdjustmentBucket, SessionAdju
         author_user_id: req.user.id
       });
       return res.json({ bucket: existing });
-    } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to update bucket' }); }
+    } catch (e) { logger.error(e); return res.status(500).json({ error: 'Failed to update bucket' }); }
   }
 
   async function deactivateBucket(req, res) {
@@ -264,7 +265,7 @@ function buildAdjustmentBucketsController({ SessionAdjustmentBucket, SessionAdju
         }
       }
       return res.json({ deactivated: true, recomputed_rows: recomputedRows, recomputed_matches: matchedDays, scope_used: scope || (start && end ? 'range' : null) });
-    } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to deactivate bucket' }); }
+    } catch (e) { logger.error(e); return res.status(500).json({ error: 'Failed to deactivate bucket' }); }
   }
 
   async function activateBucket(req, res) {
@@ -338,7 +339,7 @@ function buildAdjustmentBucketsController({ SessionAdjustmentBucket, SessionAdju
         });
       }
       return res.json({ bucket: existing, auto_applied_rows: applied, auto_applied_matches: matchedDays });
-    } catch (e) { console.error(e); return res.status(500).json({ error: 'Failed to activate bucket' }); }
+    } catch (e) { logger.error(e); return res.status(500).json({ error: 'Failed to activate bucket' }); }
   }
 
   return {
@@ -423,7 +424,7 @@ function buildAdjustmentBucketsController({ SessionAdjustmentBucket, SessionAdju
         const totalDeltaPct = totalRaw > 0 ? (totalDelta / totalRaw) * 100 : (totalAdj > 0 ? 100 : 0);
 
         return res.json({ range: { start, end }, days: resultDays, totals: { raw: totalRaw, adjusted: totalAdj, delta: totalDelta, delta_pct: totalDeltaPct }, buckets: allBuckets, selected_bucket_ids: selectedIds });
-      } catch (e) { console.error(e); return res.status(500).json({ error: 'Preview failed' }); }
+      } catch (e) { logger.error(e); return res.status(500).json({ error: 'Preview failed' }); }
     },
 
     applyAdjustments: async (req, res) => {
@@ -475,7 +476,7 @@ function buildAdjustmentBucketsController({ SessionAdjustmentBucket, SessionAdju
           author_user_id: req.user.id
         });
         return res.json({ applied: updates.length, range: { start, end } });
-      } catch (e) { console.error(e); return res.status(500).json({ error: 'Apply failed' }); }
+      } catch (e) { logger.error(e); return res.status(500).json({ error: 'Apply failed' }); }
     },
   };
 }

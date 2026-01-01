@@ -2,10 +2,10 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import dayjs from 'dayjs';
 import { AppProvider } from '@shopify/polaris';
 import enTranslations from '@shopify/polaris/locales/en.json';
-import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, useMediaQuery } from '@mui/material';
+import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert } from '@mui/material';
 import Header from './components/Header.jsx';
 import MobileTopBar from './components/MobileTopBar.jsx';
-import Sidebar, { DRAWER_WIDTH } from './components/Sidebar.jsx';
+import Sidebar from './components/Sidebar.jsx';
 import AuthorBrandForm from './components/AuthorBrandForm.jsx';
 import AuthorBrandList from './components/AuthorBrandList.jsx';
 import KPIs from './components/KPIs.jsx';
@@ -28,49 +28,26 @@ import AlertsAdmin from './components/AlertsAdmin.jsx';
 import { useAppDispatch, useAppSelector } from './state/hooks.js';
 import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
 import { setBrand } from './state/slices/brandSlice.js';
+import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setSelectedMetric } from './state/slices/filterSlice.js';
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
 }
 
-function defaultRangeYesterdayToday() {
-  // Default to today only
-  const today = dayjs();
-  return [today, today];
-}
-
-const RANGE_KEY = 'pts_date_range_v2';
-const TTL_MS = 30 * 60 * 1000; // 30 minutes
-const DEFAULT_TREND_METRIC = 'sales';
 const TREND_METRICS = new Set(['sales', 'orders', 'sessions', 'cvr', 'atc', 'aov']);
 const SESSION_TRACKING_ENABLED = String(import.meta.env.VITE_SESSION_TRACKING || 'false').toLowerCase() === 'true';
 const AUTHOR_BRAND_STORAGE_KEY = 'author_active_brand_v1';
 const THEME_MODE_KEY = 'dashboard_theme_mode';
-const DEFAULT_PRODUCT_OPTION = { id: '', label: 'All products', detail: 'Whole store' };
+const DRAWER_WIDTH = 260;
 
 function loadInitialThemeMode() {
   try {
     const saved = localStorage.getItem(THEME_MODE_KEY);
     if (saved === 'dark' || saved === 'light') return saved;
-  } catch { }
+  } catch {
+    // Ignore storage access errors
+  }
   return 'light';
-}
-
-function loadInitialRange() {
-  try {
-    const raw = localStorage.getItem(RANGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.start && parsed.end && parsed.savedAt) {
-        if (Date.now() - parsed.savedAt < TTL_MS) {
-          return [dayjs(parsed.start), dayjs(parsed.end)];
-        } else {
-          localStorage.removeItem(RANGE_KEY);
-        }
-      }
-    }
-  } catch { }
-  return defaultRangeYesterdayToday();
 }
 
 export default function App() {
@@ -78,16 +55,14 @@ export default function App() {
   const {
     user, initialized, loginStatus, loginError,
     GlobalBrandKey: globalBrandKey,
-    expiresAt
   } = useAppSelector((state) => ({
     ...state.auth,
     GlobalBrandKey: state.brand.brand
   }));
+  const { range, selectedMetric, productSelection } = useAppSelector((state) => state.filters);
   const loggingIn = loginStatus === 'loading';
-  const [range, setRange] = useState(loadInitialRange);
   const [start, end] = range;
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
-  const [selectedMetric, setSelectedMetric] = useState(DEFAULT_TREND_METRIC);
 
   const isAuthor = !!user?.isAuthor;
   const isBrandUser = !!user && !user.isAuthor;
@@ -112,14 +87,11 @@ export default function App() {
   });
 
   const [authorRefreshKey, setAuthorRefreshKey] = useState(0);
-  const [authorLastLoadedAt, setAuthorLastLoadedAt] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(loadInitialThemeMode);
   const [isScrolled, setIsScrolled] = useState(false);
   const [productOptions, setProductOptions] = useState([DEFAULT_PRODUCT_OPTION]);
-  const [productSelection, setProductSelection] = useState(DEFAULT_PRODUCT_OPTION);
   const [productOptionsLoading, setProductOptionsLoading] = useState(false);
-  const [fcmToken, setFcmToken] = useState(null);
   const [funnelData, setFunnelData] = useState({ stats: null, deltas: null, loading: true });
 
   // Keep a data attribute on the body so global CSS (e.g., Polaris overrides) can react to theme changes.
@@ -157,26 +129,15 @@ export default function App() {
     // Persist immediately alongside Redux
     try {
       localStorage.setItem('author_active_brand_v1', normalized);
-    } catch { }
+    } catch {
+      // Ignore storage write errors
+    }
 
     dispatch(setBrand(normalized || ''));
     if (changed) {
       setAuthorRefreshKey((prev) => prev + 1);
-      setAuthorLastLoadedAt(null);
     }
   }, [authorBrandKey, dispatch]);
-
-  const handleAuthorRefresh = useCallback(() => {
-    setAuthorRefreshKey((prev) => prev + 1);
-    setAuthorLastLoadedAt(null);
-  }, []);
-
-  const handleAuthorDataLoaded = useCallback((ts) => {
-    if (!isAuthor) return;
-    if (ts instanceof Date && !Number.isNaN(ts.getTime())) {
-      setAuthorLastLoadedAt(ts);
-    }
-  }, [isAuthor]);
 
   useEffect(() => {
     if (!isAuthor) {
@@ -315,16 +276,21 @@ export default function App() {
 
   const handleSelectMetric = useCallback((metricKey) => {
     if (!metricKey) return;
-    setSelectedMetric(TREND_METRICS.has(metricKey) ? metricKey : DEFAULT_TREND_METRIC);
-  }, []);
+    dispatch(setSelectedMetric(TREND_METRICS.has(metricKey) ? metricKey : DEFAULT_TREND_METRIC));
+  }, [dispatch]);
+
+  const handleRangeChange = useCallback((nextRange) => {
+    if (!Array.isArray(nextRange)) return;
+    dispatch(setRange(nextRange));
+  }, [dispatch]);
 
   const handleProductChange = useCallback((option) => {
     if (!option || typeof option !== 'object') {
-      setProductSelection(DEFAULT_PRODUCT_OPTION);
+      dispatch(setProductSelection(DEFAULT_PRODUCT_OPTION));
       return;
     }
-    setProductSelection(option);
-  }, []);
+    dispatch(setProductSelection(option));
+  }, [dispatch]);
 
   const handleSidebarOpen = useCallback(() => setSidebarOpen(true), []);
   const handleSidebarClose = useCallback(() => setSidebarOpen(false), []);
@@ -332,7 +298,9 @@ export default function App() {
     setAuthorTab(tabId);
     try {
       localStorage.setItem('author_active_tab_v1', tabId);
-    } catch { }
+    } catch {
+      // Ignore storage write errors
+    }
   }, []);
 
   const handleToggleDarkMode = useCallback(() => {
@@ -340,7 +308,9 @@ export default function App() {
       const next = prev === 'light' ? 'dark' : 'light';
       try {
         localStorage.setItem(THEME_MODE_KEY, next);
-      } catch { }
+      } catch {
+        // Ignore storage write errors
+      }
       return next;
     });
   }, []);
@@ -402,8 +372,10 @@ export default function App() {
   useEffect(() => {
     if (start && end) {
       try {
-        localStorage.setItem(RANGE_KEY, JSON.stringify({ start: start.toISOString(), end: end.toISOString(), savedAt: Date.now() }));
-      } catch { }
+        localStorage.setItem('pts_date_range_v2', JSON.stringify({ start: start.toISOString(), end: end.toISOString(), savedAt: Date.now() }));
+      } catch {
+        // Ignore storage write errors
+      }
     }
   }, [start, end]);
 
@@ -447,137 +419,6 @@ export default function App() {
     dispatch(logoutUser());
   }
 
-  // [NEW] Request Notification Permission on mount and Subscribe
-  useEffect(() => {
-    async function setupNotifications() {
-      if ('Notification' in window && 'serviceWorker' in navigator) {
-        try {
-          const permission = await Notification.requestPermission();
-          if (permission === 'granted') {
-            console.log('Notification permission granted.');
-
-            // Dynamic import to avoid SSR/build issues if not needed
-            const { initializeApp } = await import('firebase/app');
-            const { getMessaging, getToken, onMessage } = await import('firebase/messaging');
-
-            // Config from env
-            const firebaseConfig = {
-              apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-              authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-              projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-              storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-              messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-              appId: import.meta.env.VITE_FIREBASE_APP_ID,
-            };
-
-            const missing = Object.entries(firebaseConfig).filter(([, v]) => !v).map(([k]) => k);
-            if (missing.length) {
-              console.warn('[notifications] Skipping FCM setup; missing config:', missing.join(', '));
-              return;
-            }
-
-            // Initialize
-            const app = initializeApp(firebaseConfig);
-            const messaging = getMessaging(app);
-
-            // Get Token
-            // VAPID key should be in env or hardcoded if user provided
-            const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
-            if (!vapidKey) {
-              console.warn('[notifications] Skipping FCM setup; missing VAPID key');
-              return;
-            }
-            const token = await getToken(messaging, { vapidKey });
-
-            if (token) {
-              console.log('FCM Token:', token);
-
-              // Subscribe to topics
-              // Strategy:
-              // 1. If Author (Admin): Subscribe to ALL accessible brands.
-              // 2. If Normal User: Subscribe to their specific brand.
-              // Topic format: `brand-{KEY}-alerts` (KEY must be uppercase)
-
-              let topicsToSubscribe = [];
-
-              if (isAuthor) {
-                // Wait for authorBrands loop to populate or use what's available?
-                // `authorBrands` is populated by useEffect [isAuthor].
-                // We need to be sure it's loaded.
-                // Ideally, we trigger subscription when `authorBrands` changes if isAuthor.
-                // But here we are inside setupNotifications ON MOUNT.
-                // If authorBrands is empty initially, we might miss it.
-                // Better: decouple subscription from this setup?
-                // OR: fetch brands here if author?
-                // Since `authorBrands` might take time, let's defer subscription or try to fetch list.
-                // However, we can use a separate effect for subscription.
-                // Let's keep it simple: subscription should happen when dependencies change.
-                // But `setupNotifications` requests permission first.
-
-                // If we are Author, we want all brands.
-                // The `authorBrands` state is updated by another effect.
-                // Let's subscribe to a generic 'admin-alerts' ? No, user wants specific brand alerts.
-                // We will move the subscription call to a dedicated useEffect that watches `token` AND `authorBrands`.
-              } else {
-                if (user?.brandKey) {
-                  topicsToSubscribe.push(`brand-${user.brandKey.toUpperCase()}-alerts`);
-                }
-              }
-
-              // Store token in state to allow specific effect to handle subscription
-              // setFcmToken(token); // We don't have this state yet, maybe just Ref?
-              // Store token in state to allow specific effect to handle subscription
-              setFcmToken(token);
-
-            }
-
-            // Foreground listener
-            onMessage(messaging, (payload) => {
-              console.log('Message received. ', payload);
-              // Show system notification even in foreground if desired, or use a toast.
-              // Note: native Notification might be suppressed in some browsers if tab is active, 
-              // but usually works if permission granted.
-              new Notification(payload.notification.title, {
-                body: payload.notification.body,
-                icon: '/favicon.png' // Ensure this path exists or remove
-              });
-            });
-          }
-        } catch (err) {
-          console.error('Notification setup failed:', err);
-        }
-      }
-    }
-
-    setupNotifications();
-  }, [user]); // Re-run if user changes (e.g. login)
-
-  // [NEW] Effect to manage subscriptions when Token and Brands are available - DISABLED per user request
-  // useEffect(() => {
-  //   if (!fcmToken) return;
-  //
-  //   const performSubscription = async (topics) => {
-  //     if (!topics.length) return;
-  //     console.log('[App] Subscribing to topics:', topics);
-  //     try {
-  //       await fetch('/api/notifications/subscribe', {
-  //         method: 'POST',
-  //         headers: { 'Content-Type': 'application/json' },
-  //         body: JSON.stringify({ token: fcmToken, topics })
-  //       });
-  //       console.log('[App] Subscription request sent.');
-  //     } catch (e) { console.error('Subscription failed', e); }
-  //   };
-  //
-  //   if (isAuthor && brandsLoaded && authorBrands.length > 0) {
-  //     // Admin: Subscribe to ALL brands
-  //     const allTopics = authorBrands.map(b => `brand-${b.key}-alerts`);
-  //     performSubscription(allTopics);
-  //   } else if (!isAuthor && user?.brandKey) {
-  //     // User: Subscribe to own brand
-  //     performSubscription([`brand-${user.brandKey.toUpperCase()}-alerts`]);
-  //   }
-  // }, [isAuthor, brandsLoaded, authorBrands, user, fcmToken]);
 
 
 
@@ -702,7 +543,7 @@ export default function App() {
                     {authorTab === 'dashboard' && hasAuthorBrand && (
                       <MobileTopBar
                         value={range}
-                        onChange={setRange}
+                        onChange={handleRangeChange}
                         brandKey={authorBrandKey}
                         productOptions={productOptions}
                         productValue={productSelection}
@@ -732,7 +573,6 @@ export default function App() {
                           query={metricsQuery}
                           selectedMetric={selectedMetric}
                           onSelectMetric={handleSelectMetric}
-                          onLoaded={handleAuthorDataLoaded}
                           onFunnelData={setFunnelData}
                           productId={productSelection.id}
                           productLabel={productSelection.label}
@@ -846,7 +686,7 @@ export default function App() {
             <Container maxWidth="sm" sx={{ pt: { xs: 2.5, sm: 3 } }}>
             <MobileTopBar
               value={range}
-              onChange={setRange}
+              onChange={handleRangeChange}
               brandKey={activeBrandKey}
               showProductFilter={false}
               productOptions={productOptions}
@@ -858,14 +698,14 @@ export default function App() {
           </Box>
           <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
             <Stack spacing={{ xs: 1, sm: 1.25 }}>
-            <KPIs
-              query={metricsQuery}
-              selectedMetric={selectedMetric}
-              onSelectMetric={handleSelectMetric}
-              onFunnelData={setFunnelData}
-              productId={productSelection.id}
-              productLabel={productSelection.label}
-            />
+                        <KPIs
+                          query={metricsQuery}
+                          selectedMetric={selectedMetric}
+                          onSelectMetric={handleSelectMetric}
+                          onFunnelData={setFunnelData}
+                          productId={productSelection.id}
+                          productLabel={productSelection.label}
+                        />
             <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
             <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
             <FunnelChart funnelData={funnelData} />

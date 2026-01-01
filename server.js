@@ -2,16 +2,17 @@ require('dotenv').config();
 
 const { init, sequelize } = require('./app');
 const { closeAll: closeBrandConnections } = require('./lib/brandConnectionManager');
+const logger = require('./utils/logger');
 
 let server = null;
 
 async function gracefulShutdown(signal) {
-  console.log(`[${signal}] Graceful shutdown initiated...`);
+  logger.info(`[${signal}] Graceful shutdown initiated...`);
 
-  // Stop accepting new connections
+    // Stop accepting new connections
   if (server) {
     server.close(() => {
-      console.log('[shutdown] HTTP server closed.');
+      logger.info('[shutdown] HTTP server closed.');
     });
   }
 
@@ -21,15 +22,15 @@ async function gracefulShutdown(signal) {
 
     // Close main database connection pool
     await sequelize.close();
-    console.log('[shutdown] Main database connection closed.');
+    logger.info('[shutdown] Main database connection closed.');
 
-    console.log('[shutdown] Graceful shutdown complete.');
+    logger.info('[shutdown] Graceful shutdown complete.');
     
     // Small delay to ensure logs are flushed to stdout before exit
     await new Promise(resolve => setTimeout(resolve, 500));
     process.exit(0);
   } catch (e) {
-    console.error('[shutdown] Error during graceful shutdown:', e.message);
+    logger.error('[shutdown] Error during graceful shutdown:', e.message);
     await new Promise(resolve => setTimeout(resolve, 500));
     process.exit(1);
   }
@@ -41,12 +42,12 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Handle uncaught errors gracefully
 process.on('uncaughtException', (err) => {
-  console.error('[uncaughtException]', err);
+  logger.error('[uncaughtException]', err);
   gracefulShutdown('uncaughtException');
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('[unhandledRejection] at:', promise, 'reason:', reason);
+  logger.error('[unhandledRejection] at:', promise, 'reason:', reason);
   // Don't exit on unhandled rejection, just log it
 });
 
@@ -55,6 +56,6 @@ init()
     server = httpServer;
   })
   .catch((e) => {
-    console.error('Startup failure', e);
+    logger.error('Startup failure', e);
     process.exit(1);
   });
