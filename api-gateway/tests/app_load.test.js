@@ -1,4 +1,4 @@
-const request = require('supertest');
+/* eslint-env jest */
 const crypto = require('crypto');
 
 // MOCK KEYS BEFORE REQUIRE APP

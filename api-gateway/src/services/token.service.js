@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { randomUUID } = require('crypto');
+const logger = require('../utils/logger');
 
 // Configuration
 const ACCESS_TOKEN_EXPIRY = process.env.ACCESS_TOKEN_EXPIRY || '15m';
@@ -58,7 +59,7 @@ function loadKeysFromEnv() {
         }
 
         ACTIVE_KID = process.env.AUTH_ACTIVE_KID;
-        console.log(`[TokenService] Successfully loaded ${KEY_REGISTRY.size} keys. Active: ${ACTIVE_KID}`);
+        logger.info(`[TokenService] Successfully loaded ${KEY_REGISTRY.size} keys. Active: ${ACTIVE_KID}`);
 
     } catch (err) {
         console.error('[TokenService] FATAL: Failed to load auth keys:', err.message);
@@ -203,7 +204,7 @@ class TokenService {
     static getJWKS() {
         this.ensureInitialized();
         const keys = [];
-        for (const [kid, config] of KEY_REGISTRY.entries()) {
+        for (const [, config] of KEY_REGISTRY.entries()) {
             // Fix Issue 2: Return cloned objects
             keys.push({ ...config.jwk });
         }

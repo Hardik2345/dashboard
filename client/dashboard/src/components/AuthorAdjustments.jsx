@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, Stack, Typography, Button, TextField, Chip, Snackbar, Alert, Grid, Box } from '@mui/material';
-import dayjs from 'dayjs';
-import { listAdjustmentBuckets, createAdjustmentBucket, updateAdjustmentBucket, deactivateAdjustmentBucket, activateAdjustmentBucket, listAuthorBrands } from '../lib/api.js';
+import { listAdjustmentBuckets, createAdjustmentBucket, deactivateAdjustmentBucket, activateAdjustmentBucket, listAuthorBrands } from '../lib/api.js';
 
 function pct(v) { return `${(Number(v)||0).toFixed(2)}%`; }
 
@@ -13,13 +12,9 @@ export default function AuthorAdjustments({ brandKey: externalBrandKey, onBrandK
   const [brands, setBrands] = useState(externalBrands || []);
   const [internalBrandKey, setInternalBrandKey] = useState(externalBrandKey || '');
   const brandKey = isBrandControlled ? (externalBrandKey || '') : internalBrandKey;
-  const [selectedBucketIds, setSelectedBucketIds] = useState([]); // kept for future, not used now
   const [form, setForm] = useState({ lower_bound_sessions:'', upper_bound_sessions:'', offset_pct:'', priority:'100', effective_from:'', effective_to:'', notes:'' });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
-  const [previewRange, setPreviewRange] = useState({ start: dayjs().format('YYYY-MM-DD'), end: dayjs().format('YYYY-MM-DD') }); // legacy, can be removed later
-  const [preview, setPreview] = useState(null); // legacy
-  const [applying, setApplying] = useState(false); // legacy
   const [notice, setNotice] = useState(null);
   const [activatingId, setActivatingId] = useState(null);
   const [deactivatingId, setDeactivatingId] = useState(null);
@@ -60,11 +55,6 @@ export default function AuthorAdjustments({ brandKey: externalBrandKey, onBrandK
   useEffect(() => { loadBuckets(); }, [loadBuckets]);
 
   // Reset selection and preview when brand changes (preview is legacy)
-  useEffect(() => {
-    setSelectedBucketIds([]);
-    setPreview(null);
-  }, [brandKey]);
-
   useEffect(() => {
     if (isBrandControlled) return;
     if (!brands.length) return;
@@ -129,12 +119,8 @@ export default function AuthorAdjustments({ brandKey: externalBrandKey, onBrandK
     if (r.error) { setError('Activate failed'); return; }
     const matched = Number(r.data?.auto_applied_matches ?? r.data?.auto_applied_rows ?? 0);
     setNotice(`Activated and applied to ${matched} day(s).`);
-    // Refresh buckets and preview to reflect persisted values
     await loadBuckets();
   }
-  // Legacy helpers (no longer used after auto-apply). Kept to avoid breaking other screens if imported.
-  const totals = preview?.totals;
-  const deltaColor = (v) => v > 0 ? 'success.main' : v < 0 ? 'error.main' : 'text.secondary';
 
   return (
     <Stack spacing={{ xs: 2.5, md: 3.5 }}>

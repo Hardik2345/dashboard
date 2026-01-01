@@ -29,7 +29,9 @@ function sendHeartbeatBeacon(meta) {
       navigator.sendBeacon(`${base}/activity/heartbeat`, blob);
       return;
     }
-  } catch {}
+  } catch {
+    // Fallback to standard heartbeat call
+  }
   sendHeartbeat(meta);
 }
 

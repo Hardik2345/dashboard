@@ -179,5 +179,3 @@ export default function Sidebar({
     </Drawer>
   );
 }
-
-export { DRAWER_WIDTH };

@@ -60,7 +60,6 @@ import {
   updateAlert,
 } from "../lib/api.js";
 import { toast } from "react-toastify";
-import axios from "axios";
 
 // defined base metrics that cannot be derived
 const BASE_METRICS = ['total_orders', 'total_sales', 'total_sessions', 'atc_sessions', 'performance'];

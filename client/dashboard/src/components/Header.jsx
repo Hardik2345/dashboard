@@ -1,4 +1,4 @@
-import { AppBar, Toolbar, Typography, Box, Button, IconButton, Chip, useTheme, useMediaQuery, Tooltip } from '@mui/material';
+import { AppBar, Toolbar, Box, Button, IconButton, useTheme, useMediaQuery, Tooltip } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
@@ -7,9 +7,6 @@ import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 export default function Header({ user, onLogout, onMenuClick, showMenuButton = false, darkMode = false, onToggleDarkMode }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const brand = user?.email ? user.email.split('@')[0].toUpperCase() : null;
-  // Prefer explicit brand fields if present; fallback to derived brand from email
-  const brandName = user?.activeBrand?.name || user?.brandName || brand;
   return (
     <AppBar
       position="static"

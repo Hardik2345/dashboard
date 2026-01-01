@@ -50,74 +50,6 @@ const legendPadPlugin = {
   }
 };
 
-const barValueLabelsPlugin = {
-  id: 'barValueLabels',
-  afterDatasetsDraw(chart, _args, pluginOptions) {
-    const options = pluginOptions || {};
-    if (!options.enabled) return;
-    const datasetIndex = Number.isInteger(options.datasetIndex) ? options.datasetIndex : 0;
-    if (!chart.isDatasetVisible(datasetIndex)) return;
-    const meta = chart.getDatasetMeta(datasetIndex);
-    if (!meta || !meta.data?.length) return;
-    const dataset = chart.data?.datasets?.[datasetIndex];
-    if (!dataset) return;
-
-    const ctx = chart.ctx;
-    ctx.save();
-    const font = options.font || {};
-    const fontWeight = font.weight || 600;
-    const fontSize = font.size || 11;
-    const fontFamily = font.family || ctx.font.split(' ').slice(-1).join(' ') || 'sans-serif';
-    ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
-    ctx.fillStyle = options.color || '#111';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.shadowColor = options.shadowColor || 'transparent';
-    ctx.shadowBlur = options.shadowBlur || 0;
-
-    const padding = options.padding ?? 6;
-
-    meta.data.forEach((element, index) => {
-      if (!element || element.skip || element.hidden) return;
-      const rawValue = dataset.data?.[index];
-      if (rawValue === null || rawValue === undefined || Number.isNaN(rawValue)) return;
-      const label = typeof options.formatter === 'function'
-        ? options.formatter(rawValue, index, chart)
-        : `${rawValue}`;
-      if (label === null || label === undefined || label === '') return;
-
-      const position = element.tooltipPosition();
-      // Try to position label above the bar using the element's top coordinate when available.
-      const chartTop = chart.chartArea?.top ?? 0;
-      // Determine candidate coords. Some Chart.js element implementations expose `y` (top or center)
-      // and `base` (opposite edge). We'll take the minimum (visually top) of available numeric values
-      // including the tooltip position as a safe fallback.
-      const candidates = [];
-      if (position && typeof position.y === 'number') candidates.push(position.y);
-      try {
-        if (typeof element.y === 'number') candidates.push(element.y);
-        if (typeof element.base === 'number') candidates.push(element.base);
-        if (typeof element.getCenter === 'function') {
-          const c = element.getCenter();
-          if (c && typeof c.y === 'number') candidates.push(c.y);
-        }
-      } catch (err) {
-        // ignore and rely on position
-      }
-      const elementTop = candidates.length ? Math.min(...candidates) : position.y;
-
-      // Place label just above the bar's top edge with a small gap so it doesn't overlap.
-      const smallGap = 6; // px gap between bar top and label baseline
-      const yCandidate = elementTop - smallGap;
-      const minY = chartTop + fontSize + 2; // never draw above chart top
-      const y = Math.max(yCandidate, minY);
-      ctx.fillText(label, position.x, y);
-    });
-
-    ctx.restore();
-  },
-};
-
 const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const nfCurrency2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
@@ -251,11 +183,11 @@ function CustomLegend({ chartRef, dataKey }) {
       const originalUpdate = chart.update.bind(chart);
       chart.update = function () {
         const ret = originalUpdate(...arguments);
-        try { build(); } catch (e) { /* ignore */ }
+        try { build(); } catch { /* ignore */ }
         return ret;
       };
       return () => {
-        try { chart.update = originalUpdate; } catch (e) { /* ignore */ }
+        try { chart.update = originalUpdate; } catch { /* ignore */ }
       };
     };
 
@@ -288,10 +220,10 @@ function CustomLegend({ chartRef, dataKey }) {
     try {
       const meta = chart.getDatasetMeta(idx);
       if (meta) meta.hidden = newHidden;
-    } catch (e) {
+    } catch {
       // ignore
     }
-    try { chart.update(); } catch (e) { /* ignore */ }
+    try { chart.update(); } catch { /* ignore */ }
     const datasets2 = chart.data?.datasets || [];
     const arr = datasets2.map((ds, i) => {
       const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
@@ -512,7 +444,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         });
         setLoading(false);
 
-      } catch (err) {
+      } catch {
         if (!cancelled) {
           setState({
             labels: [],

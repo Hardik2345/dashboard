@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const logger = require('../utils/logger');
 
 // Initialize Firebase Admin SDK
 // Assumes GOOGLE_APPLICATION_CREDENTIALS is set or default auth is available.
@@ -9,7 +10,7 @@ try {
     admin.initializeApp();
   }
 } catch (error) {
-  console.error('[NotificationService] Firebase admin initialization failed:', error);
+  logger.error('[NotificationService] Firebase admin initialization failed:', error);
 }
 
 /**
@@ -33,8 +34,8 @@ async function sendPushNotification(tokens, title, body, data = {}) {
 
   try {
     const response = await admin.messaging().sendEachForMulticast(message);
-    console.log('[NotificationService] Sent success count:', response.successCount);
-    console.log('[NotificationService] Sent failure count:', response.failureCount);
+    logger.info('[NotificationService] Sent success count:', response.successCount);
+    logger.info('[NotificationService] Sent failure count:', response.failureCount);
     
     // Log failed tokens if needed
     if (response.failureCount > 0) {
@@ -44,12 +45,12 @@ async function sendPushNotification(tokens, title, body, data = {}) {
           failedTokens.push(tokens[idx]);
         }
       });
-      console.warn('[NotificationService] Failed tokens:', failedTokens);
+      logger.warn('[NotificationService] Failed tokens:', failedTokens);
     }
     
     return response;
   } catch (error) {
-    console.error('[NotificationService] Error sending message:', error);
+    logger.error('[NotificationService] Error sending message:', error);
     throw error;
   }
 }
@@ -73,10 +74,10 @@ async function sendTopicNotification(topic, title, body, data = {}) {
 
   try {
     const response = await admin.messaging().send(message);
-    console.log('[NotificationService] Successfully sent message to topic:', response);
+    logger.info('[NotificationService] Successfully sent message to topic:', response);
     return response;
   } catch (error) {
-    console.error('[NotificationService] Error sending to topic:', error);
+    logger.error('[NotificationService] Error sending to topic:', error);
     throw error;
   }
 }

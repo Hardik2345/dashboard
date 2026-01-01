@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const AWS = require('aws-sdk');
 const crypto = require('crypto');
+const logger = require('../utils/logger');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -52,7 +53,7 @@ function buildUploadsRouter() {
 
       return res.json({ success: true, url });
     } catch (err) {
-      console.error('S3 upload error:', err);
+      logger.error('S3 upload error:', err);
       res.status(500).json({ success: false, message: 'Upload failed', error: err.message });
     }
   });
@@ -129,7 +130,7 @@ function buildUploadsRouter() {
         }
       });
     } catch (err) {
-      console.error('S3 list error:', err);
+      logger.error('S3 list error:', err);
       res.status(500).json({ success: false, message: 'Failed to list files', error: err.message });
     }
   });

@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const FormData = require('form-data');
 const { createApiKeyAuthMiddleware } = require('../middlewares/apiKeyAuth');
+const logger = require('../utils/logger');
 
 /**
  * Shopify Integration Router
@@ -93,7 +94,7 @@ function buildShopifyRouter(sequelize) {
         },
       };
 
-      console.log(`[Shopify] Creating staged upload for ${filename}...`);
+      logger.info(`[Shopify] Creating staged upload for ${filename}...`);
       const stagedUploadResult = await axios.post(graphqlUrl, {
         query: stagedUploadsQuery,
         variables: stagedUploadsVariables,
@@ -130,7 +131,7 @@ function buildShopifyRouter(sequelize) {
       const resourceUrl = target.resourceUrl;
 
       // Step 2: Upload file to S3 staging location
-      console.log(`[Shopify] Uploading file to S3 staging: ${s3Url.slice(0, 50)}...`);
+      logger.info(`[Shopify] Uploading file to S3 staging: ${s3Url.slice(0, 50)}...`);
       const form = new FormData();
 
       // Add S3 parameters (must be in the exact order returned by Shopify)
@@ -149,7 +150,7 @@ function buildShopifyRouter(sequelize) {
           maxBodyLength: Infinity,
           timeout: 30000, // 30 second timeout
         });
-        console.log('[Shopify] S3 upload completed successfully');
+        logger.info('[Shopify] S3 upload completed successfully');
       } catch (s3Err) {
         console.error('S3 upload failed:', s3Err.response?.status, s3Err.response?.data || s3Err.message);
         return res.status(500).json({
@@ -188,7 +189,7 @@ function buildShopifyRouter(sequelize) {
         },
       };
 
-      console.log(`[Shopify] Creating file resource in Shopify...`);
+      logger.info(`[Shopify] Creating file resource in Shopify...`);
       const createFileResult = await axios.post(graphqlUrl, {
         query: createFileQuery,
         variables: createFileVariables,

@@ -1,4 +1,4 @@
-const { Sequelize, DataTypes } = require('sequelize');
+const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
 const DATABASE_NAME = process.env.DATABASE_NAME || 'dashboard';

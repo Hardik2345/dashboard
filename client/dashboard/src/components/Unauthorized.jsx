@@ -27,7 +27,6 @@ function prettyReason(reason, msg) {
 }
 
 export default function Unauthorized() {
-  const base = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
   const { reason, msg } = useReason();
   const detail = prettyReason(reason, msg);
 

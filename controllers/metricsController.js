@@ -1,5 +1,6 @@
 const { QueryTypes } = require('sequelize');
 const redisClient = require('../lib/redis');
+const logger = require('../utils/logger');
 const { RangeSchema, isoDate } = require('../validation/schemas');
 const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta } = require('../utils/metricsUtils');
 const { previousWindow, prevDayStr, parseIsoDate, formatIsoDate, shiftDays } = require('../utils/dateUtils');
@@ -13,7 +14,7 @@ const MEM_CACHE = new Map();
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds
 const IST_OFFSET_MIN = 330;
 
-async function calcTotalOrdersDelta({ start, end, align, compare, conn }) {
+async function calcTotalOrdersDelta({ start, end, align, conn }) {
   const date = end || start;
   if (!date && !(start && end)) {
     return { metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
@@ -351,7 +352,6 @@ async function calcAovDelta({ start, end, align, compare, conn, debug }) {
 }
 
 async function calcCvrDelta({ start, end, align, compare, conn }) {
-  const date = end || start;
   const target = end || start;
   if (!target && !(start && end)) {
     return { metric: 'CVR_DELTA', date: null, current: null, previous: null, diff_pp: 0, diff_pct: 0, direction: 'flat' };
@@ -504,10 +504,10 @@ async function fetchCachedMetrics(brandKey, date) {
     const entry = MEM_CACHE.get(key);
     if (now - entry.timestamp < CACHE_TTL_MS) {
       if (entry.promise) {
-        console.log(`[MEM CACHE] Reuse pending request for ${brandKey} on ${date}`);
+        logger.debug(`[MEM CACHE] Reuse pending request for ${brandKey} on ${date}`);
         return entry.promise;
       }
-      console.log(`[MEM CACHE] Hit for ${brandKey} on ${date}`);
+      logger.debug(`[MEM CACHE] Hit for ${brandKey} on ${date}`);
       return entry.data;
     }
     MEM_CACHE.delete(key);
@@ -525,9 +525,9 @@ async function fetchCachedMetrics(brandKey, date) {
          const raw = await redisClient.get(key);
          if (raw) {
            data = JSON.parse(raw);
-           console.log(`[REDIS HIT] ${key}`);
+           logger.debug(`[REDIS HIT] ${key}`);
          } else {
-           console.log(`[REDIS MISS] ${key}`);
+           logger.debug(`[REDIS MISS] ${key}`);
          }
       } else {
          console.warn(`[REDIS SKIP] Client not available`);
@@ -569,7 +569,7 @@ async function fetchCachedMetricsBatch(brandKey, dates) {
     if (MEM_CACHE.has(key)) {
        const entry = MEM_CACHE.get(key);
        if (now - entry.timestamp < CACHE_TTL_MS && entry.data) {
-           console.log(`[MEM CACHE] Hit for ${key}`);
+           logger.debug(`[MEM CACHE] Hit for ${key}`);
            results[idx] = entry.data;
            return;
        }
@@ -584,7 +584,7 @@ async function fetchCachedMetricsBatch(brandKey, dates) {
   // 2. MGET from Redis
   try {
      if (redisClient) {
-        console.log(`[REDIS MGET] Fetching ${missingKeys.length} keys`);
+        logger.debug(`[REDIS MGET] Fetching ${missingKeys.length} keys`);
         const rawValues = await redisClient.mget(missingKeys);
         
         rawValues.forEach((raw, i) => {
@@ -595,9 +595,9 @@ async function fetchCachedMetricsBatch(brandKey, dates) {
               const data = JSON.parse(raw);
               MEM_CACHE.set(key, { timestamp: now, data, promise: null });
               results[originalIdx] = data;
-              console.log(`[REDIS HIT] ${key}`);
+              logger.debug(`[REDIS HIT] ${key}`);
            } else {
-              console.log(`[REDIS MISS] ${key}`);
+              logger.debug(`[REDIS MISS] ${key}`);
            }
         });
      } else {
@@ -653,7 +653,7 @@ function buildMetricsController() {
         if (start && end && start === end) {
           const cached = await fetchCachedMetrics(req.brandKey, start);
           if (cached) {
-            console.log(`[CACHE USE] AOV for ${req.brandKey} on ${start} | Value: ${cached.average_order_value}`);
+            logger.debug(`[CACHE USE] AOV for ${req.brandKey} on ${start} | Value: ${cached.average_order_value}`);
             return res.json({ 
               metric: "AOV", 
               range: { start, end }, 
@@ -665,7 +665,7 @@ function buildMetricsController() {
         }
 
         const result = await computeAOV({ start, end, conn: req.brandDb.sequelize });
-        console.log(`[DB FETCH] AOV for ${req.brandKey} on range ${start} to ${end} | Result: ${JSON.stringify({ total_sales: result.total_sales, total_orders: result.total_orders, aov: result.aov })}`);
+        logger.debug(`[DB FETCH] AOV for ${req.brandKey} on range ${start} to ${end} | Result: ${JSON.stringify({ total_sales: result.total_sales, total_orders: result.total_orders, aov: result.aov })}`);
         return res.json({ metric: "AOV", range: { start: start || null, end: end || null }, total_sales: result.total_sales, total_orders: result.total_orders, aov: result.aov });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
@@ -680,7 +680,7 @@ function buildMetricsController() {
         if (start && end && start === end) {
           const cached = await fetchCachedMetrics(req.brandKey, start);
           if (cached) {
-            console.log(`[CACHE USE] CVR for ${req.brandKey} on ${start} | Value: ${cached.conversion_rate}`);
+            logger.debug(`[CACHE USE] CVR for ${req.brandKey} on ${start} | Value: ${cached.conversion_rate}`);
             return res.json({ 
               metric: "CVR", 
               range: { start, end }, 
@@ -693,7 +693,7 @@ function buildMetricsController() {
         }
 
         const result = await computeCVR({ start, end, conn: req.brandDb.sequelize });
-        console.log(`[DB FETCH] CVR for ${req.brandKey} on range ${start} to ${end} | Result: ${JSON.stringify({ total_orders: result.total_orders, total_sessions: result.total_sessions, cvr: result.cvr })}`);
+        logger.debug(`[DB FETCH] CVR for ${req.brandKey} on range ${start} to ${end} | Result: ${JSON.stringify({ total_orders: result.total_orders, total_sessions: result.total_sessions, cvr: result.cvr })}`);
         return res.json({ metric: "CVR", range: { start: start || null, end: end || null }, total_orders: result.total_orders, total_sessions: result.total_sessions, cvr: result.cvr, cvr_percent: result.cvr_percent });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
@@ -705,65 +705,8 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         const align = (req.query.align || '').toString().toLowerCase();
         const compare = (req.query.compare || '').toString().toLowerCase();
-
-        if (compare === 'prev-range-avg' && start && end) {
-          const curr = await cvrForRange({ start, end, conn: req.brandDb.sequelize });
-          const prevWin = previousWindow(start, end);
-          const prev = await cvrForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn: req.brandDb.sequelize });
-          const delta = computePercentDelta(curr.cvr_percent || 0, prev.cvr_percent || 0);
-          return res.json({ metric: 'CVR_DELTA', range: { start, end }, current: curr, previous: prev, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction, compare: 'prev-range-avg' });
-        }
-
-        const base = new Date(`${target}T00:00:00Z`);
-        const prev = new Date(base.getTime() - 24 * 3600_000);
-        const prevStr = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth()+1).padStart(2,'0')}-${String(prev.getUTCDate()).padStart(2,'0')}`;
-
-        const conn = req.brandDb.sequelize;
-        if (align === 'hour') {
-          return res.json(await computeMetricDelta({
-            metricName: 'CVR_DELTA',
-            range: { start: start || target, end: end || target },
-            conn,
-            queryFn: async ({ rangeStart, rangeEnd, prevStart, prevEnd, cutoffTime, prevCutoffTime, targetHour, prevCompareHour, isCurrentRangeToday }) => {
-              const sqlSessRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
-              const orderRangeSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-              const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
-
-              const [sessCurRows, sessPrevRows, ordCurRows, ordPrevRows, overallCurrSess] = await Promise.all([
-                conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, targetHour] }),
-                conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCompareHour] }),
-                conn.query(orderRangeSql, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
-                conn.query(orderRangeSql, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
-                isCurrentRangeToday ? conn.query(sqlOverallSessions, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd] }) : Promise.resolve(null),
-              ]);
-
-              let curSessions = Number(sessCurRows?.[0]?.total || 0);
-              if (overallCurrSess) {
-                curSessions = Number(overallCurrSess?.[0]?.total || 0);
-              }
-              const prevSessions = Number(sessPrevRows?.[0]?.total || 0);
-              const curOrders = Number(ordCurRows?.[0]?.cnt || 0);
-              const prevOrders = Number(ordPrevRows?.[0]?.cnt || 0);
-              const curCVR = curSessions > 0 ? (curOrders / curSessions) : 0;
-              const prevCVR = prevSessions > 0 ? (prevOrders / prevSessions) : 0;
-              
-              return { 
-                currentVal: curCVR * 100, 
-                previousVal: prevCVR * 100,
-                currentMeta: { total_orders: curOrders, total_sessions: curSessions, cvr: curCVR, cvr_percent: curCVR * 100 },
-                previousMeta: { total_orders: prevOrders, total_sessions: prevSessions, cvr: prevCVR, cvr_percent: prevCVR * 100 }
-              };
-            }
-          }));
-        }
-
-        const prevWin = previousWindow(target, target); // Handles single date same as range
-        const [current, previous] = await Promise.all([
-          computeCVRForDay(target, conn),
-          computeCVRForDay(prevWin.prevStart, conn)
-        ]);
-        const delta = computePercentDelta(current.cvr_percent || 0, previous.cvr_percent || 0);
-        return res.json({ metric: 'CVR_DELTA', date: target, current, previous, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction });
+        const result = await calcCvrDelta({ start, end, align, compare, conn: req.brandDb.sequelize });
+        return res.json(result);
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
 
@@ -772,6 +715,7 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
+        const date = end || start || null;
         const align = (req.query.align || '').toString().toLowerCase();
         if (align === 'hour') {
           return res.json(await computeMetricDelta({
@@ -800,6 +744,7 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
+        const date = end || start || null;
         const align = (req.query.align || '').toString().toLowerCase();
         if (align === 'hour') {
           return res.json(await computeMetricDelta({
@@ -879,6 +824,7 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
+        const date = end || start || null;
         const align = (req.query.align || '').toString().toLowerCase();
         if (align === 'hour') {
           return res.json(await computeMetricDelta({
@@ -913,6 +859,7 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
+        const date = end || start || null;
         const align = (req.query.align || '').toString().toLowerCase();
         if (align === 'hour') {
           return res.json(await computeMetricDelta({
@@ -947,6 +894,7 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
+        const date = end || start || null;
         const align = (req.query.align || '').toString().toLowerCase();
         if (align === 'hour') {
           return res.json(await computeMetricDelta({
@@ -999,11 +947,11 @@ function buildMetricsController() {
         if (start && end && start === end) {
              const cached = await fetchCachedMetrics(req.brandKey, start);
              if (cached) {
-                console.log(`[CACHE USE] TOTAL_SALES for ${req.brandKey} on ${start} | Value: ${cached.total_sales}`);
+                logger.debug(`[CACHE USE] TOTAL_SALES for ${req.brandKey} on ${start} | Value: ${cached.total_sales}`);
                 return res.json({ metric: "TOTAL_SALES", range: { start: start || null, end: end || null }, total_sales: cached.total_sales });
              }
         }
-        console.log(`[DB FETCH] TOTAL_SALES for ${req.brandKey} on range ${start} to ${end} | Result: ${total_sales}`);
+        logger.debug(`[DB FETCH] TOTAL_SALES for ${req.brandKey} on range ${start} to ${end} | Result: ${total_sales}`);
         return res.json({ metric: "TOTAL_SALES", range: { start: start || null, end: end || null }, total_sales });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
@@ -1026,11 +974,11 @@ function buildMetricsController() {
         if (start && end && start === end) {
             const cached = await fetchCachedMetrics(req.brandKey, start);
             if (cached) {
-              console.log(`[CACHE USE] TOTAL_ORDERS for ${req.brandKey} on ${start} | Value: ${cached.total_orders}`);
+              logger.debug(`[CACHE USE] TOTAL_ORDERS for ${req.brandKey} on ${start} | Value: ${cached.total_orders}`);
               return res.json({ metric: "TOTAL_ORDERS", range: { start: start || null, end: end || null }, total_orders: cached.total_orders });
             }
         }
-        console.log(`[DB FETCH] TOTAL_ORDERS for ${req.brandKey} on range ${start} to ${end} | Result: ${total_orders}`);
+        logger.debug(`[DB FETCH] TOTAL_ORDERS for ${req.brandKey} on range ${start} to ${end} | Result: ${total_orders}`);
         return res.json({ metric: "TOTAL_ORDERS", range: { start: start || null, end: end || null }, total_orders });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
@@ -2075,10 +2023,10 @@ function buildMetricsController() {
                 yesterdayData = JSON.parse(results[1]);
                 yesterdaySource = 'redis';
               }
-              if (todayData) console.log(`[REDIS HIT] ${keyToday}`);
-              else console.log(`[REDIS MISS] ${keyToday}`);
-              if (yesterdayData) console.log(`[REDIS HIT] ${keyYesterday}`);
-              else console.log(`[REDIS MISS] ${keyYesterday}`);
+              if (todayData) logger.debug(`[REDIS HIT] ${keyToday}`);
+              else logger.debug(`[REDIS MISS] ${keyToday}`);
+              if (yesterdayData) logger.debug(`[REDIS HIT] ${keyYesterday}`);
+              else logger.debug(`[REDIS MISS] ${keyYesterday}`);
             } catch (err) {
               console.error('[hourlySalesSummary] Redis fetch failed', err.message);
             }
@@ -2108,7 +2056,7 @@ function buildMetricsController() {
                number_of_sessions: Number(r.number_of_sessions || 0),
                number_of_atc_sessions: Number(r.number_of_atc_sessions || 0)
              }));
-             console.log(`[DB FETCH] hourly sales for ${brandKey} on ${todayStr}`);
+             logger.debug(`[DB FETCH] hourly sales for ${brandKey} on ${todayStr}`);
           }
 
           if (!yesterdayData) {
@@ -2120,7 +2068,7 @@ function buildMetricsController() {
               number_of_sessions: Number(r.number_of_sessions || 0),
               number_of_atc_sessions: Number(r.number_of_atc_sessions || 0)
             }));
-            console.log(`[DB FETCH] hourly sales for ${brandKey} on ${yesterdayStr}`);
+            logger.debug(`[DB FETCH] hourly sales for ${brandKey} on ${yesterdayStr}`);
           }
         }
 
@@ -2229,7 +2177,7 @@ function buildMetricsController() {
         const prevStart = prevWin?.prevStart;
         const prevEnd = prevWin?.prevEnd;
 
-        console.log(`[SUMMARY] Fetching for ${brandQuery} range ${start} to ${end}${prevStart && prevEnd ? ` (prev: ${prevStart} to ${prevEnd})` : ''}`);
+        logger.debug(`[SUMMARY] Fetching for ${brandQuery} range ${start} to ${end}${prevStart && prevEnd ? ` (prev: ${prevStart} to ${prevEnd})` : ''}`);
         const cacheFetchStart = Date.now();
 
         // Batch fetch from cache when single-day so we can reuse existing cache keys.
@@ -2255,7 +2203,7 @@ function buildMetricsController() {
 
           // Ensure DB connection
           if (!req.brandDb && req.brandConfig) {
-            console.log(`[LAZY CONNECT] Connecting to ${req.brandConfig.key} for fallback`);
+            logger.debug(`[LAZY CONNECT] Connecting to ${req.brandConfig.key} for fallback`);
             try {
               req.brandDb = await getBrandConnection(req.brandConfig);
               req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
@@ -2348,7 +2296,7 @@ function buildMetricsController() {
           sources: { current: current?.source || 'db', previous: previous?.source || 'db' }
         };
 
-        console.log(
+        logger.debug(
           `[SUMMARY TRACE] ${brandQuery} ${start}->${end} steps=${spans.map(s => `${s.label}:${s.ms}ms`).join(' | ')} total=${Date.now() - traceStart}ms`
         );
 

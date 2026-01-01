@@ -203,3 +203,4 @@ describe('Auth Flow', () => {
         }).toThrow('Invalid access token');
     });
 });
+/* eslint-env jest */

@@ -17,22 +17,13 @@ async function rawSum(column, { start, end, conn }) {
 const IST_OFFSET_MIN = 330;
 const IST_OFFSET_MS = IST_OFFSET_MIN * 60 * 1000;
 
-function isToday(dateStr) {
-  if (!dateStr) return false;
-  const nowUtc = new Date();
-  const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MS);
-  const pad2 = (n) => String(n).padStart(2, '0');
-  const todayIst = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
-  return dateStr === todayIst;
-}
-
 /**
  * Generic helper to compute aligned delta for any metric.
  * queryFn: ({ start, end, cutoffTime, targetHour, prevWin }) => Promise<{ currentVal, previousVal, currentMeta?, previousMeta? }>
  * If queryFn is provided, it handles the DB calls.
  * OR provide `sqlRange` and `sqlOverall` to let this helper run standard queries.
  */
-async function computeMetricDelta({ metricName, range, conn, queryFn }) {
+async function computeMetricDelta({ metricName, range, queryFn }) {
   const { start, end } = range;
   const date = end || start;
   const rangeStart = start || date;
