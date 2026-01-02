@@ -6,6 +6,56 @@ const bcrypt = require('bcryptjs');
 const REFRESH_TOKEN_EXPIRY_DAYS = process.env.REFRESH_TOKEN_EXPIRY_DAYS || 7;
 
 class AuthService {
+    static async signup({ email, password, primaryBrandId, role = 'author' }) {
+        if (!email || !password || !primaryBrandId) {
+            throw new Error('Missing required fields');
+        }
+
+        const existing = await GlobalUser.findOne({ email });
+        if (existing) {
+            throw new Error('User already exists');
+        }
+
+        const password_hash = await bcrypt.hash(password, 10);
+        const brandMembership = {
+            brand_id: primaryBrandId,
+            role: role === 'viewer' ? 'viewer' : 'author',
+            status: 'active',
+            permissions: ['all']
+        };
+
+        const user = await GlobalUser.create({
+            email,
+            password_hash,
+            status: 'active',
+            primary_brand_id: primaryBrandId,
+            brand_memberships: [brandMembership],
+        });
+
+        const accessToken = TokenService.generateAccessToken(user, primaryBrandId);
+        const { tokenId, rawToken, tokenHash } = TokenService.generateRefreshToken();
+
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + parseInt(REFRESH_TOKEN_EXPIRY_DAYS));
+
+        const refreshTokenDoc = new RefreshToken({
+            _id: tokenId,
+            user_id: user._id,
+            device_id: null,
+            token_hash: tokenHash,
+            expires_at: expiresAt,
+            revoked: false
+        });
+
+        await refreshTokenDoc.save();
+
+        return {
+            accessToken,
+            refreshToken: rawToken,
+            user,
+        };
+    }
+
     /**
      * Authenticate user and issue tokens
      * @param {String} email 
@@ -56,7 +106,8 @@ class AuthService {
 
         return {
             accessToken,
-            refreshToken: rawToken // Send raw token to controller to set cookie
+            refreshToken: rawToken, // Send raw token to controller to set cookie
+            user,
         };
     }
 

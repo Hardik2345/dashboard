@@ -31,6 +31,40 @@ exports.login = async (req, res) => {
     }
 };
 
+exports.signup = async (req, res) => {
+    try {
+        const { email, password, primary_brand_id, role } = req.body || {};
+        if (!email || !password || !primary_brand_id) {
+            return res.status(400).json({ error: 'email, password, primary_brand_id required' });
+        }
+
+        const result = await AuthService.signup({
+            email,
+            password,
+            primaryBrandId: primary_brand_id,
+            role
+        });
+
+        res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
+        logger.info('AuthController', 'Signup success', { email, brand: primary_brand_id });
+        res.status(201).json({
+            access_token: result.accessToken,
+            user: {
+                id: result.user._id,
+                email: result.user.email,
+                primary_brand_id: result.user.primary_brand_id,
+                brand_memberships: result.user.brand_memberships,
+                status: result.user.status,
+            }
+        });
+    } catch (err) {
+        logger.error('AuthController', 'Signup error', { error: err.message });
+        if (err.message === 'User already exists') return res.status(409).json({ error: 'User already exists' });
+        if (err.message === 'Missing required fields') return res.status(400).json({ error: 'Missing required fields' });
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+};
+
 exports.refresh = async (req, res) => {
     try {
         logger.info('AuthController', 'Refresh request received', { ip: req.ip });

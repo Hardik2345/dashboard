@@ -8,7 +8,7 @@ const BrandMembershipSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['admin', 'viewer'],
+    enum: ['author', 'viewer'],
     required: true
   },
   status: {

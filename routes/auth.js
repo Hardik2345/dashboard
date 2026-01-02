@@ -1,5 +1,6 @@
 const express = require('express');
 const { login, logout, googleDebug, googleCallback, me } = require('../controllers/authController');
+const { requireAuth } = require('../middlewares/auth');
 
 function buildAuthRouter({ passport, accessCache }) {
   const router = express.Router();
@@ -17,7 +18,7 @@ function buildAuthRouter({ passport, accessCache }) {
     router.get('/google/callback', googleCallback(passport, successRedirect, failureRedirect));
   }
 
-  router.get('/me', me());
+  router.get('/me', requireAuth, me());
   return router;
 }
 
