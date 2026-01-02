@@ -32,6 +32,7 @@ const { buildApiKeysRouter } = require('./routes/apiKeys');
 const { buildShopifyRouter } = require('./routes/shopify');
 const { buildWebhooksRouter } = require('./routes/webhooks');
 const { buildNotificationsRouter } = require('./routes/notifications'); // [NEW]
+const { buildQStashRouter } = require('./routes/qstashRouter');
 
 const app = express();
 app.use(helmet());
@@ -124,7 +125,7 @@ const SessionAdjustmentBucket = sequelize.define('session_adjustment_buckets', {
   brand_key: { type: DataTypes.STRING(32), allowNull: false },
   lower_bound_sessions: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
   upper_bound_sessions: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
-  offset_pct: { type: DataTypes.DECIMAL(5,2), allowNull: false }, // e.g. -8.00 to +12.50
+  offset_pct: { type: DataTypes.DECIMAL(5, 2), allowNull: false }, // e.g. -8.00 to +12.50
   active: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 1 },
   priority: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 100 },
   effective_from: { type: DataTypes.DATEONLY, allowNull: true },
@@ -140,7 +141,7 @@ const SessionAdjustmentAudit = sequelize.define('session_adjustment_audit', {
   id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
   brand_key: { type: DataTypes.STRING(32), allowNull: false },
   bucket_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
-  action: { type: DataTypes.ENUM('CREATE','UPDATE','DEACTIVATE','DELETE'), allowNull: false },
+  action: { type: DataTypes.ENUM('CREATE', 'UPDATE', 'DEACTIVATE', 'DELETE'), allowNull: false },
   before_json: { type: DataTypes.JSON, allowNull: true },
   after_json: { type: DataTypes.JSON, allowNull: true },
   author_user_id: { type: DataTypes.BIGINT, allowNull: true },
@@ -191,7 +192,7 @@ const BrandAlertChannel = sequelize.define('brands_alert_channel', {
 // Tables are created idempotently on startup (MySQL CREATE TABLE IF NOT EXISTS)
 sequelize.define('access_control_settings', {
   id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
-  mode: { type: DataTypes.ENUM('domain','whitelist'), allowNull: false, defaultValue: 'domain' },
+  mode: { type: DataTypes.ENUM('domain', 'whitelist'), allowNull: false, defaultValue: 'domain' },
   auto_provision_brand_user: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 0 },
   updated_by: { type: DataTypes.BIGINT, allowNull: true },
   updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP') }
@@ -476,7 +477,7 @@ passport.deserializeUser(async (obj, done) => {
       // Fallback to legacy local author via master DB user
       const authorEmail = (process.env.AUTHOR_EMAIL || '').toLowerCase();
       if (authorEmail !== email.toLowerCase()) return done(null, false);
-      const authorUser = await User.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
+      const authorUser = await User.findByPk(obj.id, { attributes: ['id', 'email', 'role', 'is_active'] });
       if (!authorUser || !authorUser.is_active || authorUser.role !== 'author') return done(null, false);
       return cacheResult({ id: authorUser.id, email: authorUser.email, role: 'author', brandKey: null, isAuthor: true });
     }
@@ -557,6 +558,7 @@ app.use('/', buildApiKeysRouter(sequelize));
 app.use('/shopify', buildShopifyRouter(sequelize));
 app.use('/webhooks', buildWebhooksRouter({ Alert, AlertChannel, BrandAlertChannel }));
 app.use('/notifications', buildNotificationsRouter()); // [NEW]
+app.use('/webhooks/qstash', buildQStashRouter({ Alert, AlertChannel, BrandAlertChannel }));
 
 // ---- Init -------------------------------------------------------------------
 async function init() {

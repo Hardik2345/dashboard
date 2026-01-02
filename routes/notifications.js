@@ -2,6 +2,15 @@ const express = require('express');
 const admin = require('firebase-admin');
 const logger = require('../utils/logger');
 
+// Ensure Firebase is initialized
+try {
+  if (!admin.apps.length) {
+    admin.initializeApp();
+  }
+} catch (error) {
+  logger.error('[NotificationsRouter] Firebase admin initialization failed:', error);
+}
+
 function buildNotificationsRouter() {
   const router = express.Router();
 
@@ -20,7 +29,7 @@ function buildNotificationsRouter() {
     if (typeof topic === 'string') topicList.push(topic);
 
     if (topicList.length === 0) {
-        return res.status(400).json({ error: 'No topics provided' });
+      return res.status(400).json({ error: 'No topics provided' });
     }
 
     try {

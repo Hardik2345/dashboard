@@ -9,6 +9,7 @@ import { listAuthorBrands, getTopProducts } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
 import Unauthorized from './components/Unauthorized.jsx';
 import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
+import usePushNotifications from './hooks/usePushNotifications.js';
 import { useAppDispatch, useAppSelector } from './state/hooks.js';
 import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
 import { setBrand } from './state/slices/brandSlice.js';
@@ -124,6 +125,7 @@ export default function App() {
   }, []);
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
+  usePushNotifications(user);
 
   const activeBrandKey = isAuthor ? (authorBrandKey || '') : (user?.brandKey || '');
 
@@ -711,19 +713,19 @@ export default function App() {
           >
             <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
             <Container maxWidth="sm" sx={{ pt: { xs: 2.5, sm: 3 } }}>
-            <MobileTopBar
-              value={range}
-              onChange={handleRangeChange}
-              brandKey={activeBrandKey}
-              showProductFilter={false}
-              productOptions={productOptions}
-              productValue={productSelection}
-              onProductChange={handleProductChange}
-              productLoading={productOptionsLoading}
-            />
+              <MobileTopBar
+                value={range}
+                onChange={handleRangeChange}
+                brandKey={activeBrandKey}
+                showProductFilter={false}
+                productOptions={productOptions}
+                productValue={productSelection}
+                onProductChange={handleProductChange}
+                productLoading={productOptionsLoading}
+              />
             </Container>
           </Box>
-            <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
+          <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
             <Stack spacing={{ xs: 1, sm: 1.25 }}>
               <Suspense fallback={<SectionFallback count={4} />}>
                 <KPIs

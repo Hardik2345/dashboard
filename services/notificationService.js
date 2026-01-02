@@ -36,7 +36,7 @@ async function sendPushNotification(tokens, title, body, data = {}) {
     const response = await admin.messaging().sendEachForMulticast(message);
     logger.info('[NotificationService] Sent success count:', response.successCount);
     logger.info('[NotificationService] Sent failure count:', response.failureCount);
-    
+
     // Log failed tokens if needed
     if (response.failureCount > 0) {
       const failedTokens = [];
@@ -47,7 +47,7 @@ async function sendPushNotification(tokens, title, body, data = {}) {
       });
       logger.warn('[NotificationService] Failed tokens:', failedTokens);
     }
-    
+
     return response;
   } catch (error) {
     logger.error('[NotificationService] Error sending message:', error);
