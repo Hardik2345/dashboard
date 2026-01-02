@@ -1,34 +1,35 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import dayjs from 'dayjs';
 import { AppProvider } from '@shopify/polaris';
 import enTranslations from '@shopify/polaris/locales/en.json';
-import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert } from '@mui/material';
+import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, Skeleton } from '@mui/material';
 import Header from './components/Header.jsx';
-import MobileTopBar from './components/MobileTopBar.jsx';
 import Sidebar from './components/Sidebar.jsx';
-import AuthorBrandForm from './components/AuthorBrandForm.jsx';
-import AuthorBrandList from './components/AuthorBrandList.jsx';
-import KPIs from './components/KPIs.jsx';
-import FunnelChart from './components/FunnelChart.jsx';
-import OrderSplit from './components/OrderSplit.jsx';
-import PaymentSalesSplit from './components/PaymentSalesSplit.jsx';
-import HourlySalesCompare from './components/HourlySalesCompare.jsx';
-import WebVitals from './components/WebVitals.jsx';
-import Footer from './components/Footer.jsx';
 import { listAuthorBrands, getTopProducts } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
-import AuthorAdjustments from './components/AuthorAdjustments.jsx';
 import Unauthorized from './components/Unauthorized.jsx';
-import AccessControlCard from './components/AccessControlCard.jsx';
-import WhitelistTable from './components/WhitelistTable.jsx';
-import ProductConversionTable from './components/ProductConversionTable.jsx';
 import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
-import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
-import AlertsAdmin from './components/AlertsAdmin.jsx';
 import { useAppDispatch, useAppSelector } from './state/hooks.js';
 import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
 import { setBrand } from './state/slices/brandSlice.js';
 import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setSelectedMetric } from './state/slices/filterSlice.js';
+import MobileTopBar from './components/MobileTopBar.jsx';
+import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
+import Footer from './components/Footer.jsx';
+
+const KPIs = lazy(() => import('./components/KPIs.jsx'));
+const FunnelChart = lazy(() => import('./components/FunnelChart.jsx'));
+const OrderSplit = lazy(() => import('./components/OrderSplit.jsx'));
+const PaymentSalesSplit = lazy(() => import('./components/PaymentSalesSplit.jsx'));
+const HourlySalesCompare = lazy(() => import('./components/HourlySalesCompare.jsx'));
+const WebVitals = lazy(() => import('./components/WebVitals.jsx'));
+const AuthorAdjustments = lazy(() => import('./components/AuthorAdjustments.jsx'));
+const AccessControlCard = lazy(() => import('./components/AccessControlCard.jsx'));
+const WhitelistTable = lazy(() => import('./components/WhitelistTable.jsx'));
+const ProductConversionTable = lazy(() => import('./components/ProductConversionTable.jsx'));
+const AuthorBrandForm = lazy(() => import('./components/AuthorBrandForm.jsx'));
+const AuthorBrandList = lazy(() => import('./components/AuthorBrandList.jsx'));
+const AlertsAdmin = lazy(() => import('./components/AlertsAdmin.jsx'));
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -39,6 +40,20 @@ const SESSION_TRACKING_ENABLED = String(import.meta.env.VITE_SESSION_TRACKING ||
 const AUTHOR_BRAND_STORAGE_KEY = 'author_active_brand_v1';
 const THEME_MODE_KEY = 'dashboard_theme_mode';
 const DRAWER_WIDTH = 260;
+
+function SectionFallback({ count = 1, height = 180 }) {
+  return (
+    <Stack spacing={{ xs: 1, md: 1.5 }}>
+      {Array.from({ length: count }).map((_, idx) => (
+        <Paper key={idx} variant="outlined" sx={{ p: { xs: 1.5, md: 2 }, borderStyle: 'dashed' }}>
+          <Skeleton variant="text" width="40%" />
+          <Skeleton variant="rectangular" height={height} sx={{ my: 1 }} />
+          <Skeleton variant="text" width="60%" />
+        </Paper>
+      ))}
+    </Stack>
+  );
+}
 
 function loadInitialThemeMode() {
   try {
@@ -568,22 +583,24 @@ export default function App() {
                 <Stack spacing={{ xs: 1, md: 2 }}>
                   {authorTab === 'dashboard' && (
                     hasAuthorBrand ? (
-                      <Stack spacing={{ xs: 1, md: 1.5 }}>
-                        <KPIs
-                          query={metricsQuery}
-                          selectedMetric={selectedMetric}
-                          onSelectMetric={handleSelectMetric}
-                          onFunnelData={setFunnelData}
-                          productId={productSelection.id}
-                          productLabel={productSelection.label}
-                        />
-                        <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-                        <WebVitals query={metricsQuery} />
-                        <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-                        <FunnelChart funnelData={funnelData} />
-                        <OrderSplit query={metricsQuery} />
-                        <PaymentSalesSplit query={metricsQuery} />
-                      </Stack>
+                      <Suspense fallback={<SectionFallback count={5} />}>
+                        <Stack spacing={{ xs: 1, md: 1.5 }}>
+                          <KPIs
+                            query={metricsQuery}
+                            selectedMetric={selectedMetric}
+                            onSelectMetric={handleSelectMetric}
+                            onFunnelData={setFunnelData}
+                            productId={productSelection.id}
+                            productLabel={productSelection.label}
+                          />
+                          <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+                          <WebVitals query={metricsQuery} />
+                          <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
+                          <FunnelChart funnelData={funnelData} />
+                          <OrderSplit query={metricsQuery} />
+                          <PaymentSalesSplit query={metricsQuery} />
+                        </Stack>
+                      </Suspense>
                     ) : (
                       <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
                         <Typography variant="body2" color="text.secondary">
@@ -594,19 +611,23 @@ export default function App() {
                   )}
 
                   {authorTab === 'access' && (
-                    <Stack spacing={{ xs: 2, md: 3 }}>
-                      <AccessControlCard />
-                      <WhitelistTable />
-                    </Stack>
+                    <Suspense fallback={<SectionFallback count={2} />}>
+                      <Stack spacing={{ xs: 2, md: 3 }}>
+                        <AccessControlCard />
+                        <WhitelistTable />
+                      </Stack>
+                    </Suspense>
                   )}
 
                   {authorTab === 'adjustments' && (
                     hasAuthorBrand ? (
-                      <AuthorAdjustments
-                        brandKey={authorBrandKey}
-                        onBrandKeyChange={handleAuthorBrandChange}
-                        brands={authorBrands}
-                      />
+                      <Suspense fallback={<SectionFallback />}>
+                        <AuthorAdjustments
+                          brandKey={authorBrandKey}
+                          onBrandKeyChange={handleAuthorBrandChange}
+                          brands={authorBrands}
+                        />
+                      </Suspense>
                     ) : (
                       <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
                         <Typography variant="body2" color="text.secondary">
@@ -618,12 +639,14 @@ export default function App() {
 
                   {authorTab === 'product-conversion' && (
                     hasAuthorBrand ? (
-                      <ProductConversionTable
-                        brandKey={authorBrandKey}
-                        brands={authorBrands}
-                        onBrandChange={handleAuthorBrandChange}
-                        brandsLoading={authorBrandsLoading}
-                      />
+                      <Suspense fallback={<SectionFallback />}>
+                        <ProductConversionTable
+                          brandKey={authorBrandKey}
+                          brands={authorBrands}
+                          onBrandChange={handleAuthorBrandChange}
+                          brandsLoading={authorBrandsLoading}
+                        />
+                      </Suspense>
                     ) : (
                       <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
                         <Typography variant="body2" color="text.secondary">
@@ -634,18 +657,22 @@ export default function App() {
                   )}
 
                   {authorTab === 'brands' && (
-                    <Stack spacing={{ xs: 2, md: 3 }}>
-                      <AuthorBrandForm />
-                      <AuthorBrandList />
-                    </Stack>
+                    <Suspense fallback={<SectionFallback count={2} />}>
+                      <Stack spacing={{ xs: 2, md: 3 }}>
+                        <AuthorBrandForm />
+                        <AuthorBrandList />
+                      </Stack>
+                    </Suspense>
                   )}
 
                   {authorTab === 'alerts' && (
                     authorBrands.length ? (
-                      <AlertsAdmin
-                        brands={authorBrands}
-                        defaultBrandKey={authorBrandKey}
-                      />
+                      <Suspense fallback={<SectionFallback />}>
+                        <AlertsAdmin
+                          brands={authorBrands}
+                          defaultBrandKey={authorBrandKey}
+                        />
+                      </Suspense>
                     ) : (
                       <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
                         <Typography variant="body2" color="text.secondary">
@@ -696,21 +723,23 @@ export default function App() {
             />
             </Container>
           </Box>
-          <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
+            <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
             <Stack spacing={{ xs: 1, sm: 1.25 }}>
-                        <KPIs
-                          query={metricsQuery}
-                          selectedMetric={selectedMetric}
-                          onSelectMetric={handleSelectMetric}
-                          onFunnelData={setFunnelData}
-                          productId={productSelection.id}
-                          productLabel={productSelection.label}
-                        />
-            <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-            <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-            <FunnelChart funnelData={funnelData} />
-            <OrderSplit query={metricsQuery} />
-            <PaymentSalesSplit query={metricsQuery} />
+              <Suspense fallback={<SectionFallback count={4} />}>
+                <KPIs
+                  query={metricsQuery}
+                  selectedMetric={selectedMetric}
+                  onSelectMetric={handleSelectMetric}
+                  onFunnelData={setFunnelData}
+                  productId={productSelection.id}
+                  productLabel={productSelection.label}
+                />
+                <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+                <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
+                <FunnelChart funnelData={funnelData} />
+                <OrderSplit query={metricsQuery} />
+                <PaymentSalesSplit query={metricsQuery} />
+              </Suspense>
             </Stack>
           </Container>
           <Footer />
