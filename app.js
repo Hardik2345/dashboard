@@ -285,7 +285,8 @@ async function createBrandUser(brandConn, { email, password_hash, role = 'user',
 
 // ---- Session & Passport -----------------------------------------------------
 const SequelizeStore = SequelizeStoreFactory(session.Store);
-const redisStore = redisClient ? new RedisStore({ client: redisClient, prefix: 'sess:' }) : null;
+const useRedisSession = String(process.env.USE_REDIS_SESSION || 'false').toLowerCase() === 'true';
+const redisStore = useRedisSession && redisClient ? new RedisStore({ client: redisClient, prefix: 'sess:' }) : null;
 const sessionStore = redisStore || new SequelizeStore({ db: sequelize, tableName: 'sessions' });
 logger.info('Using session store:', redisStore ? 'RedisStore' : 'SequelizeStore');
 
@@ -308,7 +309,7 @@ app.use(session({
     secure: isProd || crossSite, // must be true for SameSite=None
     sameSite: crossSite ? 'none' : 'lax',
     domain: process.env.COOKIE_DOMAIN || undefined, // set if you serve API on subdomain
-    maxAge: 1000 * 60 * 60 * 24 * 7, // 1 Week
+    maxAge: 1000 * 60 * 60 * 8, // 8 hours to limit stale sessions
   }
 }));
 
@@ -429,13 +430,14 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 // --- User Cache for Performance ---
 const USER_CACHE = new Map();
 const CACHE_TTL = 60 * 1000; // 60 seconds
+const enableUserCache = String(process.env.ENABLE_USER_CACHE || 'false').toLowerCase() === 'true';
 
 passport.serializeUser((user, done) => done(null, { id: user.id, email: user.email, brandKey: user.brandKey, isAuthor: !!user.isAuthor, sso: user.sso }));
 passport.deserializeUser(async (obj, done) => {
   try {
-    // 1. Check L1 Memory Cache
+    // 1. Check L1 Memory Cache (disabled by default to avoid stale identities)
     const cacheKey = `user:${obj.id || 'x'}:${obj.email}`;
-    if (USER_CACHE.has(cacheKey)) {
+    if (enableUserCache && USER_CACHE.has(cacheKey)) {
       const entry = USER_CACHE.get(cacheKey);
       if (Date.now() - entry.ts < CACHE_TTL) {
         return done(null, entry.user);
@@ -444,7 +446,7 @@ passport.deserializeUser(async (obj, done) => {
     }
 
     const cacheResult = (user) => {
-      if (user) {
+      if (enableUserCache && user) {
         USER_CACHE.set(cacheKey, { ts: Date.now(), user });
       }
       return done(null, user);
