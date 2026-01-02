@@ -1,5 +1,5 @@
 local jwt = require("resty.jwt")
-local jwks = require("gateway.lua.jwks")
+local jwks = require("jwks")
 local cjson = require("cjson")
 
 local _M = {}

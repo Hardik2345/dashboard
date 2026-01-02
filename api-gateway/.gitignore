@@ -1,2 +1,12 @@
 node_modules
 .env
+# OpenResty / NGINX runtime files
+api-gateway/client_body_temp/
+api-gateway/proxy_temp/
+api-gateway/fastcgi_temp/
+api-gateway/uwsgi_temp/
+api-gateway/scgi_temp/
+
+# Logs & pid
+api-gateway/logs/
+*.pid
