@@ -166,7 +166,6 @@ export default function MobileTopBar({
       setMonth(focus.month());
       setYear(focus.year());
     }
-    console.log("Updating month/year:", month, year);
   }, [start, end]);
 
   const selectedRange = useMemo(() => {

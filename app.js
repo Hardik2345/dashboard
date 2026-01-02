@@ -8,6 +8,7 @@ const session = require('express-session');
 const { RedisStore } = require('connect-redis');
 const SequelizeStoreFactory = require('connect-session-sequelize');
 const passport = require('passport');
+const logger = require('./utils/logger');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const LocalStrategy = require('passport-local').Strategy;
 const bcrypt = require('bcrypt');
@@ -286,7 +287,7 @@ async function createBrandUser(brandConn, { email, password_hash, role = 'user',
 const SequelizeStore = SequelizeStoreFactory(session.Store);
 const redisStore = redisClient ? new RedisStore({ client: redisClient, prefix: 'sess:' }) : null;
 const sessionStore = redisStore || new SequelizeStore({ db: sequelize, tableName: 'sessions' });
-console.log('Using session store:', redisStore ? 'RedisStore' : 'SequelizeStore');
+logger.info('Using session store:', redisStore ? 'RedisStore' : 'SequelizeStore');
 
 const isProd = process.env.NODE_ENV === 'production';
 // Default to cross-site=true so SameSite=None/secure cookies work when frontend is on a different host (e.g., Vercel -> Render).
@@ -335,7 +336,7 @@ passport.use(new LocalStrategy({ usernameField: 'email', passwordField: 'passwor
 
     // Brand user path
     const brandCfg = resolveBrandFromEmail(email);
-    console.log(`Authenticating brand user ${email} with brand config:`, brandCfg);
+    logger.info(`Authenticating brand user ${email} with brand config:`, brandCfg);
     if (!brandCfg) return done(null, false, { message: 'Unknown brand' });
     const brandConn = await getBrandConnection(brandCfg);
     const user = await fetchBrandUserByEmail(brandConn, email);
@@ -574,7 +575,7 @@ async function init() {
   if (!(await User.findOne({ where: { email: process.env.ADMIN_EMAIL || 'admin@example.com' } }))) {
     const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'ChangeMe123!', 12);
     await User.create({ email: process.env.ADMIN_EMAIL || 'admin@example.com', password_hash: hash, role: 'admin' });
-    console.log('Seeded admin user');
+    logger.info('Seeded admin user');
   }
   // seed author if configured
   if (process.env.AUTHOR_EMAIL && process.env.AUTHOR_PASSWORD) {
@@ -582,11 +583,11 @@ async function init() {
     if (!existingAuthor) {
       const hash = await bcrypt.hash(process.env.AUTHOR_PASSWORD, 12);
       await User.create({ email: process.env.AUTHOR_EMAIL, password_hash: hash, role: 'author', is_active: true });
-      console.log('Seeded author user');
+      logger.info('Seeded author user');
     }
   }
   const port = process.env.PORT || 3000;
-  const server = app.listen(port, () => console.log(`Metrics API running on :${port}`));
+  const server = app.listen(port, () => logger.info(`Metrics API running on :${port}`));
   return server;
 }
 

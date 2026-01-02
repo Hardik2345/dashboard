@@ -1,5 +1,6 @@
 const express = require('express');
 const admin = require('firebase-admin');
+const logger = require('../utils/logger');
 
 function buildNotificationsRouter() {
   const router = express.Router();
@@ -23,11 +24,11 @@ function buildNotificationsRouter() {
     }
 
     try {
-      const results = await Promise.all(topicList.map(t => admin.messaging().subscribeToTopic(token, t)));
-      console.log(`[Notifications] Subscribed token to ${topicList.length} topics:`, topicList);
+      await Promise.all(topicList.map(t => admin.messaging().subscribeToTopic(token, t)));
+      logger.info(`[Notifications] Subscribed token to ${topicList.length} topics:`, topicList);
       res.json({ success: true, message: `Subscribed to ${topicList.length} topics`, topics: topicList });
     } catch (error) {
-      console.error('[Notifications] Subscribe error:', error);
+      logger.error('[Notifications] Subscribe error:', error);
       res.status(500).json({ error: 'Failed to subscribe', details: error.message });
     }
   });

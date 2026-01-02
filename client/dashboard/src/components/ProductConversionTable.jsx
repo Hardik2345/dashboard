@@ -82,7 +82,7 @@ function PaginationActions({ count, page, rowsPerPage, onPageChange, disabled })
   );
 }
 
-export default function ProductConversionTable({ brandKey, brands = [], onBrandChange, brandsLoading = false }) {
+export default function ProductConversionTable({ brandKey }) {
   const dispatch = useAppDispatch();
   const productState = useAppSelector((state) => state.productConversion);
   const { start, end, page, pageSize, sortBy, sortDir, rows, totalCount, status, error } = productState;
@@ -139,7 +139,6 @@ export default function ProductConversionTable({ brandKey, brands = [], onBrandC
     if (!brandKey) return;
     runFetch();
     // We intentionally do not depend on start/end to avoid double-fetch on date changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandKey, runFetch]);
 
   useEffect(() => {

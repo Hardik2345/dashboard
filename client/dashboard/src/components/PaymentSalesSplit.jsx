@@ -11,7 +11,6 @@ import { getPaymentSalesSplit } from '../lib/api.js';
 
 ChartJS.register(ArcElement, ChartTooltip, Legend);
 
-const nfInt = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 const nfPct1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const nfCurrencyCompact = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', notation: 'compact', maximumFractionDigits: 1 });

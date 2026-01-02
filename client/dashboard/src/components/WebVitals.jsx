@@ -330,7 +330,7 @@ const WebVitals = ({ query }) => {
                 let displayUrl = cleanUrl;
                 try {
                   displayUrl = new URL(cleanUrl).pathname;
-                } catch (e) {
+                } catch {
                   // fallback
                 }
 

@@ -1,4 +1,5 @@
 const { QueryTypes } = require('sequelize');
+const logger = require('../utils/logger');
 
 function buildExternalController() {
   const lastUpdatedCache = { data: null, fetchedAt: 0 };
@@ -34,7 +35,7 @@ function buildExternalController() {
           iso = parsed.toISOString();
           legacy = looksLegacy ? rawTs : iso.replace('T', ' ').replace('Z', '').slice(0, 19);
         } else {
-          console.warn('[last-updated] Unparseable timestamp string:', rawTs);
+          logger.warn('[last-updated] Unparseable timestamp string:', rawTs);
           legacy = rawTs;
         }
       } else if (typeof rawTs === 'number') {
@@ -43,9 +44,9 @@ function buildExternalController() {
         iso = d.toISOString();
         legacy = iso.replace('T', ' ').replace('Z', '').slice(0, 19);
       } else if (rawTs == null) {
-        console.warn('[last-updated] No row found in pipeline_metadata for last_pipeline_completion_time');
+        logger.warn('[last-updated] No row found in pipeline_metadata for last_pipeline_completion_time');
       } else {
-        console.warn('[last-updated] Unexpected key_value type:', typeof rawTs);
+        logger.warn('[last-updated] Unexpected key_value type:', typeof rawTs);
       }
 
       const payload = {
@@ -60,7 +61,7 @@ function buildExternalController() {
       res.set('Cache-Control', 'public, max-age=15');
       return res.json(payload);
     } catch (e) {
-      console.error('Error fetching last updated from DB', e);
+      logger.error('Error fetching last updated from DB', e);
       const msg = process.env.NODE_ENV === 'production' ? 'Failed to read last updated' : (e?.message || 'Failed');
       return res.status(500).json({ error: msg });
     }
