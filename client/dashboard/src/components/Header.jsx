@@ -3,6 +3,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
+import NotificationBell from './NotificationBell.jsx';
 
 export default function Header({ user, onLogout, onMenuClick, showMenuButton = false, darkMode = false, onToggleDarkMode }) {
   const theme = useTheme();
@@ -68,6 +69,9 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
         {/* Right: User info and actions */}
         {user && (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+            {/* Notification Bell */}
+            <NotificationBell darkMode={darkMode} />
+
             {/* Dark Mode Toggle */}
             <Tooltip title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'} arrow>
               <IconButton

@@ -1,6 +1,7 @@
 const express = require('express');
 const admin = require('firebase-admin');
 const logger = require('../utils/logger');
+const { getRecentNotifications } = require('../services/notificationService');
 
 // Ensure Firebase is initialized
 try {
@@ -13,6 +14,17 @@ try {
 
 function buildNotificationsRouter() {
   const router = express.Router();
+
+  // GET /history
+  router.get('/history', async (req, res) => {
+    try {
+      const history = await getRecentNotifications();
+      res.json({ history });
+    } catch (error) {
+      logger.error('[Notifications] History error:', error);
+      res.status(500).json({ error: 'Failed to fetch history' });
+    }
+  });
 
   // POST /notifications/subscribe
   // Body: { token: string, topic: string }

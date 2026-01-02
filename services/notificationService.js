@@ -55,6 +55,50 @@ async function sendPushNotification(tokens, title, body, data = {}) {
   }
 }
 
+const redis = require('../lib/redis'); // Import generic redis client
+
+/**
+ * Store notification in Redis (Last 10)
+ * Uses a global list 'notifications:history' for simplicity as per requirements ("notifications we got").
+ */
+async function storeNotification(title, body, data = {}) {
+  try {
+    const entry = JSON.stringify({
+      title,
+      body,
+      data,
+      timestamp: new Date().toISOString()
+    });
+
+    const key = 'notifications:history';
+    // RPUSH + LTRIM to keep last 10
+    // We want to see recent 10. List order: [oldest ... newest] or [newest ... oldest]?
+    // "recent 10 notifications". Usually visualized as newest top.
+    // If using LPUSH, index 0 is newest.
+    // Let's use LPUSH to prepend, and LTRIM 0 9.
+
+    await redis.lpush(key, entry);
+    await redis.ltrim(key, 0, 9);
+
+  } catch (e) {
+    logger.error('[NotificationService] Failed to store notification history', e);
+  }
+}
+
+/**
+ * Get recent 10 notifications
+ * @returns {Promise<Array>}
+ */
+async function getRecentNotifications() {
+  try {
+    const raw = await redis.lrange('notifications:history', 0, -1);
+    return raw.map(s => JSON.parse(s));
+  } catch (e) {
+    logger.error('[NotificationService] Failed to fetch history', e);
+    return [];
+  }
+}
+
 /**
  * Send to a single topic
  * @param {string} topic 
@@ -75,6 +119,12 @@ async function sendTopicNotification(topic, title, body, data = {}) {
   try {
     const response = await admin.messaging().send(message);
     logger.info('[NotificationService] Successfully sent message to topic:', response);
+
+    // Store in history (Global for now, or filter by 'admin' topic?)
+    // User sees "notifications we got". If I am admin, I see everything.
+    // Ideally we filter. But for "recent 10", let's just log everything sent via this service.
+    await storeNotification(title, body, data);
+
     return response;
   } catch (error) {
     logger.error('[NotificationService] Error sending to topic:', error);
@@ -84,5 +134,6 @@ async function sendTopicNotification(topic, title, body, data = {}) {
 
 module.exports = {
   sendPushNotification,
-  sendTopicNotification
+  sendTopicNotification,
+  getRecentNotifications
 };

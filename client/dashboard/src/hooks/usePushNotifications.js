@@ -4,13 +4,14 @@ import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import axios from 'axios';
 
 // Firebase Config (Same as in sw.js)
+// Firebase Config (Loaded from Env)
 const firebaseConfig = {
-    apiKey: "AIzaSyAfDggFGLHrR91uUWpxICSYJu57XkTDSWg",
-    authDomain: "datum-push-test.firebaseapp.com",
-    projectId: "datum-push-test",
-    storageBucket: "datum-push-test.firebasestorage.app",
-    messagingSenderId: "404123337738",
-    appId: "1:404123337738:web:eaf5899b153e9e5a928bf3"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 // Initialize only once
@@ -37,13 +38,12 @@ export default function usePushNotifications(user) {
                         console.log('[FCM] Token received:', currentToken);
 
                         // Subscribe via Backend
-                        // We subscribe to 'admin' (all) and 'brand-tmc' (test)
-                        // Ideally this should use user.brandKey
+                        // User requested to only subscribe to 'admin' topic to receive all notifications and avoid duplicates.
                         const topics = ['admin'];
 
-                        // Assuming user object has brand information or we default to tmc for test
-                        const brandKey = user.brandKey || 'tmc';
-                        topics.push(`brand-${brandKey}`);
+                        // Previously subscribed to brand topic as well, causing duplicates.
+                        // const brandKey = user.brandKey || 'tmc';
+                        // topics.push(`brand-${brandKey}`);
 
                         console.log('[FCM] Subscribing to topics:', topics);
 
