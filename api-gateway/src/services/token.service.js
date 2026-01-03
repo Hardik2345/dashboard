@@ -134,6 +134,7 @@ class TokenService {
 
         const payload = {
             sub: user._id,
+            email: user.email,
             brand_ids: brandIds,
             primary_brand_id: primaryBrandId,
             roles: roles,

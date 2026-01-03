@@ -5,8 +5,8 @@ const { RangeSchema, isoDate } = require('../validation/schemas');
 const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta } = require('../utils/metricsUtils');
 const { previousWindow, prevDayStr, parseIsoDate, formatIsoDate, shiftDays } = require('../utils/dateUtils');
 const { requireBrandKey } = require('../utils/brandHelpers');
-const { getBrandConnection } = require('../lib/brandConnectionManager');
 const { getBrands } = require('../config/brands');
+const { getBrandConnection } = require('../lib/brandConnectionManager');
 
 const SHOP_DOMAIN_CACHE = new Map();
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -774,8 +774,6 @@ function buildMetricsController() {
         if (brandQuery) {
           const brandCheck = requireBrandKey(brandQuery);
           if (brandCheck.error) return res.status(400).json({ error: brandCheck.error });
-          const brandConn = await getBrandConnection(brandCheck.cfg);
-          conn = brandConn.sequelize;
         }
         if (!conn) return res.status(500).json({ error: 'Brand DB connection unavailable' });
 
@@ -2114,8 +2112,7 @@ function buildMetricsController() {
 
         if (!req.brandDb && req.brandConfig) {
           try {
-            req.brandDb = await getBrandConnection(req.brandConfig);
-            req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
+                        req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
           } catch (connErr) {
             console.error("Lazy connection failed", connErr);
           }
@@ -2205,14 +2202,13 @@ function buildMetricsController() {
           if (!req.brandDb && req.brandConfig) {
             logger.debug(`[LAZY CONNECT] Connecting to ${req.brandConfig.key} for fallback`);
             try {
-              req.brandDb = await getBrandConnection(req.brandConfig);
-              req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
+                            req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
             } catch (connErr) {
               console.error("Lazy connection failed", connErr);
             }
           }
           const conn = req.brandDb ? req.brandDb.sequelize : null;
-          if (!conn) throw new Error("Database connection missing for fallback (Cache Miss & DB Fail)");
+          if (!conn) throw new Error("Database connection missing (tenant router required)");
 
           const [sales, orders, sessions, atc, cvrObj, aovObj] = await Promise.all([
             rawSum('total_sales', { start: s, end: e, conn }),

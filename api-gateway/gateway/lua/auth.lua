@@ -1,6 +1,8 @@
 local jwt = require("resty.jwt")
 local jwks = require("jwks")
 local cjson = require("cjson")
+local hmac = require("resty.hmac")
+local resty_str = require("resty.string")
 
 local _M = {}
 
@@ -106,7 +108,21 @@ function _M.authenticate()
     ngx.req.set_header("x-user-id", claims.sub)
     ngx.req.set_header("x-brand-id", target_brand_id)
     ngx.req.set_header("x-role", role)
-    
+    if claims.email then
+        ngx.req.set_header("x-email", claims.email)
+    end
+
+    -- 9. Gateway-signed header to prevent spoofing downstream
+    local gw_secret = os.getenv("GATEWAY_SHARED_SECRET")
+    if gw_secret and gw_secret ~= "" then
+        local ts = tostring(ngx.time())
+        local payload = table.concat({ claims.sub or "", target_brand_id or "", role or "", ts }, "|")
+        local hm = hmac:new(gw_secret, hmac.ALGOS.SHA256)
+        local sig = hm:final(payload, true) -- hex-encoded
+        ngx.req.set_header("x-gw-ts", ts)
+        ngx.req.set_header("x-gw-sig", sig)
+    end
+
     ngx.req.clear_header("Authorization")
 end
 
