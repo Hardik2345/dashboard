@@ -1,27 +1,12 @@
 import { useEffect } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getMessaging, getToken, onMessage } from 'firebase/messaging';
+import { getToken, onMessage } from 'firebase/messaging';
+import { messaging } from '../lib/firebase';
 import axios from 'axios';
-
-// Firebase Config (Same as in sw.js)
-// Firebase Config (Loaded from Env)
-const firebaseConfig = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: import.meta.env.VITE_FIREBASE_APP_ID
-};
-
-// Initialize only once
-const app = initializeApp(firebaseConfig);
-const messaging = getMessaging(app);
 
 export default function usePushNotifications(user) {
     useEffect(() => {
-        // Only subscribe if user is logged in
-        if (!user) return;
+        // Only subscribe if user is logged in AND is an author
+        if (!user || !user.isAuthor) return;
 
         async function setupNotifications() {
             try {

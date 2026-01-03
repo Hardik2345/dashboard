@@ -56,6 +56,7 @@ async function sendPushNotification(tokens, title, body, data = {}) {
 }
 
 const redis = require('../lib/redis'); // Import generic redis client
+const { getIO } = require('../lib/socket');
 
 /**
  * Store notification in Redis (Last 10)
@@ -63,12 +64,13 @@ const redis = require('../lib/redis'); // Import generic redis client
  */
 async function storeNotification(title, body, data = {}) {
   try {
-    const entry = JSON.stringify({
+    const notifObj = {
       title,
       body,
       data,
       timestamp: new Date().toISOString()
-    });
+    };
+    const entry = JSON.stringify(notifObj);
 
     const key = 'notifications:history';
     // RPUSH + LTRIM to keep last 10
@@ -79,6 +81,15 @@ async function storeNotification(title, body, data = {}) {
 
     await redis.lpush(key, entry);
     await redis.ltrim(key, 0, 9);
+
+    // Emit Socket Event for Real-Time Update
+    try {
+      const io = getIO();
+      io.emit('notification', notifObj);
+    } catch (socketError) {
+      // Socket might not be init if running tests or script script, ignore
+      // logger.debug('Socket emit failed', socketError.message);
+    }
 
   } catch (e) {
     logger.error('[NotificationService] Failed to store notification history', e);

@@ -588,8 +588,16 @@ async function init() {
       logger.info('Seeded author user');
     }
   }
+  const { initSocket } = require('./lib/socket');
+
+  // ...
+
   const port = process.env.PORT || 3000;
   const server = app.listen(port, () => logger.info(`Metrics API running on :${port}`));
+
+  // Initialize Socket.IO
+  initSocket(server);
+
   return server;
 }
 

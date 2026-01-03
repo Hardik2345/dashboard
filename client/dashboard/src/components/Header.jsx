@@ -69,8 +69,8 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
         {/* Right: User info and actions */}
         {user && (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
-            {/* Notification Bell */}
-            <NotificationBell darkMode={darkMode} />
+            {/* Notification Bell - Authors Only */}
+            {user?.isAuthor && <NotificationBell darkMode={darkMode} />}
 
             {/* Dark Mode Toggle */}
             <Tooltip title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'} arrow>

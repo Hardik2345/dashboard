@@ -58,7 +58,7 @@ async function sendCVRAlert(brandName, brandKey, comparisonResult, customBody = 
         // 1. Send to Brand Topic (Authors)
         // Topic Convention: brand-{brandKey}
         const brandTopic = `brand-${brandKey}`;
-        await sendTopicNotification(brandTopic, title, body, payload);
+        // await sendTopicNotification(brandTopic, title, body, payload); // Disabling to avoid duplicate history/socket events
 
         // 2. Send to Admin Topic (All Brands)
         // Topic Convention: admin
