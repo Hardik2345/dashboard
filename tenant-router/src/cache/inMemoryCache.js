@@ -2,7 +2,7 @@ const { LRUCache } = require('lru-cache');
 
 const options = {
     max: 500,
-    ttl: 1000 * 300,
+    ttl: 1000 * 600,
     allowStale: false, // Default: return undefined if expired
     updateAgeOnGet: false,
     updateAgeOnHas: false,
