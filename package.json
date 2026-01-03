@@ -21,6 +21,7 @@
   "type": "commonjs",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.731.1",
+    "@upstash/qstash": "^2.8.4",
     "aws-sdk": "^2.1692.0",
     "axios": "^1.13.2",
     "bcrypt": "^5.1.1",

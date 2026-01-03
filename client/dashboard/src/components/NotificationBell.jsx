@@ -209,7 +209,7 @@ export default function NotificationBell({ darkMode }) {
                                                             {notif.body}
                                                         </Typography>
                                                         <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                            {notif.timestamp ? dayjs(notif.timestamp).fromNow() : ''}
+                                                            {notif.timestamp ? `${dayjs(notif.timestamp).fromNow()} • ${dayjs(notif.timestamp).format('h:mm A')}` : ''}
                                                             {isNew && <Box component="span" sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'primary.main', display: 'inline-block', ml: 1 }} />}
                                                         </Typography>
                                                     </>
@@ -217,7 +217,7 @@ export default function NotificationBell({ darkMode }) {
                                                 disableTypography
                                             />
                                         </ListItem>
-                                        {index < notifications.length - 1 && <Divider component="li" variant="inset" component="div" sx={{ ml: 9 }} />}
+                                        {index < notifications.length - 1 && <Divider component="li" variant="inset" sx={{ ml: 9 }} />}
                                     </Box>
                                 );
                             })

@@ -49,10 +49,21 @@ async function sendCVRAlert(brandName, brandKey, comparisonResult, customBody = 
 
         logger.info(`[PushDispatcher] Sending '${body}' via Topics`);
 
+        // Calculate Time Context for Deep Link
+        const istOffset = (Number(process.env.IST_OFFSET_HOURS) || 5.5) * 60 * 60 * 1000;
+        const now = new Date();
+        const istDate = new Date(now.getTime() + istOffset);
+        const dateStr = istDate.toISOString().split('T')[0]; // YYYY-MM-DD
+        const hour = istDate.getUTCHours();
+
+        const linkUrl = `/dashboard?brand=${brandName}&date=${dateStr}&hour=${hour}`;
+
         const payload = {
             type: 'cvr_alert',
             brand: brandName,
-            brand_key: brandKey
+            brand_key: brandKey,
+            url: linkUrl,
+            link: linkUrl // Common standard
         };
 
         // 1. Send to Brand Topic (Authors)

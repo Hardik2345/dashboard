@@ -7,6 +7,11 @@ const logger = require('../utils/logger');
 // For now, initializing without arguments attempts to use ADC (Application Default Credentials).
 try {
   if (!admin.apps.length) {
+    // Security Check: Ensure Credentials are env-managed in Production
+    if (process.env.NODE_ENV === 'production' && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      logger.warn('[NotificationService] SECURITY WARNING: Production environment missing GOOGLE_APPLICATION_CREDENTIALS. Relying on default ADC. Ensure this is intended.');
+    }
+
     admin.initializeApp();
   }
 } catch (error) {

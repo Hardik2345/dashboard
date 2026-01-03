@@ -46,9 +46,11 @@ function buildQStashController(deps) {
         return true;
     }
 
+    const redis = require('../lib/redis');
+
     async function handleEvent(req, res) {
         const signature = req.headers['upstash-signature'];
-        const messageId = req.headers['upstash-message-id'];
+        const messageId = req.headers['upstash-message-id']; // QStash Header
 
         logger.info(`[QStash] Received event ${messageId || 'unknown'}`);
 
@@ -57,9 +59,53 @@ function buildQStashController(deps) {
             return res.status(401).json({ error: 'Invalid signature' });
         }
 
+        // 1. Idempotency Check (Prevent duplicate handling)
+        if (messageId) {
+            try {
+                // Try to set key if not exists (NX), with 1 hour Expiry (EX 3600)
+                // Returns 'OK' if set, null if already exists
+                const key = `event_processed:${messageId}`;
+                const result = await redis.set(key, '1', 'NX', 'EX', 3600);
+
+                if (!result) {
+                    logger.warn(`[QStash] duplicate event detected: ${messageId}. Skipping.`);
+                    return res.status(200).json({ received: true, handled: false, note: 'Duplicate event' });
+                }
+            } catch (e) {
+                logger.error('[QStash] Redis idempotency check failed. Proceeding cautiously.', e);
+                // We proceed if Redis fails, or should we fail safe? 
+                // Proceeding risks duplicates, but failing risks downtime. Proceeding is safer for delivery.
+            }
+        }
+
         try {
             const event = req.body || {};
             logger.info('[QStash] Payload:', JSON.stringify(event));
+
+            // 2. Strict Input Validation (Fail Fast)
+            if (event.brand_id && (event.total_sessions !== undefined || event.total_orders !== undefined)) {
+                // Check required fields
+                if (!event.brand) {
+                    logger.warn(`[QStash] Invalid Payload: Missing 'brand' name`);
+                    return res.status(400).json({ error: 'Missing brand name' });
+                }
+
+                // Check Numeric constraints
+                const sessions = Number(event.total_sessions);
+                const orders = Number(event.total_orders);
+
+                if (isNaN(sessions) || sessions < 0) {
+                    logger.warn(`[QStash] Invalid Payload: total_sessions invalid (${event.total_sessions})`);
+                    return res.status(400).json({ error: 'Invalid total_sessions' });
+                }
+                if (isNaN(orders) || orders < 0) {
+                    logger.warn(`[QStash] Invalid Payload: total_orders invalid (${event.total_orders})`);
+                    return res.status(400).json({ error: 'Invalid total_orders' });
+                }
+
+                // Check Divide-by-zero safety? 
+                // Calculation logic handles it, but good to know data is sane.
+            }
 
             // Dispatch Logic
 
@@ -67,17 +113,6 @@ function buildQStashController(deps) {
             // { brand_id, brand, total_sales, total_orders... }
             if (event.brand_id && event.total_sessions !== undefined && event.total_orders !== undefined) {
                 logger.info('[QStash] Dispatching to CVR Service');
-                // Fire and forget?
-                // "The backend receives metric update events... QStash... NOT cron-based"
-                // Usually we shouldn't block the HTTP response on the entire logic if it's long.
-                // But QStash retries on failure. We should return 200 OK only if we accepted it.
-                // Since our service is async, we can await it or just trigger it.
-                // Given "high-signal", let's await to ensure no errors during dispatch, 
-                // but maybe not wait for FCM delivery if slow? 
-                // The CVR logic (Redis fetches) is fast. FCM might be slow.
-                // I'll make `processCVREvent` returns promise.
-                // I will NOT await the entire chain if it risks timeout, but for now await is safer for error reporting.
-                // Actually, let's await it to catch errors.
                 const { processCVREvent } = require('../services/cvr/cvrService');
                 await processCVREvent(event);
                 return res.status(200).json({ received: true, handled: true, module: 'cvrService' });

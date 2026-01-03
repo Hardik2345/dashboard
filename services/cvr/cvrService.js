@@ -17,7 +17,7 @@ const { getBrands } = require('../../config/brands');
  * 
  * @param {object} event 
  */
-async function processCVREvent(event) { 
+async function processCVREvent(event) {
     const brandName = event.brand || ''; // "tmc"
     const brandId = event.brand_id;
 
