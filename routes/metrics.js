@@ -63,9 +63,9 @@ function buildMetricsRouter(sequelize) {
   router.get('/product-conversion', requireAuthor, brandContext, controller.productConversion);
   router.get('/product-conversion/export', requireAuthor, brandContext, controller.productConversionCsv);
 
-  router.get('/hourly-sales-compare', requireAuth, controller.hourlySalesCompare);
+  router.get('/hourly-sales-compare', ...protectedBrand, controller.hourlySalesCompare);
   router.get('/hourly-sales-summary', ...protectedBrand, controller.hourlySalesSummary);
-  router.get('/diagnose/total-orders', requireAuth, controller.diagnoseTotalOrders(sequelize));
+  router.get('/diagnose/total-orders', ...protectedBrand, controller.diagnoseTotalOrders(sequelize));
 
   return router;
 }
