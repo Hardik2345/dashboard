@@ -41,10 +41,17 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/external-pagespeed/, '/api'),
       },
-      '/api': {
-        target: 'http://localhost:3000',
+      // Auth goes to gateway root
+      '/api/auth/': {
+        target: 'http://localhost:18080',
         changeOrigin: true,
-        // Remove the /api prefix because backend routes are mounted at root
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      // Route all other app API calls through the gateway analytics prefix (dev)
+      '/api': {
+        target: 'http://localhost:18080/analytics',
+        changeOrigin: true,
+        // Strip /api prefix; gateway expects /analytics/... paths
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
@@ -56,10 +63,15 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/external-pagespeed/, '/api'),
       },
-      '/api': {
-        target: 'http://localhost:3000',
+      '/api/auth/': {
+        target: 'http://localhost:18080',
         changeOrigin: true,
-        // Remove the /api prefix because backend routes are mounted at root
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      // Route all app API calls through the gateway analytics prefix (preview)
+      '/api': {
+        target: 'http://localhost:18080/analytics',
+        changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },

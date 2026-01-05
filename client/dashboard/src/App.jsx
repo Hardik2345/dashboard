@@ -67,16 +67,22 @@ function loadInitialThemeMode() {
 
 export default function App() {
   const dispatch = useAppDispatch();
+  const authState = useAppSelector((state) => state.auth);
+  const globalBrandKey = useAppSelector((state) => state.brand.brand);
   const {
     user, initialized, loginStatus, loginError,
-    GlobalBrandKey: globalBrandKey,
-  } = useAppSelector((state) => ({
-    ...state.auth,
-    GlobalBrandKey: state.brand.brand
-  }));
+  } = authState;
   const { range, selectedMetric, productSelection } = useAppSelector((state) => state.filters);
   const loggingIn = loginStatus === 'loading';
-  const [start, end] = range;
+  // range holds ISO strings; normalize to dayjs for components that expect it
+  const [start, end] = useMemo(
+    () => [
+      range?.[0] && dayjs(range[0]).isValid() ? dayjs(range[0]) : null,
+      range?.[1] && dayjs(range[1]).isValid() ? dayjs(range[1]) : null,
+    ],
+    [range]
+  );
+  const normalizedRange = useMemo(() => [start, end], [start, end]);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
 
   const isAuthor = !!user?.isAuthor;
@@ -387,7 +393,11 @@ export default function App() {
   useEffect(() => {
     if (start && end) {
       try {
-        localStorage.setItem('pts_date_range_v2', JSON.stringify({ start: start.toISOString(), end: end.toISOString(), savedAt: Date.now() }));
+        const sIso = dayjs(start).isValid() ? dayjs(start).toISOString() : null;
+        const eIso = dayjs(end).isValid() ? dayjs(end).toISOString() : null;
+        if (sIso && eIso) {
+          localStorage.setItem('pts_date_range_v2', JSON.stringify({ start: sIso, end: eIso, savedAt: Date.now() }));
+        }
       } catch {
         // Ignore storage write errors
       }
@@ -557,7 +567,7 @@ export default function App() {
                     />
                     {authorTab === 'dashboard' && hasAuthorBrand && (
                       <MobileTopBar
-                        value={range}
+                        value={normalizedRange}
                         onChange={handleRangeChange}
                         brandKey={authorBrandKey}
                         productOptions={productOptions}
@@ -712,7 +722,7 @@ export default function App() {
             <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
             <Container maxWidth="sm" sx={{ pt: { xs: 2.5, sm: 3 } }}>
             <MobileTopBar
-              value={range}
+              value={normalizedRange}
               onChange={handleRangeChange}
               brandKey={activeBrandKey}
               showProductFilter={false}
