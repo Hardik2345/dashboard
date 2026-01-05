@@ -401,6 +401,37 @@ export default function App() {
     dispatch(fetchCurrentUser());
   }, [dispatch]);
 
+  // Deep Link Hydration (Handle ?brand=X&date=Y)
+  useEffect(() => {
+    if (!user) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const brandParam = params.get('brand');
+    const dateParam = params.get('date');
+
+    if (brandParam) {
+      const normalized = brandParam.toString().trim().toUpperCase();
+      if (isAuthor) {
+        console.log('[App] Deep Linking to Brand:', normalized);
+        dispatch(setBrand(normalized));
+      }
+    }
+
+    // Optional: If date is present, we could set the range.
+    // However, the deep link is usually specific to an hour on a specific date.
+    // The Dashboard defaults to a range.
+    // If we want to view that specific day?
+    if (dateParam) {
+      const d = dayjs(dateParam);
+      if (d.isValid()) {
+        // Set range to that full day?
+        // dispatch(setRange([d.startOf('day'), d.endOf('day')]));
+        // User didn't explicitly ask for date override, but it helps context.
+        // I'll leave it commented out or strictly stick to Brand as requested to avoid confusing global state.
+      }
+    }
+  }, [dispatch, user, isAuthor]);
+
   // Session Expiry Notification - DISABLED per user request
   // useEffect(() => {
   //   if (!user || !expiresAt) return; // 'expiresAt' needs to be selected from state

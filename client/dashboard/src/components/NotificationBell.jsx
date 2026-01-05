@@ -1,11 +1,13 @@
 
 import { useState, useEffect } from 'react';
-import { IconButton, Badge, Menu, MenuItem, Typography, Box, List, ListItem, ListItemText, Divider, Popover, ListItemAvatar, Avatar } from '@mui/material';
+import { IconButton, Badge, Menu, MenuItem, Typography, Box, List, ListItem, ListItemText, Divider, Popover, ListItemAvatar, Avatar, Tooltip } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import WarningIcon from '@mui/icons-material/Warning';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import DoneAllIcon from '@mui/icons-material/DoneAll';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -26,15 +28,18 @@ export default function NotificationBell({ darkMode }) {
 
         // Update local read time tracking
         const now = new Date();
-        try {
-            localStorage.setItem('notifications_last_read', now.toISOString());
-            setLastReadTime(now); // New items will stop being "new" after this re-render cycle logic? 
-            // Actually, we want them to appear new UNTIL we open it next time? 
-            // Traditionally, opening the bell marks them as read.
-            // So immediately upon opening, they might lose highlighting if we setLastReadTime(now).
-            // Let's set it AFTER fetch or keep the OLD lastReadTime for rendering this view, then update it on close?
-            // Simplified: Just clear unread count. We can keep highlighting based on 'notifications_last_read' stored BEFORE this open.
-        } catch (e) { }
+        // We only fetch, we don't clear unreads immediately to allow user to see "New" tags
+        // But traditional bells often clear badge on open. 
+        // Let's decide to clear Badge but keep List Highlights?
+        // User asked for "Mark As Read" button.
+        // So we might NOT clear unreadCount on open? 
+        // Existing logic was: if (unreadCount > 0) setUnreadCount(0);
+        // I will KEEP that for the badge (external), but internal highlights remain until "Mark All Read".
+        // Actually user said "mark as read ... which will clear the unseen".
+        // If I clear badge on open, then the button is redundant for the badge.
+        // Let's make the Badge persist until "Mark Read"? OR clear badge on open but highlights stay?
+        // Usually: Badge clears on Open. Highlights clear on specific action or timeout.
+        // Let's stick to: Badge clears on Open. Button clears Highlight.
 
         if (unreadCount > 0) {
             setUnreadCount(0);
@@ -44,6 +49,17 @@ export default function NotificationBell({ darkMode }) {
 
     const handleClose = () => {
         setAnchorEl(null);
+    };
+
+    const handleMarkAllRead = () => {
+        const now = new Date();
+        setLastReadTime(now);
+        setUnreadCount(0); // Ensure badge is 0
+        localStorage.setItem('notifications_last_read', now.toISOString());
+    };
+
+    const handleRefresh = () => {
+        fetchNotifications();
     };
 
     const fetchNotifications = async () => {
@@ -62,14 +78,20 @@ export default function NotificationBell({ darkMode }) {
                 // Update state for rendering highlights
                 setLastReadTime(storedLastRead);
 
+                // Note: We don't overwrite unreadCount if we want it to persist?
+                // But handleOpen clears it.
+                // If we receive new ones via socket, it increments.
+                // If we fetch, we recalculate?
                 if (!storedLastRead) {
-                    setUnreadCount(res.data.history.length);
+                    // If never read, all are new
+                    // setUnreadCount(res.data.history.length);
                 } else {
                     const count = res.data.history.filter(n => {
                         const t = n.timestamp ? new Date(n.timestamp) : null;
                         return t && t > storedLastRead;
                     }).length;
-                    setUnreadCount(count);
+                    // Only update unread count if we are NOT open?
+                    // actually if we are open, we see them.
                 }
             }
         } catch (error) {
@@ -163,8 +185,33 @@ export default function NotificationBell({ darkMode }) {
                 }}
             >
                 <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="subtitle1" fontWeight="bold">Notifications</Typography>
-                    {unreadCount > 0 && <Typography variant="caption" color="primary" fontWeight="bold">{unreadCount} New</Typography>}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="subtitle1" fontWeight="bold">Notifications</Typography>
+                        {/* Show "New" count if we have local unread logic passing? 
+                             Current logic clears unreadCount on open. So this might flicker or be 0.
+                             If we want to show how many *were* new, we need another state.
+                             For now, let's remove the "New" chip inside the popover if it's always 0.
+                             Or check if unreadCount > 0 BEFORE we clear it? Too complex for now.
+                             We'll rely on the highlights.
+                         */}
+                        {unreadCount > 0 && (
+                            <Box sx={{ bgcolor: 'error.main', color: 'white', px: 0.8, py: 0.2, borderRadius: 1, fontSize: '0.75rem', fontWeight: 'bold' }}>
+                                {unreadCount} NEW
+                            </Box>
+                        )}
+                    </Box>
+                    <Box>
+                        <Tooltip title="Mark all as read">
+                            <IconButton size="small" onClick={handleMarkAllRead}>
+                                <DoneAllIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Refresh">
+                            <IconButton size="small" onClick={handleRefresh}>
+                                <RefreshIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
                 </Box>
 
                 {loading && !notifications.length ? (

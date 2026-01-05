@@ -7,32 +7,13 @@ const logger = require('../../utils/logger');
  * (Switched to Topics as 'users.fcm_token' column does not exist).
  */
 
+const { generateMessage } = require('./messageUtils');
+
 /**
- * Format the Push Message.
- * Mandatory Format: "{brand_name}: CVR down 18% vs yesterday (same hour), and 12% vs 5-day avg"
- * 
- * @param {string} brandName 
- * @param {object} comparisonResult - { primaryDiff, secondaryDiff, secondaryDrop }
- * @returns {string} Formatted Body
+ * Push Dispatcher
+ * Formats messages and sends to eligible users via Topics.
+ * (Switched to Topics as 'users.fcm_token' column does not exist).
  */
-function formatMessage(brandName, comparisonResult) {
-    const { primaryDiff, secondaryDiff } = comparisonResult;
-
-    // primaryDiff is negative for drop. e.g. -18.3
-    const pDirection = primaryDiff < 0 ? 'down' : 'up';
-    const pVal = Math.round(Math.abs(primaryDiff));
-
-    let body = `${brandName}: CVR ${pDirection} ${pVal}% vs yesterday (same hour)`;
-
-    // "and 12% vs 5-day avg" 
-    if (secondaryDiff !== undefined && secondaryDiff !== null && !isNaN(secondaryDiff)) {
-        const sDirection = secondaryDiff < 0 ? 'down' : 'up';
-        const sVal = Math.round(Math.abs(secondaryDiff));
-        body += `, and ${sDirection} ${sVal}% vs 5-day avg`;
-    }
-
-    return body;
-}
 
 /**
  * Send the CVR Alert
@@ -44,17 +25,23 @@ function formatMessage(brandName, comparisonResult) {
  */
 async function sendCVRAlert(brandName, brandKey, comparisonResult, customBody = null) {
     try {
-        const title = `🚨 ${brandName} CVR Alert`;
-        const body = customBody || formatMessage(brandName, comparisonResult);
-
-        logger.info(`[PushDispatcher] Sending '${body}' via Topics`);
-
-        // Calculate Time Context for Deep Link
+        // Calculate Time Context for Deep Link & Deterministic Variation
         const istOffset = (Number(process.env.IST_OFFSET_HOURS) || 5.5) * 60 * 60 * 1000;
         const now = new Date();
         const istDate = new Date(now.getTime() + istOffset);
         const dateStr = istDate.toISOString().split('T')[0]; // YYYY-MM-DD
         const hour = istDate.getUTCHours();
+
+        let body = customBody;
+        if (!body) {
+            // Use Deterministic Message Generator
+            body = generateMessage(brandName, comparisonResult, dateStr, hour);
+        }
+
+        const title = `🚨 ${brandName} CVR Alert`;
+        // const body = customBody || formatMessage(brandName, comparisonResult); // Legacy
+
+        logger.info(`[PushDispatcher] Sending '${body}' via Topics`);
 
         const linkUrl = `/dashboard?brand=${brandName}&date=${dateStr}&hour=${hour}`;
 
