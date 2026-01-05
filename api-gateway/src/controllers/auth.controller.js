@@ -1,11 +1,13 @@
 const AuthService = require('../services/auth.service');
 const logger = require('../utils/logger');
+const TokenService = require('../services/token.service');
+const GlobalUser = require('../models/GlobalUser.model');
 
 const COOKIE_OPTIONS = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'Strict',
-    path: '/auth',
+    sameSite: 'Lax',
+    path: '/', // ensure refresh cookie is sent on /api/auth/* via proxy
     maxAge: 7 * 24 * 60 * 60 * 1000
 };
 
@@ -120,5 +122,30 @@ exports.logoutAllSelf = async (req, res) => {
     } catch (err) {
         logger.error('AuthController', 'Logout All Self error', { error: err.message });
         res.status(401).json({ error: 'Unauthorized' });
+    }
+};
+
+exports.me = async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) return res.status(401).json({ error: 'Access token required' });
+
+        const payload = TokenService.verifyAccessToken(token);
+        const user = await GlobalUser.findById(payload.sub);
+        if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+        return res.json({
+            user: {
+                id: user._id,
+                email: user.email,
+                primary_brand_id: user.primary_brand_id,
+                brand_memberships: user.brand_memberships,
+                status: user.status,
+            },
+            expiresAt: payload.exp ? payload.exp * 1000 : null,
+        });
+    } catch (err) {
+        logger.error('AuthController', 'Me error', { error: err.message });
+        return res.status(401).json({ error: 'Unauthorized' });
     }
 };

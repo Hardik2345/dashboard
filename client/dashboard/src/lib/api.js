@@ -1,20 +1,9 @@
 function resolveApiBase() {
   const envBase = (import.meta.env.VITE_API_BASE || '').trim();
   if (!envBase) return '/api';
-
-  // If env base is absolute but on a different host, fall back to same-origin proxy to keep cookies working.
-  try {
-    const envUrl = new URL(envBase, window.location.origin);
-    if (envUrl.origin !== window.location.origin) {
-      return '/api';
-    }
-  } catch {
-    // Ignore parse errors, fall through to envBase
-  }
   return envBase;
 }
 
-// Keep API calls on same origin so session cookies stick.
 const API_BASE = resolveApiBase();
 
 function qs(params) {
@@ -57,10 +46,46 @@ function filenameFromDisposition(disposition) {
   return null;
 }
 
+function authHeaders() {
+  const token = window.localStorage.getItem('gateway_access_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function refreshAccessToken() {
+  try {
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.access_token) {
+      window.localStorage.removeItem('gateway_access_token');
+      return false;
+    }
+    window.localStorage.setItem('gateway_access_token', json.access_token);
+    return true;
+  } catch {
+    window.localStorage.removeItem('gateway_access_token');
+    return false;
+  }
+}
+
+async function fetchWithAuth(url, options = {}, retry = true) {
+  const opts = { ...options, headers: { ...(options.headers || {}), ...authHeaders() } };
+  const res = await fetch(url, opts);
+  if (res.status === 401 && retry) {
+    const refreshed = await refreshAccessToken();
+    if (!refreshed) return res;
+    const retryOpts = { ...options, headers: { ...(options.headers || {}), ...authHeaders() } };
+    return fetch(url, retryOpts);
+  }
+  return res;
+}
+
 async function getJSON(path, params) {
   const url = `${API_BASE}${path}${qs(params || {})}`;
   try {
-    const res = await fetch(url, { credentials: 'include' });
+    const res = await fetchWithAuth(url);
     if (!res.ok) throw new Error(`${res.status}`);
     return await res.json();
   } catch (e) {
@@ -73,7 +98,7 @@ async function getJSON(path, params) {
 async function doGet(path, params, options = {}) {
   const url = `${API_BASE}${path}${qs(params || {})}`;
   try {
-    const res = await fetch(url, { credentials: 'include', signal: options.signal });
+    const res = await fetchWithAuth(url, { signal: options.signal });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) return { error: true, status: res.status, data: json };
     return { error: false, data: json };
@@ -85,10 +110,9 @@ async function doGet(path, params, options = {}) {
 async function doPost(path, body) {
   const url = `${API_BASE}${path}`;
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithAuth(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify(body || {})
     });
     const json = await res.json().catch(() => ({}));
@@ -102,10 +126,9 @@ async function doPost(path, body) {
 async function doPut(path, body) {
   const url = `${API_BASE}${path}`;
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithAuth(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify(body || {}),
     });
     const json = await res.json().catch(() => ({}));
@@ -119,7 +142,7 @@ async function doPut(path, body) {
 async function doDelete(path) {
   const url = `${API_BASE}${path}`;
   try {
-    const res = await fetch(url, { method: 'DELETE', credentials: 'include' });
+    const res = await fetchWithAuth(url, { method: 'DELETE' });
     // Some deletes return 204 with no JSON
     let json = {};
     try { json = await res.json(); } catch {
@@ -141,8 +164,10 @@ export async function login(email, password) {
       credentials: 'include',
       body: JSON.stringify({ email, password })
     });
-    if (!res.ok) return { error: true, status: res.status, data: await res.json().catch(()=>({})) };
-    return { error: false, data: await res.json() };
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.access_token) return { error: true, status: res.status, data: json };
+    window.localStorage.setItem('gateway_access_token', json.access_token);
+    return { error: false, data: json };
   } catch {
     return { error: true };
   }
@@ -150,7 +175,8 @@ export async function login(email, password) {
 
 export async function logout() {
   try {
-    await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
+    window.localStorage.removeItem('gateway_access_token');
+    await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: authHeaders(), credentials: 'include' });
   } catch {
     // ignore logout errors
   }
@@ -158,8 +184,9 @@ export async function logout() {
 
 export async function me() {
   try {
-    const res = await fetch(`${API_BASE}/auth/me`, { credentials: 'include' });
-    if (!res.ok) return { authenticated: false };
+    const res = await fetchWithAuth(`${API_BASE}/auth/me`);
+    if (res.status === 401) return { authenticated: false, status: res.status };
+    if (!res.ok) return { authenticated: false, status: res.status };
     const json = await res.json();
     return { authenticated: true, user: json.user, expiresAt: json.expiresAt };
   } catch {
@@ -172,7 +199,6 @@ export async function sendHeartbeat(meta = null) {
     const res = await fetch(`${API_BASE}/activity/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       keepalive: true,
       body: JSON.stringify({ meta }),
     });
@@ -414,7 +440,7 @@ export async function getLastUpdatedPTS(arg = undefined) {
   const search = brandKey ? `?brand_key=${encodeURIComponent(brandKey)}` : '';
   const url = `${API_BASE}/external/last-updated/pts${search}`;
   try {
-    const res = await fetch(url, { cache: 'no-store', credentials: 'include' });
+    const res = await fetchWithAuth(url, { cache: 'no-store' });
     if (!res.ok) throw new Error('Failed');
     const json = await res.json();
     return { raw: json["Last successful run completed at"], timezone: json.timezone, error: false };
@@ -436,7 +462,6 @@ export async function createAdjustmentBucket(payload) {
     const res = await fetch(`${API_BASE}/author/adjustment-buckets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify(payload)
     });
     const json = await res.json().catch(()=>({}));
