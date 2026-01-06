@@ -53,7 +53,7 @@ const legendPadPlugin = {
 const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const nfCurrency2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
-const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
+const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 2 });
 
 // Short formatting for bar labels: prefer compact 'k' for thousands and 'lakhs' for millions
 function shortNumberLabel(value) {
