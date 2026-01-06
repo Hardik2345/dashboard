@@ -4,6 +4,15 @@ const logger = require('../utils/logger');
 function buildExternalController() {
   const lastUpdatedCache = { data: null, fetchedAt: 0 };
 
+  function toIstPayload(dateObj, legacyRaw) {
+    // Convert any Date to IST (+05:30) without relying on DB/session TZ.
+    const istMs = dateObj.getTime() + (5.5 * 60 * 60 * 1000);
+    const ist = new Date(istMs);
+    const iso = ist.toISOString();
+    const legacy = legacyRaw || iso.replace('T', ' ').replace('Z', '').slice(0, 19);
+    return { iso, legacy };
+  }
+
   async function lastUpdated(req, res) {
     try {
       if (!lastUpdatedCache[req.brandKey]) {
@@ -28,14 +37,16 @@ function buildExternalController() {
       let legacy = null;
 
       if (rawTs instanceof Date) {
-        iso = rawTs.toISOString();
-        legacy = iso.replace('T', ' ').replace('Z', '').slice(0, 19);
+        const ist = toIstPayload(rawTs);
+        iso = ist.iso;
+        legacy = ist.legacy;
       } else if (typeof rawTs === 'string' && rawTs.trim()) {
         const looksLegacy = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(rawTs);
-        const parsed = looksLegacy ? new Date(rawTs.replace(' ', 'T') + 'Z') : new Date(rawTs);
+        const parsed = looksLegacy ? new Date(rawTs.replace(' ', 'T')) : new Date(rawTs);
         if (!isNaN(parsed.valueOf())) {
-          iso = parsed.toISOString();
-          legacy = looksLegacy ? rawTs : iso.replace('T', ' ').replace('Z', '').slice(0, 19);
+          const ist = toIstPayload(parsed, looksLegacy ? rawTs : null);
+          iso = ist.iso;
+          legacy = ist.legacy;
         } else {
           logger.warn('[last-updated] Unparseable timestamp string:', rawTs);
           legacy = rawTs;
@@ -43,8 +54,11 @@ function buildExternalController() {
       } else if (typeof rawTs === 'number') {
         const ms = rawTs > 1e12 ? rawTs : rawTs * 1000;
         const d = new Date(ms);
-        iso = d.toISOString();
-        legacy = iso.replace('T', ' ').replace('Z', '').slice(0, 19);
+        if (!isNaN(d.valueOf())) {
+          const ist = toIstPayload(d);
+          iso = ist.iso;
+          legacy = ist.legacy;
+        }
       } else if (rawTs == null) {
         logger.warn('[last-updated] No row found in pipeline_metadata for last_pipeline_completion_time');
       } else {

@@ -1382,7 +1382,7 @@ function buildMetricsController() {
         const alignHour = Math.max(0, Math.min(23, alignHourRaw));
 
         const rows = await req.brandDb.sequelize.query(
-          `SELECT date, hour, total_sales, number_of_orders,
+          `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, hour, total_sales, number_of_orders,
         COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
         adjusted_number_of_sessions,
         number_of_sessions AS raw_number_of_sessions,
@@ -1486,7 +1486,7 @@ function buildMetricsController() {
         if (prevWin?.prevStart && prevWin?.prevEnd) {
           const comparisonAlignHour = end === todayIst ? alignHour : 23;
           const comparisonRows = await req.brandDb.sequelize.query(
-            `SELECT date, hour, total_sales, number_of_orders,
+            `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, hour, total_sales, number_of_orders,
     COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
     adjusted_number_of_sessions,
     number_of_sessions AS raw_number_of_sessions,

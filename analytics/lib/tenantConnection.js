@@ -35,6 +35,8 @@ function ensurePool(route) {
     idleTimeout: POOL_IDLE,
     queueLimit: 0,
     enableKeepAlive: true,
+    // Align with IST to match legacy behaviour
+    timezone: '+05:30',
     ssl: { rejectUnauthorized: false },
   });
 
@@ -45,6 +47,15 @@ function ensurePool(route) {
 async function runQuery(pool, route, sql, options = {}) {
   const conn = await pool.getConnection();
   try {
+    // Ensure session timezone is set once per connection so DATETIME rows come back in IST
+    if (!conn.__tzSet) {
+      try {
+        await conn.query("SET time_zone = '+05:30'");
+      } catch {
+        // ignore; fall back to driver-level timezone if SET fails
+      }
+      conn.__tzSet = true;
+    }
     if (route.dbName) {
       await conn.query('USE ??', [route.dbName]);
     }
