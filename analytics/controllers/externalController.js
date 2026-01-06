@@ -19,8 +19,10 @@ function buildExternalController() {
         "SELECT key_value FROM pipeline_metadata WHERE key_name = 'last_pipeline_completion_time' LIMIT 1",
         { type: QueryTypes.SELECT }
       );
-
+      
       const rawTs = rows?.[0]?.key_value ?? null;
+      console.log("brand: ",req.brandKey,"brandDb: ",req.brandDb);
+      console.log("rawTs: ",rawTs);
 
       let iso = null;
       let legacy = null;
