@@ -443,6 +443,7 @@ export async function getLastUpdatedPTS(arg = undefined) {
     const res = await fetchWithAuth(url, { cache: 'no-store' });
     if (!res.ok) throw new Error('Failed');
     const json = await res.json();
+    console.log("Last updated PTS response: ",json);
     return { raw: json["Last successful run completed at"], timezone: json.timezone, error: false };
   } catch (e) {
     console.error('Last updated fetch error', e);
