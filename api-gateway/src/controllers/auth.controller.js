@@ -4,6 +4,7 @@ const TokenService = require('../services/token.service');
 const GlobalUser = require('../models/GlobalUser.model');
 const crypto = require('crypto');
 const AdminUserService = require('../services/adminUser.service');
+const AdminDomainRuleService = require('../services/adminDomainRule.service');
 
 const COOKIE_OPTIONS = {
     httpOnly: true,
@@ -217,6 +218,51 @@ exports.adminListUsers = async (req, res) => {
     }
 };
 
+exports.adminUpsertDomainRule = async (req, res) => {
+    try {
+        requireAdminOrAuthor(req);
+        const rule = await AdminDomainRuleService.upsertRule(req.body || {});
+        return res.status(200).json({ rule });
+    } catch (err) {
+        if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
+        if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
+        if (err.message === 'invalid domain' || err.message === 'invalid role' || err.message === 'primary_brand_id required') {
+            return res.status(400).json({ error: err.message });
+        }
+        logger.error('AuthController', 'Admin upsert domain rule error', { error: err.message });
+        return res.status(500).json({ error: 'Failed to upsert domain rule' });
+    }
+};
+
+exports.adminListDomainRules = async (req, res) => {
+    try {
+        requireAdminOrAuthor(req);
+        const rules = await AdminDomainRuleService.listRules();
+        return res.status(200).json({ rules });
+    } catch (err) {
+        if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
+        if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
+        logger.error('AuthController', 'Admin list domain rules error', { error: err.message });
+        return res.status(500).json({ error: 'Failed to list domain rules' });
+    }
+};
+
+exports.adminDeleteDomainRule = async (req, res) => {
+    try {
+        requireAdminOrAuthor(req);
+        const domain = req.params.domain;
+        if (!domain) return res.status(400).json({ error: 'domain required' });
+        const deleted = await AdminDomainRuleService.deleteRule(domain);
+        if (!deleted) return res.status(404).json({ error: 'Not found' });
+        return res.status(200).json({ deleted: true });
+    } catch (err) {
+        if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
+        if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
+        logger.error('AuthController', 'Admin delete domain rule error', { error: err.message });
+        return res.status(500).json({ error: 'Failed to delete domain rule' });
+    }
+};
+
 // ---------- Google OAuth ----------
 function buildState(params = {}) {
     const json = JSON.stringify(params);
@@ -309,13 +355,24 @@ exports.googleCallback = async (req, res) => {
             sub: info.sub,
             brandId: brand_id
         };
+        console.log('Google profile:', profile);
 
         let result;
         try {
             result = await AuthService.loginWithGoogle(profile);
         } catch (err) {
-            if (err.message === 'User not allowed') return res.status(403).json({ error: 'User not allowed' });
-            throw err;
+            if (err.message === 'User not allowed') {
+                // Attempt domain-rule-based provision on the fly
+                const provisionedUser = await AuthService.provisionUserByDomainRule(profile.email);
+                console.log('Provisioned user via domain rule:', provisionedUser);
+                if (!provisionedUser) return res.status(403).json({ error: 'User not allowed' });
+                const tokens = await AuthService.issueTokensForUser(provisionedUser, 'google-oauth');
+                console.log('Issued tokens for provisioned user');
+                result = { ...tokens, user: provisionedUser };
+            } else {
+                console.error('AuthController', 'Google login error', { error: err.message, stack: err.stack });
+                throw err;
+            }
         }
 
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
@@ -339,7 +396,7 @@ exports.googleCallback = async (req, res) => {
 
         return res.json(payload);
     } catch (err) {
-        logger.error('AuthController', 'Google callback error', { error: err.message });
+        logger.error('AuthController', 'Google callback error', { error: err.message, stack: err.stack });
         return res.status(500).json({ error: 'Google auth failed' });
     }
 };

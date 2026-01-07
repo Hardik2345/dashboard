@@ -3,6 +3,7 @@ const RefreshToken = require('../models/RefreshToken.model');
 const TokenService = require('./token.service');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const DomainRule = require('../models/DomainRule.model');
 
 const REFRESH_TOKEN_EXPIRY_DAYS = process.env.REFRESH_TOKEN_EXPIRY_DAYS || 7;
 
@@ -78,6 +79,55 @@ class AuthService {
         };
     }
 
+    static normalizeBrands(brand_ids = [], primary_brand_id = null, role = 'viewer') {
+        const brandIds = Array.isArray(brand_ids) ? [...new Set(brand_ids.map(b => (b || '').toUpperCase()).filter(Boolean))] : [];
+        const primary = primary_brand_id ? primary_brand_id.toUpperCase() : null;
+        if (!primary) throw new Error('primary_brand_id required');
+        if (!brandIds.includes(primary)) brandIds.push(primary);
+        if (role === 'author' && brandIds.length === 0) brandIds.push(primary);
+        return { brandIds, primary };
+    }
+
+    static async provisionUserFromRule(email, rule) {
+        const normalizedEmail = (email || '').toLowerCase();
+        const role = rule.role || 'viewer';
+        const { brandIds, primary } = this.normalizeBrands(rule.brand_ids, rule.primary_brand_id, role);
+        const perms = role === 'author' ? ['all'] : (rule.permissions && rule.permissions.length ? rule.permissions : ['all']);
+        const memberships = brandIds.map((bid) => ({
+            brand_id: bid,
+            status: 'active',
+            permissions: perms
+        }));
+
+        // Upsert atomically to avoid race duplicates
+        const password_hash = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
+        const user = await GlobalUser.findOneAndUpdate(
+            { email: normalizedEmail },
+            {
+                $setOnInsert: {
+                    password_hash
+                },
+                $set: {
+                    role,
+                    primary_brand_id: primary,
+                    brand_memberships: memberships,
+                    status: rule.status || 'active',
+                },
+            },
+            { upsert: true, new: true }
+        );
+        return user;
+    }
+
+    static async provisionUserByDomainRule(email) {
+        const normalizedEmail = (email || '').toLowerCase();
+        const domain = normalizedEmail.split('@')[1];
+        if (!domain) return null;
+        const rule = await DomainRule.findOne({ domain, status: 'active' }).lean();
+        if (!rule) return null;
+        return this.provisionUserFromRule(email, rule);
+    }
+
     /**
      * Authenticate user and issue tokens
      * @param {String} email 
@@ -87,9 +137,11 @@ class AuthService {
      */
     static async login(email, password, userAgent) {
         // 1. Find User
-        const user = await GlobalUser.findOne({ email });
+        let user = await GlobalUser.findOne({ email });
         if (!user) {
-            throw new Error('Invalid credentials');
+            const provisioned = await this.provisionUserByDomainRule(email);
+            if (!provisioned) throw new Error('Invalid credentials');
+            user = provisioned;
         }
 
         // 2. Verify Password
@@ -141,15 +193,24 @@ class AuthService {
         const email = (profile.email || '').toLowerCase();
         if (!email) throw new Error('Email required');
 
-        const user = await GlobalUser.findOne({ email });
-        if (!user) throw new Error('User not allowed');
+        let user = await GlobalUser.findOne({ email });
+        if (!user) {
+            const provisioned = await this.provisionUserByDomainRule(email);
+            if (!provisioned) throw new Error('User not allowed');
+            user = provisioned;
+        }
 
         if (user.status !== 'active') throw new Error('User suspended');
         const hasActiveBrand = user.role === 'author' || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
         if (!hasActiveBrand) throw new Error('No active brand memberships');
 
-        const tokens = await this.issueTokensForUser(user, 'google-oauth');
-        return { ...tokens, user };
+        try {
+            const tokens = await this.issueTokensForUser(user, 'google-oauth');
+            return { ...tokens, user };
+        } catch (err) {
+            console.error('AuthService.loginWithGoogle issueTokens error', { error: err.message, stack: err.stack });
+            throw err;
+        }
     }
 
     /**

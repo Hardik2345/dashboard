@@ -28,7 +28,7 @@ import {
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import { adminListUsers, adminUpsertUser, adminDeleteUser, listAuthorBrands } from '../lib/api';
+import { adminListUsers, adminUpsertUser, adminDeleteUser, listAuthorBrands, listDomainRules, upsertDomainRule, deleteDomainRule } from '../lib/api';
 
 const PERMISSION_OPTIONS = ["all", "product_filter", "web_vitals", "payment_split_order", "payment_split_sales"];
 
@@ -60,6 +60,17 @@ export default function AccessControlCard() {
     });
     return Array.from(set);
   }, [users, knownBrands]);
+  const [domainRules, setDomainRules] = useState([]);
+  const [domainDialogOpen, setDomainDialogOpen] = useState(false);
+  const [domainForm, setDomainForm] = useState({
+    domain: '',
+    role: 'viewer',
+    brand_ids: [],
+    primary_brand_id: '',
+    permissions: ['all'],
+    status: 'active'
+  });
+  const [domainSaving, setDomainSaving] = useState(false);
 
   async function loadUsers() {
     setLoading(true);
@@ -74,6 +85,17 @@ export default function AccessControlCard() {
 
   useEffect(() => {
     loadUsers();
+  }, []);
+
+  async function loadDomainRules() {
+    const r = await listDomainRules();
+    if (!r.error) {
+      setDomainRules(r.data?.rules || []);
+    }
+  }
+
+  useEffect(() => {
+    loadDomainRules();
   }, []);
 
   useEffect(() => {
@@ -154,6 +176,58 @@ export default function AccessControlCard() {
     await loadUsers();
   }
 
+  const filteredDomainRules = useMemo(() => domainRules, [domainRules]);
+
+  function openNewDomainRule() {
+    setDomainForm({
+      domain: '',
+      role: 'viewer',
+      brand_ids: [],
+      primary_brand_id: '',
+      permissions: ['all'],
+      status: 'active'
+    });
+    setDomainDialogOpen(true);
+  }
+
+  async function handleSaveDomainRule() {
+    if (!domainForm.domain) { setError('Domain is required'); return; }
+    if (!domainForm.primary_brand_id) { setError('Primary brand is required'); return; }
+    if (domainForm.role === 'viewer') {
+      if (!domainForm.brand_ids.length) { setError('Select at least one brand'); return; }
+      if (!domainForm.brand_ids.includes(domainForm.primary_brand_id)) {
+        setError('Primary brand must be one of the selected brands');
+        return;
+      }
+    }
+    const payload = {
+      ...domainForm,
+      domain: domainForm.domain.toLowerCase().trim(),
+      brand_ids: domainForm.brand_ids,
+      permissions: domainForm.role === 'author' ? ['all'] : domainForm.permissions
+    };
+    setDomainSaving(true);
+    const r = await upsertDomainRule(payload);
+    setDomainSaving(false);
+    if (r.error) {
+      setError(r.data?.error || 'Failed to save domain rule');
+      return;
+    }
+    setDomainDialogOpen(false);
+    setError(null);
+    loadDomainRules();
+  }
+
+  async function handleDeleteDomainRule(domain) {
+    if (!window.confirm(`Delete domain rule for ${domain}?`)) return;
+    const r = await deleteDomainRule(domain);
+    if (r.error) {
+      setError(r.data?.error || 'Failed to delete domain rule');
+      return;
+    }
+    loadDomainRules();
+  }
+
   async function handleDelete(email) {
     if (!window.confirm(`Delete user ${email}?`)) return;
     const r = await adminDeleteUser(email);
@@ -169,7 +243,12 @@ export default function AccessControlCard() {
       <CardHeader
         title="Access Control"
         subheader="Manage who can sign in (author/viewer) and their brand access"
-        action={<Button size="small" variant="contained" onClick={openNew}>Add user</Button>}
+        action={
+          <Stack direction="row" spacing={1}>
+            <Button size="small" variant="outlined" onClick={openNewDomainRule}>Add domain rule</Button>
+            <Button size="small" variant="contained" onClick={openNew}>Add user</Button>
+          </Stack>
+        }
       />
       <CardContent>
         <Stack spacing={2}>
@@ -239,6 +318,52 @@ export default function AccessControlCard() {
               )}
             </TableBody>
           </Table>
+
+          <Typography variant="h6" sx={{ mt: 2 }}>Domain rules</Typography>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Domain</TableCell>
+                <TableCell>Role</TableCell>
+                <TableCell>Primary Brand</TableCell>
+                <TableCell>Brands</TableCell>
+                <TableCell>Permissions</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filteredDomainRules.map((r) => (
+                <TableRow key={r._id || r.domain}>
+                  <TableCell>{r.domain}</TableCell>
+                  <TableCell>{r.role}</TableCell>
+                  <TableCell>{r.primary_brand_id}</TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                      {(r.brand_ids || []).map((b) => <Chip key={b} size="small" label={b} />)}
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                      {r.role === 'author'
+                        ? <Chip size="small" label="all" />
+                        : (r.permissions || []).map((p) => <Chip key={p} size="small" label={p} />)}
+                    </Stack>
+                  </TableCell>
+                  <TableCell>{r.status}</TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={1}>
+                      <Tooltip title="Delete"><IconButton size="small" onClick={() => handleDeleteDomainRule(r.domain)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!loading && filteredDomainRules.length === 0 && (
+                <TableRow><TableCell colSpan={7}><Typography variant="body2">No domain rules</Typography></TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+
         </Stack>
       </CardContent>
 
@@ -337,6 +462,87 @@ export default function AccessControlCard() {
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
           <Button onClick={handleSave} disabled={saving} variant="contained">{isEdit ? 'Save' : 'Create'}</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={domainDialogOpen} onClose={() => setDomainDialogOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Add domain rule</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="Domain"
+              fullWidth
+              value={domainForm.domain}
+              onChange={(e) => setDomainForm(prev => ({ ...prev, domain: e.target.value }))}
+              helperText="Example: trytechit.co"
+            />
+            <FormControl fullWidth>
+              <InputLabel id="domain-role-label">Role</InputLabel>
+              <Select
+                labelId="domain-role-label"
+                label="Role"
+                value={domainForm.role}
+                onChange={(e) => setDomainForm(prev => ({ ...prev, role: e.target.value }))}
+              >
+                <MenuItem value="author">Author</MenuItem>
+                <MenuItem value="viewer">Viewer</MenuItem>
+              </Select>
+            </FormControl>
+            <Autocomplete
+              multiple
+              freeSolo
+              options={availableBrands}
+              value={domainForm.brand_ids}
+              filterSelectedOptions
+              onChange={(_, val) => setDomainForm(prev => ({ ...prev, brand_ids: val.map(v => v.toString().trim().toUpperCase()).filter(Boolean) }))}
+              renderTags={(value, getTagProps) =>
+                value.map((option, index) => (
+                  <Chip variant="outlined" label={option} {...getTagProps({ index })} />
+                ))
+              }
+              renderInput={(params) => <TextField {...params} label="Brands" placeholder="Type and press Enter" fullWidth />}
+            />
+            <Autocomplete
+              freeSolo
+              options={domainForm.brand_ids.length ? domainForm.brand_ids : availableBrands}
+              value={domainForm.primary_brand_id}
+              onChange={(_, val) => setDomainForm(prev => ({ ...prev, primary_brand_id: (val || '').toString().trim().toUpperCase() }))}
+              renderInput={(params) => <TextField {...params} label="Primary brand (required)" required fullWidth />}
+            />
+            {domainForm.role === 'viewer' && (
+              <Autocomplete
+                multiple
+                options={PERMISSION_OPTIONS}
+                value={domainForm.permissions}
+                onChange={(_, val) => setDomainForm(prev => ({ ...prev, permissions: val }))}
+                renderTags={(value, getTagProps) =>
+                  value.map((option, index) => (
+                    <Chip variant="outlined" label={option} {...getTagProps({ index })} />
+                  ))
+                }
+                renderInput={(params) => <TextField {...params} label="Permissions" placeholder="Select permissions" fullWidth helperText={`Available: ${PERMISSION_OPTIONS.join(', ')}`} />}
+              />
+            )}
+            {domainForm.role === 'author' && (
+              <Alert severity="info">Authors have access to all brands and permissions.</Alert>
+            )}
+            <FormControl fullWidth>
+              <InputLabel id="domain-status-label">Status</InputLabel>
+              <Select
+                labelId="domain-status-label"
+                label="Status"
+                value={domainForm.status}
+                onChange={(e) => setDomainForm(prev => ({ ...prev, status: e.target.value }))}
+              >
+                <MenuItem value="active">Active</MenuItem>
+                <MenuItem value="suspended">Suspended</MenuItem>
+              </Select>
+            </FormControl>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDomainDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleSaveDomainRule} disabled={domainSaving} variant="contained">Save</Button>
         </DialogActions>
       </Dialog>
     </Card>
