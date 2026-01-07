@@ -8,6 +8,8 @@ import {
   Alert,
   Button,
   Autocomplete,
+  ToggleButton,
+  ToggleButtonGroup,
   Table,
   TableHead,
   TableRow,
@@ -251,19 +253,21 @@ export default function AccessControlCard() {
         }
       />
       <CardContent>
-        <Stack spacing={2}>
-          {error && <Alert severity="error">{error}</Alert>}
+          <Stack spacing={2}>
+            {error && <Alert severity="error">{error}</Alert>}
           <Stack direction="row" spacing={2} alignItems="center">
             <Typography variant="body2">Filter by role:</Typography>
-            <Select
-              size="small"
-              value={filterRole}
-              onChange={(e) => setFilterRole(e.target.value)}
-            >
-              <MenuItem value="all">All</MenuItem>
-              <MenuItem value="author">Author</MenuItem>
-              <MenuItem value="viewer">Viewer</MenuItem>
-            </Select>
+            <FormControl size="small" sx={{ minWidth: 90, width: 110 }}>
+              <Select
+                size="small"
+                value={filterRole}
+                onChange={(e) => setFilterRole(e.target.value)}
+              >
+                <MenuItem value="all">All</MenuItem>
+                <MenuItem value="author">Author</MenuItem>
+                <MenuItem value="viewer">Viewer</MenuItem>
+              </Select>
+            </FormControl>
           </Stack>
           <Table size="small">
             <TableHead>
