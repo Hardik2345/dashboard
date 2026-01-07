@@ -144,8 +144,14 @@ export default function App() {
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
 
   const activeBrandKey = isAuthor
-    ? (authorBrandKey || '')
-    : ((globalBrandKey || '').toString().trim().toUpperCase()) || (user?.brandKey || viewerBrands[0] || '');
+    ? (authorBrandKey || user?.primary_brand_id || '')
+    : (
+        (globalBrandKey || '').toString().trim().toUpperCase() ||
+        (user?.primary_brand_id || '').toString().trim().toUpperCase() ||
+        (user?.brandKey || '').toString().trim().toUpperCase() ||
+        viewerBrands[0] ||
+        ''
+      );
 
   useEffect(() => {
     if (!isAuthor && viewerBrands.length) {
@@ -747,7 +753,7 @@ export default function App() {
             <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
             <Container maxWidth="sm" sx={{ pt: { xs: 2.5, sm: 3 } }}>
             {isBrandUser && viewerBrands.length > 1 && (
-              <FormControl fullWidth size="small" sx={{ mb: 1 }}>
+              <FormControl fullWidth size="small" sx={{ mb: 1, maxWidth: 240 }}>
                 <InputLabel id="brand-select-label">Brand</InputLabel>
                 <Select
                   labelId="brand-select-label"
