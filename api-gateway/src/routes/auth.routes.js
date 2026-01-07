@@ -16,5 +16,8 @@ router.get('/google/callback', authController.googleCallback);
 router.post('/admin/users', authController.adminUpsertUser);
 router.delete('/admin/users/:email', authController.adminDeleteUser);
 router.get('/admin/users', authController.adminListUsers);
+router.post('/admin/domain-rules', authController.adminUpsertDomainRule);
+router.get('/admin/domain-rules', authController.adminListDomainRules);
+router.delete('/admin/domain-rules/:domain', authController.adminDeleteDomainRule);
 
 module.exports = router;

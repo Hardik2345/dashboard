@@ -251,6 +251,19 @@ export async function adminDeleteUser(email) {
   return doDelete(`/auth/admin/users/${encodeURIComponent(email)}`);
 }
 
+// ---- Admin domain rules ---------------------------------------------------
+export async function listDomainRules() {
+  return doGet('/auth/admin/domain-rules');
+}
+
+export async function upsertDomainRule(payload) {
+  return doPost('/auth/admin/domain-rules', payload);
+}
+
+export async function deleteDomainRule(domain) {
+  return doDelete(`/auth/admin/domain-rules/${encodeURIComponent(domain)}`);
+}
+
 export async function getDashboardSummary(args) {
   const params = appendBrandKey({
     start: args.start || args.date,

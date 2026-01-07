@@ -22,7 +22,7 @@ const BrandMembershipSchema = new mongoose.Schema({
 const GlobalUserSchema = new mongoose.Schema({
   _id: {
     type: String,
-    default: randomUUID
+    default: () => randomUUID()
   },
   email: {
     type: String,
@@ -60,5 +60,9 @@ const GlobalUserSchema = new mongoose.Schema({
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });
+
+GlobalUserSchema.index({ email: 1 }, { unique: true });
+GlobalUserSchema.index({ primary_brand_id: 1 });
+GlobalUserSchema.index({ role: 1 });
 
 module.exports = mongoose.model('GlobalUser', GlobalUserSchema);
