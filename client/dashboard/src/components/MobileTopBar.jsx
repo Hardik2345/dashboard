@@ -249,10 +249,10 @@ export default function MobileTopBar({
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
-      {/* Mobile: Product filter on its own row (authors only) */}
+      {/* Mobile: Product filter (permission-gated) */}
       {showProductFilter && (
         <Box sx={{ display: { xs: 'block', sm: 'none' }, width: '100%', mb: { xs: 1.5, sm: 0 } }}>
-          <FormControl size="small" fullWidth>
+          <FormControl size="small" fullWidth sx={{ maxWidth: 240 }}>
             <InputLabel id="mobile-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
             <Select
               labelId="mobile-product-label"
@@ -268,7 +268,7 @@ export default function MobileTopBar({
                 PaperProps: {
                   sx: {
                     maxHeight: '60vh',
-                    width: { xs: '100%', sm: 360 },
+                    width: { xs: '100%', sm: 280 },
                     whiteSpace: 'normal',
                   }
                 }
@@ -350,7 +350,7 @@ export default function MobileTopBar({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {/* Desktop-only compact product filter */}
           {showProductFilter && (
-            <FormControl size="small" sx={{ width: { xs: '100%', sm: 420 }, display: { xs: 'none', sm: 'flex' } }}>
+            <FormControl size="small" sx={{ width: { xs: '100%', sm: 260 }, maxWidth: 280, display: { xs: 'none', sm: 'flex' } }}>
               <InputLabel id="desktop-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
               <Select
                 labelId="desktop-product-label"
@@ -376,7 +376,7 @@ export default function MobileTopBar({
                   PaperProps: {
                     sx: {
                       maxHeight: '60vh',
-                      width: { xs: '100%', sm: 420 },
+                      width: { xs: '100%', sm: 300 },
                       whiteSpace: 'normal',
                     }
                   }
