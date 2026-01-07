@@ -59,22 +59,31 @@ function _M.authenticate()
     end
 
     -- 6. Resolve Brand Context
-    local target_brand_id = ngx.req.get_headers()["x-brand-id"]
-    if not target_brand_id then
-        target_brand_id = claims.primary_brand_id
+    local args = ngx.req.get_uri_args() or {}
+    local requested_brand = args["brand_key"]
+    local header_brand = ngx.req.get_headers()["x-brand-id"]
+    local target_brand_id = nil
+
+    if requested_brand and requested_brand ~= "" then
+        target_brand_id = tostring(requested_brand):upper()
+    elseif header_brand and header_brand ~= "" then
+        target_brand_id = tostring(header_brand):upper()
+    elseif claims.primary_brand_id then
+        target_brand_id = tostring(claims.primary_brand_id):upper()
     end
 
-    if not target_brand_id then
+    if not target_brand_id or target_brand_id == "" then
         ngx.status = 403
         ngx.say(cjson.encode({error = "No brand context determined"}))
         ngx.exit(403)
     end
 
-    -- Validate Membership
-    local allowed = false
-    if claims.brand_ids then
+    -- Validate Membership (authors/admins are global; viewers must have brand access)
+    local role = claims.role
+    local allowed = role == "author"
+    if not allowed and claims.brand_ids then
         for _, b_id in ipairs(claims.brand_ids) do
-            if b_id == target_brand_id then
+            if tostring(b_id):upper() == target_brand_id then
                 allowed = true
                 break
             end
@@ -88,16 +97,15 @@ function _M.authenticate()
     end
 
     -- 7. Role Check (Coarse)
-    local role = claims.roles and claims.roles[target_brand_id]
     if not role then
          ngx.status = 403
-         ngx.say(cjson.encode({error = "No role in this brand"}))
+         ngx.say(cjson.encode({error = "No role in token"}))
          ngx.exit(403)
     end
 
-    -- Admin Route Protection
+    -- Admin Route Protection (author is the elevated role)
     if ngx.var.uri:find("^/admin") then
-        if role ~= "owner" and role ~= "admin" then
+        if role ~= "author" then
             ngx.status = 403
             ngx.say(cjson.encode({error = "Admin access required"}))
             ngx.exit(403)
@@ -116,7 +124,12 @@ function _M.authenticate()
     local gw_secret = os.getenv("GATEWAY_SHARED_SECRET")
     if gw_secret and gw_secret ~= "" then
         local ts = tostring(ngx.time())
-        local payload = table.concat({ claims.sub or "", target_brand_id or "", role or "", ts }, "|")
+        local payload = table.concat({
+            tostring(claims.sub or ""),
+            tostring(target_brand_id or ""),
+            tostring(role or ""),
+            ts
+        }, "|")
         local hm = hmac:new(gw_secret, hmac.ALGOS.SHA256)
         local sig = hm:final(payload, true) -- hex-encoded
         ngx.req.set_header("x-gw-ts", ts)

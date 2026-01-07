@@ -2,10 +2,32 @@ const GlobalUser = require('../models/GlobalUser.model');
 const RefreshToken = require('../models/RefreshToken.model');
 const TokenService = require('./token.service');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const REFRESH_TOKEN_EXPIRY_DAYS = process.env.REFRESH_TOKEN_EXPIRY_DAYS || 7;
 
 class AuthService {
+    static async issueTokensForUser(user, deviceId = null) {
+        const accessToken = TokenService.generateAccessToken(user);
+        const { tokenId, rawToken, tokenHash } = TokenService.generateRefreshToken();
+
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + parseInt(REFRESH_TOKEN_EXPIRY_DAYS));
+
+        const refreshTokenDoc = new RefreshToken({
+            _id: tokenId,
+            user_id: user._id,
+            device_id: deviceId,
+            token_hash: tokenHash,
+            expires_at: expiresAt,
+            revoked: false
+        });
+
+        await refreshTokenDoc.save();
+
+        return { accessToken, refreshToken: rawToken };
+    }
+
     static async signup({ email, password, primaryBrandId, role = 'author' }) {
         if (!email || !password || !primaryBrandId) {
             throw new Error('Missing required fields');
@@ -19,7 +41,6 @@ class AuthService {
         const password_hash = await bcrypt.hash(password, 10);
         const brandMembership = {
             brand_id: primaryBrandId,
-            role: role === 'viewer' ? 'viewer' : 'author',
             status: 'active',
             permissions: ['all']
         };
@@ -28,6 +49,7 @@ class AuthService {
             email,
             password_hash,
             status: 'active',
+            role: role || 'viewer',
             primary_brand_id: primaryBrandId,
             brand_memberships: [brandMembership],
         });
@@ -80,7 +102,7 @@ class AuthService {
         if (user.status !== 'active') {
             throw new Error('User suspended');
         }
-        const hasActiveBrand = user.brand_memberships.some(m => m.status === 'active');
+        const hasActiveBrand = user.role === 'author' || user.brand_memberships.some(m => m.status === 'active');
         if (!hasActiveBrand) {
             throw new Error('No active brand memberships');
         }
@@ -109,6 +131,25 @@ class AuthService {
             refreshToken: rawToken, // Send raw token to controller to set cookie
             user,
         };
+    }
+
+    /**
+     * Google OAuth login (requires pre-created user)
+     * @param {Object} profile { email, name, sub }
+     */
+    static async loginWithGoogle(profile) {
+        const email = (profile.email || '').toLowerCase();
+        if (!email) throw new Error('Email required');
+
+        const user = await GlobalUser.findOne({ email });
+        if (!user) throw new Error('User not allowed');
+
+        if (user.status !== 'active') throw new Error('User suspended');
+        const hasActiveBrand = user.role === 'author' || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
+        if (!hasActiveBrand) throw new Error('No active brand memberships');
+
+        const tokens = await this.issueTokensForUser(user, 'google-oauth');
+        return { ...tokens, user };
     }
 
     /**
@@ -143,7 +184,7 @@ class AuthService {
             throw new Error('User suspended or not found');
         }
         // Check membership suspension again
-        const hasActiveBrand = user.brand_memberships.some(m => m.status === 'active');
+        const hasActiveBrand = user.role === 'author' || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
         if (!user.brand_memberships || !hasActiveBrand) {
             throw new Error('Membership suspended');
         }

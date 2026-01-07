@@ -6,11 +6,6 @@ const BrandMembershipSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  role: {
-    type: String,
-    enum: ['author', 'viewer'],
-    required: true
-  },
   status: {
     type: String,
     enum: ['active', 'suspended'],
@@ -45,7 +40,12 @@ const GlobalUserSchema = new mongoose.Schema({
   },
   primary_brand_id: {
     type: String,
-    default: null
+    required: true
+  },
+  role: {
+    type: String,
+    enum: ['author', 'viewer'],
+    default: 'viewer'
   },
   brand_memberships: {
     type: [BrandMembershipSchema],

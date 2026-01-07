@@ -1,69 +1,344 @@
-import { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, Stack, Switch, FormControlLabel, Typography, Alert, Button } from '@mui/material';
-import { getAccessControl, setAccessMode, setAccessSettings } from '../lib/api.js';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  Stack,
+  Typography,
+  Alert,
+  Button,
+  Autocomplete,
+  Table,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableBody,
+  Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
+  IconButton,
+  Tooltip,
+} from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import { adminListUsers, adminUpsertUser, adminDeleteUser, listAuthorBrands } from '../lib/api';
+
+const PERMISSION_OPTIONS = ["all", "product_filter", "web_vitals", "payment_split_order", "payment_split_sales"];
+
+const emptyForm = {
+  email: '',
+  role: 'viewer',
+  brand_ids: [],
+  primary_brand_id: '',
+  status: 'active',
+  permissions: ['all'],
+};
 
 export default function AccessControlCard() {
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState('domain');
-  const [autoProvision, setAutoProvision] = useState(false);
-  const [whitelistCount, setWhitelistCount] = useState(0);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [isEdit, setIsEdit] = useState(false);
+  const [filterRole, setFilterRole] = useState('all');
+  const [knownBrands, setKnownBrands] = useState([]);
+  const availableBrands = useMemo(() => {
+    const set = new Set(knownBrands);
+    users.forEach((u) => {
+      (u.brand_memberships || []).forEach((b) => {
+        if (b.brand_id) set.add(b.brand_id.toUpperCase());
+      });
+    });
+    return Array.from(set);
+  }, [users, knownBrands]);
+
+  async function loadUsers() {
+    setLoading(true);
+    const r = await adminListUsers();
+    if (r.error) setError(r.data?.error || 'Failed to load users');
+    else {
+      setUsers(r.data?.users || []);
+      setError(null);
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
 
   useEffect(() => {
     (async () => {
-      const r = await getAccessControl();
-      if (r.error) { setError(r.data?.error || 'Failed to load'); }
-      else {
-        setMode(r.data.mode);
-        setAutoProvision(!!r.data.autoProvision);
-        setWhitelistCount(r.data.whitelistCount || 0);
+      const r = await listAuthorBrands();
+      if (r.error) {
+        console.warn('Failed to load brands', r);
+        return;
       }
-      setLoading(false);
-      console.log("small change");
+      const raw = r.data ?? r;
+      const source = Array.isArray(raw?.brands) ? raw.brands : Array.isArray(raw) ? raw : [];
+      const brands = source.map(b => (b.key || b.brand_id || b.name || b.toString()).toUpperCase()).filter(Boolean);
+      console.log('Loaded brands for access control', brands, 'raw:', raw);
+      setKnownBrands(brands);
     })();
   }, []);
 
-  async function handleToggleMode(ev) {
-    const next = ev.target.checked ? 'domain' : 'whitelist';
-    setSaving(true);
-    const r = await setAccessMode(next);
-    setSaving(false);
-    if (r.error) setError(r.data?.error || 'Failed to update'); else setMode(next);
+  const filteredUsers = useMemo(() => {
+    return users.filter(u => filterRole === 'all' ? true : (u.role === filterRole));
+  }, [users, filterRole]);
+
+  function openNew() {
+    setForm(emptyForm);
+    setIsEdit(false);
+    setDialogOpen(true);
   }
 
-  async function handleAutoProvision(ev) {
-    const next = ev.target.checked;
+  function openEdit(u) {
+    setForm({
+      email: u.email,
+      role: u.role,
+      brand_ids: (u.brand_memberships || []).map(b => b.brand_id),
+      primary_brand_id: u.primary_brand_id || '',
+      status: u.status || 'active',
+      permissions: (u.brand_memberships?.[0]?.permissions) || ['all'],
+    });
+    setIsEdit(true);
+    setDialogOpen(true);
+  }
+
+  function handleFormChange(key, value) {
+    setForm(prev => ({ ...prev, [key]: value }));
+  }
+
+  async function handleSave() {
+    if (!form.email) { setError('Email is required'); return; }
+    if (!form.primary_brand_id) {
+      setError('Primary brand is required');
+      return;
+    }
+    let brandIds = form.brand_ids || [];
+    if (form.role === 'viewer') {
+      if (!brandIds.length) { setError('Select at least one brand'); return; }
+      if (!brandIds.includes(form.primary_brand_id)) {
+        setError('Primary brand must be one of the selected brands');
+        return;
+      }
+    } else {
+      // For authors, ensure primary brand is included in memberships we save
+      const merged = new Set(brandIds);
+      merged.add(form.primary_brand_id);
+      brandIds = Array.from(merged);
+    }
     setSaving(true);
-    const r = await setAccessSettings({ autoProvision: next });
+    const payload = {
+      ...form,
+      brand_ids: brandIds,
+      permissions: form.role === 'author' ? ['all'] : form.permissions,
+    };
+    const r = await adminUpsertUser(payload);
     setSaving(false);
-    if (r.error) setError(r.data?.error || 'Failed to update'); else setAutoProvision(next);
+    if (r.error) {
+      setError(r.data?.error || 'Save failed');
+      return;
+    }
+    setDialogOpen(false);
+    setError(null);
+    await loadUsers();
+  }
+
+  async function handleDelete(email) {
+    if (!window.confirm(`Delete user ${email}?`)) return;
+    const r = await adminDeleteUser(email);
+    if (r.error) {
+      setError(r.data?.error || 'Delete failed');
+      return;
+    }
+    await loadUsers();
   }
 
   return (
     <Card variant="outlined">
-      <CardHeader title="Access control" subheader="Control who can sign in with Google" />
+      <CardHeader
+        title="Access Control"
+        subheader="Manage who can sign in (author/viewer) and their brand access"
+        action={<Button size="small" variant="contained" onClick={openNew}>Add user</Button>}
+      />
       <CardContent>
-        <Stack spacing={1.5}>
+        <Stack spacing={2}>
           {error && <Alert severity="error">{error}</Alert>}
-          <FormControlLabel
-            control={<Switch checked={mode === 'domain'} onChange={handleToggleMode} disabled={loading || saving} />}
-            label={mode === 'domain' ? 'Allow access by domain map' : 'Whitelist only'}
-          />
-          <Typography variant="body2" color="text.secondary">
-            {mode === 'domain'
-              ? 'Anyone whose email domain is mapped to a brand can sign in.'
-              : `Only whitelisted emails can sign in. ${whitelistCount} whitelisted.`}
-          </Typography>
-          <FormControlLabel
-            control={<Switch checked={autoProvision} onChange={handleAutoProvision} disabled={loading || saving} />}
-            label="Auto-create brand user on first SSO"
-          />
-          <Typography variant="caption" color="text.secondary">
-            Creates an active brand user with a random password. Local-password login remains disabled unless explicitly set later.
-          </Typography>
+          <Stack direction="row" spacing={2} alignItems="center">
+            <Typography variant="body2">Filter by role:</Typography>
+            <Select
+              size="small"
+              value={filterRole}
+              onChange={(e) => setFilterRole(e.target.value)}
+            >
+              <MenuItem value="all">All</MenuItem>
+              <MenuItem value="author">Author</MenuItem>
+              <MenuItem value="viewer">Viewer</MenuItem>
+            </Select>
+          </Stack>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Email</TableCell>
+                <TableCell>Role</TableCell>
+                <TableCell>Primary Brand</TableCell>
+                <TableCell>Brands</TableCell>
+                <TableCell>Permissions</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filteredUsers.map((u) => (
+                <TableRow key={u.id || u.email}>
+                  <TableCell>{u.email}</TableCell>
+                  <TableCell>{u.role}</TableCell>
+                  <TableCell>{u.primary_brand_id || '-'}</TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                      {(u.brand_memberships || []).map(b => (
+                        <Chip key={b.brand_id} size="small" label={b.brand_id} />
+                      ))}
+                      {u.role === 'author' && <Chip size="small" color="primary" label="ALL" />}
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                      {u.role === 'author'
+                        ? <Chip size="small" label="all" />
+                        : ((u.brand_memberships?.[0]?.permissions) || []).map(p => (
+                            <Chip key={p} size="small" label={p} />
+                          ))
+                      }
+                    </Stack>
+                  </TableCell>
+                  <TableCell>{u.status}</TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={1}>
+                      <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(u)}><EditIcon fontSize="small" /></IconButton></Tooltip>
+                      <Tooltip title="Delete"><IconButton size="small" onClick={() => handleDelete(u.email)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!loading && filteredUsers.length === 0 && (
+                <TableRow><TableCell colSpan={7}><Typography variant="body2">No users</Typography></TableCell></TableRow>
+              )}
+              {loading && (
+                <TableRow><TableCell colSpan={7}><Typography variant="body2">Loading...</Typography></TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
         </Stack>
       </CardContent>
+
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>{isEdit ? 'Edit user' : 'Add user'}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="Email"
+              fullWidth
+              value={form.email}
+              onChange={(e) => handleFormChange('email', e.target.value)}
+              disabled={isEdit}
+            />
+            <FormControl fullWidth>
+              <InputLabel id="role-label">Role</InputLabel>
+              <Select
+                labelId="role-label"
+                label="Role"
+                value={form.role}
+                onChange={(e) => handleFormChange('role', e.target.value)}
+              >
+                <MenuItem value="author">Author</MenuItem>
+                <MenuItem value="viewer">Viewer</MenuItem>
+              </Select>
+            </FormControl>
+            {form.role === 'viewer' && (
+              <>
+                <Autocomplete
+                  multiple
+                  freeSolo
+                  options={availableBrands}
+                  value={form.brand_ids}
+                  filterSelectedOptions
+                  onChange={(_, val) => handleFormChange('brand_ids', val.map(v => v.toString().trim().toUpperCase()).filter(Boolean))}
+                  renderTags={(value, getTagProps) =>
+                    value.map((option, index) => (
+                      <Chip variant="outlined" label={option} {...getTagProps({ index })} />
+                    ))
+                  }
+                  renderInput={(params) => <TextField {...params} label="Brands" placeholder="Type and press Enter" fullWidth />}
+                />
+                <FormControl fullWidth>
+                  <InputLabel id="primary-brand-label">Primary brand</InputLabel>
+                  <Select
+                    labelId="primary-brand-label"
+                    label="Primary brand"
+                    value={form.primary_brand_id}
+                    onChange={(e) => handleFormChange('primary_brand_id', e.target.value)}
+                  >
+                    {(form.brand_ids || []).map((b) => (
+                      <MenuItem key={b} value={b}>{b}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Autocomplete
+                  multiple
+                  options={PERMISSION_OPTIONS}
+                  value={form.permissions}
+                  onChange={(_, val) => handleFormChange('permissions', val)}
+                  renderTags={(value, getTagProps) =>
+                    value.map((option, index) => (
+                      <Chip variant="outlined" label={option} {...getTagProps({ index })} />
+                    ))
+                  }
+                  renderInput={(params) => <TextField {...params} label="Permissions" placeholder="Select permissions" fullWidth helperText={`Available: ${PERMISSION_OPTIONS.join(', ')}`} />}
+                />
+              </>
+            )}
+            {form.role === 'author' && (
+              <Stack spacing={1}>
+                <Autocomplete
+                  freeSolo
+                  options={availableBrands}
+                  value={form.primary_brand_id}
+                  onChange={(_, val) => handleFormChange('primary_brand_id', (val || '').toString().trim().toUpperCase())}
+                  renderInput={(params) => <TextField {...params} label="Primary brand (required)" helperText="Authors must set a primary brand" required fullWidth />}
+                />
+                <Alert severity="info">Authors have access to all brands and permissions.</Alert>
+              </Stack>
+            )}
+            <FormControl fullWidth>
+              <InputLabel id="status-label">Status</InputLabel>
+              <Select
+                labelId="status-label"
+                label="Status"
+                value={form.status}
+                onChange={(e) => handleFormChange('status', e.target.value)}
+              >
+                <MenuItem value="active">Active</MenuItem>
+                <MenuItem value="suspended">Suspended</MenuItem>
+              </Select>
+            </FormControl>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving} variant="contained">{isEdit ? 'Save' : 'Create'}</Button>
+        </DialogActions>
+      </Dialog>
     </Card>
   );
 }

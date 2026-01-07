@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback, Suspense, lazy } from 'react
 import dayjs from 'dayjs';
 import { AppProvider } from '@shopify/polaris';
 import enTranslations from '@shopify/polaris/locales/en.json';
-import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, Skeleton } from '@mui/material';
+import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, Skeleton, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
 import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import { listAuthorBrands, getTopProducts } from './lib/api.js';
@@ -25,7 +25,6 @@ const HourlySalesCompare = lazy(() => import('./components/HourlySalesCompare.js
 const WebVitals = lazy(() => import('./components/WebVitals.jsx'));
 const AuthorAdjustments = lazy(() => import('./components/AuthorAdjustments.jsx'));
 const AccessControlCard = lazy(() => import('./components/AccessControlCard.jsx'));
-const WhitelistTable = lazy(() => import('./components/WhitelistTable.jsx'));
 const ProductConversionTable = lazy(() => import('./components/ProductConversionTable.jsx'));
 const AuthorBrandForm = lazy(() => import('./components/AuthorBrandForm.jsx'));
 const AuthorBrandList = lazy(() => import('./components/AuthorBrandList.jsx'));
@@ -97,6 +96,19 @@ export default function App() {
     () => (globalBrandKey || '').toString().trim().toUpperCase(),
     [globalBrandKey]
   );
+  const viewerBrands = useMemo(() => {
+    if (!user?.brand_memberships) return [];
+    const seen = new Set();
+    const list = [];
+    for (const m of user.brand_memberships) {
+      const key = (m.brand_id || '').toString().trim().toUpperCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        list.push(key);
+      }
+    }
+    return list;
+  }, [user]);
 
   // Initialize tab checking storage; guard against invalid reads
   const [authorTab, setAuthorTab] = useState(() => {
@@ -131,7 +143,19 @@ export default function App() {
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
 
-  const activeBrandKey = isAuthor ? (authorBrandKey || '') : (user?.brandKey || '');
+  const activeBrandKey = isAuthor
+    ? (authorBrandKey || '')
+    : ((globalBrandKey || '').toString().trim().toUpperCase()) || (user?.brandKey || viewerBrands[0] || '');
+
+  useEffect(() => {
+    if (!isAuthor && viewerBrands.length) {
+      const current = (globalBrandKey || '').toString().trim().toUpperCase();
+      const next = current || viewerBrands[0];
+      if (next && next !== current) {
+        dispatch(setBrand(next));
+      }
+    }
+  }, [isAuthor, viewerBrands, globalBrandKey, dispatch]);
 
   const metricsQuery = useMemo(() => {
     const base = { start: formatDate(start), end: formatDate(end) };
@@ -172,11 +196,12 @@ export default function App() {
     setBrandsLoaded(false); // Reset loaded state on new fetch start
     listAuthorBrands().then((json) => {
       if (cancelled) return;
-      if (json.__error) {
+      if (json.__error || json.error) {
         setAuthorBrands([]);
         return;
       }
-      const arr = Array.isArray(json.brands) ? json.brands.map((b) => ({
+      const payload = json.data ?? json;
+      const arr = Array.isArray(payload.brands) ? payload.brands.map((b) => ({
         key: (b.key || '').toString().trim().toUpperCase(),
         host: b.host,
         db: b.db,
@@ -490,7 +515,8 @@ export default function App() {
                   onClick={() => {
                     const base = import.meta.env.VITE_API_BASE || '/api';
                     const target = base.startsWith('http') ? base : `${window.location.origin}${base}`;
-                    window.location.href = `${target}/auth/google`;
+                    const redirect = encodeURIComponent(window.location.origin);
+                    window.location.href = `${target.replace(/\/$/, '')}/auth/google/start?redirect=${redirect}`;
                   }}
                 >
                   <div className="gsi-material-button-state"></div>
@@ -624,7 +650,6 @@ export default function App() {
                     <Suspense fallback={<SectionFallback count={2} />}>
                       <Stack spacing={{ xs: 2, md: 3 }}>
                         <AccessControlCard />
-                        <WhitelistTable />
                       </Stack>
                     </Suspense>
                   )}
@@ -721,6 +746,21 @@ export default function App() {
           >
             <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
             <Container maxWidth="sm" sx={{ pt: { xs: 2.5, sm: 3 } }}>
+            {isBrandUser && viewerBrands.length > 1 && (
+              <FormControl fullWidth size="small" sx={{ mb: 1 }}>
+                <InputLabel id="brand-select-label">Brand</InputLabel>
+                <Select
+                  labelId="brand-select-label"
+                  value={activeBrandKey}
+                  label="Brand"
+                  onChange={(e) => dispatch(setBrand((e.target.value || '').toString().trim().toUpperCase()))}
+                >
+                  {viewerBrands.map((b) => (
+                    <MenuItem key={b} value={b}>{b}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
             <MobileTopBar
               value={normalizedRange}
               onChange={handleRangeChange}
