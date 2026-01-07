@@ -52,10 +52,7 @@ const WebVitals = ({ query }) => {
   const { user } = useAppSelector((state) => state.auth);
   const globalBrandKey = useAppSelector((state) => state.brand.brand);
 
-  const isAuthor = !!user?.isAuthor;
-  const activeBrandKey = isAuthor
-    ? (globalBrandKey || "").toString().trim().toUpperCase()
-    : (user?.brandKey || "").toString().trim().toUpperCase();
+  const activeBrandKey = (globalBrandKey || user?.brandKey || "").toString().trim().toUpperCase();
 
   let brand_name;
   switch (activeBrandKey) {
