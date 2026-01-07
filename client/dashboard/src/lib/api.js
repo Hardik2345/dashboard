@@ -70,11 +70,21 @@ async function refreshAccessToken() {
   }
 }
 
+let refreshPromise = null;
+async function ensureFreshToken() {
+  if (!refreshPromise) {
+    refreshPromise = refreshAccessToken().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
 async function fetchWithAuth(url, options = {}, retry = true) {
   const opts = { ...options, headers: { ...(options.headers || {}), ...authHeaders() } };
   const res = await fetch(url, opts);
   if (res.status === 401 && retry) {
-    const refreshed = await refreshAccessToken();
+    const refreshed = await ensureFreshToken();
     if (!refreshed) return res;
     const retryOpts = { ...options, headers: { ...(options.headers || {}), ...authHeaders() } };
     return fetch(url, retryOpts);
@@ -226,6 +236,19 @@ export async function addWhitelist(email, brand_key, notes) {
 }
 export async function removeWhitelist(id) {
   return doDelete(`/author/access-control/whitelist/${id}`);
+}
+
+// ---- Admin user management (Access Control) -------------------------------
+export async function adminListUsers() {
+  return doGet('/auth/admin/users');
+}
+
+export async function adminUpsertUser(payload) {
+  return doPost('/auth/admin/users', payload);
+}
+
+export async function adminDeleteUser(email) {
+  return doDelete(`/auth/admin/users/${encodeURIComponent(email)}`);
 }
 
 export async function getDashboardSummary(args) {
@@ -517,7 +540,7 @@ export async function activateAdjustmentBucket(id, { brandKey, start, end, onlyT
 
 // Author brands helper (list)
 export async function listAuthorBrands() {
-  return getJSON('/author/brands');
+  return doGet('/author/brands');
 }
 
 // ---------------- Author: Alerts admin ----------------
