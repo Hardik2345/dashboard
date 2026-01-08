@@ -143,21 +143,15 @@ export default function App() {
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
 
-  const activeBrandKey = useMemo(() => {
-    if (isAuthor) {
-      return authorBrandKey || user?.primary_brand_id || '';
-    }
-    // For viewers, validate that the selected brand is in their allowed list
-    const candidates = [
-      (globalBrandKey || '').toString().trim().toUpperCase(),
-      (user?.primary_brand_id || '').toString().trim().toUpperCase(),
-      (user?.brandKey || '').toString().trim().toUpperCase(),
-    ].filter(Boolean);
-    
-    // Find first candidate that's in viewerBrands, or fall back to first allowed brand
-    const validBrand = candidates.find((b) => viewerBrands.includes(b));
-    return validBrand || viewerBrands[0] || '';
-  }, [isAuthor, authorBrandKey, globalBrandKey, user?.primary_brand_id, user?.brandKey, viewerBrands]);
+  const activeBrandKey = isAuthor
+    ? (authorBrandKey || user?.primary_brand_id || '')
+    : (
+        (globalBrandKey || '').toString().trim().toUpperCase() ||
+        (user?.primary_brand_id || '').toString().trim().toUpperCase() ||
+        (user?.brandKey || '').toString().trim().toUpperCase() ||
+        viewerBrands[0] ||
+        ''
+      );
 
   const viewerPermissions = useMemo(() => {
     if (isAuthor) return ['all'];
@@ -177,12 +171,9 @@ export default function App() {
   useEffect(() => {
     if (!isAuthor && viewerBrands.length) {
       const current = (globalBrandKey || '').toString().trim().toUpperCase();
-      const isValidBrand = current && viewerBrands.includes(current);
-      // If current brand is not in user's allowed brands, reset to first allowed brand
-      if (!isValidBrand) {
-        dispatch(setBrand(viewerBrands[0]));
-      } else if (!current) {
-        dispatch(setBrand(viewerBrands[0]));
+      const next = current || viewerBrands[0];
+      if (next && next !== current) {
+        dispatch(setBrand(next));
       }
     }
   }, [isAuthor, viewerBrands, globalBrandKey, dispatch]);
