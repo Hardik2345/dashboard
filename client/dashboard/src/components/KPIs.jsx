@@ -4,7 +4,6 @@ import { Stack, Typography } from "@mui/material";
 import KPIStat from "./KPIStat.jsx";
 import {
   getDashboardSummary,
-  getDeltaSummary,
   getProductKpis,
 } from "../lib/api.js";
 
@@ -143,6 +142,32 @@ export default function KPIs({
             total_orders: orders.value
           };
 
+          const ordersDelta = {
+            diff_pct: m.total_orders?.diff_pct ?? 0,
+            direction: m.total_orders?.direction ?? "flat",
+          };
+          const salesDelta = {
+            diff_pct: m.total_sales?.diff_pct ?? 0,
+            direction: m.total_sales?.direction ?? "flat",
+          };
+          const aovDelta = {
+            diff_pct: m.average_order_value?.diff_pct ?? 0,
+            direction: m.average_order_value?.direction ?? "flat",
+          };
+          const cvrDelta = {
+            diff_pct: m.conversion_rate?.diff_pct ?? 0,
+            diff_pp: m.conversion_rate?.diff_pp,
+            direction: m.conversion_rate?.direction ?? "flat",
+          };
+          const sessDelta = {
+            diff_pct: m.total_sessions?.diff_pct ?? 0,
+            direction: m.total_sessions?.direction ?? "flat",
+          };
+          const atcDelta = {
+            diff_pct: m.total_atc_sessions?.diff_pct ?? 0,
+            direction: m.total_atc_sessions?.direction ?? "flat",
+          };
+
           setData((prev) => ({
             ...prev,
             orders,
@@ -150,8 +175,15 @@ export default function KPIs({
             aov,
             cvr,
             funnel,
+            ordersDelta,
+            salesDelta,
+            aovDelta,
+            cvrDelta,
+            sessDelta,
+            atcDelta,
           }));
           setLoading(false);
+          setDeltaLoading(false);
           if (typeof onLoaded === "function") {
             onLoaded(new Date());
           }
@@ -159,96 +191,6 @@ export default function KPIs({
         .catch(() => {
           if (cancelled) return;
           setLoading(false);
-        });
-
-      // Fetch deltas separately
-      getDeltaSummary(base)
-        .then((resp) => {
-          if (cancelled) return;
-          if (resp.error || !resp.metrics) {
-            setDeltaLoading(false);
-            return;
-          }
-
-          const m = resp.metrics || {};
-          setData((prev) => {
-            const ordersCurrent = prev.orders?.value ?? m.total_orders?.current ?? m.total_orders?.value ?? 0;
-            const salesCurrent = prev.sales?.value ?? m.total_sales?.current ?? m.total_sales?.value ?? 0;
-            const sessionsCurrent = prev.funnel?.total_sessions ?? m.total_sessions?.current ?? m.total_sessions?.value ?? 0;
-            const atcCurrent = prev.funnel?.total_atc_sessions ?? m.total_atc_sessions?.current ?? m.total_atc_sessions?.value ?? 0;
-            const aovCurrent = prev.aov?.aov ?? m.average_order_value?.current ?? m.average_order_value?.value ?? 0;
-
-            const orders = prev.orders || { value: ordersCurrent };
-            const sales = prev.sales || { value: salesCurrent };
-            const aov = prev.aov || { aov: aovCurrent };
-
-            const ordersDelta = {
-              diff_pct: m.total_orders?.diff_pct ?? prev.ordersDelta?.diff_pct ?? 0,
-              direction: m.total_orders?.direction ?? prev.ordersDelta?.direction ?? 'flat'
-            };
-
-            const salesDelta = {
-              diff_pct: m.total_sales?.diff_pct ?? prev.salesDelta?.diff_pct ?? 0,
-              direction: m.total_sales?.direction ?? prev.salesDelta?.direction ?? 'flat'
-            };
-
-            const aovDelta = {
-              diff_pct: m.average_order_value?.diff_pct ?? prev.aovDelta?.diff_pct ?? 0,
-              direction: m.average_order_value?.direction ?? prev.aovDelta?.direction ?? 'flat'
-            };
-
-            const cvrPercent = m.conversion_rate?.current?.cvr_percent
-              ?? m.conversion_rate?.current
-              ?? m.conversion_rate?.value
-              ?? prev.cvr?.cvr_percent
-              ?? 0;
-            const cvr = prev.cvr || {
-              cvr: Number(cvrPercent) / 100,
-              cvr_percent: Number(cvrPercent),
-              total_orders: ordersCurrent,
-              total_sessions: sessionsCurrent
-            };
-            const cvrDelta = {
-              diff_pct: m.conversion_rate?.diff_pct ?? prev.cvrDelta?.diff_pct ?? 0,
-              diff_pp: m.conversion_rate?.diff_pp ?? prev.cvrDelta?.diff_pp,
-              direction: m.conversion_rate?.direction ?? prev.cvrDelta?.direction ?? 'flat'
-            };
-
-            const funnel = prev.funnel || {
-              total_sessions: sessionsCurrent,
-              total_atc_sessions: atcCurrent,
-              total_orders: ordersCurrent
-            };
-
-            const sessDelta = {
-              diff_pct: m.total_sessions?.diff_pct ?? prev.sessDelta?.diff_pct ?? 0,
-              direction: m.total_sessions?.direction ?? prev.sessDelta?.direction ?? 'flat'
-            };
-
-            const atcDelta = {
-              diff_pct: m.total_atc_sessions?.diff_pct ?? prev.atcDelta?.diff_pct ?? 0,
-              direction: m.total_atc_sessions?.direction ?? prev.atcDelta?.direction ?? 'flat'
-            };
-
-            return {
-              ...prev,
-              orders,
-              sales,
-              aov,
-              cvr,
-              funnel,
-              ordersDelta,
-              salesDelta,
-              aovDelta,
-              cvrDelta,
-              sessDelta,
-              atcDelta
-            };
-          });
-          setDeltaLoading(false);
-        })
-        .catch(() => {
-          if (cancelled) return;
           setDeltaLoading(false);
         });
     }
