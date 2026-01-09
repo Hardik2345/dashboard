@@ -13,8 +13,21 @@ export const fetchProductConversion = createAsyncThunk(
     const pageSize = params.pageSize || state.pageSize || 10;
     const sortBy = params.sortBy || state.sortBy || 'sessions';
     const sortDir = params.sortDir || state.sortDir || 'desc';
+    const compareMode = params.compareMode ?? state.compareMode ?? false;
+    // Default comparison: previous period relative to start/end
+    const compareStart = params.compareStart || state.compareStart || null;
+    const compareEnd = params.compareEnd || state.compareEnd || null;
 
-    const resp = await getProductConversion({ start, end, page, pageSize, sortBy, sortDir, brand_key: params.brand_key }, { signal });
+    const apiParams = {
+      start, end, page, pageSize, sortBy, sortDir, brand_key: params.brand_key
+    };
+
+    if (compareMode && compareStart && compareEnd) {
+      apiParams.compareStart = compareStart;
+      apiParams.compareEnd = compareEnd;
+    }
+
+    const resp = await getProductConversion(apiParams, { signal });
     if (resp.error) {
       return rejectWithValue('Failed to fetch product conversion');
     }
@@ -27,21 +40,57 @@ export const fetchProductConversion = createAsyncThunk(
       sortDir,
       start,
       end,
+      compareMode,
+      compareStart,
+      compareEnd
     };
   }
 );
 
+// Helper to save state
+const saveState = (state) => {
+  try {
+    const toSave = {
+      start: state.start,
+      end: state.end,
+      compareMode: state.compareMode,
+      compareStart: state.compareStart,
+      compareEnd: state.compareEnd,
+      pageSize: state.pageSize
+    };
+    localStorage.setItem('productConversionState', JSON.stringify(toSave));
+  } catch (e) {
+    console.error('Failed to save state', e);
+  }
+};
+
+// Helper to load state
+const loadState = () => {
+  try {
+    const serialized = localStorage.getItem('productConversionState');
+    if (serialized === null) return {};
+    return JSON.parse(serialized);
+  } catch (e) {
+    return {};
+  }
+};
+
+const saved = loadState();
+
 const initialState = {
-  start: today,
-  end: today,
+  start: saved.start || today,
+  end: saved.end || today,
   page: 1,
-  pageSize: 10,
+  pageSize: saved.pageSize || 10,
   sortBy: 'sessions',
   sortDir: 'desc',
   rows: [],
   totalCount: 0,
   status: 'idle',
   error: null,
+  compareMode: saved.compareMode ?? false,
+  compareStart: saved.compareStart || null,
+  compareEnd: saved.compareEnd || null,
 };
 
 const productConversionSlice = createSlice({
@@ -52,6 +101,16 @@ const productConversionSlice = createSlice({
       state.start = action.payload?.start || today;
       state.end = action.payload?.end || today;
       state.page = 1;
+      saveState(state);
+    },
+    setCompareMode(state, action) {
+      state.compareMode = !!action.payload;
+      saveState(state);
+    },
+    setCompareDateRange(state, action) {
+      state.compareStart = action.payload?.start || null;
+      state.compareEnd = action.payload?.end || null;
+      saveState(state);
     },
     setPage(state, action) {
       state.page = action.payload || 1;
@@ -59,6 +118,7 @@ const productConversionSlice = createSlice({
     setPageSize(state, action) {
       state.pageSize = action.payload || 10;
       state.page = 1;
+      saveState(state);
     },
     setSort(state, action) {
       const { sortBy, sortDir } = action.payload || {};
@@ -87,6 +147,9 @@ const productConversionSlice = createSlice({
         state.sortDir = action.payload.sortDir || state.sortDir;
         state.start = action.payload.start || state.start;
         state.end = action.payload.end || state.end;
+        state.compareMode = action.payload.compareMode;
+        state.compareStart = action.payload.compareStart;
+        state.compareEnd = action.payload.compareEnd;
       })
       .addCase(fetchProductConversion.rejected, (state, action) => {
         state.status = 'failed';
@@ -95,5 +158,5 @@ const productConversionSlice = createSlice({
   },
 });
 
-export const { setDateRange, setPage, setPageSize, setSort, resetProductConversion } = productConversionSlice.actions;
+export const { setDateRange, setCompareMode, setCompareDateRange, setPage, setPageSize, setSort, resetProductConversion } = productConversionSlice.actions;
 export default productConversionSlice.reducer;
