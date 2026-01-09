@@ -370,7 +370,7 @@ async function calcCvrDelta({ start, end, align, compare, conn }) {
 
   const base = new Date(`${target}T00:00:00Z`);
   const prev = new Date(base.getTime() - 24 * 3600_000);
-  const prevStr = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth()+1).padStart(2,'0')}-${String(prev.getUTCDate()).padStart(2,'0')}`;
+  const prevStr = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}-${String(prev.getUTCDate()).padStart(2, '0')}`;
 
   if (alignLower === 'hour') {
     const offsetMs = IST_OFFSET_MIN * 60 * 1000;
@@ -518,19 +518,19 @@ async function fetchCachedMetrics(brandKey, date) {
     try {
       let data = null;
       if (redisClient) {
-         // Assuming key format is simple: "brand_date"
-         // If pipeline uses "metrics:brand:date", change here.
-         // Based on previous conversations, sticking to simple key or pipeline.py logic
-         // Let's assume the key is exactly as generated above: `${brandKey.toLowerCase()}_${date}`
-         const raw = await redisClient.get(key);
-         if (raw) {
-           data = JSON.parse(raw);
-           logger.debug(`[REDIS HIT] ${key}`);
-         } else {
-           logger.debug(`[REDIS MISS] ${key}`);
-         }
+        // Assuming key format is simple: "brand_date"
+        // If pipeline uses "metrics:brand:date", change here.
+        // Based on previous conversations, sticking to simple key or pipeline.py logic
+        // Let's assume the key is exactly as generated above: `${brandKey.toLowerCase()}_${date}`
+        const raw = await redisClient.get(key);
+        if (raw) {
+          data = JSON.parse(raw);
+          logger.debug(`[REDIS HIT] ${key}`);
+        } else {
+          logger.debug(`[REDIS MISS] ${key}`);
+        }
       } else {
-         console.warn(`[REDIS SKIP] Client not available`);
+        console.warn(`[REDIS SKIP] Client not available`);
       }
 
       if (data) {
@@ -538,12 +538,12 @@ async function fetchCachedMetrics(brandKey, date) {
         MEM_CACHE.set(key, { timestamp: Date.now(), data: data, promise: null });
         return data;
       }
-      
+
       return null;
     } catch (error) {
-       console.error(`[REDIS ERROR] Fetch failed for ${key}`, error.message);
-       MEM_CACHE.delete(key);
-       return null;
+      console.error(`[REDIS ERROR] Fetch failed for ${key}`, error.message);
+      MEM_CACHE.delete(key);
+      return null;
     } finally {
       // If we had a promise in cache, clear it if it failed
       const entry = MEM_CACHE.get(key);
@@ -567,13 +567,13 @@ async function fetchCachedMetricsBatch(brandKey, dates) {
   // 1. Check Memory Cache
   keys.forEach((key, idx) => {
     if (MEM_CACHE.has(key)) {
-       const entry = MEM_CACHE.get(key);
-       if (now - entry.timestamp < CACHE_TTL_MS && entry.data) {
-           logger.debug(`[MEM CACHE] Hit for ${key}`);
-           results[idx] = entry.data;
-           return;
-       }
-       if (now - entry.timestamp >= CACHE_TTL_MS) MEM_CACHE.delete(key);
+      const entry = MEM_CACHE.get(key);
+      if (now - entry.timestamp < CACHE_TTL_MS && entry.data) {
+        logger.debug(`[MEM CACHE] Hit for ${key}`);
+        results[idx] = entry.data;
+        return;
+      }
+      if (now - entry.timestamp >= CACHE_TTL_MS) MEM_CACHE.delete(key);
     }
     missingIndices.push(idx);
     missingKeys.push(key);
@@ -583,28 +583,28 @@ async function fetchCachedMetricsBatch(brandKey, dates) {
 
   // 2. MGET from Redis
   try {
-     if (redisClient) {
-        logger.debug(`[REDIS MGET] Fetching ${missingKeys.length} keys`);
-        const rawValues = await redisClient.mget(missingKeys);
-        
-        rawValues.forEach((raw, i) => {
-           const originalIdx = missingIndices[i];
-           const key = missingKeys[i];
-           
-           if (raw) {
-              const data = JSON.parse(raw);
-              MEM_CACHE.set(key, { timestamp: now, data, promise: null });
-              results[originalIdx] = data;
-              logger.debug(`[REDIS HIT] ${key}`);
-           } else {
-              logger.debug(`[REDIS MISS] ${key}`);
-           }
-        });
-     } else {
-        console.warn(`[REDIS SKIP] Client not available`);
-     }
+    if (redisClient) {
+      logger.debug(`[REDIS MGET] Fetching ${missingKeys.length} keys`);
+      const rawValues = await redisClient.mget(missingKeys);
+
+      rawValues.forEach((raw, i) => {
+        const originalIdx = missingIndices[i];
+        const key = missingKeys[i];
+
+        if (raw) {
+          const data = JSON.parse(raw);
+          MEM_CACHE.set(key, { timestamp: now, data, promise: null });
+          results[originalIdx] = data;
+          logger.debug(`[REDIS HIT] ${key}`);
+        } else {
+          logger.debug(`[REDIS MISS] ${key}`);
+        }
+      });
+    } else {
+      console.warn(`[REDIS SKIP] Client not available`);
+    }
   } catch (e) {
-     console.error('[REDIS BATCH ERROR]', e.message);
+    console.error('[REDIS BATCH ERROR]', e.message);
   }
   return results;
 }
@@ -648,18 +648,18 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
         const { start, end } = parsed.data;
-        
+
         // Cache check
         if (start && end && start === end) {
           const cached = await fetchCachedMetrics(req.brandKey, start);
           if (cached) {
             logger.debug(`[CACHE USE] AOV for ${req.brandKey} on ${start} | Value: ${cached.average_order_value}`);
-            return res.json({ 
-              metric: "AOV", 
-              range: { start, end }, 
-              total_sales: cached.total_sales, 
-              total_orders: cached.total_orders, 
-              aov: cached.average_order_value 
+            return res.json({
+              metric: "AOV",
+              range: { start, end },
+              total_sales: cached.total_sales,
+              total_orders: cached.total_orders,
+              aov: cached.average_order_value
             });
           }
         }
@@ -681,12 +681,12 @@ function buildMetricsController() {
           const cached = await fetchCachedMetrics(req.brandKey, start);
           if (cached) {
             logger.debug(`[CACHE USE] CVR for ${req.brandKey} on ${start} | Value: ${cached.conversion_rate}`);
-            return res.json({ 
-              metric: "CVR", 
-              range: { start, end }, 
-              total_orders: cached.total_orders, 
-              total_sessions: cached.total_sessions, 
-              cvr: cached.conversion_rate / 100, 
+            return res.json({
+              metric: "CVR",
+              range: { start, end },
+              total_orders: cached.total_orders,
+              total_sessions: cached.total_sessions,
+              cvr: cached.conversion_rate / 100,
               cvr_percent: cached.conversion_rate
             });
           }
@@ -786,7 +786,7 @@ function buildMetricsController() {
         } else {
           const rows = await conn.query('SELECT MAX(date) AS max_d FROM overall_summary', { type: QueryTypes.SELECT });
           const maxd = Array.isArray(rows) ? rows[0]?.max_d : (rows && rows.max_d);
-          end = maxd || new Date().toISOString().slice(0,10);
+          end = maxd || new Date().toISOString().slice(0, 10);
         }
 
         const days = [];
@@ -945,11 +945,11 @@ function buildMetricsController() {
 
         const total_sales = await computeTotalSales({ start, end, conn: req.brandDb.sequelize });
         if (start && end && start === end) {
-             const cached = await fetchCachedMetrics(req.brandKey, start);
-             if (cached) {
-                logger.debug(`[CACHE USE] TOTAL_SALES for ${req.brandKey} on ${start} | Value: ${cached.total_sales}`);
-                return res.json({ metric: "TOTAL_SALES", range: { start: start || null, end: end || null }, total_sales: cached.total_sales });
-             }
+          const cached = await fetchCachedMetrics(req.brandKey, start);
+          if (cached) {
+            logger.debug(`[CACHE USE] TOTAL_SALES for ${req.brandKey} on ${start} | Value: ${cached.total_sales}`);
+            return res.json({ metric: "TOTAL_SALES", range: { start: start || null, end: end || null }, total_sales: cached.total_sales });
+          }
         }
         logger.debug(`[DB FETCH] TOTAL_SALES for ${req.brandKey} on range ${start} to ${end} | Result: ${total_sales}`);
         return res.json({ metric: "TOTAL_SALES", range: { start: start || null, end: end || null }, total_sales });
@@ -972,11 +972,11 @@ function buildMetricsController() {
 
         const total_orders = await computeTotalOrders({ start, end, conn: req.brandDb.sequelize });
         if (start && end && start === end) {
-            const cached = await fetchCachedMetrics(req.brandKey, start);
-            if (cached) {
-              logger.debug(`[CACHE USE] TOTAL_ORDERS for ${req.brandKey} on ${start} | Value: ${cached.total_orders}`);
-              return res.json({ metric: "TOTAL_ORDERS", range: { start: start || null, end: end || null }, total_orders: cached.total_orders });
-            }
+          const cached = await fetchCachedMetrics(req.brandKey, start);
+          if (cached) {
+            logger.debug(`[CACHE USE] TOTAL_ORDERS for ${req.brandKey} on ${start} | Value: ${cached.total_orders}`);
+            return res.json({ metric: "TOTAL_ORDERS", range: { start: start || null, end: end || null }, total_orders: cached.total_orders });
+          }
         }
         logger.debug(`[DB FETCH] TOTAL_ORDERS for ${req.brandKey} on range ${start} to ${end} | Result: ${total_orders}`);
         return res.json({ metric: "TOTAL_ORDERS", range: { start: start || null, end: end || null }, total_orders });
@@ -1052,7 +1052,7 @@ function buildMetricsController() {
           const startTs = `${effectiveStart} 00:00:00`;
           const endTsExclusive = new Date(`${effectiveEnd}T00:00:00Z`);
           endTsExclusive.setUTCDate(endTsExclusive.getUTCDate() + 1);
-          const endTs = endTsExclusive.toISOString().slice(0,19).replace('T',' ');
+          const endTs = endTsExclusive.toISOString().slice(0, 19).replace('T', ' ');
 
           const sql = `
             SELECT payment_type, COUNT(DISTINCT order_name) AS cnt
@@ -1114,7 +1114,7 @@ function buildMetricsController() {
         const startTs = `${effectiveStart} 00:00:00`;
         const endTsExclusive = new Date(`${effectiveEnd}T00:00:00Z`);
         endTsExclusive.setUTCDate(endTsExclusive.getUTCDate() + 1);
-        const endTs = endTsExclusive.toISOString().slice(0,19).replace('T',' ');
+        const endTs = endTsExclusive.toISOString().slice(0, 19).replace('T', ' ');
 
         const sql = `
       SELECT payment_type, SUM(max_price) AS sales
@@ -1419,7 +1419,7 @@ function buildMetricsController() {
 
         const DAY_MS = 24 * 3600_000;
         let points = [];
-        const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
         if (aggregate === 'avg-by-hour' || aggregate === 'avg-hour' || aggregate === 'avg') {
           const buckets = [];
@@ -1552,7 +1552,7 @@ function buildMetricsController() {
           const baseHours = points.map(p => p.hour);
           const comparisonPoints = baseHours.map((hour) => {
             const avg = avgByHour[hour] || { sales: 0, sessions: 0, orders: 0, atc: 0, cvr_ratio: 0, cvr_percent: 0 };
-            return { hour, label: `${String(hour).padStart(2,'0')}:00`, metrics: avg };
+            return { hour, label: `${String(hour).padStart(2, '0')}:00`, metrics: avg };
           });
 
           comparison = { range: { start: prevWin.prevStart, end: prevWin.prevEnd }, alignHour: comparisonAlignHour, points: comparisonPoints, hourSampleCount: hourAcc.map((acc) => acc.count) };
@@ -1658,7 +1658,7 @@ function buildMetricsController() {
           WHERE date >= ? AND date <= ?
           GROUP BY month_start
           ORDER BY month_start ASC`;
-        
+
         const sessionsSql = `
           SELECT 
             DATE_FORMAT(date, '%Y-%m-01') AS month_start,
@@ -1699,7 +1699,7 @@ function buildMetricsController() {
         let comparison = null;
         const prevWin = previousWindow(start, end);
         if (prevWin?.prevStart && prevWin?.prevEnd) {
-           const [rowsPrev, sessionsRowsPrev] = await Promise.all([
+          const [rowsPrev, sessionsRowsPrev] = await Promise.all([
             req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] }),
             req.brandDb.sequelize.query(sessionsSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] })
           ]);
@@ -1769,7 +1769,7 @@ function buildMetricsController() {
             SELECT
               product_id,
               COUNT(DISTINCT order_name) AS orders,
-              SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity) AS sales
+              SUM((line_item_price * line_item_quantity) - COALESCE(discount_amount_per_line_item, 0)) AS sales
             FROM shopify_orders
             WHERE created_date >= ? AND created_date <= ?
               AND product_id IS NOT NULL
@@ -1791,6 +1791,7 @@ function buildMetricsController() {
         const sql = `
           ${baseCte}
           SELECT
+            s.product_id,
             s.landing_page_path,
             s.sessions,
             s.atc,
@@ -1810,11 +1811,90 @@ function buildMetricsController() {
           FROM sessions_60d s
         `;
 
-        const [rows, countRows] = await Promise.all([
+        const [rowsRAW, countRows] = await Promise.all([
           conn.query(sql, { type: QueryTypes.SELECT, replacements }),
           conn.query(countSql, { type: QueryTypes.SELECT, replacements }),
         ]);
+
+        let rows = rowsRAW.map(r => ({ ...r, previous: null }));
         const total = Number(countRows?.[0]?.total_count || 0);
+
+        // --- Comparison Logic ---
+        const compareStart = req.query.compare_start;
+        const compareEnd = req.query.compare_end;
+        if (compareStart && compareEnd && rows.length > 0) {
+          const productIds = [...new Set(rows.map(r => r.product_id).filter(Boolean))];
+
+          if (productIds.length > 0) {
+            try {
+              // Re-use logic for comparison range, filtering by specific productIds
+              // We use NAMED replacements to handle array of IDs safely if using sequelizes replacements, 
+              // OR we use indexed replacements if we are careful. 
+              // Better to use a clean new query with replacement params.
+
+              // Using positional replacements (?) to ensure compatibility
+              const compReplacements = [compareStart, compareEnd, productIds, compareStart, compareEnd, productIds];
+
+              const compCte = `
+              WITH orders_comp AS (
+                SELECT
+                  product_id,
+                  COUNT(DISTINCT order_name) AS orders,
+                  SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity) AS sales
+                FROM shopify_orders
+                WHERE created_date >= ? AND created_date <= ?
+                  AND product_id IN (?)
+                GROUP BY product_id
+              ),
+              sessions_comp AS (
+                SELECT
+                  product_id,
+                  SUM(sessions) AS sessions,
+                  SUM(sessions_with_cart_additions) AS atc
+                FROM mv_product_sessions_by_path_daily
+                WHERE date >= ? AND date <= ?
+                  AND product_id IN (?)
+                GROUP BY product_id
+              )
+            `;
+
+              const compSql = `
+              ${compCte}
+              SELECT
+                s.product_id,
+                s.sessions,
+                s.atc,
+                COALESCE(o.orders, 0) AS orders,
+                COALESCE(o.sales, 0) AS sales,
+                CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
+              FROM sessions_comp s
+              LEFT JOIN orders_comp o ON s.product_id = o.product_id
+            `;
+
+              // Important: The query result is an array of rows
+              const rowsRAW = await conn.query(compSql, { type: QueryTypes.SELECT, replacements: compReplacements });
+              // Check if result is wrapped or just rows. QueryTypes.SELECT usually returns just the rows.
+              const compRows = rowsRAW;
+
+              // Merge
+              const compMap = new Map();
+              compRows.forEach(r => compMap.set(r.product_id, r));
+
+              rows = rows.map(r => {
+                const prev = compMap.get(r.product_id);
+                // If no previous data found (e.g. 0 sessions), we might want to default to 0s so frontend sees "0" instead of null?
+                // The frontend treats null/undefined as "no data".
+                // If product didn't exist in that period, it won't be in compRows (INNER JOINS or WHERE IN).
+                // If we want to show 0 for previous period, we should provide an object with 0s.
+                // Let's provide an object of 0s if missing, so we can show "infinite growth" from 0.
+                return {
+                  ...r,
+                  previous: prev || { sessions: 0, atc: 0, orders: 0, sales: 0, cvr: 0 }
+                };
+              });
+            } catch (e) { console.error('[product-conversion] comparison logic failed', e); }
+          }
+        }
 
         return res.json({
           range: { start, end },
@@ -1996,10 +2076,10 @@ function buildMetricsController() {
         const IST_OFFSET_MIN = 330;
         const nowUtc = new Date();
         const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
-        
+
         const pad2 = (n) => String(n).padStart(2, '0');
         const formatDate = (d) => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
-        
+
         const todayStr = formatDate(nowIst);
         const yesterdayIst = new Date(nowIst.getTime() - 24 * 60 * 60 * 1000);
         const yesterdayStr = formatDate(yesterdayIst);
@@ -2013,23 +2093,23 @@ function buildMetricsController() {
         let yesterdaySource = 'db';
 
         if (redisClient) {
-            try {
-              const results = await redisClient.mget(keyToday, keyYesterday);
-              if (results[0]) {
-                todayData = JSON.parse(results[0]);
-                todaySource = 'redis';
-              }
-              if (results[1]) {
-                yesterdayData = JSON.parse(results[1]);
-                yesterdaySource = 'redis';
-              }
-              if (todayData) logger.debug(`[REDIS HIT] ${keyToday}`);
-              else logger.debug(`[REDIS MISS] ${keyToday}`);
-              if (yesterdayData) logger.debug(`[REDIS HIT] ${keyYesterday}`);
-              else logger.debug(`[REDIS MISS] ${keyYesterday}`);
-            } catch (err) {
-              console.error('[hourlySalesSummary] Redis fetch failed', err.message);
+          try {
+            const results = await redisClient.mget(keyToday, keyYesterday);
+            if (results[0]) {
+              todayData = JSON.parse(results[0]);
+              todaySource = 'redis';
             }
+            if (results[1]) {
+              yesterdayData = JSON.parse(results[1]);
+              yesterdaySource = 'redis';
+            }
+            if (todayData) logger.debug(`[REDIS HIT] ${keyToday}`);
+            else logger.debug(`[REDIS MISS] ${keyToday}`);
+            if (yesterdayData) logger.debug(`[REDIS HIT] ${keyYesterday}`);
+            else logger.debug(`[REDIS MISS] ${keyYesterday}`);
+          } catch (err) {
+            console.error('[hourlySalesSummary] Redis fetch failed', err.message);
+          }
         }
 
         // Fallback to DB if missing
@@ -2046,17 +2126,17 @@ function buildMetricsController() {
             WHERE date = ?
             ORDER BY hour ASC
           `;
-          
+
           if (!todayData) {
-             const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements: [todayStr] });
-             todayData = rows.map(r => ({
-               hour: r.hour,
-               total_sales: Number(r.total_sales || 0),
-               number_of_orders: Number(r.number_of_orders || 0),
-               number_of_sessions: Number(r.number_of_sessions || 0),
-               number_of_atc_sessions: Number(r.number_of_atc_sessions || 0)
-             }));
-             logger.debug(`[DB FETCH] hourly sales for ${brandKey} on ${todayStr}`);
+            const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements: [todayStr] });
+            todayData = rows.map(r => ({
+              hour: r.hour,
+              total_sales: Number(r.total_sales || 0),
+              number_of_orders: Number(r.number_of_orders || 0),
+              number_of_sessions: Number(r.number_of_sessions || 0),
+              number_of_atc_sessions: Number(r.number_of_atc_sessions || 0)
+            }));
+            logger.debug(`[DB FETCH] hourly sales for ${brandKey} on ${todayStr}`);
           }
 
           if (!yesterdayData) {
@@ -2073,13 +2153,13 @@ function buildMetricsController() {
         }
 
         return res.json({
-            metric: "HOURLY_SALES_SUMMARY",
-            brand: brandKey,
-            source: (todaySource === 'redis' && yesterdaySource === 'redis') ? 'redis' : (todaySource === 'redis' || yesterdaySource === 'redis' ? 'mixed' : 'db'),
-            data: {
-              today: { date: todayStr, source: todaySource, data: todayData || [] },
-              yesterday: { date: yesterdayStr, source: yesterdaySource, data: yesterdayData || [] }
-            }
+          metric: "HOURLY_SALES_SUMMARY",
+          brand: brandKey,
+          source: (todaySource === 'redis' && yesterdaySource === 'redis') ? 'redis' : (todaySource === 'redis' || yesterdaySource === 'redis' ? 'mixed' : 'db'),
+          data: {
+            today: { date: todayStr, source: todaySource, data: todayData || [] },
+            yesterday: { date: yesterdayStr, source: yesterdaySource, data: yesterdayData || [] }
+          }
         });
 
       } catch (e) {

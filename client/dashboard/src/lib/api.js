@@ -141,7 +141,7 @@ export async function login(email, password) {
       credentials: 'include',
       body: JSON.stringify({ email, password })
     });
-    if (!res.ok) return { error: true, status: res.status, data: await res.json().catch(()=>({})) };
+    if (!res.ok) return { error: true, status: res.status, data: await res.json().catch(() => ({})) };
     return { error: false, data: await res.json() };
   } catch {
     return { error: true };
@@ -240,6 +240,8 @@ export async function getProductConversion(args, options = {}) {
     page_size: args.pageSize,
     sort_by: args.sortBy,
     sort_dir: args.sortDir,
+    compare_start: args.compareStart,
+    compare_end: args.compareEnd,
   }, args);
   const res = await doGet('/metrics/product-conversion', params, { signal: options.signal });
   if (res.error) return { error: true };
@@ -439,7 +441,7 @@ export async function createAdjustmentBucket(payload) {
       credentials: 'include',
       body: JSON.stringify(payload)
     });
-    const json = await res.json().catch(()=>({}));
+    const json = await res.json().catch(() => ({}));
     if (!res.ok) return { error: true, data: json };
     return { error: false, data: json };
   } catch { return { error: true }; }
@@ -453,7 +455,7 @@ export async function updateAdjustmentBucket(id, payload) {
       credentials: 'include',
       body: JSON.stringify(payload)
     });
-    const json = await res.json().catch(()=>({}));
+    const json = await res.json().catch(() => ({}));
     if (!res.ok) return { error: true, data: json };
     return { error: false, data: json };
   } catch { return { error: true }; }
@@ -467,7 +469,7 @@ export async function deactivateAdjustmentBucket(id, { brandKey, start, end, sco
     if (scope) params.set('scope', scope);
     const url = `${API_BASE}/author/adjustment-buckets/${id}?${params.toString()}`;
     const res = await fetch(url, { method: 'DELETE', credentials: 'include' });
-    const json = await res.json().catch(()=>({}));
+    const json = await res.json().catch(() => ({}));
     if (!res.ok) return { error: true, data: json };
     return { error: false, data: json };
   } catch { return { error: true }; }
@@ -481,7 +483,7 @@ export async function activateAdjustmentBucket(id, { brandKey, start, end, onlyT
     if (onlyThisBucket) params.set('only_this_bucket', '1');
     const url = `${API_BASE}/author/adjustment-buckets/${id}/activate?${params.toString()}`;
     const res = await fetch(url, { method: 'POST', credentials: 'include' });
-    const json = await res.json().catch(()=>({}));
+    const json = await res.json().catch(() => ({}));
     if (!res.ok) return { error: true, data: json };
     return { error: false, data: json };
   } catch { return { error: true }; }
