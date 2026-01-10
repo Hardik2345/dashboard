@@ -258,7 +258,7 @@ function DateRangePicker({
                             variant: 'body2',
                             fontWeight: isSelected ? 600 : 400,
                             fontSize: 12,
-                            color: isDisabled ? 'text.disabled' : 'inherit'
+                            color: isDisabled ? 'text.disabled' : 'text.primary'
                           }}
                         />
                         {isSelected && <CheckIcon sx={{ fontSize: 14, ml: 0.5, color: isDisabled ? 'text.disabled' : 'inherit' }} />}
