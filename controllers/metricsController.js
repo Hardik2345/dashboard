@@ -1763,7 +1763,71 @@ function buildMetricsController() {
         const sortCol = allowedSort.get(sortBy) || 'sessions';
         const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
 
-        const replacements = [start, end, start, end];
+
+
+        const validFields = ['sessions', 'atc', 'orders', 'sales', 'cvr'];
+        const validOps = ['gt', 'lt'];
+        let whereClause = '';
+        const filterReplacements = [];
+
+        // Parse filters from query: expect JSON array string or nothing
+        let filters = [];
+        try {
+          if (req.query.filters) {
+            filters = typeof req.query.filters === 'string' ? JSON.parse(req.query.filters) : req.query.filters;
+          }
+        } catch (e) {
+          filters = [];
+        }
+
+        // Also support legacy single filter params or if frontend sends them separately
+        const singleField = (req.query.filter_field || '').toString().toLowerCase();
+        if (filters.length === 0 && singleField) {
+          filters.push({
+            field: singleField,
+            operator: (req.query.filter_operator || '').toString().toLowerCase(),
+            value: req.query.filter_value
+          });
+        }
+
+
+        const conditions = [];
+        const search = (req.query.search || '').trim();
+        if (search) {
+          conditions.push(`s.landing_page_path LIKE ?`);
+          filterReplacements.push(`%${search}%`);
+        }
+
+        if (Array.isArray(filters) && filters.length > 0) {
+          for (const f of filters) {
+            const fField = (f.field || '').toString().toLowerCase();
+            const fOp = (f.operator || '').toString().toLowerCase();
+            const fVal = Number(f.value);
+
+            if (validFields.includes(fField) && validOps.includes(fOp) && !Number.isNaN(fVal)) {
+              let fieldExpr = '';
+              switch (fField) {
+                case 'sessions': fieldExpr = 's.sessions'; break;
+                case 'atc': fieldExpr = 's.atc'; break;
+                case 'orders': fieldExpr = 'COALESCE(o.orders, 0)'; break;
+                case 'sales': fieldExpr = 'COALESCE(o.sales, 0)'; break;
+                case 'cvr': fieldExpr = '(CASE WHEN s.sessions > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)'; break;
+              }
+
+              if (fieldExpr) {
+                const operator = fOp === 'gt' ? '>' : '<';
+                conditions.push(`${fieldExpr} ${operator} ?`);
+                filterReplacements.push(fVal);
+              }
+            }
+          }
+        }
+
+        if (conditions.length > 0) {
+          whereClause = `WHERE ${conditions.join(' AND ')}`;
+        }
+
+        const replacements = [start, end, start, end, ...filterReplacements];
         const baseCte = `
           WITH orders_60d AS (
             SELECT
@@ -1801,14 +1865,19 @@ function buildMetricsController() {
           FROM sessions_60d s
           LEFT JOIN orders_60d o
             ON s.product_id = o.product_id
+          ${whereClause}
           ORDER BY ${sortCol} ${dir}
           LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
         `;
 
         const countSql = `
           ${baseCte}
-          SELECT COUNT(*) AS total_count
-          FROM sessions_60d s
+          SELECT COUNT(*) AS total_count FROM (
+            SELECT 1
+            FROM sessions_60d s
+            LEFT JOIN orders_60d o ON s.product_id = o.product_id
+            ${whereClause}
+          ) AS filtered
         `;
 
         const [rowsRAW, countRows] = await Promise.all([
