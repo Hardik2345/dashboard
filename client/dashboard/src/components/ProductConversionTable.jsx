@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef, memo } from 'react';
 import dayjs from 'dayjs';
 import {
   Box,
@@ -27,18 +27,26 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  TextField,
+  Chip,
+  Popover as MuiPopover,
+  InputAdornment,
 } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
 import DownloadIcon from '@mui/icons-material/Download';
 import CheckIcon from '@mui/icons-material/Check';
 import KeyboardArrowLeft from '@mui/icons-material/KeyboardArrowLeft';
 import KeyboardArrowRight from '@mui/icons-material/KeyboardArrowRight';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import CloseIcon from '@mui/icons-material/Close';
+
 import { Popover, DatePicker } from '@shopify/polaris';
 import { AppProvider } from '@shopify/polaris';
 import enTranslations from '@shopify/polaris/locales/en.json';
 import { useAppDispatch, useAppSelector } from '../state/hooks.js';
-import { fetchProductConversion, setDateRange, setPage, setPageSize, setSort, setCompareMode, setCompareDateRange } from '../state/slices/productConversionSlice.js';
+import { fetchProductConversion, setDateRange, setPage, setPageSize, setSort, setCompareMode, setCompareDateRange, addFilter, removeFilter, clearFilters, setSearch } from '../state/slices/productConversionSlice.js';
 import { exportProductConversionCsv } from '../lib/api.js';
 import { useTheme } from '@mui/material/styles';
 
@@ -101,7 +109,9 @@ function DateRangePicker({
   variant = 'default',
   disabled = false,
   singleDate = false,
+
   disableDatesAfter,
+  sx = {},
 }) {
   const [active, setActive] = useState(false);
   const [month, setMonth] = useState(dayjs().month());
@@ -212,6 +222,7 @@ function DateRangePicker({
               opacity: disabled ? 0.6 : 1,
               pointerEvents: disabled ? 'none' : 'auto',
               '&:hover': { filter: disabled ? 'none' : 'brightness(0.97)' },
+              ...sx,
             }}
           >
             <Typography variant="body2" noWrap sx={{ color: 'inherit' }}>{displayLabel}</Typography>
@@ -342,13 +353,222 @@ function DeltaBadge({ current, previous, isPercent }) {
   );
 }
 
+
+function FilterPopover({ columns, existingFilters, onAddFilter, disabled }) {
+  const theme = useTheme();
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [field, setField] = useState('');
+  const [operator, setOperator] = useState('gt');
+  const [value, setValue] = useState('');
+
+  const handleClick = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleClose = () => {
+    setAnchorEl(null);
+  };
+
+  const open = Boolean(anchorEl);
+
+  const handleAdd = () => {
+    if (field && value !== '') {
+      onAddFilter({ field, operator, value });
+      setField('');
+      setOperator('gt');
+      setValue('');
+      handleClose();
+    }
+  };
+
+  const isInvalid = useMemo(() => {
+    if (!field || value === '') return true;
+    const newVal = Number(value);
+    for (const f of existingFilters) {
+      if (f.field === field) {
+        const fVal = Number(f.value);
+        // Exact duplicate
+        if (f.operator === operator && fVal === newVal) return true;
+
+        // Contradictions
+        if (operator === 'gt' && f.operator === 'lt' && newVal >= fVal) return true;
+        if (operator === 'lt' && f.operator === 'gt' && newVal <= fVal) return true;
+      }
+    }
+    return false;
+  }, [field, operator, value, existingFilters]);
+
+  return (
+    <>
+      <Button
+        variant="outlined"
+        startIcon={<FilterListIcon />}
+        onClick={handleClick}
+        disabled={disabled}
+        sx={{ textTransform: 'none', color: 'text.secondary', borderColor: 'divider' }}
+      >
+        Filter
+      </Button>
+      <MuiPopover
+        open={open}
+        anchorEl={anchorEl}
+        onClose={handleClose}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        slotProps={{ paper: { sx: { mt: 1, p: 1 } } }}
+      >
+        <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 200 }}>
+          <FormControl size="small" fullWidth>
+            <InputLabel id="filter-field-label">Field</InputLabel>
+            <Select
+              labelId="filter-field-label"
+              value={field}
+              label="Field"
+              onChange={(e) => setField(e.target.value)}
+            >
+              <MenuItem value=""><em>None</em></MenuItem>
+              {columns.map(c => (
+                <MenuItem key={c.id} value={c.id}>{c.label}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" fullWidth>
+            <InputLabel id="filter-operator-label">Condition</InputLabel>
+            <Select
+              labelId="filter-operator-label"
+              value={operator}
+              label="Condition"
+              disabled={!field}
+              onChange={(e) => setOperator(e.target.value)}
+            >
+              <MenuItem value="gt">Greater than</MenuItem>
+              <MenuItem value="lt">Less than</MenuItem>
+            </Select>
+          </FormControl>
+
+          <TextField
+            size="small"
+            label="Value"
+            type="number"
+            placeholder="0"
+            value={value}
+            disabled={!field}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val === '' || Number(val) >= 0) {
+                setValue(val);
+              }
+            }}
+            fullWidth
+            sx={{ '& input': { colorScheme: theme.palette.mode } }}
+            InputProps={{ inputProps: { min: 0 } }}
+          />
+
+          <Button
+            variant="contained"
+            size="small"
+            disabled={!field || value === '' || isInvalid}
+            onClick={handleAdd}
+            fullWidth
+          >
+            Add
+          </Button>
+        </Box>
+      </MuiPopover>
+    </>
+  );
+}
+
+
+const MemoizedTable = memo(({ columns, rows, status, sortBy, sortDir, compareMode, handleSort, start, end, compareStart, compareEnd }) => {
+  return (
+    <Table size="small">
+      <TableHead>
+        <TableRow sx={{ bgcolor: 'rgba(255,255,255,0.08)' }}>
+          {columns.map((col) => (
+            <TableCell key={col.id} align={col.align} sx={{ fontWeight: 600 }}>
+              <TableSortLabel
+                active={sortBy === col.id} direction={sortBy === col.id ? sortDir : 'asc'}
+                onClick={() => handleSort(col.id)}
+              >
+                {col.label}
+              </TableSortLabel>
+            </TableCell>
+          ))}
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {status !== 'loading' && rows.length === 0 && (
+          <TableRow>
+            <TableCell colSpan={columns.length} align="center" sx={{ py: 3, color: 'text.secondary' }}>
+              No data for the selected range.
+            </TableCell>
+          </TableRow>
+        )}
+        {rows.map((row, idx) => (
+          <TableRow key={`${row.landing_page_path || 'path'}-${idx}`}>
+            {columns.map((col) => {
+              const raw = row[col.id] ?? '';
+              const value = col.format ? col.format(raw) : formatNumber(raw);
+              const display = col.id === 'landing_page_path' ? (row.landing_page_path || '—') : value;
+
+              let delta = null;
+              if (compareMode && row.previous && col.id !== 'landing_page_path') {
+                const prev = Number(row.previous[col.id] || 0);
+                const curr = Number(raw || 0);
+
+                let valCurr = curr;
+                let valPrev = prev;
+
+                if (col.id !== 'cvr') {
+                  const daysCurr = dayjs(end).diff(dayjs(start), 'day') + 1;
+                  const daysPrev = dayjs(compareEnd).diff(dayjs(compareStart), 'day') + 1;
+                  valCurr = curr / Math.max(1, daysCurr);
+                  valPrev = prev / Math.max(1, daysPrev);
+                }
+                delta = <DeltaBadge current={valCurr} previous={valPrev} isPercent={col.id === 'cvr'} />;
+              }
+              const prevRaw = (compareMode && row.previous) ? row.previous[col.id] : null;
+              const prevDisplay = prevRaw !== null && prevRaw !== undefined ? (col.format ? col.format(prevRaw) : formatNumber(prevRaw)) : null;
+
+              return (
+                <TableCell key={col.id} align={col.align} sx={col.id === 'landing_page_path' ? { maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : {}}>
+                  <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: col.align === 'right' ? 'flex-end' : 'flex-start', pr: (compareMode && col.align === 'right') ? '70px' : 0 }}>
+                    <span>{display}</span>
+                    {prevDisplay && (
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.70rem', lineHeight: 1.2 }}>
+                        {prevDisplay}
+                      </Typography>
+                    )}
+                    {delta && (
+                      <Box sx={{ position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)', width: '64px', display: 'flex', justifyContent: 'flex-start' }}>
+                        {delta}
+                      </Box>
+                    )}
+                  </Box>
+                </TableCell>
+              );
+            })}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+});
+
 export default function ProductConversionTable({ brandKey }) {
+  const theme = useTheme();
   const dispatch = useAppDispatch();
   const productState = useAppSelector((state) => state.productConversion);
   const { start, end, page, pageSize, sortBy, sortDir, rows, totalCount, status, error, compareMode, compareStart, compareEnd } = productState;
   const [exporting, setExporting] = useState(false);
+  const [localSearch, setLocalSearch] = useState(productState.search || '');
 
-  const theme = useTheme();
+
+
+
+
   // const isDark = theme.palette.mode === 'dark'; // Handled in DateRangePicker
   const fetchTimer = useRef(null);
   const inflight = useRef(null);
@@ -403,6 +623,17 @@ export default function ProductConversionTable({ brandKey }) {
     if (fetchTimer.current) clearTimeout(fetchTimer.current);
     fetchTimer.current = setTimeout(() => { runFetch(params); }, 200);
   }, [runFetch]);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (localSearch !== (productState.search || '')) {
+        dispatch(setSearch(localSearch));
+        triggerFetch({ search: localSearch, page: 1 });
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [localSearch, productState.search, dispatch, triggerFetch]);
 
   useEffect(() => { if (brandKey) runFetch(); }, [brandKey, runFetch]);
 
@@ -536,10 +767,26 @@ export default function ProductConversionTable({ brandKey }) {
 
   return (
     <Stack spacing={2}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', pr: { xs: 0, md: 1 } }}>
-        <Box />
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <FormControl size="small" sx={{ minWidth: 150 }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: { xs: 'stretch', md: 'center' }, justifyContent: 'space-between', width: '100%', pr: { xs: 0, md: 1 } }}>
+        <Box sx={{ width: { xs: '100%', md: 300 }, mb: { xs: 2, md: 0 } }}>
+          <TextField
+            size="small"
+            placeholder="Search products..."
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
+            fullWidth
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" color="action" />
+                </InputAdornment>
+              ),
+              sx: { bgcolor: 'background.paper', fontSize: '0.875rem' }
+            }}
+          />
+        </Box>
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: { xs: 'stretch', md: 'center' }, gap: { xs: 1, md: 2 }, width: { xs: '100%', md: 'auto' } }}>
+          <FormControl size="small" sx={{ minWidth: 150, width: { xs: '100%', md: 'auto' } }}>
             <Select
               value={compareMode ? 'compare' : 'none'}
               onChange={handleCompareModeChange}
@@ -558,6 +805,7 @@ export default function ProductConversionTable({ brandKey }) {
             label="Select comparison"
             activePresetLabel={activeCompPreset}
             disabled={!compareMode}
+            sx={{ width: { xs: '100%', md: 'auto' } }}
           />
 
           <DateRangePicker
@@ -567,6 +815,7 @@ export default function ProductConversionTable({ brandKey }) {
             variant="primary"
             activePresetLabel={activePreset}
             disableDatesAfter={compareMode ? dayjs().subtract(1, 'day').toDate() : null}
+            sx={{ width: { xs: '100%', md: 'auto' } }}
           />
 
           <Button
@@ -575,91 +824,104 @@ export default function ProductConversionTable({ brandKey }) {
             startIcon={exporting ? <CircularProgress size={16} /> : <DownloadIcon fontSize="small" />}
             onClick={handleExport}
             disabled={exporting || status === 'loading'}
-            sx={{ height: 36 }}
+            sx={{ height: 36, width: { xs: '100%', md: 'auto' } }}
           >
             Export CSV
           </Button>
         </Box>
       </Box>
 
+      {/* Filter Bar */}
+      <Card
+        variant="outlined"
+        sx={{
+          p: 2,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          flexWrap: 'nowrap', // Prevent wrapping to keep height constant
+          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : theme.palette.background.paper,
+          borderColor: theme.palette.divider,
+          overflow: 'hidden', // Ensure no parent scroll
+        }}
+      >
+        <FilterPopover
+          columns={columns.filter(c => c.id !== 'landing_page_path')}
+          existingFilters={productState.filters || []}
+          disabled={false} // Could pass loading state if needed
+          onAddFilter={(newFilter) => {
+            dispatch(addFilter(newFilter));
+            // Optimistic update for fetch
+            triggerFetch({ filters: [...(productState.filters || []), newFilter] });
+          }}
+        />
+
+        {productState.filters && productState.filters.length > 0 && (
+          <Box sx={{
+            display: 'flex',
+            flexWrap: 'nowrap',
+            gap: 1,
+            ml: 2,
+            alignItems: 'center',
+            overflowX: 'auto',
+            flex: 1,
+            minWidth: 0,
+            scrollbarWidth: 'thin',
+            '&::-webkit-scrollbar': { height: 6 },
+            '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 3 }
+          }}>
+            <Divider orientation="vertical" flexItem sx={{ mx: 1, height: 24, alignSelf: 'center' }} />
+            {productState.filters.map((f, idx) => {
+              const col = columns.find(c => c.id === f.field);
+              const label = col ? col.label : f.field;
+              const op = f.operator === 'gt' ? '>' : '<';
+              return (
+                <Chip
+                  key={idx}
+                  label={`${label} ${op} ${f.value}`}
+                  onDelete={() => {
+                    dispatch(removeFilter(idx));
+                    const newFilters = [...productState.filters];
+                    newFilters.splice(idx, 1);
+                    triggerFetch({ filters: newFilters });
+                  }}
+                  size="small"
+                  variant="outlined"
+                  color="primary"
+                />
+              );
+            })}
+            <Button
+              size="small"
+              color="error"
+              onClick={() => {
+                dispatch(clearFilters());
+                triggerFetch({ filters: [] });
+              }}
+              sx={{ textTransform: 'none', ml: 1, minWidth: 'auto' }}
+            >
+              Clear All
+            </Button>
+          </Box>
+        )}
+      </Card>
+
       <Card variant="outlined">
         <CardContent sx={{ p: 0 }}>
           <TableContainer sx={{ minHeight: 360, position: 'relative' }}>
-            <Table size="small">
-              {/* Keep existing table header */}
-              <TableHead>
-                <TableRow sx={{ bgcolor: 'rgba(255,255,255,0.08)' }}>
-                  {columns.map((col) => (
-                    <TableCell key={col.id} align={col.align} sx={{ fontWeight: 600 }}>
-                      <TableSortLabel
-                        active={sortBy === col.id} direction={sortBy === col.id ? sortDir : 'asc'}
-                        onClick={() => handleSort(col.id)}
-                      >
-                        {col.label}
-                      </TableSortLabel>
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {status !== 'loading' && rows.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={columns.length} align="center" sx={{ py: 3, color: 'text.secondary' }}>
-                      No data for the selected range.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {rows.map((row, idx) => (
-                  <TableRow key={`${row.landing_page_path || 'path'}-${idx}`}>
-                    {columns.map((col) => {
-                      const raw = row[col.id] ?? '';
-                      const value = col.format ? col.format(raw) : formatNumber(raw);
-                      const display = col.id === 'landing_page_path' ? (row.landing_page_path || '—') : value;
-
-                      let delta = null;
-                      if (compareMode && row.previous && col.id !== 'landing_page_path') {
-                        const prev = Number(row.previous[col.id] || 0);
-                        const curr = Number(raw || 0);
-
-                        let valCurr = curr;
-                        let valPrev = prev;
-
-                        // Normalize by days if not a rate (CVR is a rate)
-                        if (col.id !== 'cvr') {
-                          const daysCurr = dayjs(end).diff(dayjs(start), 'day') + 1;
-                          const daysPrev = dayjs(compareEnd).diff(dayjs(compareStart), 'day') + 1;
-                          valCurr = curr / Math.max(1, daysCurr);
-                          valPrev = prev / Math.max(1, daysPrev);
-                        }
-
-                        delta = <DeltaBadge current={valCurr} previous={valPrev} isPercent={col.id === 'cvr'} />;
-                      }
-
-                      const prevRaw = (compareMode && row.previous) ? row.previous[col.id] : null;
-                      const prevDisplay = prevRaw !== null && prevRaw !== undefined ? (col.format ? col.format(prevRaw) : formatNumber(prevRaw)) : null;
-
-                      return (
-                        <TableCell key={col.id} align={col.align} sx={col.id === 'landing_page_path' ? { maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : {}}>
-                          <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: col.align === 'right' ? 'flex-end' : 'flex-start', pr: (compareMode && col.align === 'right') ? '70px' : 0 }}>
-                            <span>{display}</span>
-                            {prevDisplay && (
-                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.70rem', lineHeight: 1.2 }}>
-                                {prevDisplay}
-                              </Typography>
-                            )}
-                            {delta && (
-                              <Box sx={{ position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)', width: '64px', display: 'flex', justifyContent: 'flex-start' }}>
-                                {delta}
-                              </Box>
-                            )}
-                          </Box>
-                        </TableCell>
-                      );
-                    })}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <MemoizedTable
+              columns={columns}
+              rows={rows}
+              status={status}
+              sortBy={sortBy}
+              sortDir={sortDir}
+              compareMode={compareMode}
+              handleSort={handleSort}
+              start={start}
+              end={end}
+              compareStart={compareStart}
+              compareEnd={compareEnd}
+            />
             {error && (
               <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.16)', px: 2 }}>
                 <Alert severity="error">Failed to load data</Alert>
