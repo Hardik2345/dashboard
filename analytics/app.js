@@ -19,18 +19,13 @@ const { createAccessControlService } = require('./services/accessControlService'
 const { createSessionActivityService } = require('./services/sessionActivityService');
 const { buildAuthRouter } = require('./routes/auth');
 const { buildActivityRouter } = require('./routes/activity');
-const { buildAccessControlRouter } = require('./routes/accessControl');
 const { buildAuthorRouter } = require('./routes/author');
 const { buildAuthorBrandsRouter } = require('./routes/authorBrands');
-const { buildAdjustmentBucketsRouter } = require('./routes/adjustmentBuckets');
-const { buildAdjustmentsRouter } = require('./routes/adjustments');
-const { buildAlertsRouter } = require('./routes/alerts');
 const { buildMetricsRouter } = require('./routes/metrics');
 const { buildExternalRouter } = require('./routes/external');
 const { buildUploadsRouter } = require('./routes/uploads');
 const { buildApiKeysRouter } = require('./routes/apiKeys');
 const { buildShopifyRouter } = require('./routes/shopify');
-const { buildWebhooksRouter } = require('./routes/webhooks');
 const { buildNotificationsRouter } = require('./routes/notifications'); // [NEW]
 
 const app = express();
@@ -113,79 +108,6 @@ const User = sequelize.define('user', {
   role: { type: DataTypes.STRING },
   is_active: { type: DataTypes.BOOLEAN }
 }, { tableName: 'users', timestamps: true });
-
-// Author session adjustment bucket & audit models (tables created via manual DDL already).
-// Now scoped per-brand via brand_key (user has applied DDL already).
-// lower_bound_sessions / upper_bound_sessions define an inclusive range. If daily sessions fall inside a range
-// and the bucket is active and (effective_from/effective_to) match, we apply offset_pct (+/- percentage) when previewing/applying.
-// Priority: lower numeric value wins among overlapping buckets.
-const SessionAdjustmentBucket = sequelize.define('session_adjustment_buckets', {
-  id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
-  brand_key: { type: DataTypes.STRING(32), allowNull: false },
-  lower_bound_sessions: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
-  upper_bound_sessions: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
-  offset_pct: { type: DataTypes.DECIMAL(5,2), allowNull: false }, // e.g. -8.00 to +12.50
-  active: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 1 },
-  priority: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 100 },
-  effective_from: { type: DataTypes.DATEONLY, allowNull: true },
-  effective_to: { type: DataTypes.DATEONLY, allowNull: true },
-  notes: { type: DataTypes.STRING(255), allowNull: true },
-  created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
-  // Important: do NOT use "ON UPDATE CURRENT_TIMESTAMP" inside a VALUES clause; leave that to the column definition.
-  // Here we only provide CURRENT_TIMESTAMP as default so INSERT works across MySQL variants.
-  updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
-}, { tableName: 'session_adjustment_buckets', timestamps: false });
-
-const SessionAdjustmentAudit = sequelize.define('session_adjustment_audit', {
-  id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
-  brand_key: { type: DataTypes.STRING(32), allowNull: false },
-  bucket_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
-  action: { type: DataTypes.ENUM('CREATE','UPDATE','DEACTIVATE','DELETE'), allowNull: false },
-  before_json: { type: DataTypes.JSON, allowNull: true },
-  after_json: { type: DataTypes.JSON, allowNull: true },
-  author_user_id: { type: DataTypes.BIGINT, allowNull: true },
-  changed_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
-}, { tableName: 'session_adjustment_audit', timestamps: false });
-
-const Alert = sequelize.define('alerts', {
-  id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
-  brand_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
-  name: { type: DataTypes.STRING(255), allowNull: false },
-  metric_name: { type: DataTypes.STRING(255), allowNull: true },
-  metric_type: { type: DataTypes.ENUM('base', 'derived'), allowNull: false, defaultValue: 'base' },
-  formula: { type: DataTypes.TEXT, allowNull: true },
-  threshold_type: { type: DataTypes.ENUM('absolute', 'percentage_drop', 'percentage_rise', 'less_than', 'more_than', 'greater_than'), allowNull: false },
-  threshold_value: { type: DataTypes.DOUBLE, allowNull: false },
-  critical_threshold: { type: DataTypes.FLOAT, allowNull: true },
-  severity: { type: DataTypes.ENUM('low', 'medium', 'high'), allowNull: false, defaultValue: 'low' },
-  cooldown_minutes: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 30 },
-  is_active: { type: DataTypes.TINYINT, allowNull: true, defaultValue: 1 },
-  created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
-  lookback_days: { type: DataTypes.INTEGER, allowNull: true },
-  have_recipients: { type: DataTypes.TINYINT, allowNull: true, defaultValue: 0 },
-  quiet_hours_start: { type: DataTypes.INTEGER, allowNull: true },
-  quiet_hours_end: { type: DataTypes.INTEGER, allowNull: true },
-  last_triggered_at: { type: DataTypes.DATE, allowNull: true }
-}, { tableName: 'alerts', timestamps: false });
-
-const AlertChannel = sequelize.define('alert_channels', {
-  id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
-  alert_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
-  brand_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
-  channel_type: { type: DataTypes.ENUM('slack', 'email', 'webhook'), allowNull: false },
-  channel_config: { type: DataTypes.JSON, allowNull: false },
-}, { tableName: 'alert_channels', timestamps: false });
-
-// Brand-level alert channel configuration
-const BrandAlertChannel = sequelize.define('brands_alert_channel', {
-  id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
-  brand_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, unique: true },
-  channel_type: { type: DataTypes.ENUM('slack', 'email', 'webhook'), allowNull: false },
-  channel_config: { type: DataTypes.JSON, allowNull: false },
-  is_active: { type: DataTypes.TINYINT, allowNull: true, defaultValue: 1 },
-  created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
-  updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP') }
-}, { tableName: 'brands_alert_channel', timestamps: false });
 
 // --- Access control (master DB) ---------------------------------------------
 // Tables are created idempotently on startup (MySQL CREATE TABLE IF NOT EXISTS)
@@ -544,18 +466,13 @@ if (sessionTrackingEnabled) {
 // Routers
 app.use('/auth', buildAuthRouter({ passport, accessCache }));
 app.use('/activity', buildActivityRouter({ sessionTrackingEnabled, recordSessionActivity }));
-app.use('/author/access-control', buildAccessControlRouter({ sequelize, getAccessSettings, bustAccessCache }));
 app.use('/author', buildAuthorBrandsRouter(sequelize));
 app.use('/author', buildAuthorRouter());
-app.use('/author/adjustment-buckets', buildAdjustmentBucketsRouter({ SessionAdjustmentBucket, SessionAdjustmentAudit }));
-app.use('/author/alerts', buildAlertsRouter({ Alert, AlertChannel, BrandAlertChannel }));
-app.use('/author', buildAdjustmentsRouter({ SessionAdjustmentBucket, SessionAdjustmentAudit }));
 app.use('/metrics', buildMetricsRouter(sequelize));
 app.use('/external', buildExternalRouter());
 app.use('/', buildUploadsRouter());
 app.use('/', buildApiKeysRouter(sequelize));
 app.use('/shopify', buildShopifyRouter(sequelize));
-app.use('/webhooks', buildWebhooksRouter({ Alert, AlertChannel, BrandAlertChannel }));
 app.use('/notifications', buildNotificationsRouter()); // [NEW]
 
 // ---- Init -------------------------------------------------------------------
@@ -565,12 +482,7 @@ async function init() {
     await sessionStore.sync();
   }
   await User.sync(); // optionally use migrations in real app
-  // Ensure author tables exist if not created via manual DDL
-  try { await SessionAdjustmentBucket.sync(); } catch (e) { console.warn('Bucket sync skipped', e?.message); }
-  try { await SessionAdjustmentAudit.sync(); } catch (e) { console.warn('Audit sync skipped', e?.message); }
   try { await sequelize.models.api_keys.sync(); } catch (e) { console.warn('API keys sync skipped', e?.message); }
-  try { await Alert.sync(); } catch (e) { console.warn('Alert sync skipped', e?.message); }
-  try { await AlertChannel.sync(); } catch (e) { console.warn('AlertChannel sync skipped', e?.message); }
   // seed admin if none
   if (!(await User.findOne({ where: { email: process.env.ADMIN_EMAIL || 'admin@example.com' } }))) {
     const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'ChangeMe123!', 12);
@@ -597,9 +509,4 @@ module.exports = {
   sequelize,
   sessionStore,
   User,
-  SessionAdjustmentBucket,
-  SessionAdjustmentAudit,
-  Alert,
-  AlertChannel,
-  BrandAlertChannel,
 };

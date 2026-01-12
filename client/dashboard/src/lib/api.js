@@ -471,70 +471,6 @@ export async function getLastUpdatedPTS(arg = undefined) {
   }
 }
 
-// ---------------- Author: Session adjustments ----------------
-export async function listAdjustmentBuckets({ brandKey, active } = {}) {
-  const params = { brand_key: brandKey };
-  if (active != null) params.active = active ? '1' : '0';
-  return getJSON('/author/adjustment-buckets', params);
-}
-
-export async function createAdjustmentBucket(payload) {
-  try {
-    const res = await fetch(`${API_BASE}/author/adjustment-buckets`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const json = await res.json().catch(()=>({}));
-    if (!res.ok) return { error: true, data: json };
-    return { error: false, data: json };
-  } catch { return { error: true }; }
-}
-
-export async function updateAdjustmentBucket(id, payload) {
-  try {
-    const res = await fetch(`${API_BASE}/author/adjustment-buckets/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify(payload)
-    });
-    const json = await res.json().catch(()=>({}));
-    if (!res.ok) return { error: true, data: json };
-    return { error: false, data: json };
-  } catch { return { error: true }; }
-}
-
-export async function deactivateAdjustmentBucket(id, { brandKey, start, end, scope }) {
-  try {
-    const params = new URLSearchParams({ brand_key: brandKey });
-    if (start) params.set('start', start);
-    if (end) params.set('end', end);
-    if (scope) params.set('scope', scope);
-    const url = `${API_BASE}/author/adjustment-buckets/${id}?${params.toString()}`;
-    const res = await fetch(url, { method: 'DELETE', credentials: 'include' });
-    const json = await res.json().catch(()=>({}));
-    if (!res.ok) return { error: true, data: json };
-    return { error: false, data: json };
-  } catch { return { error: true }; }
-}
-
-export async function activateAdjustmentBucket(id, { brandKey, start, end, onlyThisBucket = false }) {
-  try {
-    const params = new URLSearchParams({ brand_key: brandKey });
-    if (start) params.set('start', start);
-    if (end) params.set('end', end);
-    if (onlyThisBucket) params.set('only_this_bucket', '1');
-    const url = `${API_BASE}/author/adjustment-buckets/${id}/activate?${params.toString()}`;
-    const res = await fetch(url, { method: 'POST', credentials: 'include' });
-    const json = await res.json().catch(()=>({}));
-    if (!res.ok) return { error: true, data: json };
-    return { error: false, data: json };
-  } catch { return { error: true }; }
-}
-
-// Legacy preview/apply endpoints removed from UI; keep server endpoints until deprecated.
-
 // Author brands helper (list)
 export async function listAuthorBrands() {
   return doGet('/author/brands');
@@ -542,21 +478,21 @@ export async function listAuthorBrands() {
 
 // ---------------- Author: Alerts admin ----------------
 export async function listAlerts(params) {
-  return doGet('/author/alerts', params);
+  return doGet('/alerts', params);
 }
 
 export async function createAlert(payload) {
-  return doPost('/author/alerts', payload);
+  return doPost('/alerts', payload);
 }
 
 export async function updateAlert(id, payload) {
-  return doPut(`/author/alerts/${id}`, payload);
+  return doPut(`/alerts/${id}`, payload);
 }
 
 export async function deleteAlert(id) {
-  return doDelete(`/author/alerts/${id}`);
+  return doDelete(`/alerts/${id}`);
 }
 
 export async function setAlertActive(id, isActive) {
-  return doPost(`/author/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
+  return doPost(`/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
 }

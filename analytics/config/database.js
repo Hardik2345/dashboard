@@ -46,32 +46,6 @@ function defineModels(sequelize) {
     is_active: { type: DataTypes.BOOLEAN }
   }, { tableName: 'users', timestamps: true });
 
-  const SessionAdjustmentBucket = sequelize.define('session_adjustment_buckets', {
-    id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
-    brand_key: { type: DataTypes.STRING(32), allowNull: false },
-    lower_bound_sessions: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
-    upper_bound_sessions: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
-    offset_pct: { type: DataTypes.DECIMAL(5,2), allowNull: false },
-    active: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 1 },
-    priority: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 100 },
-    effective_from: { type: DataTypes.DATEONLY, allowNull: true },
-    effective_to: { type: DataTypes.DATEONLY, allowNull: true },
-    notes: { type: DataTypes.STRING(255), allowNull: true },
-    created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
-    updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
-  }, { tableName: 'session_adjustment_buckets', timestamps: false });
-
-  const SessionAdjustmentAudit = sequelize.define('session_adjustment_audit', {
-    id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
-    brand_key: { type: DataTypes.STRING(32), allowNull: false },
-    bucket_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
-    action: { type: DataTypes.ENUM('CREATE','UPDATE','DEACTIVATE','DELETE'), allowNull: false },
-    before_json: { type: DataTypes.JSON, allowNull: true },
-    after_json: { type: DataTypes.JSON, allowNull: true },
-    author_user_id: { type: DataTypes.BIGINT, allowNull: true },
-    changed_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') }
-  }, { tableName: 'session_adjustment_audit', timestamps: false });
-
   sequelize.define('access_control_settings', {
     id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
     mode: { type: DataTypes.ENUM('domain','whitelist'), allowNull: false, defaultValue: 'domain' },
@@ -110,7 +84,7 @@ function defineModels(sequelize) {
     ]
   });
 
-  return { User, SessionAdjustmentBucket, SessionAdjustmentAudit };
+  return { User };
 }
 
 module.exports = {

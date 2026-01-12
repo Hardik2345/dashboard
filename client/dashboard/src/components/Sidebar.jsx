@@ -13,7 +13,6 @@ import {
 } from '@mui/material';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import SecurityIcon from '@mui/icons-material/Security';
-import TuneIcon from '@mui/icons-material/Tune';
 import StorefrontIcon from '@mui/icons-material/Storefront';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import TableChartIcon from '@mui/icons-material/TableChart';
@@ -23,7 +22,6 @@ const DRAWER_WIDTH = 260;
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: DashboardIcon },
   { id: 'access', label: 'Access Control', icon: SecurityIcon },
-  { id: 'adjustments', label: 'Session Adjustments', icon: TuneIcon },
   { id: 'brands', label: 'Brand Setup', icon: StorefrontIcon },
   { id: 'product-conversion', label: 'Product Conversion', icon: TableChartIcon },
   { id: 'alerts', label: 'Alerts', icon: NotificationsActiveIcon },
