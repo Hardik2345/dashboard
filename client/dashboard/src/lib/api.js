@@ -242,6 +242,8 @@ export async function getProductConversion(args, options = {}) {
     sort_dir: args.sortDir,
     compare_start: args.compareStart,
     compare_end: args.compareEnd,
+    filters: args.filters,
+    search: args.search,
   }, args);
   const res = await doGet('/metrics/product-conversion', params, { signal: options.signal });
   if (res.error) return { error: true };
