@@ -49,6 +49,7 @@ import { useAppDispatch, useAppSelector } from '../state/hooks.js';
 import { fetchProductConversion, setDateRange, setPage, setPageSize, setSort, setCompareMode, setCompareDateRange, addFilter, removeFilter, clearFilters, setSearch } from '../state/slices/productConversionSlice.js';
 import { exportProductConversionCsv } from '../lib/api.js';
 import { useTheme } from '@mui/material/styles';
+import { validateFilter } from '../lib/filterValidation.js';
 
 const DATE_PRESETS = [
   { label: 'Today', getValue: () => [dayjs().startOf('day'), dayjs().startOf('day')], group: 1 },
@@ -354,140 +355,247 @@ function DeltaBadge({ current, previous, isPercent }) {
 }
 
 
-function FilterPopover({ columns, existingFilters, onAddFilter, disabled }) {
+import { Collapse, IconButton, Tooltip, Checkbox, ListItem, ListItemIcon, ListItemSecondaryAction, Paper } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
+
+// --- Detailed Filter Panel Component (Persistent Side Panel Mode) ---
+function DetailedFilterPanel({
+  onClose,
+  allColumns,
+  visibleColumnIds,
+  setVisibleColumnIds,
+  filters,
+  onAddFilter,
+  onRemoveFilter,
+  onClearFilters
+}) {
   const theme = useTheme();
-  const [anchorEl, setAnchorEl] = useState(null);
+
+  // State for new filter creation
+  const [showAddForm, setShowAddForm] = useState(false);
   const [field, setField] = useState('');
   const [operator, setOperator] = useState('gt');
   const [value, setValue] = useState('');
 
-  const handleClick = (event) => {
-    setAnchorEl(event.currentTarget);
+  const handleToggleColumn = (colId) => {
+    if (visibleColumnIds.includes(colId)) {
+      if (visibleColumnIds.length > 1) { // Prevent hiding all columns
+        setVisibleColumnIds(visibleColumnIds.filter(id => id !== colId));
+      }
+    } else {
+      setVisibleColumnIds([...visibleColumnIds, colId]);
+    }
   };
 
-  const handleClose = () => {
-    setAnchorEl(null);
+  const handleToggleAllMetrics = () => {
+    const metricIds = allColumns.filter(c => c.id !== 'landing_page_path').map(c => c.id);
+    const allMetricsVisible = metricIds.every(id => visibleColumnIds.includes(id));
+
+    if (allMetricsVisible) {
+      // Hide all except landing_page (primary key)
+      setVisibleColumnIds(['landing_page_path']);
+    } else {
+      // Show all
+      setVisibleColumnIds(allColumns.map(c => c.id));
+    }
   };
 
-  const open = Boolean(anchorEl);
+  // Validation Logic
+  const validation = useMemo(() => {
+    if (!field || value === '') return { valid: true };
+    return validateFilter({ field, operator, value }, filters);
+  }, [field, operator, value, filters]);
 
-  const handleAdd = () => {
-    if (field && value !== '') {
+  const handleAddF = () => {
+    if (field && value !== '' && validation.valid) {
       onAddFilter({ field, operator, value });
       setField('');
-      setOperator('gt');
       setValue('');
-      handleClose();
+      setShowAddForm(false);
     }
   };
 
-  const isInvalid = useMemo(() => {
-    if (!field || value === '') return true;
-    const newVal = Number(value);
-    for (const f of existingFilters) {
-      if (f.field === field) {
-        const fVal = Number(f.value);
-        // Exact duplicate
-        if (f.operator === operator && fVal === newVal) return true;
+  const metricCols = allColumns.filter(c => c.id !== 'landing_page_path');
+  const isAllSelected = metricCols.every(c => visibleColumnIds.includes(c.id));
 
-        // Contradictions
-        if (operator === 'gt' && f.operator === 'lt' && newVal >= fVal) return true;
-        if (operator === 'lt' && f.operator === 'gt' && newVal <= fVal) return true;
-      }
-    }
-    return false;
-  }, [field, operator, value, existingFilters]);
-
+  // Render as a persistent panel (Box/Card style)
   return (
-    <>
-      <Button
-        variant="outlined"
-        startIcon={<FilterListIcon />}
-        onClick={handleClick}
-        disabled={disabled}
-        sx={{ textTransform: 'none', color: 'text.secondary', borderColor: 'divider' }}
-      >
-        Filter
-      </Button>
-      <MuiPopover
-        open={open}
-        anchorEl={anchorEl}
-        onClose={handleClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-        slotProps={{ paper: { sx: { mt: 1, p: 1 } } }}
-      >
-        <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 200 }}>
-          <FormControl size="small" fullWidth>
-            <InputLabel id="filter-field-label">Field</InputLabel>
-            <Select
-              labelId="filter-field-label"
-              value={field}
-              label="Field"
-              onChange={(e) => setField(e.target.value)}
-            >
-              <MenuItem value=""><em>None</em></MenuItem>
-              {columns.map(c => (
-                <MenuItem key={c.id} value={c.id}>{c.label}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+    <Card variant="outlined" sx={{ width: 320, height: 800, display: 'flex', flexDirection: 'column', borderRadius: 2, bgcolor: 'background.paper', borderLeft: `1px solid ${theme.palette.divider}` }}>
+      {/* Header */}
+      <Box sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'background.default' }}>
+        <Typography variant="h6" fontWeight={600} fontSize="0.95rem">Refine Explorer</Typography>
+        <IconButton onClick={onClose} size="small"><CloseIcon fontSize="small" /></IconButton>
+      </Box>
 
-          <FormControl size="small" fullWidth>
-            <InputLabel id="filter-operator-label">Condition</InputLabel>
-            <Select
-              labelId="filter-operator-label"
-              value={operator}
-              label="Condition"
-              disabled={!field}
-              onChange={(e) => setOperator(e.target.value)}
-            >
-              <MenuItem value="gt">Greater than</MenuItem>
-              <MenuItem value="lt">Less than</MenuItem>
-            </Select>
-          </FormControl>
+      <Box sx={{ overflowY: 'auto', flex: 1, p: 2 }}>
 
-          <TextField
-            size="small"
-            label="Value"
-            type="number"
-            placeholder="0"
-            value={value}
-            disabled={!field}
-            onChange={(e) => {
-              const val = e.target.value;
-              if (val === '' || Number(val) >= 0) {
-                setValue(val);
-              }
-            }}
-            fullWidth
-            sx={{ '& input': { colorScheme: theme.palette.mode } }}
-            InputProps={{ inputProps: { min: 0 } }}
-          />
+        {/* Metrics Section */}
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
+            Metrics
+          </Typography>
+          <Card variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+            <List dense disablePadding>
+              {/* "All" Toggle */}
+              <ListItem dense divider button onClick={handleToggleAllMetrics}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <Checkbox
+                    edge="start"
+                    checked={isAllSelected}
+                    indeterminate={!isAllSelected && metricCols.some(c => visibleColumnIds.includes(c.id))}
+                    tabIndex={-1}
+                    disableRipple
+                    size="small"
+                  />
+                </ListItemIcon>
+                <ListItemText primary="All Metrics" primaryTypographyProps={{ fontWeight: 600, fontSize: '0.875rem' }} />
+              </ListItem>
 
-          <Button
-            variant="contained"
-            size="small"
-            disabled={!field || value === '' || isInvalid}
-            onClick={handleAdd}
-            fullWidth
-          >
-            Add
+              {/* Individual Metrics */}
+              {metricCols.map((col) => {
+                const isChecked = visibleColumnIds.includes(col.id);
+                return (
+                  <ListItem key={col.id} dense divider button onClick={() => handleToggleColumn(col.id)}>
+                    <ListItemIcon sx={{ minWidth: 36 }}>
+                      <Checkbox
+                        edge="start"
+                        checked={isChecked}
+                        tabIndex={-1}
+                        disableRipple
+                        size="small"
+                      />
+                    </ListItemIcon>
+                    <ListItemText primary={col.label} primaryTypographyProps={{ fontSize: '0.875rem' }} />
+                  </ListItem>
+                );
+              })}
+            </List>
+          </Card>
+        </Box>
+
+        {/* Filters Section */}
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+            <Typography variant="subtitle2" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
+              Filters
+            </Typography>
+            <Tooltip title="Add New Filter">
+              <IconButton size="small" onClick={() => setShowAddForm(!showAddForm)} color={showAddForm ? 'primary' : 'default'} sx={{ bgcolor: showAddForm ? 'action.selected' : 'transparent', border: '1px solid', borderColor: 'divider' }}>
+                <AddIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+
+          {/* Add Filter Form */}
+          <Collapse in={showAddForm} unmountOnExit>
+            <Card variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: 'background.default', borderStyle: 'dashed' }}>
+              <Stack spacing={2}>
+                <FormControl size="small" fullWidth>
+                  <InputLabel>Field</InputLabel>
+                  <Select value={field} label="Field" onChange={(e) => setField(e.target.value)}>
+                    {allColumns.filter(c => c.id !== 'landing_page_path').map(c => (
+                      <MenuItem key={c.id} value={c.id}>{c.label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Stack direction="row" spacing={1}>
+                  <FormControl size="small" sx={{ width: '40%' }}>
+                    <Select value={operator} onChange={(e) => setOperator(e.target.value)}>
+                      <MenuItem value="gt">&gt; (Gt)</MenuItem>
+                      <MenuItem value="lt">&lt; (Lt)</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <TextField
+                    size="small"
+                    type="number"
+                    placeholder="Val"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    sx={{ flex: 1 }}
+                  />
+                </Stack>
+
+                {!validation.valid && (
+                  <Alert severity="warning" sx={{ py: 0, px: 1, '& .MuiAlert-message': { fontSize: '0.75rem' }, alignItems: 'center' }}>
+                    {validation.message}
+                  </Alert>
+                )}
+
+                <Button variant="contained" size="small" disabled={!field || !value || !validation.valid} onClick={handleAddF} sx={{ alignSelf: 'flex-end', textTransform: 'none', borderRadius: 2, boxShadow: 'none' }}>
+                  Apply Filter
+                </Button>
+              </Stack>
+            </Card>
+          </Collapse>
+
+          {/* Active Filters List */}
+          {filters.length === 0 && !showAddForm ? (
+            <Box sx={{ p: 3, textAlign: 'center', bgcolor: 'action.hover', borderRadius: 2, border: '1px dashed', borderColor: 'divider' }}>
+              <Typography variant="body2" color="text.secondary">No active filters</Typography>
+              <Typography variant="caption" color="text.secondary">Click + to add one</Typography>
+            </Box>
+          ) : (
+            <Box sx={{ maxHeight: 200, overflowY: 'auto', pr: 0.5 }}>
+              <Stack spacing={1}>
+                {filters.map((f, idx) => {
+                  const col = allColumns.find(c => c.id === f.field);
+                  return (
+                    <Card key={idx} variant="outlined" sx={{ p: 1, pl: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 2, borderColor: 'primary.main' }}>
+                      <Box>
+                        <Typography variant="caption" display="block" color="text.secondary" fontSize="0.65rem" fontWeight={600} sx={{ textTransform: 'uppercase' }}>
+                          {col?.label || f.field}
+                        </Typography>
+                        <Typography variant="body2" fontWeight={500} fontSize="0.75rem">
+                          {f.operator === 'gt' ? 'Greater than' : 'Less than'} <b>{f.value}</b>
+                        </Typography>
+                      </Box>
+                      <IconButton size="small" onClick={() => onRemoveFilter(idx)} sx={{ color: 'text.secondary', '&:hover': { color: 'error.main' } }}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Card>
+                  );
+                })}
+              </Stack>
+            </Box>
+          )}
+        </Box>
+
+      </Box>
+
+      {/* Footer */}
+      {(filters.length > 0) && (
+        <Box sx={{ p: 2, borderTop: `1px solid ${theme.palette.divider}`, bgcolor: 'background.paper' }}>
+          <Button fullWidth variant="outlined" color="error" onClick={onClearFilters} startIcon={<DeleteIcon />} sx={{ textTransform: 'none' }}>
+            Clear All Filters
           </Button>
         </Box>
-      </MuiPopover>
-    </>
+      )}
+
+    </Card>
   );
 }
 
 
-const MemoizedTable = memo(({ columns, rows, status, sortBy, sortDir, compareMode, handleSort, start, end, compareStart, compareEnd }) => {
+const MemoizedTable = memo(({
+  columns,
+  rows,
+  status,
+  sortBy,
+  sortDir,
+  compareMode,
+  handleSort,
+  start,
+  end,
+  compareStart,
+  compareEnd
+}) => {
   return (
     <Table size="small">
       <TableHead>
         <TableRow sx={{ bgcolor: 'rgba(255,255,255,0.08)' }}>
           {columns.map((col) => (
-            <TableCell key={col.id} align={col.align} sx={{ fontWeight: 600 }}>
+            <TableCell key={col.id} align={col.align} sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
               <TableSortLabel
                 active={sortBy === col.id} direction={sortBy === col.id ? sortDir : 'asc'}
                 onClick={() => handleSort(col.id)}
@@ -558,15 +666,37 @@ const MemoizedTable = memo(({ columns, rows, status, sortBy, sortDir, compareMod
 });
 
 export default function ProductConversionTable({ brandKey }) {
-  const theme = useTheme();
+
   const dispatch = useAppDispatch();
   const productState = useAppSelector((state) => state.productConversion);
   const { start, end, page, pageSize, sortBy, sortDir, rows, totalCount, status, error, compareMode, compareStart, compareEnd } = productState;
   const [exporting, setExporting] = useState(false);
   const [localSearch, setLocalSearch] = useState(productState.search || '');
 
+  // Columns definition (Memoized to prevent recreation)
+  const columns = useMemo(() => [
+    { id: 'landing_page_path', label: 'Landing Page', align: 'left' },
+    { id: 'sessions', label: 'Sessions', align: 'right' },
+    { id: 'atc', label: 'ATC Sessions', align: 'right' },
+    { id: 'orders', label: 'Orders', align: 'right' },
+    { id: 'sales', label: 'Sales', align: 'right' },
+    { id: 'cvr', label: 'CVR', align: 'right', format: formatPercent },
+  ], []);
 
+  // Panel State (Boolean togglable)
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [visibleColumnIds, setVisibleColumnIds] = useState(columns.map(c => c.id));
 
+  // Compute visible columns
+  const visibleColumns = useMemo(() => {
+    return columns.filter(c => visibleColumnIds.includes(c.id));
+  }, [columns, visibleColumnIds]);
+
+  // Handler for clearing all filters
+  const handleClearFilters = () => {
+    dispatch(clearFilters());
+    triggerFetch({ filters: [] });
+  };
 
 
   // const isDark = theme.palette.mode === 'dark'; // Handled in DateRangePicker
@@ -756,17 +886,10 @@ export default function ProductConversionTable({ brandKey }) {
     URL.revokeObjectURL(url);
   };
 
-  const columns = [
-    { id: 'landing_page_path', label: 'Landing Page', align: 'left' },
-    { id: 'sessions', label: 'Sessions', align: 'right' },
-    { id: 'atc', label: 'ATC Sessions', align: 'right' },
-    { id: 'orders', label: 'Orders', align: 'right' },
-    { id: 'sales', label: 'Sales', align: 'right' },
-    { id: 'cvr', label: 'CVR', align: 'right', format: formatPercent },
-  ];
-
   return (
+
     <Stack spacing={2}>
+
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: { xs: 'stretch', md: 'center' }, justifyContent: 'space-between', width: '100%', pr: { xs: 0, md: 1 } }}>
         <Box sx={{ width: { xs: '100%', md: 300 }, mb: { xs: 2, md: 0 } }}>
           <TextField
@@ -786,6 +909,7 @@ export default function ProductConversionTable({ brandKey }) {
           />
         </Box>
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: { xs: 'stretch', md: 'center' }, gap: { xs: 1, md: 2 }, width: { xs: '100%', md: 'auto' } }}>
+
           <FormControl size="small" sx={{ minWidth: 150, width: { xs: '100%', md: 'auto' } }}>
             <Select
               value={compareMode ? 'compare' : 'none'}
@@ -805,6 +929,7 @@ export default function ProductConversionTable({ brandKey }) {
             label="Select comparison"
             activePresetLabel={activeCompPreset}
             disabled={!compareMode}
+            disableDatesAfter={dayjs().subtract(1, 'day').toDate()}
             sx={{ width: { xs: '100%', md: 'auto' } }}
           />
 
@@ -828,127 +953,138 @@ export default function ProductConversionTable({ brandKey }) {
           >
             Export CSV
           </Button>
+
+          <Tooltip title="Refine">
+            <IconButton
+              onClick={() => setShowFilterPanel(!showFilterPanel)}
+              sx={{
+                bgcolor: (showFilterPanel || productState.filters?.length > 0) ? 'primary.main' : 'background.paper',
+                color: (showFilterPanel || productState.filters?.length > 0) ? 'primary.contrastText' : 'text.primary',
+                border: '1px solid',
+                borderColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.3)' : 'divider',
+                borderRadius: 2,
+                width: 36, height: 36,
+                '&:hover': { bgcolor: (showFilterPanel || productState.filters?.length > 0) ? 'primary.dark' : 'action.hover' }
+              }}
+            >
+              <FilterListIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+
         </Box>
       </Box>
 
-      {/* Filter Bar */}
-      <Card
-        variant="outlined"
-        sx={{
-          p: 2,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 2,
-          flexWrap: 'nowrap', // Prevent wrapping to keep height constant
-          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : theme.palette.background.paper,
-          borderColor: theme.palette.divider,
-          overflow: 'hidden', // Ensure no parent scroll
-        }}
-      >
-        <FilterPopover
-          columns={columns.filter(c => c.id !== 'landing_page_path')}
-          existingFilters={productState.filters || []}
-          disabled={false} // Could pass loading state if needed
-          onAddFilter={(newFilter) => {
-            dispatch(addFilter(newFilter));
-            // Optimistic update for fetch
-            triggerFetch({ filters: [...(productState.filters || []), newFilter] });
-          }}
-        />
+      {/* Filter Summary / Active Chips (optional display if panel is closed) */}
+      {(productState.filters && productState.filters.length > 0 && !showFilterPanel) && (
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+          {productState.filters.map((f, idx) => {
+            const col = columns.find(c => c.id === f.field);
+            return (
+              <Chip
+                key={idx}
+                label={`${col?.label || f.field} ${f.operator === 'gt' ? '>' : '<'} ${f.value}`}
+                size="small"
+                onDelete={() => {
+                  dispatch(removeFilter(idx));
+                  const newFilters = [...productState.filters];
+                  newFilters.splice(idx, 1);
+                  triggerFetch({ filters: newFilters });
+                }}
+                sx={{ borderRadius: 1 }}
+              />
+            );
+          })}
+          <Button size="small" color="primary" onClick={handleClearFilters} sx={{ textTransform: 'none', fontSize: '0.75rem' }}>Clear all</Button>
+        </Box>
+      )}
 
-        {productState.filters && productState.filters.length > 0 && (
-          <Box sx={{
-            display: 'flex',
-            flexWrap: 'nowrap',
-            gap: 1,
-            ml: 2,
-            alignItems: 'center',
-            overflowX: 'auto',
-            flex: 1,
-            minWidth: 0,
-            scrollbarWidth: 'thin',
-            '&::-webkit-scrollbar': { height: 6 },
-            '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 3 }
-          }}>
-            <Divider orientation="vertical" flexItem sx={{ mx: 1, height: 24, alignSelf: 'center' }} />
-            {productState.filters.map((f, idx) => {
-              const col = columns.find(c => c.id === f.field);
-              const label = col ? col.label : f.field;
-              const op = f.operator === 'gt' ? '>' : '<';
-              return (
-                <Chip
-                  key={idx}
-                  label={`${label} ${op} ${f.value}`}
-                  onDelete={() => {
-                    dispatch(removeFilter(idx));
-                    const newFilters = [...productState.filters];
-                    newFilters.splice(idx, 1);
-                    triggerFetch({ filters: newFilters });
-                  }}
-                  size="small"
-                  variant="outlined"
-                  color="primary"
+      {/* Flex Container for Table + Side Panel */}
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, minHeight: 500 }}>
+
+        {/* Main Table Content (Flex Grow) */}
+        <Box sx={{ flex: 1, minWidth: 0, transition: 'all 0.3s ease' }}>
+          <Card variant="outlined" sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <TableContainer sx={{ flex: 1, overflowY: 'auto' }}>
+                <MemoizedTable
+                  columns={visibleColumns}
+                  rows={rows}
+                  status={status}
+                  sortBy={sortBy}
+                  sortDir={sortDir}
+                  compareMode={compareMode}
+                  handleSort={handleSort}
+                  start={start}
+                  end={end}
+                  compareStart={compareStart}
+                  compareEnd={compareEnd}
+                  onOpenFilter={() => setShowFilterPanel(true)}
+                  hasActiveFilters={productState.filters?.length > 0 || visibleColumnIds.length < columns.length}
                 />
-              );
-            })}
-            <Button
-              size="small"
-              color="error"
-              onClick={() => {
-                dispatch(clearFilters());
-                triggerFetch({ filters: [] });
-              }}
-              sx={{ textTransform: 'none', ml: 1, minWidth: 'auto' }}
-            >
-              Clear All
-            </Button>
-          </Box>
-        )}
-      </Card>
+                {error && (
+                  <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.16)', px: 2 }}>
+                    <Alert severity="error">Failed to load data</Alert>
+                  </Box>
+                )}
+                {status === 'loading' && (
+                  <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.12)', pointerEvents: 'none' }}>
+                    <CircularProgress size={24} />
+                  </Box>
+                )}
+              </TableContainer>
+              <Divider />
+              <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                <TablePagination
+                  component="div"
+                  count={totalCount}
+                  page={Math.max(0, page - 1)}
+                  onPageChange={handleChangePage}
+                  rowsPerPage={pageSize}
+                  onRowsPerPageChange={handleChangeRowsPerPage}
+                  rowsPerPageOptions={[10, 25, 50]}
+                  ActionsComponent={(props) => <PaginationActions {...props} disabled={status === 'loading' || exporting} />}
+                  SelectProps={{ disabled: status === 'loading' || exporting }}
+                />
+              </Box>
+            </CardContent>
+          </Card>
+        </Box>
 
-      <Card variant="outlined">
-        <CardContent sx={{ p: 0 }}>
-          <TableContainer sx={{ minHeight: 360, position: 'relative' }}>
-            <MemoizedTable
-              columns={columns}
-              rows={rows}
-              status={status}
-              sortBy={sortBy}
-              sortDir={sortDir}
-              compareMode={compareMode}
-              handleSort={handleSort}
-              start={start}
-              end={end}
-              compareStart={compareStart}
-              compareEnd={compareEnd}
-            />
-            {error && (
-              <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.16)', px: 2 }}>
-                <Alert severity="error">Failed to load data</Alert>
-              </Box>
-            )}
-            {status === 'loading' && (
-              <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.12)', pointerEvents: 'none' }}>
-                <CircularProgress size={24} />
-              </Box>
-            )}
-          </TableContainer>
-          <Divider />
-          <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-            <TablePagination
-              component="div"
-              count={totalCount}
-              page={Math.max(0, page - 1)}
-              onPageChange={handleChangePage}
-              rowsPerPage={pageSize}
-              onRowsPerPageChange={handleChangeRowsPerPage}
-              rowsPerPageOptions={[10, 25, 50]}
-              ActionsComponent={(props) => <PaginationActions {...props} disabled={status === 'loading' || exporting} />}
-              SelectProps={{ disabled: status === 'loading' || exporting }}
-            />
-          </Box>
-        </CardContent>
-      </Card>
+        {/* Filter Panel (Collapsible) */}
+        <Collapse in={showFilterPanel} orientation="horizontal" timeout={300}>
+          {/* Detailed Panel */}
+          <DetailedFilterPanel
+            onClose={() => setShowFilterPanel(false)}
+            allColumns={columns}
+            visibleColumnIds={visibleColumnIds}
+            setVisibleColumnIds={setVisibleColumnIds}
+            filters={productState.filters || []}
+            onAddFilter={(newFilter) => {
+              const existingIdx = (productState.filters || []).findIndex(f => f.field === newFilter.field && f.operator === newFilter.operator);
+              if (existingIdx !== -1) {
+                // Replace existing
+                dispatch(removeFilter(existingIdx));
+                dispatch(addFilter(newFilter));
+                const updated = [...(productState.filters || [])];
+                updated.splice(existingIdx, 1, newFilter);
+                triggerFetch({ filters: updated });
+              } else {
+                // Add new
+                dispatch(addFilter(newFilter));
+                triggerFetch({ filters: [...(productState.filters || []), newFilter] });
+              }
+            }}
+            onRemoveFilter={(idx) => {
+              dispatch(removeFilter(idx));
+              const newFilters = [...(productState.filters || [])];
+              newFilters.splice(idx, 1);
+              triggerFetch({ filters: newFilters });
+            }}
+            onClearFilters={handleClearFilters}
+          />
+        </Collapse>
+      </Box>
+
     </Stack>
   );
 }
