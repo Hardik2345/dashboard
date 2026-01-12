@@ -14,12 +14,19 @@ export const fetchProductConversion = createAsyncThunk(
     const sortBy = params.sortBy || state.sortBy || 'sessions';
     const sortDir = params.sortDir || state.sortDir || 'desc';
     const compareMode = params.compareMode ?? state.compareMode ?? false;
-    // Default comparison: previous period relative to start/end
     const compareStart = params.compareStart || state.compareStart || null;
     const compareEnd = params.compareEnd || state.compareEnd || null;
 
+    let filters = params.filters || state.filters || [];
+    const search = params.search !== undefined ? params.search : (state.search || '');
+
+    // Ensure it is always an array
+    if (!Array.isArray(filters)) filters = [];
+
     const apiParams = {
-      start, end, page, pageSize, sortBy, sortDir, brand_key: params.brand_key
+      start, end, page, pageSize, sortBy, sortDir, brand_key: params.brand_key,
+      filters: JSON.stringify(filters),
+      search,
     };
 
     if (compareMode && compareStart && compareEnd) {
@@ -42,7 +49,10 @@ export const fetchProductConversion = createAsyncThunk(
       end,
       compareMode,
       compareStart,
-      compareEnd
+      compareEnd,
+
+      filters,
+      search
     };
   }
 );
@@ -56,7 +66,8 @@ const saveState = (state) => {
       compareMode: state.compareMode,
       compareStart: state.compareStart,
       compareEnd: state.compareEnd,
-      pageSize: state.pageSize
+      pageSize: state.pageSize,
+      filters: state.filters,
     };
     localStorage.setItem('productConversionState', JSON.stringify(toSave));
   } catch (e) {
@@ -91,6 +102,9 @@ const initialState = {
   compareMode: saved.compareMode ?? false,
   compareStart: saved.compareStart || null,
   compareEnd: saved.compareEnd || null,
+
+  filters: Array.isArray(saved.filters) ? saved.filters : [],
+  search: '',
 };
 
 const productConversionSlice = createSlice({
@@ -110,6 +124,36 @@ const productConversionSlice = createSlice({
     setCompareDateRange(state, action) {
       state.compareStart = action.payload?.start || null;
       state.compareEnd = action.payload?.end || null;
+      saveState(state);
+    },
+    addFilter(state, action) {
+      // payload: { field, operator, value }
+      if (action.payload && action.payload.field) {
+        state.filters.push(action.payload);
+        state.page = 1;
+        saveState(state);
+      }
+    },
+    removeFilter(state, action) {
+      // payload: index
+      state.filters.splice(action.payload, 1);
+      state.page = 1;
+      saveState(state);
+    },
+    clearFilters(state) {
+      state.filters = [];
+      state.page = 1;
+      saveState(state);
+    },
+    setSearch(state, action) {
+      state.search = action.payload || '';
+      state.page = 1;
+    },
+    // Keep setFilter for backward compatibility or reset logic if needed, but primary is add/remove
+    setFilter(state, action) {
+      // If used, treat as setting a single filter (clearing others)
+      state.filters = [action.payload];
+      state.page = 1;
       saveState(state);
     },
     setPage(state, action) {
@@ -150,6 +194,10 @@ const productConversionSlice = createSlice({
         state.compareMode = action.payload.compareMode;
         state.compareStart = action.payload.compareStart;
         state.compareEnd = action.payload.compareEnd;
+        state.compareStart = action.payload.compareStart;
+        state.compareEnd = action.payload.compareEnd;
+        state.filters = action.payload.filters || [];
+        state.search = action.payload.search || '';
       })
       .addCase(fetchProductConversion.rejected, (state, action) => {
         state.status = 'failed';
@@ -158,5 +206,7 @@ const productConversionSlice = createSlice({
   },
 });
 
-export const { setDateRange, setCompareMode, setCompareDateRange, setPage, setPageSize, setSort, resetProductConversion } = productConversionSlice.actions;
+export const { setDateRange, setCompareMode, setCompareDateRange, setPage, setPageSize, setSort, resetProductConversion, setFilter, addFilter, removeFilter, clearFilters, setSearch } = productConversionSlice.actions;
 export default productConversionSlice.reducer;
+
+
