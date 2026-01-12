@@ -424,7 +424,7 @@ function DetailedFilterPanel({
     <Card variant="outlined" sx={{ width: 320, height: 800, display: 'flex', flexDirection: 'column', borderRadius: 2, bgcolor: 'background.paper', borderLeft: `1px solid ${theme.palette.divider}` }}>
       {/* Header */}
       <Box sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'background.default' }}>
-        <Typography variant="h6" fontWeight={600} fontSize="0.95rem">Refine Explorer</Typography>
+        <Typography variant="h6" fontWeight={600} fontSize="0.95rem">Filter Panel</Typography>
         <IconButton onClick={onClose} size="small"><CloseIcon fontSize="small" /></IconButton>
       </Box>
 
@@ -641,7 +641,7 @@ const MemoizedTable = memo(({
               const prevDisplay = prevRaw !== null && prevRaw !== undefined ? (col.format ? col.format(prevRaw) : formatNumber(prevRaw)) : null;
 
               return (
-                <TableCell key={col.id} align={col.align} sx={col.id === 'landing_page_path' ? { maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : {}}>
+                <TableCell key={col.id} align={col.align} sx={{ verticalAlign: 'middle', ...(col.id === 'landing_page_path' ? { maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : {}) }}>
                   <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: col.align === 'right' ? 'flex-end' : 'flex-start', pr: (compareMode && col.align === 'right') ? '70px' : 0 }}>
                     <span>{display}</span>
                     {prevDisplay && (
@@ -678,6 +678,7 @@ export default function ProductConversionTable({ brandKey }) {
     { id: 'landing_page_path', label: 'Landing Page', align: 'left' },
     { id: 'sessions', label: 'Sessions', align: 'right' },
     { id: 'atc', label: 'ATC Sessions', align: 'right' },
+    { id: 'atc_rate', label: 'ATC Rate', align: 'right', format: formatPercent },
     { id: 'orders', label: 'Orders', align: 'right' },
     { id: 'sales', label: 'Sales', align: 'right' },
     { id: 'cvr', label: 'CVR', align: 'right', format: formatPercent },
@@ -954,7 +955,7 @@ export default function ProductConversionTable({ brandKey }) {
             Export CSV
           </Button>
 
-          <Tooltip title="Refine">
+          <Tooltip title="Filter">
             <IconButton
               onClick={() => setShowFilterPanel(!showFilterPanel)}
               sx={{

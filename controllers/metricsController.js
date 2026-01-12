@@ -1755,6 +1755,7 @@ function buildMetricsController() {
         const allowedSort = new Map([
           ['sessions', 'sessions'],
           ['atc', 'atc'],
+          ['atc_rate', 'atc_rate'],
           ['orders', 'orders'],
           ['sales', 'sales'],
           ['cvr', 'cvr'],
@@ -1765,7 +1766,7 @@ function buildMetricsController() {
 
 
 
-        const validFields = ['sessions', 'atc', 'orders', 'sales', 'cvr'];
+        const validFields = ['sessions', 'atc', 'atc_rate', 'orders', 'sales', 'cvr'];
         const validOps = ['gt', 'lt'];
         let whereClause = '';
         const filterReplacements = [];
@@ -1809,6 +1810,7 @@ function buildMetricsController() {
               switch (fField) {
                 case 'sessions': fieldExpr = 's.sessions'; break;
                 case 'atc': fieldExpr = 's.atc'; break;
+                case 'atc_rate': fieldExpr = '(CASE WHEN s.sessions > 0 THEN s.atc / s.sessions * 100 ELSE 0 END)'; break;
                 case 'orders': fieldExpr = 'COALESCE(o.orders, 0)'; break;
                 case 'sales': fieldExpr = 'COALESCE(o.sales, 0)'; break;
                 case 'cvr': fieldExpr = '(CASE WHEN s.sessions > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)'; break;
@@ -1859,6 +1861,7 @@ function buildMetricsController() {
             s.landing_page_path,
             s.sessions,
             s.atc,
+            CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
             COALESCE(o.orders, 0) AS orders,
             COALESCE(o.sales, 0) AS sales,
             CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
@@ -1933,6 +1936,7 @@ function buildMetricsController() {
                 s.product_id,
                 s.sessions,
                 s.atc,
+                CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
                 COALESCE(o.orders, 0) AS orders,
                 COALESCE(o.sales, 0) AS sales,
                 CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
@@ -1958,7 +1962,7 @@ function buildMetricsController() {
                 // Let's provide an object of 0s if missing, so we can show "infinite growth" from 0.
                 return {
                   ...r,
-                  previous: prev || { sessions: 0, atc: 0, orders: 0, sales: 0, cvr: 0 }
+                  previous: prev || { sessions: 0, atc: 0, atc_rate: 0, orders: 0, sales: 0, cvr: 0 }
                 };
               });
             } catch (e) { console.error('[product-conversion] comparison logic failed', e); }
@@ -1996,6 +2000,7 @@ function buildMetricsController() {
         const allowedSort = new Map([
           ['sessions', 'sessions'],
           ['atc', 'atc'],
+          ['atc_rate', 'atc_rate'],
           ['orders', 'orders'],
           ['sales', 'sales'],
           ['cvr', 'cvr'],
@@ -2031,6 +2036,7 @@ function buildMetricsController() {
             s.landing_page_path,
             s.sessions,
             s.atc,
+            CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
             COALESCE(o.orders, 0) AS orders,
             COALESCE(o.sales, 0) AS sales,
             CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
@@ -2048,7 +2054,7 @@ function buildMetricsController() {
 
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        const headers = ['landing_page_path', 'sessions', 'atc', 'orders', 'sales', 'cvr'];
+        const headers = ['landing_page_path', 'sessions', 'atc', 'atc_rate', 'orders', 'sales', 'cvr'];
         const escapeCsv = (val) => {
           if (val === null || val === undefined) return '';
           const str = String(val);
@@ -2061,6 +2067,7 @@ function buildMetricsController() {
             escapeCsv(r.landing_page_path),
             Number(r.sessions || 0),
             Number(r.atc || 0),
+            Number(r.atc_rate || 0),
             Number(r.orders || 0),
             Number(r.sales || 0),
             Number(r.cvr || 0),
