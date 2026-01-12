@@ -58,6 +58,38 @@ router.post('/create', async (req, res) => {
     }
 });
 
+// Deployment service: upsert mapping
+router.post('/cds/mappings', async (req, res) => {
+    try {
+        const mapping = await cdsService.upsertMapping(req.body || {});
+        return res.status(200).json(mapping);
+    } catch (err) {
+        console.error('[Routes] Error upserting mapping:', err.stack || err.message);
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
+
+router.get('/cds/mappings/:brand_id', async (req, res) => {
+    try {
+        const mapping = await cdsService.getMapping(req.params.brand_id);
+        if (!mapping) return res.status(404).json({ error: 'not_found' });
+        return res.status(200).json(mapping);
+    } catch (err) {
+        console.error('[Routes] Error fetching mapping:', err.stack || err.message);
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
+
+router.delete('/cds/mappings/:brand_id', async (req, res) => {
+    try {
+        await cdsService.deleteMapping(req.params.brand_id);
+        return res.status(204).send();
+    } catch (err) {
+        console.error('[Routes] Error deleting mapping:', err.stack || err.message);
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
+
 // Find tenants by plaintext credentials
 router.post('/find-by-credentials', async (req, res) => {
     const { user, brand_id } = req.body;

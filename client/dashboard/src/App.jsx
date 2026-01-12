@@ -23,7 +23,6 @@ const OrderSplit = lazy(() => import('./components/OrderSplit.jsx'));
 const PaymentSalesSplit = lazy(() => import('./components/PaymentSalesSplit.jsx'));
 const HourlySalesCompare = lazy(() => import('./components/HourlySalesCompare.jsx'));
 const WebVitals = lazy(() => import('./components/WebVitals.jsx'));
-const AuthorAdjustments = lazy(() => import('./components/AuthorAdjustments.jsx'));
 const AccessControlCard = lazy(() => import('./components/AccessControlCard.jsx'));
 const ProductConversionTable = lazy(() => import('./components/ProductConversionTable.jsx'));
 const AuthorBrandForm = lazy(() => import('./components/AuthorBrandForm.jsx'));
@@ -113,7 +112,8 @@ export default function App() {
   // Initialize tab checking storage; guard against invalid reads
   const [authorTab, setAuthorTab] = useState(() => {
     try {
-      return localStorage.getItem('author_active_tab_v1') || 'dashboard';
+      const stored = localStorage.getItem('author_active_tab_v1') || 'dashboard';
+      return stored === 'adjustments' ? 'dashboard' : stored;
     } catch {
       return 'dashboard';
     }
@@ -263,7 +263,16 @@ export default function App() {
     if (initialized && !isAuthor) {
       setAuthorTab('dashboard');
     }
-  }, [isAuthor, initialized]);
+    // Guard against legacy tab state that no longer exists
+    if (initialized && authorTab === 'adjustments') {
+      setAuthorTab('dashboard');
+      try {
+        localStorage.setItem('author_active_tab_v1', 'dashboard');
+      } catch {
+        // ignore storage issues
+      }
+    }
+  }, [isAuthor, initialized, authorTab]);
 
   useEffect(() => {
     // Only authors should see/use product filters; reset for everyone else.
@@ -694,24 +703,6 @@ export default function App() {
                       <AccessControlCard />
                     </Stack>
                   </Suspense>
-                )}
-
-                {isAuthor && authorTab === 'adjustments' && (
-                  hasBrand ? (
-                    <Suspense fallback={<SectionFallback />}>
-                      <AuthorAdjustments
-                        brandKey={activeBrandKey}
-                        onBrandKeyChange={handleAuthorBrandChange}
-                        brands={authorBrands}
-                      />
-                    </Suspense>
-                  ) : (
-                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Choose a brand to manage session adjustments.
-                      </Typography>
-                    </Paper>
-                  )
                 )}
 
                 {isAuthor && authorTab === 'product-conversion' && (

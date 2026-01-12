@@ -1,4 +1,5 @@
 const Tenant = require('../models/tenant.model');
+const CdsMapping = require('../models/cdsMapping.model');
 const { RoutingUnavailableError } = require('../utils/errors');
 
 /**
@@ -17,10 +18,6 @@ const resolveFromCDS = async (brandId) => {
     }
 };
 
-module.exports = {
-    resolveFromCDS
-};
-
 /**
  * Create and persist a new tenant record in the CDS (DB).
  * @param {Object} tenantData
@@ -36,11 +33,6 @@ const createTenant = async (tenantData) => {
         // Re-throw for the caller to handle (route will return appropriate status)
         throw error;
     }
-};
-
-module.exports = {
-    resolveFromCDS,
-    createTenant
 };
 
 /**
@@ -61,8 +53,30 @@ const findTenantsByCredentials = async (user, brand_id) => {
     }
 };
 
+// ----- Deployment-service facing helpers -----
+const upsertMapping = async (mapping) => {
+    const { brand_id } = mapping;
+    if (!brand_id) throw new Error('brand_id required');
+    return CdsMapping.findOneAndUpdate(
+        { brand_id },
+        { $set: mapping },
+        { new: true, upsert: true, runValidators: true }
+    ).lean();
+};
+
+const getMapping = async (brandId) => {
+    return CdsMapping.findOne({ brand_id: brandId }).lean();
+};
+
+const deleteMapping = async (brandId) => {
+    return CdsMapping.deleteOne({ brand_id: brandId });
+};
+
 module.exports = {
     resolveFromCDS,
     createTenant,
-    findTenantsByCredentials
+    findTenantsByCredentials,
+    upsertMapping,
+    getMapping,
+    deleteMapping
 };
