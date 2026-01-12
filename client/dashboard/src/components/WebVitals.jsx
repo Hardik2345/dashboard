@@ -39,6 +39,7 @@ const METRIC_KEYS = {
   LCP: "lcp",
   TTFB: "ttfb",
   SESSIONS: "sessions",
+  PERFORMANCE: "performance",
 };
 
 const WebVitals = ({ query }) => {
@@ -184,7 +185,7 @@ const WebVitals = ({ query }) => {
 
       let change = null;
       if (match && match.avg > 0) {
-        if (metric === "SESSIONS") {
+        if (metric === "SESSIONS" || metric === "PERFORMANCE") {
           // Higher is better -> (Current - Prev) / Prev
           change = ((t.avg - match.avg) / match.avg) * 100;
         } else {
@@ -200,7 +201,7 @@ const WebVitals = ({ query }) => {
       };
     });
 
-    const isDesc = metric === "SESSIONS";
+    const isDesc = metric === "SESSIONS" || metric === "PERFORMANCE";
     const top5 = combined
       .sort((a, b) => (isDesc ? b.avg - a.avg : a.avg - b.avg))
       .slice(0, 5);
@@ -312,6 +313,7 @@ const WebVitals = ({ query }) => {
                   <MenuItem value="FCP">FCP</MenuItem>
                   <MenuItem value="LCP">LCP</MenuItem>
                   <MenuItem value="TTFB">TTFB</MenuItem>
+                  <MenuItem value="PERFORMANCE">Performance</MenuItem>
                   <MenuItem value="SESSIONS">Sessions</MenuItem>
                 </Select>
               </FormControl>
@@ -355,11 +357,11 @@ const WebVitals = ({ query }) => {
 
                     <Typography variant="caption" color="text.secondary" component="div">
                       {metric === "SESSIONS" ? "Sessions" : metric}: {Math.round(page.avg * 100) / 100}
-                      {metric !== "TTFB" && metric !== "SESSIONS" ? "s" : ""}
+                      {metric !== "TTFB" && metric !== "SESSIONS" && metric !== "PERFORMANCE" ? "s" : ""}
 
                       {page.change !== null && (
                         <Box component="span" sx={{ ml: 1.5, color: improved ? "green" : "red", fontWeight: 700 }}>
-                          {metric === "SESSIONS"
+                          {(metric === "SESSIONS" || metric === "PERFORMANCE")
                             ? (improved ? "▲" : "▼")
                             : (improved ? "▼" : "▲")
                           } {Math.abs(page.change).toFixed(2)}%
