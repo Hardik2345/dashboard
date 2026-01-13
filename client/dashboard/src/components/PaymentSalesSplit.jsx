@@ -32,15 +32,21 @@ export default function PaymentSalesSplit({ query }) {
       return () => { cancelled = true; };
     }
     setLoading(true);
-    const params = brandKey
-      ? { start: query.start, end: query.end, brand_key: brandKey }
-      : { start: query.start, end: query.end };
-    if (productId) params.product_id = productId;
+    const params = {
+      start: query.start,
+      end: query.end,
+      brand_key: brandKey,
+      product_id: productId,
+      utm_source: query.utm_source,
+      utm_medium: query.utm_medium,
+      utm_campaign: query.utm_campaign,
+      refreshKey,
+    };
     getPaymentSalesSplit(params)
       .then(res => { if (!cancelled) { setData(res); setLoading(false); } })
       .catch(() => setLoading(false));
     return () => { cancelled = true; };
-  }, [query.start, query.end, brandKey, productId, refreshKey]);
+  }, [query.start, query.end, brandKey, productId, refreshKey, query.utm_source, query.utm_medium, query.utm_campaign]);
 
   const empty = data.total === 0;
 
@@ -60,8 +66,8 @@ export default function PaymentSalesSplit({ query }) {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { 
-        display: true, 
+      legend: {
+        display: true,
         position: 'bottom',
         labels: {
           color: isDark ? '#e0e0e0' : '#666'

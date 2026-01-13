@@ -20,7 +20,7 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import customParseFormat from "dayjs/plugin/customParseFormat";
-import { getLastUpdatedPTS } from "../lib/api.js";
+import { getLastUpdatedPTS, getDashboardSummary } from "../lib/api.js";
 
 dayjs.extend(relativeTime);
 dayjs.extend(utc);
@@ -96,6 +96,8 @@ export default function MobileTopBar({
   productValue = null,
   onProductChange,
   productLoading = false,
+  utm = {},
+  onUtmChange,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -104,6 +106,25 @@ export default function MobileTopBar({
   const [month, setMonth] = useState((end || start || dayjs()).month());
   const [year, setYear] = useState((end || start || dayjs()).year());
   const [last, setLast] = useState({ loading: true, ts: null, tz: null });
+  const [utmOptions, setUtmOptions] = useState(null);
+
+  useEffect(() => {
+    if (!brandKey) return;
+    const s = start?.format('YYYY-MM-DD');
+    const e = end?.format('YYYY-MM-DD');
+    getDashboardSummary({
+      brand_key: brandKey,
+      start: s,
+      end: e,
+      include_utm_options: true,
+      utm_source: utm?.source,
+      utm_medium: utm?.medium,
+      utm_campaign: utm?.campaign
+    })
+      .then(res => {
+        if (res.filter_options) setUtmOptions(res.filter_options);
+      });
+  }, [brandKey, start, end, utm]);
 
   useEffect(() => {
     let cancelled = false;
@@ -291,6 +312,26 @@ export default function MobileTopBar({
         </Box>
       )}
 
+      {/* Mobile: UTM Filters */}
+      <Box sx={{ display: { xs: 'flex', sm: 'none' }, gap: 1, mb: 1, flexWrap: 'wrap' }}>
+        {['source', 'medium', 'campaign'].map(field => (
+          <FormControl key={field} size="small" sx={{ flex: 1, minWidth: '30%' }}>
+            <InputLabel sx={{ fontSize: 12, textTransform: 'capitalize' }}>{field}</InputLabel>
+            <Select
+              label={field}
+              value={utm?.[field] || ''}
+              onChange={(e) => onUtmChange && onUtmChange({ [field]: e.target.value })}
+              sx={{ fontSize: 12, height: 36 }}
+            >
+              <MenuItem value=""><em>All</em></MenuItem>
+              {(utmOptions?.[`utm_${field}`] || []).map(opt => (
+                <MenuItem key={opt} value={opt} sx={{ fontSize: 12 }}>{opt}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        ))}
+      </Box>
+
       {/* Main row: Updated chip | (desktop: product filter) | Date picker */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
         {/* Left: Updated chip */}
@@ -350,7 +391,7 @@ export default function MobileTopBar({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {/* Desktop-only compact product filter */}
           {showProductFilter && (
-            <FormControl size="small" sx={{ width: { xs: '100%', sm: 420 }, display: { xs: 'none', sm: 'flex' } }}>
+            <FormControl size="small" sx={{ width: { xs: '100%', sm: 200 }, display: { xs: 'none', sm: 'flex' } }}>
               <InputLabel id="desktop-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
               <Select
                 labelId="desktop-product-label"
@@ -393,6 +434,26 @@ export default function MobileTopBar({
               )}
             </FormControl>
           )}
+
+          {/* Desktop UTM Filters */}
+          <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 1 }}>
+            {['source', 'medium', 'campaign'].map(field => (
+              <FormControl key={field} size="small" sx={{ width: 120 }}>
+                <InputLabel sx={{ fontSize: 12, textTransform: 'capitalize' }}>{field}</InputLabel>
+                <Select
+                  label={field}
+                  value={utm?.[field] || ''}
+                  onChange={(e) => onUtmChange && onUtmChange({ [field]: e.target.value })}
+                  sx={{ fontSize: 12, height: 32, '& .MuiSelect-select': { py: 0.5 } }} // dense
+                >
+                  <MenuItem value=""><em>All</em></MenuItem>
+                  {(utmOptions?.[`utm_${field}`] || []).map(opt => (
+                    <MenuItem key={opt} value={opt} sx={{ fontSize: 12 }}>{opt}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ))}
+          </Box>
 
           <Popover
             active={popoverActive}

@@ -302,6 +302,10 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   const end = query?.end;
   const brandKey = query?.brand_key;
   const refreshKey = query?.refreshKey;
+  const utmSource = query?.utm_source;
+  const utmMedium = query?.utm_medium;
+  const utmCampaign = query?.utm_campaign;
+  const productId = query?.product_id;
   const theme = useTheme();
 
   const totalDaysSelected = useMemo(() => {
@@ -340,8 +344,15 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     setLoading(true);
 
     const loadData = async () => {
+      const utmParams = {
+        utm_source: utmSource,
+        utm_medium: utmMedium,
+        utm_campaign: utmCampaign,
+        product_id: productId,
+      };
+
       // optimization: use cached hourly summary if sales + hourly view + single day match
-      if (viewMode === 'hourly' && (metric === 'sales' || metric === 'total_sales') && start === end) {
+      if (viewMode === 'hourly' && (metric === 'sales' || metric === 'total_sales') && start === end && !utmParams.utm_source && !utmParams.utm_medium && !utmParams.utm_campaign && !utmParams.product_id) {
         try {
           const res = await getHourlySalesSummary({ brand_key: brandKey });
           if (!cancelled && res.data && res.data.today && res.data.today.date === start) {
@@ -388,8 +399,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
 
       const fetcher = viewMode === 'monthly' ? getMonthlyTrend : (viewMode === 'daily' ? getDailyTrend : getHourlyTrend);
       const base = (viewMode === 'daily' || viewMode === 'monthly')
-        ? { start, end }
-        : { start, end, aggregate: 'avg-by-hour' };
+        ? { start, end, ...utmParams }
+        : { start, end, aggregate: 'avg-by-hour', ...utmParams };
       const params = brandKey ? { ...base, brand_key: brandKey } : base;
 
       try {
@@ -465,7 +476,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     loadData();
 
     return () => { cancelled = true; };
-  }, [start, end, metric, viewMode, brandKey, refreshKey]);
+  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, productId]);
 
   const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
 
