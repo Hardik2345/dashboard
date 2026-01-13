@@ -31,6 +31,9 @@ const { buildNotificationsRouter } = require('./routes/notifications'); // [NEW]
 const app = express();
 app.use(helmet());
 
+// Health check
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'analytics' }));
+
 // Parse allowed origins from env (comma separated)
 const allowedOrigins = (process.env.CORS_ORIGIN || '').split(',').map(o => o.trim()).filter(Boolean);
 app.use(cors({
