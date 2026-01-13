@@ -30,9 +30,15 @@ function normalizeBrandKey(src) {
 }
 
 function appendBrandKey(params, source) {
-  const key = normalizeBrandKey(source?.brand_key ?? source?.brandKey);
-  if (key) return { ...params, brand_key: key };
-  return params;
+  const brand_key = normalizeBrandKey(source?.brand_key ?? source?.brandKey);
+  const out = { ...params };
+  if (brand_key) out.brand_key = brand_key;
+  if (source?.utm_source) out.utm_source = source.utm_source;
+  if (source?.utm_medium) out.utm_medium = source.utm_medium;
+  if (source?.utm_campaign) out.utm_campaign = source.utm_campaign;
+  if (source?.product_id) out.product_id = source.product_id;
+  if (source?.refreshKey) out.refreshKey = source.refreshKey;
+  return out;
 }
 
 function formatDateRangeSuffix(start, end) {
@@ -204,6 +210,7 @@ export async function removeWhitelist(id) {
 
 export async function getDashboardSummary(args) {
   const params = appendBrandKey({
+    ...args,
     start: args.start || args.date,
     end: args.end || args.date || args.start,
   }, args);
@@ -212,6 +219,7 @@ export async function getDashboardSummary(args) {
     metrics: json?.metrics || null,
     range: json?.range || { start: params.start || null, end: params.end || null },
     prev_range: json?.prev_range || null,
+    filter_options: json?.filter_options || null,
     error: json?.__error
   };
 }
