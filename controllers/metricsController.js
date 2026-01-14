@@ -1194,7 +1194,7 @@ function buildMetricsController() {
           utm_medium: (req.query.utm_medium || '').trim() || null,
           utm_campaign: (req.query.utm_campaign || '').trim() || null,
         };
-        
+
         let whereSql = `WHERE created_at >= ? AND created_at < ?`;
         let replacements = []; // will be set below
         if (productIdRaw) whereSql += ` AND product_id = ?`;
@@ -1236,7 +1236,7 @@ function buildMetricsController() {
           if (filters.utm_source) replacements.push(filters.utm_source);
           if (filters.utm_medium) replacements.push(filters.utm_medium);
           if (filters.utm_campaign) replacements.push(filters.utm_campaign);
-          
+
           rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements });
         } catch (e) {
           console.error('[payment-sales-split] query failed', e.message);
@@ -2731,37 +2731,48 @@ function buildMetricsController() {
         };
 
         let filterOptions = null;
-        if (req.query.include_utm_options === 'true' && req.brandDb) {
-          const s = Date.now();
-          const conn = req.brandDb.sequelize;
+        if (req.query.include_utm_options === 'true') {
+          // Ensure DB connection for filter options, especially if main metrics were cached
+          if (!req.brandDb && req.brandConfig) {
+            try {
+              req.brandDb = await getBrandConnection(req.brandConfig);
+            } catch (connErr) {
+              console.error("[dashboardSummary] Lazy connection for UTM options failed", connErr);
+            }
+          }
 
-          const baseWhere = 'created_date >= ? AND created_date <= ?';
-          const baseReplacements = [start, end];
+          if (req.brandDb) {
+            const s = Date.now();
+            const conn = req.brandDb.sequelize;
 
-          const buildOptionQuery = (field, otherFilters) => {
-            let w = baseWhere + ` AND ${field} IS NOT NULL AND ${field} <> ""`;
-            let r = [...baseReplacements];
-            if (otherFilters.utm_source && field !== 'utm_source') { w += ' AND utm_source = ?'; r.push(otherFilters.utm_source); }
-            if (otherFilters.utm_medium && field !== 'utm_medium') { w += ' AND utm_medium = ?'; r.push(otherFilters.utm_medium); }
-            if (otherFilters.utm_campaign && field !== 'utm_campaign') { w += ' AND utm_campaign = ?'; r.push(otherFilters.utm_campaign); }
-            return { sql: `SELECT DISTINCT ${field} FROM shopify_orders WHERE ${w} LIMIT 1000`, replacements: r };
-          };
+            const baseWhere = 'created_date >= ? AND created_date <= ?';
+            const baseReplacements = [start, end];
 
-          const qSrc = buildOptionQuery('utm_source', filters);
-          const qMed = buildOptionQuery('utm_medium', filters);
-          const qCamp = buildOptionQuery('utm_campaign', filters);
+            const buildOptionQuery = (field, otherFilters) => {
+              let w = baseWhere + ` AND ${field} IS NOT NULL AND ${field} <> ""`;
+              let r = [...baseReplacements];
+              if (otherFilters.utm_source && field !== 'utm_source') { w += ' AND utm_source = ?'; r.push(otherFilters.utm_source); }
+              if (otherFilters.utm_medium && field !== 'utm_medium') { w += ' AND utm_medium = ?'; r.push(otherFilters.utm_medium); }
+              if (otherFilters.utm_campaign && field !== 'utm_campaign') { w += ' AND utm_campaign = ?'; r.push(otherFilters.utm_campaign); }
+              return { sql: `SELECT DISTINCT ${field} FROM shopify_orders WHERE ${w} LIMIT 1000`, replacements: r };
+            };
 
-          const [srcRows, medRows, campRows] = await Promise.all([
-            conn.query(qSrc.sql, { type: QueryTypes.SELECT, replacements: qSrc.replacements }),
-            conn.query(qMed.sql, { type: QueryTypes.SELECT, replacements: qMed.replacements }),
-            conn.query(qCamp.sql, { type: QueryTypes.SELECT, replacements: qCamp.replacements })
-          ]);
-          filterOptions = {
-            utm_source: srcRows.map(r => r.utm_source).sort(),
-            utm_medium: medRows.map(r => r.utm_medium).sort(),
-            utm_campaign: campRows.map(r => r.utm_campaign).sort(),
-          };
-          mark('filter_options', s);
+            const qSrc = buildOptionQuery('utm_source', filters);
+            const qMed = buildOptionQuery('utm_medium', filters);
+            const qCamp = buildOptionQuery('utm_campaign', filters);
+
+            const [srcRows, medRows, campRows] = await Promise.all([
+              conn.query(qSrc.sql, { type: QueryTypes.SELECT, replacements: qSrc.replacements }),
+              conn.query(qMed.sql, { type: QueryTypes.SELECT, replacements: qMed.replacements }),
+              conn.query(qCamp.sql, { type: QueryTypes.SELECT, replacements: qCamp.replacements })
+            ]);
+            filterOptions = {
+              utm_source: srcRows.map(r => r.utm_source).sort(),
+              utm_medium: medRows.map(r => r.utm_medium).sort(),
+              utm_campaign: campRows.map(r => r.utm_campaign).sort(),
+            };
+            mark('filter_options', s);
+          }
         }
 
         const response = {
