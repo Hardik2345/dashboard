@@ -348,7 +348,7 @@ async function calcAovDelta({ start, end, align, compare, conn, debug, filters }
         conn.query(salesSqlWithFilter, { type: QueryTypes.SELECT, replacements: curReplacements }),
         conn.query(salesSqlWithFilter, { type: QueryTypes.SELECT, replacements: prevReplacements }),
         conn.query(ordersSqlWithFilter, { type: QueryTypes.SELECT, replacements: curReplacements }),
-        conn.query(ordersSqlWithFilter, { type: QueryTypes.SELECT, replacements: prevReplacements }),
+        conn.query(ordersSqlWithFilter, { type: QueryTypes.SELECT, replacements: prevReplacements }), sa
       ]);
 
       const curSales = Number(salesCurRows?.[0]?.total || 0);
@@ -2300,6 +2300,14 @@ function buildMetricsController() {
         const sortBy = (req.query.sort_by || 'sessions').toString().toLowerCase();
         const sortDir = (req.query.sort_dir || 'desc').toString().toLowerCase();
 
+        let visibleColumns = req.query.visible_columns;
+        if (typeof visibleColumns === 'string') {
+          try { visibleColumns = JSON.parse(visibleColumns); } catch (e) { visibleColumns = null; }
+        }
+
+        const page = Number(req.query.page) || 0;
+        const pageSize = Number(req.query.page_size) || 0;
+
         const allowedSort = new Map([
           ['sessions', 'sessions'],
           ['atc', 'atc'],
@@ -2312,7 +2320,54 @@ function buildMetricsController() {
         const sortCol = allowedSort.get(sortBy) || 'sessions';
         const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
 
-        const replacements = [start, end, start, end];
+        const validFields = ['sessions', 'atc', 'atc_rate', 'orders', 'sales', 'cvr'];
+        const validOps = ['gt', 'lt'];
+
+        let filters = req.query.filters;
+        if (typeof filters === 'string') {
+          try { filters = JSON.parse(filters); } catch (e) { filters = []; }
+        }
+        const search = (req.query.search || '').trim();
+        const conditions = [];
+        const filterReplacements = [];
+
+        if (search) {
+          conditions.push(`s.landing_page_path LIKE ?`);
+          filterReplacements.push(`%${search}%`);
+        }
+
+        if (Array.isArray(filters) && filters.length > 0) {
+          for (const f of filters) {
+            const fField = (f.field || '').toString().toLowerCase();
+            const fOp = (f.operator || '').toString().toLowerCase();
+            const fVal = Number(f.value);
+
+            if (validFields.includes(fField) && validOps.includes(fOp) && !Number.isNaN(fVal)) {
+              let fieldExpr = '';
+              switch (fField) {
+                case 'sessions': fieldExpr = 's.sessions'; break;
+                case 'atc': fieldExpr = 's.atc'; break;
+                case 'atc_rate': fieldExpr = '(CASE WHEN s.sessions > 0 THEN s.atc / s.sessions * 100 ELSE 0 END)'; break;
+                case 'orders': fieldExpr = 'COALESCE(o.orders, 0)'; break;
+                case 'sales': fieldExpr = 'COALESCE(o.sales, 0)'; break;
+                case 'cvr': fieldExpr = '(CASE WHEN s.sessions > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)'; break;
+              }
+
+              if (fieldExpr) {
+                const operator = fOp === 'gt' ? '>' : '<';
+                conditions.push(`${fieldExpr} ${operator} ?`);
+                filterReplacements.push(fVal);
+              }
+            }
+          }
+        }
+
+        let whereClause = '';
+        if (conditions.length > 0) {
+          whereClause = `WHERE ${conditions.join(' AND ')}`;
+        }
+
+        const replacements = [start, end, start, end, ...filterReplacements];
         const fullSql = `
           WITH orders_60d AS (
             SELECT
@@ -2346,7 +2401,9 @@ function buildMetricsController() {
           FROM sessions_60d s
           LEFT JOIN orders_60d o
             ON s.product_id = o.product_id
+          ${whereClause}
           ORDER BY ${sortCol} ${dir}
+          ${(page > 0 && pageSize > 0) ? `LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}` : ''}
         `;
         const csvRows = await conn.query(fullSql, { type: QueryTypes.SELECT, replacements });
 
@@ -2357,24 +2414,28 @@ function buildMetricsController() {
 
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        const headers = ['landing_page_path', 'sessions', 'atc', 'atc_rate', 'orders', 'sales', 'cvr'];
+
+        const allHeaders = ['landing_page_path', 'sessions', 'atc', 'atc_rate', 'orders', 'sales', 'cvr'];
+        let finalHeaders = allHeaders;
+
+        if (Array.isArray(visibleColumns) && visibleColumns.length > 0) {
+          finalHeaders = allHeaders.filter(h => visibleColumns.includes(h) || h === 'landing_page_path');
+        }
+
         const escapeCsv = (val) => {
           if (val === null || val === undefined) return '';
           const str = String(val);
           if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
           return str;
         };
-        const lines = [headers.join(',')];
+        const lines = [finalHeaders.join(',')];
         for (const r of csvRows) {
-          lines.push([
-            escapeCsv(r.landing_page_path),
-            Number(r.sessions || 0),
-            Number(r.atc || 0),
-            Number(r.atc_rate || 0),
-            Number(r.orders || 0),
-            Number(r.sales || 0),
-            Number(r.cvr || 0),
-          ].join(','));
+          const rowVals = finalHeaders.map(h => {
+            // Handle numeric formatting identical to previous code if needed, strictly based on header name
+            if (h === 'landing_page_path') return escapeCsv(r.landing_page_path);
+            return Number(r[h] || 0);
+          });
+          lines.push(rowVals.join(','));
         }
         return res.send(lines.join('\n'));
       } catch (e) {
