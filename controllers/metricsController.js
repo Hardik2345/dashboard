@@ -348,7 +348,7 @@ async function calcAovDelta({ start, end, align, compare, conn, debug, filters }
         conn.query(salesSqlWithFilter, { type: QueryTypes.SELECT, replacements: curReplacements }),
         conn.query(salesSqlWithFilter, { type: QueryTypes.SELECT, replacements: prevReplacements }),
         conn.query(ordersSqlWithFilter, { type: QueryTypes.SELECT, replacements: curReplacements }),
-        conn.query(ordersSqlWithFilter, { type: QueryTypes.SELECT, replacements: prevReplacements }), sa
+        conn.query(ordersSqlWithFilter, { type: QueryTypes.SELECT, replacements: prevReplacements })
       ]);
 
       const curSales = Number(salesCurRows?.[0]?.total || 0);
@@ -2652,14 +2652,59 @@ function buildMetricsController() {
         const align = (req.query.align || '').toString().toLowerCase();
         const compare = (req.query.compare || '').toString().toLowerCase();
 
-        const [orders, sales, sessions, atc, aov, cvr] = await Promise.all([
-          calcTotalOrdersDelta({ start, end, align, compare, conn, filters }),
-          calcTotalSalesDelta({ start, end, align, compare, conn, filters }),
-          calcTotalSessionsDelta({ start, end, align, compare, conn }),
-          calcAtcSessionsDelta({ start, end, align, compare, conn }),
-          calcAovDelta({ start, end, align, compare, conn, filters }),
-          calcCvrDelta({ start, end, align, compare, conn })
-        ]);
+        const isSingleDay = start === end;
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign);
+
+        let orders, sales, sessions, atc, aov, cvr;
+        let usedCache = false;
+
+        if (isSingleDay && !hasFilters && !align && !compare) {
+          try {
+            const prevWin = previousWindow(start, end);
+            const [cached, cachedPrev] = await fetchCachedMetricsBatch(brandQuery, [start, prevWin.prevStart]);
+
+            if (cached && cachedPrev) {
+              const calcDeltaLocal = (cur, prev) => {
+                const diff = cur - prev;
+                const diff_pct = prev > 0 ? (diff / prev) * 100 : (cur > 0 ? 100 : 0);
+                const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+                return { diff_pct, direction };
+              };
+
+              const mkMetric = (key, metricName) => {
+                const c = cached[key] || 0;
+                const p = cachedPrev[key] || 0;
+                const d = calcDeltaLocal(c, p);
+                return { metric: metricName, range: { start, end }, current: c, previous: p, diff_pct: d.diff_pct, direction: d.direction, source: 'cache' };
+              };
+
+              orders = mkMetric('total_orders', 'TOTAL_ORDERS_DELTA');
+              sales = mkMetric('total_sales', 'TOTAL_SALES_DELTA');
+              sessions = mkMetric('total_sessions', 'TOTAL_SESSIONS_DELTA');
+              atc = mkMetric('total_atc_sessions', 'TOTAL_ATC_SESSIONS_DELTA');
+              // AOV and CVR need special handling or just use raw numbers from cache if available
+              // Cache usually stores aov/cvr pre-calculated? getMetricsForRange in dashboardSummary uses cached.average_order_value
+              aov = mkMetric('average_order_value', 'AOV_DELTA');
+              cvr = mkMetric('conversion_rate', 'CVR_DELTA'); // conversion_rate in cache is usually a number (rate or percent? dashboardSummary says conversion_rate_percent: cached.conversion_rate)
+
+              usedCache = true;
+              logger.debug(`[deltaSummary] Served from cache for ${brandQuery} ${start}`);
+            }
+          } catch (e) {
+            console.error('[deltaSummary] Cache fetch failed', e);
+          }
+        }
+
+        if (!usedCache) {
+          [orders, sales, sessions, atc, aov, cvr] = await Promise.all([
+            calcTotalOrdersDelta({ start, end, align, compare, conn, filters }),
+            calcTotalSalesDelta({ start, end, align, compare, conn, filters }),
+            calcTotalSessionsDelta({ start, end, align, compare, conn }),
+            calcAtcSessionsDelta({ start, end, align, compare, conn }),
+            calcAovDelta({ start, end, align, compare, conn, filters }),
+            calcCvrDelta({ start, end, align, compare, conn })
+          ]);
+        }
 
         const prevWin = previousWindow(start, end);
         const response = {
