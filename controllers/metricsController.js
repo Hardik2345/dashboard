@@ -60,7 +60,7 @@ async function calcTotalOrdersDelta({ start, end, align, conn, filters }) {
 
     const prevWin = previousWindow(rangeStart, rangeEnd);
     const countSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE ${rangeFilter}`;
-    logFile(`[ZERO_DEBUG_ORDERS_SQL] ${countSql} ${JSON.stringify(curReplacements)}`);
+
 
 
     // For previous window, we need same filters
@@ -136,7 +136,6 @@ async function calcTotalSalesDelta({ start, end, align, compare, conn, filters }
     }
 
     const salesSql = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE ${rangeFilter}`;
-    logFile(`[ZERO_DEBUG_SALES_SQL] ${salesSql} ${JSON.stringify(curReplacements)}`);
     const currentPromise = conn.query(salesSql, { type: QueryTypes.SELECT, replacements: curReplacements });
     const previousPromise = prevWin ? conn.query(salesSql, { type: QueryTypes.SELECT, replacements: prevReplacements }) : Promise.resolve([{ total: 0 }]);
     const [currRow, prevRow] = await Promise.all([currentPromise, previousPromise]);
@@ -2776,16 +2775,28 @@ function buildMetricsController() {
         const getMetricsForRange = async (s, e, cachedData) => {
           if (!s || !e) return null;
           if (isSingleDay && cachedData) {
-            return {
-              total_orders: cachedData.total_orders,
-              total_sales: cachedData.total_sales,
-              total_sessions: cachedData.total_sessions,
-              total_atc_sessions: cachedData.total_atc_sessions,
-              average_order_value: cachedData.average_order_value,
-              conversion_rate: cachedData.conversion_rate,
-              conversion_rate_percent: cachedData.conversion_rate,
-              source: 'cache'
-            };
+            // Consistency Check: If orders are 0, CVR must be 0.
+            // If CVR > 0 (e.g. 1.37) but orders is 0, cache is inconsistent.
+            // Also if sales is 0 but orders > 0, AOV would be 0. This is physically possible (free orders) but suspicious if widespread.
+            // Main trigger is CVR inconsistency.
+            const cvrVal = Number(cachedData.conversion_rate || 0);
+            const ordersVal = Number(cachedData.total_orders || 0);
+
+            if (ordersVal === 0 && cvrVal > 0) {
+              logger.debug(`[CACHE INVALID] Inconsistent cache for ${s}: Orders=0 but CVR=${cvrVal}. Falling back to DB.`);
+              logFile(`[CACHE INVALID] Inconsistent cache for ${s}: Orders=0 but CVR=${cvrVal}. Falling back to DB.`);
+            } else {
+              return {
+                total_orders: cachedData.total_orders,
+                total_sales: cachedData.total_sales,
+                total_sessions: cachedData.total_sessions,
+                total_atc_sessions: cachedData.total_atc_sessions,
+                average_order_value: cachedData.average_order_value,
+                conversion_rate: cachedData.conversion_rate,
+                conversion_rate_percent: cachedData.conversion_rate,
+                source: 'cache'
+              };
+            }
           }
 
           // Ensure DB connection
@@ -2814,13 +2825,6 @@ function buildMetricsController() {
           ]);
 
           const aovVal = typeof aovObj === 'object' && aovObj !== null ? Number(aovObj.aov || 0) : Number(aovObj || 0);
-
-          // DEBUG LOGS
-          if (orders === 0 || sales === 0) {
-            logFile(`[ZERO_DEBUG] Range: ${s} to ${e} Brand: ${brandQuery}`);
-            logFile(`[ZERO_DEBUG] Sales: ${sales}, Orders: ${orders}, AOV: ${aovVal}`);
-            logFile(`[ZERO_DEBUG] Filters: ${JSON.stringify(filters)}`);
-          }
 
           return {
             total_orders: orders,
