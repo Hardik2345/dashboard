@@ -293,6 +293,7 @@ async function calcAtcSessionsDelta({ start, end, align, compare, conn }) {
 
 async function calcAovDelta({ start, end, align, compare, conn, debug, filters }) {
   const date = end || start;
+  logger.debug(`[AOV DELTA] calcAovDelta called with range ${start} to ${end}`);
   if (!date && !(start && end)) return { metric: 'AOV_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
 
   if ((compare || '').toString().toLowerCase() === 'prev-range-avg' && start && end) {
