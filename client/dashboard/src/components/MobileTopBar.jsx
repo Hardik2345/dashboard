@@ -289,8 +289,17 @@ export default function MobileTopBar({
                 PaperProps: {
                   sx: {
                     maxHeight: '60vh',
-                    width: { xs: '100%', sm: 360 },
+                    width: 'var(--select-width)',
                     whiteSpace: 'normal',
+                  }
+                },
+                // This ensures the menu matches the select width
+                anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
+                transformOrigin: { vertical: 'top', horizontal: 'left' },
+                onEntering: (node) => {
+                  const selectNode = node.parentElement?.querySelector('[role="combobox"]');
+                  if (selectNode) {
+                    node.style.width = `${selectNode.clientWidth}px`;
                   }
                 }
               }}
@@ -322,6 +331,22 @@ export default function MobileTopBar({
               value={utm?.[field] || ''}
               onChange={(e) => onUtmChange && onUtmChange({ [field]: e.target.value })}
               sx={{ fontSize: 12, height: 36 }}
+              MenuProps={{
+                PaperProps: {
+                  sx: {
+                    maxHeight: '40vh',
+                    width: 'var(--select-width)',
+                  }
+                },
+                anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
+                transformOrigin: { vertical: 'top', horizontal: 'left' },
+                onEntering: (node) => {
+                  const selectNode = node.parentElement?.querySelector('[role="combobox"]');
+                  if (selectNode) {
+                    node.style.width = `${selectNode.clientWidth}px`;
+                  }
+                }
+              }}
             >
               <MenuItem value=""><em>All</em></MenuItem>
               {(utmOptions?.[`utm_${field}`] || []).map(opt => (
@@ -417,8 +442,16 @@ export default function MobileTopBar({
                   PaperProps: {
                     sx: {
                       maxHeight: '60vh',
-                      width: { xs: '100%', sm: 420 },
+                      width: 'var(--select-width)',
                       whiteSpace: 'normal',
+                    }
+                  },
+                  anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
+                  transformOrigin: { vertical: 'top', horizontal: 'left' },
+                  onEntering: (node) => {
+                    const selectNode = node.parentElement?.querySelector('[role="combobox"]');
+                    if (selectNode) {
+                      node.style.width = `${selectNode.clientWidth}px`;
                     }
                   }
                 }}
@@ -445,6 +478,22 @@ export default function MobileTopBar({
                   value={utm?.[field] || ''}
                   onChange={(e) => onUtmChange && onUtmChange({ [field]: e.target.value })}
                   sx={{ fontSize: 12, height: 32, '& .MuiSelect-select': { py: 0.5 } }} // dense
+                  MenuProps={{
+                    PaperProps: {
+                      sx: {
+                        maxHeight: '40vh',
+                        width: 'var(--select-width)',
+                      }
+                    },
+                    anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
+                    transformOrigin: { vertical: 'top', horizontal: 'left' },
+                    onEntering: (node) => {
+                      const selectNode = node.parentElement?.querySelector('[role="combobox"]');
+                      if (selectNode) {
+                        node.style.width = `${selectNode.clientWidth}px`;
+                      }
+                    }
+                  }}
                 >
                   <MenuItem value=""><em>All</em></MenuItem>
                   {(utmOptions?.[`utm_${field}`] || []).map(opt => (
