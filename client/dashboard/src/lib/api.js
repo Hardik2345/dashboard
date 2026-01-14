@@ -272,6 +272,15 @@ export async function exportProductConversionCsv(args) {
     end: args.end,
     sort_by: args.sortBy,
     sort_dir: args.sortDir,
+    sort_dir: args.sortDir,
+    // Fix: Serialize filters array to JSON string to avoid [object Object] in query string
+    filters: args.filters ? JSON.stringify(args.filters) : undefined,
+    search: args.search,
+    visible_columns: args.visible_columns ? JSON.stringify(args.visible_columns) : undefined,
+    page: args.page,
+    page_size: args.pageSize,
+    compare_start: args.compareStart,
+    compare_end: args.compareEnd,
   }, args);
   const dateSuffix = formatDateRangeSuffix(params.start, params.end);
   const fallbackName = dateSuffix ? `product_conversion_${dateSuffix}.csv` : 'product_conversion.csv';
