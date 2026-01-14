@@ -13,11 +13,6 @@ const pad2 = (n) => String(n).padStart(2, '0');
 const MEM_CACHE = new Map();
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds
 const IST_OFFSET_MIN = 330;
-const fs = require('fs');
-const DEBUG_LOG_FILE = 'controller_debug.log';
-const logFile = (msg) => {
-  try { fs.appendFileSync(DEBUG_LOG_FILE, new Date().toISOString() + ' ' + msg + '\n'); } catch (e) { }
-};
 
 async function calcTotalOrdersDelta({ start, end, align, conn, filters }) {
   const date = end || start;
@@ -60,8 +55,6 @@ async function calcTotalOrdersDelta({ start, end, align, conn, filters }) {
 
     const prevWin = previousWindow(rangeStart, rangeEnd);
     const countSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE ${rangeFilter}`;
-
-
 
     // For previous window, we need same filters
     const prevReplacements = prevWin ? [prevWin.prevStart, prevWin.prevEnd, cutoffTime] : [];
@@ -2775,28 +2768,16 @@ function buildMetricsController() {
         const getMetricsForRange = async (s, e, cachedData) => {
           if (!s || !e) return null;
           if (isSingleDay && cachedData) {
-            // Consistency Check: If orders are 0, CVR must be 0.
-            // If CVR > 0 (e.g. 1.37) but orders is 0, cache is inconsistent.
-            // Also if sales is 0 but orders > 0, AOV would be 0. This is physically possible (free orders) but suspicious if widespread.
-            // Main trigger is CVR inconsistency.
-            const cvrVal = Number(cachedData.conversion_rate || 0);
-            const ordersVal = Number(cachedData.total_orders || 0);
-
-            if (ordersVal === 0 && cvrVal > 0) {
-              logger.debug(`[CACHE INVALID] Inconsistent cache for ${s}: Orders=0 but CVR=${cvrVal}. Falling back to DB.`);
-              logFile(`[CACHE INVALID] Inconsistent cache for ${s}: Orders=0 but CVR=${cvrVal}. Falling back to DB.`);
-            } else {
-              return {
-                total_orders: cachedData.total_orders,
-                total_sales: cachedData.total_sales,
-                total_sessions: cachedData.total_sessions,
-                total_atc_sessions: cachedData.total_atc_sessions,
-                average_order_value: cachedData.average_order_value,
-                conversion_rate: cachedData.conversion_rate,
-                conversion_rate_percent: cachedData.conversion_rate,
-                source: 'cache'
-              };
-            }
+            return {
+              total_orders: cachedData.total_orders,
+              total_sales: cachedData.total_sales,
+              total_sessions: cachedData.total_sessions,
+              total_atc_sessions: cachedData.total_atc_sessions,
+              average_order_value: cachedData.average_order_value,
+              conversion_rate: cachedData.conversion_rate,
+              conversion_rate_percent: cachedData.conversion_rate,
+              source: 'cache'
+            };
           }
 
           // Ensure DB connection
@@ -2812,9 +2793,6 @@ function buildMetricsController() {
           const conn = req.brandDb ? req.brandDb.sequelize : null;
           if (!conn) throw new Error("Database connection missing for fallback (Cache Miss & DB Fail)");
 
-          // DEBUG: Log connection DB name
-          // console.log('[ZERO_DEBUG_CONN] Using DB:', req.brandDbName, 'for brand:', brandQuery);
-
           const [sales, orders, sessions, atc, cvrObj, aovObj] = await Promise.all([
             computeTotalSales({ start: s, end: e, conn, filters }),
             computeTotalOrders({ start: s, end: e, conn, filters }),
@@ -2825,7 +2803,6 @@ function buildMetricsController() {
           ]);
 
           const aovVal = typeof aovObj === 'object' && aovObj !== null ? Number(aovObj.aov || 0) : Number(aovObj || 0);
-
           return {
             total_orders: orders,
             total_sales: sales,
