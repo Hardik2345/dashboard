@@ -19,6 +19,7 @@ import {
   Typography,
   Stack,
   Button,
+  Badge,
 } from '@mui/material';
 import CheckIcon from "@mui/icons-material/Check";
 import FilterListIcon from '@mui/icons-material/FilterList';
@@ -109,6 +110,7 @@ export default function MobileTopBar({
   productLoading = false,
   utm = {},
   onUtmChange,
+  showUtmFilter = true,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -132,19 +134,23 @@ export default function MobileTopBar({
     if (!brandKey) return;
     const s = start?.format('YYYY-MM-DD');
     const e = end?.format('YYYY-MM-DD');
+
+    // Use pendingUtm when drawer is open to allow dynamic updates before applying
+    const activeUtm = mobileFilterOpen ? pendingUtm : utm;
+
     getDashboardSummary({
       brand_key: brandKey,
       start: s,
       end: e,
       include_utm_options: true,
-      utm_source: utm?.source, // We use global utm here as this fetches options
-      utm_medium: utm?.medium,
-      utm_campaign: utm?.campaign
+      utm_source: activeUtm?.source,
+      utm_medium: activeUtm?.medium,
+      utm_campaign: activeUtm?.campaign
     })
       .then(res => {
         if (res.filter_options) setUtmOptions(res.filter_options);
       });
-  }, [brandKey, start, end, utm]);
+  }, [brandKey, start, end, utm, pendingUtm, mobileFilterOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -288,6 +294,8 @@ export default function MobileTopBar({
     [onChange]
   );
 
+  const activeUtmCount = [utm?.source, utm?.medium, utm?.campaign].filter(Boolean).length;
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
       {/* Mobile: Product filter on its own row (authors only) */}
@@ -403,80 +411,100 @@ export default function MobileTopBar({
 
 
           {/* Desktop UTM Filters (Collapsible) */}
-          <Collapse in={showUtmFilters} orientation="horizontal" unmountOnExit>
-            <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 1 }}>
-              {['source', 'medium', 'campaign'].map(field => (
-                <FormControl key={field} size="small" sx={{ width: 110 }}>
-                  <InputLabel sx={{ fontSize: 12, textTransform: 'capitalize' }}>{field}</InputLabel>
-                  <Select
-                    label={field}
-                    value={utm?.[field] || ''}
-                    onChange={(e) => onUtmChange && onUtmChange({ [field]: e.target.value })}
-                    sx={{
-                      fontSize: 12,
-                      height: 32,
-                      '& .MuiSelect-select': {
-                        py: 0.5,
+          {showUtmFilter && (
+            <>
+              <Collapse in={showUtmFilters} orientation="horizontal" unmountOnExit>
+                <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 1, alignItems: 'center' }}>
+                  {activeUtmCount > 0 && (
+                    <Button
+                      size="small"
+                      onClick={() => onUtmChange && onUtmChange({ source: '', medium: '', campaign: '' })}
+                      sx={{
+                        fontSize: 12,
+                        textTransform: 'none',
+                        minWidth: 'auto',
                         whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis'
-                      }
-                    }} // dense + truncation
-                    MenuProps={{
-                      PaperProps: {
-                        sx: {
-                          maxHeight: '40vh',
-                          width: '9vw',
-                        }
-                      },
-                      anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
-                      transformOrigin: { vertical: 'top', horizontal: 'left' },
-                      onEntering: (node) => {
-                        const selectNode = node.parentElement?.querySelector('[role="combobox"]');
-                        if (selectNode) {
-                          node.style.width = `${selectNode.clientWidth}px`;
-                        }
-                      }
-                    }}
-                  >
-                    <MenuItem value=""><em>All</em></MenuItem>
-                    {(utmOptions?.[`utm_${field}`] || []).map(opt => (
-                      <MenuItem
-                        key={opt}
-                        value={opt}
+                        color: 'text.secondary',
+                        '&:hover': { color: 'error.main', bgcolor: 'transparent' }
+                      }}
+                    >
+                      Clear all
+                    </Button>
+                  )}
+                  {['source', 'medium', 'campaign'].map(field => (
+                    <FormControl key={field} size="small" sx={{ width: 110 }}>
+                      <InputLabel sx={{ fontSize: 12, textTransform: 'capitalize' }}>{field}</InputLabel>
+                      <Select
+                        label={field}
+                        value={utm?.[field] || ''}
+                        onChange={(e) => onUtmChange && onUtmChange({ [field]: e.target.value })}
                         sx={{
                           fontSize: 12,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          display: 'block'
+                          height: 32,
+                          '& .MuiSelect-select': {
+                            py: 0.5,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }
+                        }} // dense + truncation
+                        MenuProps={{
+                          PaperProps: {
+                            sx: {
+                              maxHeight: '40vh',
+                              width: '9vw',
+                            }
+                          },
+                          anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
+                          transformOrigin: { vertical: 'top', horizontal: 'left' },
+                          onEntering: (node) => {
+                            const selectNode = node.parentElement?.querySelector('[role="combobox"]');
+                            if (selectNode) {
+                              node.style.width = `${selectNode.clientWidth}px`;
+                            }
+                          }
                         }}
                       >
-                        {opt}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              ))}
-            </Box>
-          </Collapse>
+                        <MenuItem value=""><em>All</em></MenuItem>
+                        {(utmOptions?.[`utm_${field}`] || []).map(opt => (
+                          <MenuItem
+                            key={opt}
+                            value={opt}
+                            sx={{
+                              fontSize: 12,
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              display: 'block'
+                            }}
+                          >
+                            {opt}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  ))}
+                </Box>
+              </Collapse>
 
-          {/* Filter Toggle Icon */}
-          <IconButton
-            onClick={() => setShowUtmFilters(!showUtmFilters)}
-            sx={{
-              width: 32,
-              height: 32,
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: '50%', // Circular
-              display: { xs: 'none', sm: 'flex' },
-              color: showUtmFilters ? 'primary.main' : 'text.secondary',
-              bgcolor: showUtmFilters ? (isDark ? 'rgba(91, 163, 224, 0.1)' : 'rgba(11, 107, 203, 0.05)') : 'transparent',
-            }}
-          >
-            <FilterListIcon fontSize="small" />
-          </IconButton>
+              {/* Filter Toggle Icon */}
+              <IconButton
+                onClick={() => setShowUtmFilters(!showUtmFilters)}
+                sx={{
+                  width: 32,
+                  height: 32,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: '50%', // Circular
+                  display: { xs: 'none', sm: 'flex' },
+                  color: showUtmFilters ? 'primary.main' : 'text.secondary',
+                  bgcolor: showUtmFilters ? (isDark ? 'rgba(91, 163, 224, 0.1)' : 'rgba(11, 107, 203, 0.05)') : 'transparent',
+                }}
+              >
+                <FilterListIcon fontSize="small" />
+              </IconButton>
+            </>
+          )}
 
           {/* Desktop-only compact product filter */}
           {showProductFilter && (
@@ -534,21 +562,25 @@ export default function MobileTopBar({
 
 
           {/* Mobile Filter Toggle Icon */}
-          <IconButton
-            onClick={() => setMobileFilterOpen(true)}
-            sx={{
-              width: 32,
-              height: 32,
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: '50%',
-              display: { xs: 'flex', sm: 'none' },
-              color: mobileFilterOpen ? 'primary.main' : 'text.secondary',
-              bgcolor: mobileFilterOpen ? (isDark ? 'rgba(91, 163, 224, 0.1)' : 'rgba(11, 107, 203, 0.05)') : 'transparent',
-            }}
-          >
-            <FilterListIcon fontSize="small" />
-          </IconButton>
+          {showUtmFilter && (
+            <IconButton
+              onClick={() => setMobileFilterOpen(true)}
+              sx={{
+                width: 32,
+                height: 32,
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: '50%',
+                display: { xs: 'flex', sm: 'none' },
+                color: mobileFilterOpen ? 'primary.main' : 'text.secondary',
+                bgcolor: mobileFilterOpen ? (isDark ? 'rgba(91, 163, 224, 0.1)' : 'rgba(11, 107, 203, 0.05)') : 'transparent',
+              }}
+            >
+              <Badge badgeContent={activeUtmCount} color="error" invisible={activeUtmCount === 0}>
+                <FilterListIcon fontSize="small" />
+              </Badge>
+            </IconButton>
+          )}
 
           <Popover
             active={popoverActive}
@@ -795,7 +827,12 @@ export default function MobileTopBar({
                 <List disablePadding>
                   <ListItemButton
                     onClick={() => {
-                      setPendingUtm({ ...pendingUtm, [activeFilterView]: '' });
+                      const newPending = { ...pendingUtm, [activeFilterView]: '' };
+                      if (activeFilterView === 'source') {
+                        newPending.medium = '';
+                        newPending.campaign = '';
+                      }
+                      setPendingUtm(newPending);
                       setActiveFilterView(null);
                     }}
                     selected={!pendingUtm?.[activeFilterView]}
@@ -807,7 +844,12 @@ export default function MobileTopBar({
                     <ListItemButton
                       key={opt}
                       onClick={() => {
-                        setPendingUtm({ ...pendingUtm, [activeFilterView]: opt });
+                        const newPending = { ...pendingUtm, [activeFilterView]: opt };
+                        if (activeFilterView === 'source') {
+                          newPending.medium = '';
+                          newPending.campaign = '';
+                        }
+                        setPendingUtm(newPending);
                         setActiveFilterView(null);
                       }}
                       selected={pendingUtm?.[activeFilterView] === opt}
