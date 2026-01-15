@@ -11,6 +11,8 @@ function defaultRangeYesterdayToday() {
   return [today, today];
 }
 
+const UTM_KEY = 'pts_utm_filters_v1';
+
 function loadInitialRange() {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(RANGE_KEY) : null;
@@ -29,12 +31,26 @@ function loadInitialRange() {
   return defaultRangeYesterdayToday();
 }
 
+function loadInitialUtm() {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(UTM_KEY) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return { source: '', medium: '', campaign: '' };
+}
+
 const filterSlice = createSlice({
   name: 'filters',
   initialState: {
     range: loadInitialRange(),
     selectedMetric: DEFAULT_TREND_METRIC,
     productSelection: DEFAULT_PRODUCT_OPTION,
+    utm: loadInitialUtm(),
   },
   reducers: {
     setRange(state, action) {
@@ -53,8 +69,11 @@ const filterSlice = createSlice({
         state.productSelection = DEFAULT_PRODUCT_OPTION;
       }
     },
+    setUtm(state, action) {
+      state.utm = { ...state.utm, ...action.payload };
+    },
   },
 });
 
-export const { setRange, setSelectedMetric, setProductSelection } = filterSlice.actions;
+export const { setRange, setSelectedMetric, setProductSelection, setUtm } = filterSlice.actions;
 export default filterSlice.reducer;

@@ -36,9 +36,9 @@ async function computeMetricDelta({ metricName, range, queryFn }) {
   const mm = String(nowIst.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(nowIst.getUTCDate()).padStart(2, '0');
   const todayIst = `${yyyy}-${mm}-${dd}`;
-  
+
   const isRangeIncludesToday = rangeStart === todayIst || rangeEnd === todayIst;
-  
+
   const resolveTargetHour = (endOrDate) => (endOrDate === todayIst ? nowIst.getUTCHours() : 23);
   const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + nowIst.getUTCSeconds();
   const fullDaySeconds = 24 * 3600;
@@ -54,12 +54,12 @@ async function computeMetricDelta({ metricName, range, queryFn }) {
   // effectiveSeconds is the current time of day in IST (if today) or 24:00 (if past)
   const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
   const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
-  
+
   const prevWin = previousWindow(rangeStart, rangeEnd);
-  
+
   // To avoid bias, we should use the SAME cutoff relative time for the previous period.
   // Previous logic used (targetHour - 1) for prev period if current was today, which caused bias.
-  const prevCompareHour = targetHour; 
+  const prevCompareHour = targetHour;
   const prevCutoffTime = cutoffTime;
 
   let curVal = 0;
@@ -68,12 +68,12 @@ async function computeMetricDelta({ metricName, range, queryFn }) {
   let prevMeta = null;
 
   if (queryFn) {
-    const res = await queryFn({ 
-      rangeStart, rangeEnd, 
+    const res = await queryFn({
+      rangeStart, rangeEnd,
       prevStart: prevWin.prevStart, prevEnd: prevWin.prevEnd,
       targetHour, prevCompareHour,
       cutoffTime, prevCutoffTime,
-      isCurrentRangeToday: isRangeIncludesToday 
+      isCurrentRangeToday: isRangeIncludesToday
     });
     curVal = res.currentVal;
     prevVal = res.previousVal;
@@ -102,9 +102,9 @@ async function computeMetricDelta({ metricName, range, queryFn }) {
 }
 
 
-async function computeAOV({ start, end, conn }) {
-  const total_sales = await rawSum("total_sales", { start, end, conn });
-  const total_orders = await rawSum("total_orders", { start, end, conn });
+async function computeAOV({ start, end, conn, filters }) {
+  const total_sales = await computeTotalSales({ start, end, conn, filters });
+  const total_orders = await computeTotalOrders({ start, end, conn, filters });
   const numerator = total_sales;
   const aov = total_orders > 0 ? numerator / total_orders : 0;
   return { total_sales, total_orders, aov };
@@ -122,12 +122,59 @@ async function computeCVRForDay(date, conn) {
   return computeCVR({ start: date, end: date, conn });
 }
 
-async function computeTotalSales({ start, end, conn }) {
+async function computeTotalSales({ start, end, conn, filters }) {
+  if (hasUtmFilters(filters)) {
+    const { where, params } = buildShopifyOrdersWhere(start, end, filters);
+    const sql = `SELECT COALESCE(SUM(total_price), 0) AS total FROM shopify_orders ${where}`;
+    const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements: params });
+    return Number(rows[0]?.total || 0);
+  }
   return rawSum("total_sales", { start, end, conn });
 }
 
-async function computeTotalOrders({ start, end, conn }) {
+async function computeTotalOrders({ start, end, conn, filters }) {
+  if (hasUtmFilters(filters)) {
+    const { where, params } = buildShopifyOrdersWhere(start, end, filters);
+    const sql = `SELECT COUNT(DISTINCT order_name) AS total FROM shopify_orders ${where}`;
+    const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements: params });
+    return Number(rows[0]?.total || 0);
+  }
   return rawSum("total_orders", { start, end, conn });
+}
+
+function hasUtmFilters(filters) {
+  if (!filters) return false;
+  return !!(filters.utm_source || filters.utm_medium || filters.utm_campaign);
+}
+
+function buildShopifyOrdersWhere(start, end, filters) {
+  const parts = [];
+  const params = [];
+
+  if (start) {
+    parts.push("created_date >= ?");
+    params.push(start);
+  }
+  if (end) {
+    parts.push("created_date <= ?");
+    params.push(end);
+  }
+
+  if (filters?.utm_source) {
+    parts.push("utm_source = ?");
+    params.push(filters.utm_source);
+  }
+  if (filters?.utm_medium) {
+    parts.push("utm_medium = ?");
+    params.push(filters.utm_medium);
+  }
+  if (filters?.utm_campaign) {
+    parts.push("utm_campaign = ?");
+    params.push(filters.utm_campaign);
+  }
+
+  const where = parts.length ? `WHERE ${parts.join(" AND ")}` : "";
+  return { where, params };
 }
 
 async function computeFunnelStats({ start, end, conn }) {
@@ -191,9 +238,9 @@ async function avgForRange(column, { start, end, conn }) {
   return total / n;
 }
 
-async function aovForRange({ start, end, conn }) {
+async function aovForRange({ start, end, conn, filters }) {
   if (!start || !end) return 0;
-  const { total_sales, total_orders } = await computeAOV({ start, end, conn });
+  const { total_sales, total_orders } = await computeAOV({ start, end, conn, filters });
   return total_orders > 0 ? total_sales / total_orders : 0;
 }
 
@@ -206,7 +253,7 @@ async function cvrForRange({ start, end, conn }) {
 
 module.exports = {
   rawSum,
-  computeMetricDelta, 
+  computeMetricDelta,
   computeAOV,
   computeCVR,
   computeCVRForDay,
@@ -221,4 +268,6 @@ module.exports = {
   avgForRange,
   aovForRange,
   cvrForRange,
+  buildShopifyOrdersWhere,
+  hasUtmFilters,
 };
