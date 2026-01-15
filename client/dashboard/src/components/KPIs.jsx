@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import Grid from "@mui/material/Grid2";
-import { Stack, Typography } from "@mui/material";
+import { Stack, Typography, Chip, Box } from "@mui/material";
 import KPIStat from "./KPIStat.jsx";
 import {
   getDashboardSummary,
@@ -266,6 +266,12 @@ export default function KPIs({
     ? data.cvrDelta.diff_pct ?? data.cvrDelta.diff_pp
     : undefined;
 
+  const activeFilters = [
+    utmSource && { label: `source: ${utmSource}`, key: 'source' },
+    utmMedium && { label: `medium: ${utmMedium}`, key: 'medium' },
+    utmCampaign && { label: `campaign: ${utmCampaign}`, key: 'campaign' }
+  ].filter(Boolean);
+
   // Emit funnel data to parent for FunnelChart (avoids redundant API call)
   useEffect(() => {
     if (typeof onFunnelData !== 'function') return;
@@ -287,11 +293,35 @@ export default function KPIs({
         <Typography variant="subtitle2" color="text.secondary">
           Scope: {scopeLabel}
         </Typography>
-        {isProductScoped && (
-          <Typography variant="caption" color="text.secondary">
-            Using product-level KPIs
-          </Typography>
-        )}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {activeFilters.map(f => (
+            <Chip
+              key={f.key}
+              label={f.label}
+              size="small"
+              variant="outlined"
+              sx={{
+                display: { xs: 'none', md: 'flex' },
+                fontSize: 11,
+                height: 24,
+                maxWidth: 200,
+                color: 'text.secondary',
+                borderColor: 'divider',
+                '& .MuiChip-label': {
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: 'block',
+                  whiteSpace: 'nowrap'
+                }
+              }}
+            />
+          ))}
+          {isProductScoped && (
+            <Typography variant="caption" color="text.secondary">
+              Using product-level KPIs
+            </Typography>
+          )}
+        </Box>
       </Stack>
       <Grid container spacing={1.5} columns={{ xs: 2, sm: 6 }}>
         <Grid size={{ xs: 1, sm: 2 }}>
