@@ -16,7 +16,7 @@ app.get('/health', (req, res) => {
 });
 
 // Centralized Error Handler
-app.use((err, req, res) => {
+app.use((err, req, res, _next) => {
     if (err instanceof TenantError) {
         return res.status(err.statusCode).json({ error: err.code });
     }
