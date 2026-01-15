@@ -110,16 +110,16 @@ async function computeAOV({ start, end, conn, filters }) {
   return { total_sales, total_orders, aov };
 }
 
-async function computeCVR({ start, end, conn }) {
-  const total_orders = await rawSum("total_orders", { start, end, conn });
-  const total_sessions = await rawSum("total_sessions", { start, end, conn });
+async function computeCVR({ start, end, conn, filters }) {
+  const total_orders = await computeTotalOrders({ start, end, conn, filters }); // Use computeTotalOrders to respect filters
+  const total_sessions = await computeTotalSessions({ start, end, conn, filters }); // Use new helper
   const cvr = total_sessions > 0 ? total_orders / total_sessions : 0;
   return { total_orders, total_sessions, cvr, cvr_percent: cvr * 100 };
 }
 
-async function computeCVRForDay(date, conn) {
+async function computeCVRForDay(date, conn, filters = {}) {
   if (!date) return { total_orders: 0, total_sessions: 0, cvr: 0, cvr_percent: 0 };
-  return computeCVR({ start: date, end: date, conn });
+  return computeCVR({ start: date, end: date, conn, filters });
 }
 
 async function computeTotalSales({ start, end, conn, filters }) {
@@ -140,6 +140,41 @@ async function computeTotalOrders({ start, end, conn, filters }) {
     return Number(rows[0]?.total || 0);
   }
   return rawSum("total_orders", { start, end, conn });
+}
+
+async function computeTotalSessions({ start, end, conn, filters }) {
+  if (hasUtmFilters(filters)) {
+    return computeSessionsFromSnapshot({ start, end, conn, filters, column: 'sessions' });
+  }
+  return rawSum("total_sessions", { start, end, conn });
+}
+
+async function computeAtcSessions({ start, end, conn, filters }) {
+  if (hasUtmFilters(filters)) {
+    return computeSessionsFromSnapshot({ start, end, conn, filters, column: 'sessions_with_cart_additions' });
+  }
+  return rawSum("total_atc_sessions", { start, end, conn });
+}
+
+async function computeSessionsFromSnapshot({ start, end, conn, filters, column }) {
+  // Direct query on snapshot with filters
+  const snapshotSql = `
+    SELECT COALESCE(SUM(${column}), 0) as total
+    FROM product_sessions_snapshot
+    WHERE date >= ? AND date <= ?
+    ${filters.utm_source ? 'AND utm_source = ?' : ''}
+    ${filters.utm_medium ? 'AND utm_medium = ?' : ''}
+    ${filters.utm_campaign ? 'AND utm_campaign = ?' : ''}
+    AND landing_page_type = 'Product'
+  `;
+
+  const snapParams = [start, end];
+  if (filters.utm_source) snapParams.push(filters.utm_source);
+  if (filters.utm_medium) snapParams.push(filters.utm_medium);
+  if (filters.utm_campaign) snapParams.push(filters.utm_campaign);
+
+  const snapRows = await conn.query(snapshotSql, { type: QueryTypes.SELECT, replacements: snapParams });
+  return Number(snapRows[0]?.total || 0);
 }
 
 function hasUtmFilters(filters) {
@@ -244,9 +279,9 @@ async function aovForRange({ start, end, conn, filters }) {
   return total_orders > 0 ? total_sales / total_orders : 0;
 }
 
-async function cvrForRange({ start, end, conn }) {
+async function cvrForRange({ start, end, conn, filters }) {
   if (!start || !end) return { cvr: 0, cvr_percent: 0 };
-  const { total_orders, total_sessions } = await computeCVR({ start, end, conn });
+  const { total_orders, total_sessions } = await computeCVR({ start, end, conn, filters });
   const cvr = total_sessions > 0 ? total_orders / total_sessions : 0;
   return { cvr, cvr_percent: cvr * 100 };
 }
@@ -259,6 +294,8 @@ module.exports = {
   computeCVRForDay,
   computeTotalSales,
   computeTotalOrders,
+  computeTotalSessions,
+  computeAtcSessions,
   computeFunnelStats,
   sumForDay,
   deltaForSum,
