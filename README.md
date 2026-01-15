@@ -14,3 +14,5 @@ docker compose down
   - `tenant-router/.env`
   - `alerts-service/.env`
   - `analytics/.env`
+
+Last updated: preview trigger.
