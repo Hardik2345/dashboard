@@ -158,6 +158,11 @@ export default function App() {
     }
   }, [authorBrandKey, dispatch]);
 
+  // Reset UTM filters when brand changes
+  useEffect(() => {
+    dispatch(setUtm({ source: '', medium: '', campaign: '' }));
+  }, [activeBrandKey, dispatch]);
+
   useEffect(() => {
     if (!isAuthor) {
       setAuthorBrands([]);
@@ -315,9 +320,12 @@ export default function App() {
   }, [dispatch]);
 
   const handleUtmChange = useCallback((val) => {
-    // If source is changing, reset dependent filters (medium, campaign)
+    // If source is changing, reset dependent filters (medium, campaign) ONLY if they aren't provided
     if (val && typeof val === 'object' && 'source' in val) {
-      dispatch(setUtm({ ...val, medium: '', campaign: '' }));
+      const update = { ...val };
+      if (!('medium' in val)) update.medium = '';
+      if (!('campaign' in val)) update.campaign = '';
+      dispatch(setUtm(update));
     } else {
       dispatch(setUtm(val));
     }
