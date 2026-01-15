@@ -9,7 +9,10 @@ export default async function handler(req, res) {
 
   const { path, ...query } = req.query || {};
   const cleanedPath = path ? `/${path.replace(/^\/+/, '')}` : '';
-  const url = new URL(targetBase + cleanedPath);
+  const passthroughPrefixes = ['/auth', '/alerts', '/tenant'];
+  const shouldPassthrough = passthroughPrefixes.some((prefix) => cleanedPath === prefix || cleanedPath.startsWith(`${prefix}/`));
+  const upstreamPath = shouldPassthrough ? cleanedPath : `/analytics${cleanedPath}`;
+  const url = new URL(targetBase + upstreamPath);
   for (const [key, value] of Object.entries(query)) {
     if (Array.isArray(value)) {
       value.forEach(v => url.searchParams.append(key, v));
