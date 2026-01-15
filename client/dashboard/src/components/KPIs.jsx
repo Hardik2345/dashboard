@@ -42,6 +42,9 @@ export default function KPIs({
   const refreshKey = query?.refreshKey;
   const scopedProductId = (productId || "").toString().trim();
   const isProductScoped = scopedProductId.length > 0;
+  const utmSource = query?.utm_source;
+  const utmMedium = query?.utm_medium;
+  const utmCampaign = query?.utm_campaign;
 
   const scopeLabel = useMemo(() => {
     if (!isProductScoped) return "All products";
@@ -111,8 +114,8 @@ export default function KPIs({
         });
     } else {
       const base = brandKey
-        ? { start, end, brand_key: brandKey, align: "hour" }
-        : { start, end, align: "hour" };
+        ? { start, end, brand_key: brandKey, align: "hour", utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign }
+        : { start, end, align: "hour", utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign };
 
       // Fetch summary first for fast value rendering (cache-backed)
       getDashboardSummary(base)
@@ -255,7 +258,7 @@ export default function KPIs({
     return () => {
       cancelled = true;
     };
-  }, [start, end, brandKey, refreshKey, isProductScoped, scopedProductId, onLoaded]);
+  }, [start, end, brandKey, refreshKey, isProductScoped, scopedProductId, onLoaded, utmSource, utmMedium, utmCampaign]);
 
   const totalSessions = data.cvr?.total_sessions || data.funnel?.total_sessions || 0;
   const totalAtcSessions = data.funnel?.total_atc_sessions || 0;

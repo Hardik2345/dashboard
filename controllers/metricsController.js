@@ -14,7 +14,7 @@ const MEM_CACHE = new Map();
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds
 const IST_OFFSET_MIN = 330;
 
-async function calcTotalOrdersDelta({ start, end, align, conn }) {
+async function calcTotalOrdersDelta({ start, end, align, conn, filters }) {
   const date = end || start;
   if (!date && !(start && end)) {
     return { metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
@@ -43,11 +43,29 @@ async function calcTotalOrdersDelta({ start, end, align, conn }) {
     };
 
     const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
-    const rangeFilter = `created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+
+    let rangeFilter = `created_date >= ? AND created_date <= ? AND created_time < ?`;
+    const curReplacements = [rangeStart, rangeEnd, cutoffTime];
+
+    if (filters) {
+      if (filters.utm_source) { rangeFilter += ` AND utm_source = ?`; curReplacements.push(filters.utm_source); }
+      if (filters.utm_medium) { rangeFilter += ` AND utm_medium = ?`; curReplacements.push(filters.utm_medium); }
+      if (filters.utm_campaign) { rangeFilter += ` AND utm_campaign = ?`; curReplacements.push(filters.utm_campaign); }
+    }
+
     const prevWin = previousWindow(rangeStart, rangeEnd);
     const countSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE ${rangeFilter}`;
-    const currPromise = conn.query(countSql, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] });
-    const prevPromise = prevWin ? conn.query(countSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }) : Promise.resolve([{ cnt: 0 }]);
+
+    // For previous window, we need same filters
+    const prevReplacements = prevWin ? [prevWin.prevStart, prevWin.prevEnd, cutoffTime] : [];
+    if (prevWin && filters) {
+      if (filters.utm_source) prevReplacements.push(filters.utm_source);
+      if (filters.utm_medium) prevReplacements.push(filters.utm_medium);
+      if (filters.utm_campaign) prevReplacements.push(filters.utm_campaign);
+    }
+
+    const currPromise = conn.query(countSql, { type: QueryTypes.SELECT, replacements: curReplacements });
+    const prevPromise = prevWin ? conn.query(countSql, { type: QueryTypes.SELECT, replacements: prevReplacements }) : Promise.resolve([{ cnt: 0 }]);
     const [currRows, prevRows] = await Promise.all([currPromise, prevPromise]);
     const current = Number(currRows?.[0]?.cnt || 0);
     const previous = Number(prevRows?.[0]?.cnt || 0);
@@ -64,7 +82,7 @@ async function calcTotalOrdersDelta({ start, end, align, conn }) {
   return { metric: 'TOTAL_ORDERS_DELTA', date, ...delta };
 }
 
-async function calcTotalSalesDelta({ start, end, align, compare, conn }) {
+async function calcTotalSalesDelta({ start, end, align, compare, conn, filters }) {
   const date = end || start;
   if (!date && !(start && end)) return { metric: 'TOTAL_SALES_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
 
@@ -93,9 +111,26 @@ async function calcTotalSalesDelta({ start, end, align, compare, conn }) {
     const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
     const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : `${pad2(Math.floor(effectiveSeconds / 3600))}:${pad2(Math.floor((effectiveSeconds % 3600) / 60))}:${pad2(effectiveSeconds % 60)}`;
     const prevWin = previousWindow(rangeStart, rangeEnd);
-    const salesSql = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-    const currentPromise = conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] });
-    const previousPromise = prevWin ? conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }) : Promise.resolve([{ total: 0 }]);
+
+    let rangeFilter = `created_date >= ? AND created_date <= ? AND created_time < ?`;
+    const curReplacements = [rangeStart, rangeEnd, cutoffTime];
+
+    if (filters) {
+      if (filters.utm_source) { rangeFilter += ` AND utm_source = ?`; curReplacements.push(filters.utm_source); }
+      if (filters.utm_medium) { rangeFilter += ` AND utm_medium = ?`; curReplacements.push(filters.utm_medium); }
+      if (filters.utm_campaign) { rangeFilter += ` AND utm_campaign = ?`; curReplacements.push(filters.utm_campaign); }
+    }
+
+    const prevReplacements = prevWin ? [prevWin.prevStart, prevWin.prevEnd, cutoffTime] : [];
+    if (prevWin && filters) {
+      if (filters.utm_source) prevReplacements.push(filters.utm_source);
+      if (filters.utm_medium) prevReplacements.push(filters.utm_medium);
+      if (filters.utm_campaign) prevReplacements.push(filters.utm_campaign);
+    }
+
+    const salesSql = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE ${rangeFilter}`;
+    const currentPromise = conn.query(salesSql, { type: QueryTypes.SELECT, replacements: curReplacements });
+    const previousPromise = prevWin ? conn.query(salesSql, { type: QueryTypes.SELECT, replacements: prevReplacements }) : Promise.resolve([{ total: 0 }]);
     const [currRow, prevRow] = await Promise.all([currentPromise, previousPromise]);
     const curr = Number(currRow?.[0]?.total || 0);
     const prevVal = Number(prevRow?.[0]?.total || 0);
@@ -256,14 +291,15 @@ async function calcAtcSessionsDelta({ start, end, align, compare, conn }) {
   return { metric: 'ATC_SESSIONS_DELTA', date, ...d };
 }
 
-async function calcAovDelta({ start, end, align, compare, conn, debug }) {
+async function calcAovDelta({ start, end, align, compare, conn, debug, filters }) {
   const date = end || start;
+  logger.debug(`[AOV DELTA] calcAovDelta called with range ${start} to ${end}`);
   if (!date && !(start && end)) return { metric: 'AOV_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
 
   if ((compare || '').toString().toLowerCase() === 'prev-range-avg' && start && end) {
-    const curr = await aovForRange({ start, end, conn });
+    const curr = await aovForRange({ start, end, conn, filters });
     const prevWin = previousWindow(start, end);
-    const prev = await aovForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn });
+    const prev = await aovForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
     const diff = curr - prev;
     const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
     const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
@@ -281,10 +317,10 @@ async function calcAovDelta({ start, end, align, compare, conn, debug }) {
     const fullDaySeconds = 24 * 3600;
     const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
     const secondsToTime = (secs) => `${pad2(Math.floor(secs / 3600))}:${pad2(Math.floor((secs % 3600) / 60))}:${pad2(secs % 60)}`;
-    const salesSqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-    const salesSql = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-    const ordersSqlRange = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-    const ordersSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+    const salesSqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND created_time < ?`;
+    const salesSql = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND created_time < ?`;
+    const ordersSqlRange = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND created_time < ?`;
+    const ordersSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND created_time < ?`;
 
     if (start && end) {
       const targetHour = resolveTargetHour(end);
@@ -292,11 +328,28 @@ async function calcAovDelta({ start, end, align, compare, conn, debug }) {
       const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
       const prevWin = previousWindow(start, end);
 
+      let whereExtra = "";
+      const curReplacements = [start, end, cutoffTime];
+      if (filters) {
+        if (filters.utm_source) { whereExtra += " AND utm_source = ?"; curReplacements.push(filters.utm_source); }
+        if (filters.utm_medium) { whereExtra += " AND utm_medium = ?"; curReplacements.push(filters.utm_medium); }
+        if (filters.utm_campaign) { whereExtra += " AND utm_campaign = ?"; curReplacements.push(filters.utm_campaign); }
+      }
+      const prevReplacements = [prevWin.prevStart, prevWin.prevEnd, cutoffTime];
+      if (filters) {
+        if (filters.utm_source) prevReplacements.push(filters.utm_source);
+        if (filters.utm_medium) prevReplacements.push(filters.utm_medium);
+        if (filters.utm_campaign) prevReplacements.push(filters.utm_campaign);
+      }
+
+      const salesSqlWithFilter = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND created_time < ?` + whereExtra;
+      const ordersSqlWithFilter = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND created_time < ?` + whereExtra;
+
       const [salesCurRows, salesPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
-        conn.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [start, end, cutoffTime] }),
-        conn.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }),
-        conn.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [start, end, cutoffTime] }),
-        conn.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd, cutoffTime] }),
+        conn.query(salesSqlWithFilter, { type: QueryTypes.SELECT, replacements: curReplacements }),
+        conn.query(salesSqlWithFilter, { type: QueryTypes.SELECT, replacements: prevReplacements }),
+        conn.query(ordersSqlWithFilter, { type: QueryTypes.SELECT, replacements: curReplacements }),
+        conn.query(ordersSqlWithFilter, { type: QueryTypes.SELECT, replacements: prevReplacements })
       ]);
 
       const curSales = Number(salesCurRows?.[0]?.total || 0);
@@ -322,11 +375,28 @@ async function calcAovDelta({ start, end, align, compare, conn, debug }) {
     const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
     const prev = prevDayStr(date);
 
+    let whereExtra = "";
+    const curReplacements = [date, date, cutoffTime];
+    if (filters) {
+      if (filters.utm_source) { whereExtra += " AND utm_source = ?"; curReplacements.push(filters.utm_source); }
+      if (filters.utm_medium) { whereExtra += " AND utm_medium = ?"; curReplacements.push(filters.utm_medium); }
+      if (filters.utm_campaign) { whereExtra += " AND utm_campaign = ?"; curReplacements.push(filters.utm_campaign); }
+    }
+    const prevReplacements = [prev, prev, cutoffTime];
+    if (filters) {
+      if (filters.utm_source) prevReplacements.push(filters.utm_source);
+      if (filters.utm_medium) prevReplacements.push(filters.utm_medium);
+      if (filters.utm_campaign) prevReplacements.push(filters.utm_campaign);
+    }
+
+    const salesSqlWithFilter = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND created_time < ?` + whereExtra;
+    const ordersSqlWithFilter = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND created_time < ?` + whereExtra;
+
     const [salesCurRows, salesPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
-      conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [date, date, cutoffTime] }),
-      conn.query(salesSql, { type: QueryTypes.SELECT, replacements: [prev, prev, cutoffTime] }),
-      conn.query(ordersSql, { type: QueryTypes.SELECT, replacements: [date, date, cutoffTime] }),
-      conn.query(ordersSql, { type: QueryTypes.SELECT, replacements: [prev, prev, cutoffTime] }),
+      conn.query(salesSqlWithFilter, { type: QueryTypes.SELECT, replacements: curReplacements }),
+      conn.query(salesSqlWithFilter, { type: QueryTypes.SELECT, replacements: prevReplacements }),
+      conn.query(ordersSqlWithFilter, { type: QueryTypes.SELECT, replacements: curReplacements }),
+      conn.query(ordersSqlWithFilter, { type: QueryTypes.SELECT, replacements: prevReplacements }),
     ]);
 
     const curSales = Number(salesCurRows?.[0]?.total || 0);
@@ -1042,8 +1112,14 @@ function buildMetricsController() {
         if (!parsed.success) return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
         const { start, end } = parsed.data;
         const productIdRaw = (req.query.product_id || '').toString().trim();
+        const filters = {
+          utm_source: (req.query.utm_source || '').trim() || null,
+          utm_medium: (req.query.utm_medium || '').trim() || null,
+          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+        };
+        const hasUtm = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign);
 
-        if (productIdRaw) {
+        if (productIdRaw || hasUtm) {
           if (!start && !end) {
             return res.json({ metric: "ORDER_SPLIT", range: { start: null, end: null, product_id: productIdRaw }, cod_orders: 0, prepaid_orders: 0, partially_paid_orders: 0, total_orders_from_split: 0, cod_percent: 0, prepaid_percent: 0, partially_paid_percent: 0 });
           }
@@ -1053,6 +1129,16 @@ function buildMetricsController() {
           const endTsExclusive = new Date(`${effectiveEnd}T00:00:00Z`);
           endTsExclusive.setUTCDate(endTsExclusive.getUTCDate() + 1);
           const endTs = endTsExclusive.toISOString().slice(0, 19).replace('T', ' ');
+
+          let whereSql = `WHERE created_at >= ? AND created_at < ?`;
+          let replacements = [startTs, endTs];
+          if (productIdRaw) {
+            whereSql += ` AND product_id = ?`;
+            replacements.push(productIdRaw);
+          }
+          if (filters.utm_source) { whereSql += ` AND utm_source = ?`; replacements.push(filters.utm_source); }
+          if (filters.utm_medium) { whereSql += ` AND utm_medium = ?`; replacements.push(filters.utm_medium); }
+          if (filters.utm_campaign) { whereSql += ` AND utm_campaign = ?`; replacements.push(filters.utm_campaign); }
 
           const sql = `
             SELECT payment_type, COUNT(DISTINCT order_name) AS cnt
@@ -1065,12 +1151,12 @@ function buildMetricsController() {
                 END AS payment_type,
                 order_name
               FROM shopify_orders
-              WHERE created_at >= ? AND created_at < ? AND product_id = ?
+              ${whereSql}
               GROUP BY payment_gateway_names, order_name
             ) sub
             GROUP BY payment_type`;
 
-          const rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [startTs, endTs, productIdRaw] });
+          const rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements });
 
           let cod_orders = 0; let prepaid_orders = 0; let partially_paid_orders = 0;
           for (const r of rows) {
@@ -1082,7 +1168,7 @@ function buildMetricsController() {
           const cod_percent = total > 0 ? (cod_orders / total) * 100 : 0;
           const prepaid_percent = total > 0 ? (prepaid_orders / total) * 100 : 0;
           const partially_paid_percent = total > 0 ? (partially_paid_orders / total) * 100 : 0;
-          return res.json({ metric: "ORDER_SPLIT", range: { start: effectiveStart, end: effectiveEnd, product_id: productIdRaw }, cod_orders, prepaid_orders, partially_paid_orders, total_orders_from_split: total, cod_percent, prepaid_percent, partially_paid_percent, sql_used: process.env.NODE_ENV === 'production' ? undefined : sql });
+          return res.json({ metric: "ORDER_SPLIT", range: { start: effectiveStart, end: effectiveEnd, product_id: productIdRaw, ...filters }, cod_orders, prepaid_orders, partially_paid_orders, total_orders_from_split: total, cod_percent, prepaid_percent, partially_paid_percent, sql_used: process.env.NODE_ENV === 'production' ? undefined : sql });
         }
 
         const [cod_orders, prepaid_orders, partially_paid_orders] = await Promise.all([
@@ -1104,7 +1190,18 @@ function buildMetricsController() {
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
         const productIdRaw = (req.query.product_id || '').toString().trim();
-        const productFilter = productIdRaw ? 'AND product_id = ?' : '';
+        const filters = {
+          utm_source: (req.query.utm_source || '').trim() || null,
+          utm_medium: (req.query.utm_medium || '').trim() || null,
+          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+        };
+
+        let whereSql = `WHERE created_at >= ? AND created_at < ?`;
+        let replacements = []; // will be set below
+        if (productIdRaw) whereSql += ` AND product_id = ?`;
+        if (filters.utm_source) whereSql += ` AND utm_source = ?`;
+        if (filters.utm_medium) whereSql += ` AND utm_medium = ?`;
+        if (filters.utm_campaign) whereSql += ` AND utm_campaign = ?`;
 
         if (!start && !end) {
           return res.json({ metric: 'PAYMENT_SPLIT_SALES', range: { start: null, end: null }, cod_sales: 0, prepaid_sales: 0, partial_sales: 0, total_sales_from_split: 0, cod_percent: 0, prepaid_percent: 0, partial_percent: 0 });
@@ -1128,15 +1225,19 @@ function buildMetricsController() {
           order_name,
           MAX(total_price) AS max_price
         FROM shopify_orders
-        WHERE created_at >= ? AND created_at < ?
-        ${productFilter}
+        ${whereSql}
         GROUP BY payment_gateway_names, order_name
       ) sub
       GROUP BY payment_type`;
 
         let rows = [];
         try {
-          const replacements = productIdRaw ? [startTs, endTs, productIdRaw] : [startTs, endTs];
+          replacements = [startTs, endTs];
+          if (productIdRaw) replacements.push(productIdRaw);
+          if (filters.utm_source) replacements.push(filters.utm_source);
+          if (filters.utm_medium) replacements.push(filters.utm_medium);
+          if (filters.utm_campaign) replacements.push(filters.utm_campaign);
+
           rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements });
         } catch (e) {
           console.error('[payment-sales-split] query failed', e.message);
@@ -1383,16 +1484,45 @@ function buildMetricsController() {
         const alignHourRaw = end === todayIst ? currentHourIst : 23;
         const alignHour = Math.max(0, Math.min(23, alignHourRaw));
 
-        const rows = await req.brandDb.sequelize.query(
-          `SELECT date, hour, total_sales, number_of_orders,
+        const filters = {
+          utm_source: (req.query.utm_source || '').trim() || null,
+          utm_medium: (req.query.utm_medium || '').trim() || null,
+          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+          product_id: (req.query.product_id || '').trim() || null,
+        };
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
+
+        let querySql = `SELECT date, hour, total_sales, number_of_orders,
         COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
         adjusted_number_of_sessions,
         number_of_sessions AS raw_number_of_sessions,
         number_of_atc_sessions
        FROM hour_wise_sales
-       WHERE date >= ? AND date <= ?`,
-          { type: QueryTypes.SELECT, replacements: [start, end] }
-        );
+       WHERE date >= ? AND date <= ?`;
+        let queryReplacements = [start, end];
+
+        if (hasFilters) {
+          const salesExpr = filters.product_id
+            ? `COALESCE(SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity), 0)`
+            : `SUM(total_price)`;
+
+          querySql = `SELECT created_date AS date, HOUR(created_time) AS hour, 
+                        ${salesExpr} AS total_sales, 
+                        COUNT(DISTINCT order_name) AS number_of_orders,
+                        0 AS number_of_sessions,
+                        0 AS adjusted_number_of_sessions,
+                        0 AS raw_number_of_sessions,
+                        0 AS number_of_atc_sessions
+                 FROM shopify_orders 
+                 WHERE created_date >= ? AND created_date <= ?`;
+          if (filters.utm_source) { querySql += ` AND utm_source = ?`; queryReplacements.push(filters.utm_source); }
+          if (filters.utm_medium) { querySql += ` AND utm_medium = ?`; queryReplacements.push(filters.utm_medium); }
+          if (filters.utm_campaign) { querySql += ` AND utm_campaign = ?`; queryReplacements.push(filters.utm_campaign); }
+          if (filters.product_id) { querySql += ` AND product_id = ?`; queryReplacements.push(filters.product_id); }
+          querySql += ` GROUP BY date, hour`;
+        }
+
+        const rows = await req.brandDb.sequelize.query(querySql, { type: QueryTypes.SELECT, replacements: queryReplacements });
 
         const rowMap = new Map();
         for (const row of rows) {
@@ -1487,16 +1617,38 @@ function buildMetricsController() {
         let comparison = null;
         if (prevWin?.prevStart && prevWin?.prevEnd) {
           const comparisonAlignHour = end === todayIst ? alignHour : 23;
-          const comparisonRows = await req.brandDb.sequelize.query(
-            `SELECT date, hour, total_sales, number_of_orders,
+
+          let compSql = `SELECT date, hour, total_sales, number_of_orders,
     COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
     adjusted_number_of_sessions,
     number_of_sessions AS raw_number_of_sessions,
     number_of_atc_sessions
          FROM hour_wise_sales
-         WHERE date >= ? AND date <= ?`,
-            { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] }
-          );
+         WHERE date >= ? AND date <= ?`;
+          let compReplacements = [prevWin.prevStart, prevWin.prevEnd];
+
+          if (hasFilters) {
+            const salesExpr = filters.product_id
+              ? `COALESCE(SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity), 0)`
+              : `SUM(total_price)`;
+
+            compSql = `SELECT created_date AS date, HOUR(created_time) AS hour, 
+                         ${salesExpr} AS total_sales, 
+                         COUNT(DISTINCT order_name) AS number_of_orders,
+                         0 AS number_of_sessions,
+                         0 AS adjusted_number_of_sessions,
+                         0 AS raw_number_of_sessions,
+                         0 AS number_of_atc_sessions
+                  FROM shopify_orders 
+                  WHERE created_date >= ? AND created_date <= ?`;
+            if (filters.utm_source) { compSql += ` AND utm_source = ?`; compReplacements.push(filters.utm_source); }
+            if (filters.utm_medium) { compSql += ` AND utm_medium = ?`; compReplacements.push(filters.utm_medium); }
+            if (filters.utm_campaign) { compSql += ` AND utm_campaign = ?`; compReplacements.push(filters.utm_campaign); }
+            if (filters.product_id) { compSql += ` AND product_id = ?`; compReplacements.push(filters.product_id); }
+            compSql += ` GROUP BY date, hour`;
+          }
+
+          const comparisonRows = await req.brandDb.sequelize.query(compSql, { type: QueryTypes.SELECT, replacements: compReplacements });
 
           const comparisonRowMap = new Map();
           for (const row of comparisonRows) {
@@ -1578,7 +1730,15 @@ function buildMetricsController() {
           dayList.push(formatIsoDate(new Date(ts)));
         }
 
-        const sql = `
+        const filters = {
+          utm_source: (req.query.utm_source || '').trim() || null,
+          utm_medium: (req.query.utm_medium || '').trim() || null,
+          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+          product_id: (req.query.product_id || '').trim() || null,
+        };
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
+
+        let sql = `
           SELECT date, 
             SUM(total_sales) AS sales,
             SUM(number_of_orders) AS orders,
@@ -1590,14 +1750,40 @@ function buildMetricsController() {
           WHERE date >= ? AND date <= ?
           GROUP BY date
           ORDER BY date ASC`;
-        const rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [start, end] });
+        let replacements = [start, end];
+
+        if (hasFilters) {
+          const salesExpr = filters.product_id
+            ? `COALESCE(SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity), 0)`
+            : `SUM(total_price)`;
+
+          sql = `SELECT created_date AS date, 
+                       ${salesExpr} AS sales, 
+                       COUNT(DISTINCT order_name) AS orders,
+                       0 AS sessions, 
+                       0 AS adjusted_sessions, 
+                       0 AS raw_sessions, 
+                       0 AS atc 
+                FROM shopify_orders 
+                WHERE created_date >= ? AND created_date <= ?`;
+          if (filters.utm_source) { sql += ` AND utm_source = ?`; replacements.push(filters.utm_source); }
+          if (filters.utm_medium) { sql += ` AND utm_medium = ?`; replacements.push(filters.utm_medium); }
+          if (filters.utm_campaign) { sql += ` AND utm_campaign = ?`; replacements.push(filters.utm_campaign); }
+          if (filters.product_id) { sql += ` AND product_id = ?`; replacements.push(filters.product_id); }
+          sql += ` GROUP BY date ORDER BY date ASC`;
+        }
+
+        const rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: replacements });
         const map = new Map(rows.map(r => [r.date, { sales: Number(r.sales || 0), orders: Number(r.orders || 0), sessions: Number(r.sessions || 0), adjusted_sessions: Number(r.adjusted_sessions || 0), raw_sessions: Number(r.raw_sessions || 0), atc: Number(r.atc || 0) }]));
 
-        const overallRows = await req.brandDb.sequelize.query(
-          `SELECT date, total_sessions, adjusted_total_sessions FROM overall_summary WHERE date >= ? AND date <= ?`,
-          { type: QueryTypes.SELECT, replacements: [start, end] }
-        );
-        const overallMap = new Map(overallRows.map(r => [r.date, { total_sessions: Number(r.total_sessions || 0), adjusted_total_sessions: r.adjusted_total_sessions == null ? null : Number(r.adjusted_total_sessions) }]));
+        let overallMap = new Map();
+        if (!hasFilters) {
+          const overallRows = await req.brandDb.sequelize.query(
+            `SELECT date, total_sessions, adjusted_total_sessions FROM overall_summary WHERE date >= ? AND date <= ?`,
+            { type: QueryTypes.SELECT, replacements: [start, end] }
+          );
+          overallMap = new Map(overallRows.map(r => [r.date, { total_sessions: Number(r.total_sessions || 0), adjusted_total_sessions: r.adjusted_total_sessions == null ? null : Number(r.adjusted_total_sessions) }]));
+        }
 
         const points = dayList.map(d => {
           const metrics = map.get(d) || { sales: 0, orders: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, atc: 0 };
@@ -1610,13 +1796,52 @@ function buildMetricsController() {
         let comparison = null;
         const prevWin = previousWindow(start, end);
         if (prevWin?.prevStart && prevWin?.prevEnd) {
-          const rowsPrev = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] });
+          let compSql = `
+            SELECT date, 
+              SUM(total_sales) AS sales,
+              SUM(number_of_orders) AS orders,
+              SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)) AS sessions,
+              SUM(COALESCE(adjusted_number_of_sessions, 0)) AS adjusted_sessions,
+              SUM(number_of_sessions) AS raw_sessions,
+              SUM(number_of_atc_sessions) AS atc
+            FROM hour_wise_sales
+            WHERE date >= ? AND date <= ?
+            GROUP BY date
+            ORDER BY date ASC`;
+          let compReplacements = [prevWin.prevStart, prevWin.prevEnd];
+
+          if (hasFilters) {
+            const salesExpr = filters.product_id
+              ? `COALESCE(SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity), 0)`
+              : `SUM(total_price)`;
+
+            compSql = `SELECT created_date AS date, 
+                         ${salesExpr} AS sales, 
+                         COUNT(DISTINCT order_name) AS orders,
+                         0 AS sessions, 
+                         0 AS adjusted_sessions, 
+                         0 AS raw_sessions, 
+                         0 AS atc 
+                  FROM shopify_orders 
+                  WHERE created_date >= ? AND created_date <= ?`;
+            if (filters.utm_source) { compSql += ` AND utm_source = ?`; compReplacements.push(filters.utm_source); }
+            if (filters.utm_medium) { compSql += ` AND utm_medium = ?`; compReplacements.push(filters.utm_medium); }
+            if (filters.utm_campaign) { compSql += ` AND utm_campaign = ?`; compReplacements.push(filters.utm_campaign); }
+            if (filters.product_id) { compSql += ` AND product_id = ?`; compReplacements.push(filters.product_id); }
+            compSql += ` GROUP BY date ORDER BY date ASC`;
+          }
+
+          const rowsPrev = await req.brandDb.sequelize.query(compSql, { type: QueryTypes.SELECT, replacements: compReplacements });
           const mapPrev = new Map(rowsPrev.map(r => [r.date, { sales: Number(r.sales || 0), orders: Number(r.orders || 0), sessions: Number(r.sessions || 0), adjusted_sessions: Number(r.adjusted_sessions || 0), raw_sessions: Number(r.raw_sessions || 0), atc: Number(r.atc || 0) }]));
-          const overallRowsPrev = await req.brandDb.sequelize.query(
-            `SELECT date, total_sessions, adjusted_total_sessions FROM overall_summary WHERE date >= ? AND date <= ?`,
-            { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] }
-          );
-          const overallMapPrev = new Map(overallRowsPrev.map(r => [r.date, { total_sessions: Number(r.total_sessions || 0), adjusted_total_sessions: r.adjusted_total_sessions == null ? null : Number(r.adjusted_total_sessions) }]));
+
+          let overallMapPrev = new Map();
+          if (!hasFilters) {
+            const overallRowsPrev = await req.brandDb.sequelize.query(
+              `SELECT date, total_sessions, adjusted_total_sessions FROM overall_summary WHERE date >= ? AND date <= ?`,
+              { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] }
+            );
+            overallMapPrev = new Map(overallRowsPrev.map(r => [r.date, { total_sessions: Number(r.total_sessions || 0), adjusted_total_sessions: r.adjusted_total_sessions == null ? null : Number(r.adjusted_total_sessions) }]));
+          }
 
           const prevPoints = [];
           for (let ts = parseIsoDate(prevWin.prevStart).getTime(); ts <= parseIsoDate(prevWin.prevEnd).getTime(); ts += DAY_MS) {
@@ -1646,7 +1871,15 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         if (!start || !end) return res.status(400).json({ error: 'Both start and end dates are required' });
 
-        const sql = `
+        const filters = {
+          utm_source: (req.query.utm_source || '').trim() || null,
+          utm_medium: (req.query.utm_medium || '').trim() || null,
+          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+          product_id: (req.query.product_id || '').trim() || null,
+        };
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
+
+        let sql = `
           SELECT 
             DATE_FORMAT(date, '%Y-%m-01') AS month_start,
             MIN(date) AS start_date,
@@ -1658,8 +1891,9 @@ function buildMetricsController() {
           WHERE date >= ? AND date <= ?
           GROUP BY month_start
           ORDER BY month_start ASC`;
+        let replacements = [start, end];
 
-        const sessionsSql = `
+        let sessionsSql = `
           SELECT 
             DATE_FORMAT(date, '%Y-%m-01') AS month_start,
             SUM(total_sessions) AS total_sessions,
@@ -1668,10 +1902,33 @@ function buildMetricsController() {
           WHERE date >= ? AND date <= ?
           GROUP BY month_start
           ORDER BY month_start ASC`;
+        let sessionsReplacements = [start, end];
+
+        if (hasFilters) {
+          const salesExpr = filters.product_id
+            ? `COALESCE(SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity), 0)`
+            : `SUM(total_price)`;
+
+          sql = `SELECT DATE_FORMAT(created_date, '%Y-%m-01') AS month_start, 
+                       MIN(created_date) AS start_date, 
+                       MAX(created_date) AS end_date, 
+                       ${salesExpr} AS sales, 
+                       COUNT(DISTINCT order_name) AS orders, 
+                       0 AS atc 
+                FROM shopify_orders 
+                WHERE created_date >= ? AND created_date <= ?`;
+          if (filters.utm_source) { sql += ` AND utm_source = ?`; replacements.push(filters.utm_source); }
+          if (filters.utm_medium) { sql += ` AND utm_medium = ?`; replacements.push(filters.utm_medium); }
+          if (filters.utm_campaign) { sql += ` AND utm_campaign = ?`; replacements.push(filters.utm_campaign); }
+          if (filters.product_id) { sql += ` AND product_id = ?`; replacements.push(filters.product_id); }
+          sql += ` GROUP BY month_start ORDER BY month_start ASC`;
+
+          sessionsSql = null;
+        }
 
         const [rows, sessionsRows] = await Promise.all([
-          req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [start, end] }),
-          req.brandDb.sequelize.query(sessionsSql, { type: QueryTypes.SELECT, replacements: [start, end] })
+          req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: replacements }),
+          sessionsSql ? req.brandDb.sequelize.query(sessionsSql, { type: QueryTypes.SELECT, replacements: sessionsReplacements }) : Promise.resolve([])
         ]);
 
         const sessionsMap = new Map(sessionsRows.map(r => [r.month_start, r]));
@@ -1699,9 +1956,56 @@ function buildMetricsController() {
         let comparison = null;
         const prevWin = previousWindow(start, end);
         if (prevWin?.prevStart && prevWin?.prevEnd) {
+          let compSql = `
+            SELECT 
+              DATE_FORMAT(date, '%Y-%m-01') AS month_start,
+              MIN(date) AS start_date,
+              MAX(date) AS end_date,
+              SUM(total_sales) AS sales,
+              SUM(number_of_orders) AS orders,
+              SUM(number_of_atc_sessions) AS atc
+            FROM hour_wise_sales
+            WHERE date >= ? AND date <= ?
+            GROUP BY month_start
+            ORDER BY month_start ASC`;
+          let compReplacements = [prevWin.prevStart, prevWin.prevEnd];
+
+          let compSessSql = `
+            SELECT 
+              DATE_FORMAT(date, '%Y-%m-01') AS month_start,
+              SUM(total_sessions) AS total_sessions,
+              SUM(adjusted_total_sessions) AS adjusted_total_sessions
+            FROM overall_summary
+            WHERE date >= ? AND date <= ?
+            GROUP BY month_start
+            ORDER BY month_start ASC`;
+          let compSessReplacements = [prevWin.prevStart, prevWin.prevEnd];
+
+          if (hasFilters) {
+            const salesExpr = filters.product_id
+              ? `COALESCE(SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity), 0)`
+              : `SUM(total_price)`;
+
+            compSql = `SELECT DATE_FORMAT(created_date, '%Y-%m-01') AS month_start, 
+                         MIN(created_date) AS start_date, 
+                         MAX(created_date) AS end_date, 
+                         ${salesExpr} AS sales, 
+                         COUNT(DISTINCT order_name) AS orders, 
+                         0 AS atc 
+                  FROM shopify_orders 
+                  WHERE created_date >= ? AND created_date <= ?`;
+            if (filters.utm_source) { compSql += ` AND utm_source = ?`; compReplacements.push(filters.utm_source); }
+            if (filters.utm_medium) { compSql += ` AND utm_medium = ?`; compReplacements.push(filters.utm_medium); }
+            if (filters.utm_campaign) { compSql += ` AND utm_campaign = ?`; compReplacements.push(filters.utm_campaign); }
+            if (filters.product_id) { compSql += ` AND product_id = ?`; compReplacements.push(filters.product_id); }
+            compSql += ` GROUP BY month_start ORDER BY month_start ASC`;
+
+            compSessSql = null;
+          }
+
           const [rowsPrev, sessionsRowsPrev] = await Promise.all([
-            req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] }),
-            req.brandDb.sequelize.query(sessionsSql, { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] })
+            req.brandDb.sequelize.query(compSql, { type: QueryTypes.SELECT, replacements: compReplacements }),
+            compSessSql ? req.brandDb.sequelize.query(compSessSql, { type: QueryTypes.SELECT, replacements: compSessReplacements }) : Promise.resolve([])
           ]);
           const sessionsMapPrev = new Map(sessionsRowsPrev.map(r => [r.month_start, r]));
           const prevPoints = rowsPrev.map(r => {
@@ -1997,6 +2301,14 @@ function buildMetricsController() {
         const sortBy = (req.query.sort_by || 'sessions').toString().toLowerCase();
         const sortDir = (req.query.sort_dir || 'desc').toString().toLowerCase();
 
+        let visibleColumns = req.query.visible_columns;
+        if (typeof visibleColumns === 'string') {
+          try { visibleColumns = JSON.parse(visibleColumns); } catch (e) { visibleColumns = null; }
+        }
+
+        const page = Number(req.query.page) || 0;
+        const pageSize = Number(req.query.page_size) || 0;
+
         const allowedSort = new Map([
           ['sessions', 'sessions'],
           ['atc', 'atc'],
@@ -2009,7 +2321,54 @@ function buildMetricsController() {
         const sortCol = allowedSort.get(sortBy) || 'sessions';
         const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
 
-        const replacements = [start, end, start, end];
+        const validFields = ['sessions', 'atc', 'atc_rate', 'orders', 'sales', 'cvr'];
+        const validOps = ['gt', 'lt'];
+
+        let filters = req.query.filters;
+        if (typeof filters === 'string') {
+          try { filters = JSON.parse(filters); } catch (e) { filters = []; }
+        }
+        const search = (req.query.search || '').trim();
+        const conditions = [];
+        const filterReplacements = [];
+
+        if (search) {
+          conditions.push(`s.landing_page_path LIKE ?`);
+          filterReplacements.push(`%${search}%`);
+        }
+
+        if (Array.isArray(filters) && filters.length > 0) {
+          for (const f of filters) {
+            const fField = (f.field || '').toString().toLowerCase();
+            const fOp = (f.operator || '').toString().toLowerCase();
+            const fVal = Number(f.value);
+
+            if (validFields.includes(fField) && validOps.includes(fOp) && !Number.isNaN(fVal)) {
+              let fieldExpr = '';
+              switch (fField) {
+                case 'sessions': fieldExpr = 's.sessions'; break;
+                case 'atc': fieldExpr = 's.atc'; break;
+                case 'atc_rate': fieldExpr = '(CASE WHEN s.sessions > 0 THEN s.atc / s.sessions * 100 ELSE 0 END)'; break;
+                case 'orders': fieldExpr = 'COALESCE(o.orders, 0)'; break;
+                case 'sales': fieldExpr = 'COALESCE(o.sales, 0)'; break;
+                case 'cvr': fieldExpr = '(CASE WHEN s.sessions > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)'; break;
+              }
+
+              if (fieldExpr) {
+                const operator = fOp === 'gt' ? '>' : '<';
+                conditions.push(`${fieldExpr} ${operator} ?`);
+                filterReplacements.push(fVal);
+              }
+            }
+          }
+        }
+
+        let whereClause = '';
+        if (conditions.length > 0) {
+          whereClause = `WHERE ${conditions.join(' AND ')}`;
+        }
+
+        const replacements = [start, end, start, end, ...filterReplacements];
         const fullSql = `
           WITH orders_60d AS (
             SELECT
@@ -2043,7 +2402,9 @@ function buildMetricsController() {
           FROM sessions_60d s
           LEFT JOIN orders_60d o
             ON s.product_id = o.product_id
+          ${whereClause}
           ORDER BY ${sortCol} ${dir}
+          ${(page > 0 && pageSize > 0) ? `LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}` : ''}
         `;
         const csvRows = await conn.query(fullSql, { type: QueryTypes.SELECT, replacements });
 
@@ -2054,24 +2415,28 @@ function buildMetricsController() {
 
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        const headers = ['landing_page_path', 'sessions', 'atc', 'atc_rate', 'orders', 'sales', 'cvr'];
+
+        const allHeaders = ['landing_page_path', 'sessions', 'atc', 'atc_rate', 'orders', 'sales', 'cvr'];
+        let finalHeaders = allHeaders;
+
+        if (Array.isArray(visibleColumns) && visibleColumns.length > 0) {
+          finalHeaders = allHeaders.filter(h => visibleColumns.includes(h) || h === 'landing_page_path');
+        }
+
         const escapeCsv = (val) => {
           if (val === null || val === undefined) return '';
           const str = String(val);
           if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
           return str;
         };
-        const lines = [headers.join(',')];
+        const lines = [finalHeaders.join(',')];
         for (const r of csvRows) {
-          lines.push([
-            escapeCsv(r.landing_page_path),
-            Number(r.sessions || 0),
-            Number(r.atc || 0),
-            Number(r.atc_rate || 0),
-            Number(r.orders || 0),
-            Number(r.sales || 0),
-            Number(r.cvr || 0),
-          ].join(','));
+          const rowVals = finalHeaders.map(h => {
+            // Handle numeric formatting identical to previous code if needed, strictly based on header name
+            if (h === 'landing_page_path') return escapeCsv(r.landing_page_path);
+            return Number(r[h] || 0);
+          });
+          lines.push(rowVals.join(','));
         }
         return res.send(lines.join('\n'));
       } catch (e) {
@@ -2268,6 +2633,12 @@ function buildMetricsController() {
         const end = (req.query.end || req.query.date || start).toString();
         if (start > end) return res.status(400).json({ error: 'start must be on or before end' });
 
+        const filters = {
+          utm_source: (req.query.utm_source || '').trim() || null,
+          utm_medium: (req.query.utm_medium || '').trim() || null,
+          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+        };
+
         if (!req.brandDb && req.brandConfig) {
           try {
             req.brandDb = await getBrandConnection(req.brandConfig);
@@ -2282,14 +2653,59 @@ function buildMetricsController() {
         const align = (req.query.align || '').toString().toLowerCase();
         const compare = (req.query.compare || '').toString().toLowerCase();
 
-        const [orders, sales, sessions, atc, aov, cvr] = await Promise.all([
-          calcTotalOrdersDelta({ start, end, align, compare, conn }),
-          calcTotalSalesDelta({ start, end, align, compare, conn }),
-          calcTotalSessionsDelta({ start, end, align, compare, conn }),
-          calcAtcSessionsDelta({ start, end, align, compare, conn }),
-          calcAovDelta({ start, end, align, compare, conn }),
-          calcCvrDelta({ start, end, align, compare, conn })
-        ]);
+        const isSingleDay = start === end;
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign);
+
+        let orders, sales, sessions, atc, aov, cvr;
+        let usedCache = false;
+
+        if (isSingleDay && !hasFilters && !align && !compare) {
+          try {
+            const prevWin = previousWindow(start, end);
+            const [cached, cachedPrev] = await fetchCachedMetricsBatch(brandQuery, [start, prevWin.prevStart]);
+
+            if (cached && cachedPrev) {
+              const calcDeltaLocal = (cur, prev) => {
+                const diff = cur - prev;
+                const diff_pct = prev > 0 ? (diff / prev) * 100 : (cur > 0 ? 100 : 0);
+                const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+                return { diff_pct, direction };
+              };
+
+              const mkMetric = (key, metricName) => {
+                const c = cached[key] || 0;
+                const p = cachedPrev[key] || 0;
+                const d = calcDeltaLocal(c, p);
+                return { metric: metricName, range: { start, end }, current: c, previous: p, diff_pct: d.diff_pct, direction: d.direction, source: 'cache' };
+              };
+
+              orders = mkMetric('total_orders', 'TOTAL_ORDERS_DELTA');
+              sales = mkMetric('total_sales', 'TOTAL_SALES_DELTA');
+              sessions = mkMetric('total_sessions', 'TOTAL_SESSIONS_DELTA');
+              atc = mkMetric('total_atc_sessions', 'TOTAL_ATC_SESSIONS_DELTA');
+              // AOV and CVR need special handling or just use raw numbers from cache if available
+              // Cache usually stores aov/cvr pre-calculated? getMetricsForRange in dashboardSummary uses cached.average_order_value
+              aov = mkMetric('average_order_value', 'AOV_DELTA');
+              cvr = mkMetric('conversion_rate', 'CVR_DELTA'); // conversion_rate in cache is usually a number (rate or percent? dashboardSummary says conversion_rate_percent: cached.conversion_rate)
+
+              usedCache = true;
+              logger.debug(`[deltaSummary] Served from cache for ${brandQuery} ${start}`);
+            }
+          } catch (e) {
+            console.error('[deltaSummary] Cache fetch failed', e);
+          }
+        }
+
+        if (!usedCache) {
+          [orders, sales, sessions, atc, aov, cvr] = await Promise.all([
+            calcTotalOrdersDelta({ start, end, align, compare, conn, filters }),
+            calcTotalSalesDelta({ start, end, align, compare, conn, filters }),
+            calcTotalSessionsDelta({ start, end, align, compare, conn }),
+            calcAtcSessionsDelta({ start, end, align, compare, conn }),
+            calcAovDelta({ start, end, align, compare, conn, filters }),
+            calcCvrDelta({ start, end, align, compare, conn })
+          ]);
+        }
 
         const prevWin = previousWindow(start, end);
         const response = {
@@ -2323,6 +2739,13 @@ function buildMetricsController() {
 
         if (start > end) return res.status(400).json({ error: 'start must be on or before end' });
 
+        const filters = {
+          utm_source: (req.query.utm_source || '').trim() || null,
+          utm_medium: (req.query.utm_medium || '').trim() || null,
+          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+        };
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign);
+
         const traceStart = req._reqStart || Date.now();
         const spans = [];
         const mark = (label, since) => spans.push({ label, ms: Date.now() - (since || traceStart) });
@@ -2337,7 +2760,7 @@ function buildMetricsController() {
         const cacheFetchStart = Date.now();
 
         // Batch fetch from cache when single-day so we can reuse existing cache keys.
-        const [cached, cachedPrev] = isSingleDay
+        const [cached, cachedPrev] = (isSingleDay && !hasFilters)
           ? await fetchCachedMetricsBatch(brandQuery, [start, prevStart || prevDayStr(start)])
           : [null, null];
         mark('cache_fetch', cacheFetchStart);
@@ -2371,12 +2794,12 @@ function buildMetricsController() {
           if (!conn) throw new Error("Database connection missing for fallback (Cache Miss & DB Fail)");
 
           const [sales, orders, sessions, atc, cvrObj, aovObj] = await Promise.all([
-            rawSum('total_sales', { start: s, end: e, conn }),
-            rawSum('total_orders', { start: s, end: e, conn }),
+            computeTotalSales({ start: s, end: e, conn, filters }),
+            computeTotalOrders({ start: s, end: e, conn, filters }),
             rawSum('total_sessions', { start: s, end: e, conn }),
             rawSum('total_atc_sessions', { start: s, end: e, conn }),
             computeCVR({ start: s, end: e, conn }),
-            aovForRange({ start: s, end: e, conn })
+            aovForRange({ start: s, end: e, conn, filters })
           ]);
 
           const aovVal = typeof aovObj === 'object' && aovObj !== null ? Number(aovObj.aov || 0) : Number(aovObj || 0);
@@ -2414,7 +2837,53 @@ function buildMetricsController() {
           return { diff, diff_pct, direction };
         };
 
+        let filterOptions = null;
+        if (req.query.include_utm_options === 'true') {
+          // Ensure DB connection for filter options, especially if main metrics were cached
+          if (!req.brandDb && req.brandConfig) {
+            try {
+              req.brandDb = await getBrandConnection(req.brandConfig);
+            } catch (connErr) {
+              console.error("[dashboardSummary] Lazy connection for UTM options failed", connErr);
+            }
+          }
+
+          if (req.brandDb) {
+            const s = Date.now();
+            const conn = req.brandDb.sequelize;
+
+            const baseWhere = 'created_date >= ? AND created_date <= ?';
+            const baseReplacements = [start, end];
+
+            const buildOptionQuery = (field, otherFilters) => {
+              let w = baseWhere + ` AND ${field} IS NOT NULL AND ${field} <> ""`;
+              let r = [...baseReplacements];
+              if (otherFilters.utm_source && field !== 'utm_source') { w += ' AND utm_source = ?'; r.push(otherFilters.utm_source); }
+              if (otherFilters.utm_medium && field !== 'utm_medium') { w += ' AND utm_medium = ?'; r.push(otherFilters.utm_medium); }
+              if (otherFilters.utm_campaign && field !== 'utm_campaign') { w += ' AND utm_campaign = ?'; r.push(otherFilters.utm_campaign); }
+              return { sql: `SELECT DISTINCT ${field} FROM shopify_orders WHERE ${w} LIMIT 1000`, replacements: r };
+            };
+
+            const qSrc = buildOptionQuery('utm_source', filters);
+            const qMed = buildOptionQuery('utm_medium', filters);
+            const qCamp = buildOptionQuery('utm_campaign', filters);
+
+            const [srcRows, medRows, campRows] = await Promise.all([
+              conn.query(qSrc.sql, { type: QueryTypes.SELECT, replacements: qSrc.replacements }),
+              conn.query(qMed.sql, { type: QueryTypes.SELECT, replacements: qMed.replacements }),
+              conn.query(qCamp.sql, { type: QueryTypes.SELECT, replacements: qCamp.replacements })
+            ]);
+            filterOptions = {
+              utm_source: srcRows.map(r => r.utm_source).sort(),
+              utm_medium: medRows.map(r => r.utm_medium).sort(),
+              utm_campaign: campRows.map(r => r.utm_campaign).sort(),
+            };
+            mark('filter_options', s);
+          }
+        }
+
         const response = {
+          filter_options: filterOptions,
           range: { start, end },
           prev_range: prevStart && prevEnd ? { start: prevStart, end: prevEnd } : null,
           metrics: {

@@ -12,7 +12,7 @@ import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
 import { useAppDispatch, useAppSelector } from './state/hooks.js';
 import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
 import { setBrand } from './state/slices/brandSlice.js';
-import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setSelectedMetric } from './state/slices/filterSlice.js';
+import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setSelectedMetric, setUtm } from './state/slices/filterSlice.js';
 import MobileTopBar from './components/MobileTopBar.jsx';
 import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
 import Footer from './components/Footer.jsx';
@@ -74,7 +74,7 @@ export default function App() {
     ...state.auth,
     GlobalBrandKey: state.brand.brand
   }));
-  const { range, selectedMetric, productSelection } = useAppSelector((state) => state.filters);
+  const { range, selectedMetric, productSelection, utm } = useAppSelector((state) => state.filters);
   const loggingIn = loginStatus === 'loading';
   const [start, end] = range;
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
@@ -131,12 +131,16 @@ export default function App() {
     const base = { start: formatDate(start), end: formatDate(end) };
     const key = (activeBrandKey || '').toString().trim().toUpperCase();
     if (key) base.brand_key = key;
+    if (utm?.source) base.utm_source = utm.source;
+    if (utm?.medium) base.utm_medium = utm.medium;
+    if (utm?.campaign) base.utm_campaign = utm.campaign;
+
     if (isAuthor) {
       base.refreshKey = authorRefreshKey;
       if (productSelection?.id) base.product_id = productSelection.id;
     }
     return base;
-  }, [start, end, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id]);
+  }, [start, end, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id, utm]);
 
   const handleAuthorBrandChange = useCallback((nextKeyRaw) => {
     const normalized = (nextKeyRaw || '').toString().trim().toUpperCase();
@@ -300,11 +304,23 @@ export default function App() {
   }, [dispatch]);
 
   const handleProductChange = useCallback((option) => {
+    // Reset UTMs when product changes
+    dispatch(setUtm({ source: '', medium: '', campaign: '' }));
+
     if (!option || typeof option !== 'object') {
       dispatch(setProductSelection(DEFAULT_PRODUCT_OPTION));
       return;
     }
     dispatch(setProductSelection(option));
+  }, [dispatch]);
+
+  const handleUtmChange = useCallback((val) => {
+    // If source is changing, reset dependent filters (medium, campaign)
+    if (val && typeof val === 'object' && 'source' in val) {
+      dispatch(setUtm({ ...val, medium: '', campaign: '' }));
+    } else {
+      dispatch(setUtm(val));
+    }
   }, [dispatch]);
 
   const handleSidebarOpen = useCallback(() => setSidebarOpen(true), []);
@@ -393,6 +409,15 @@ export default function App() {
       }
     }
   }, [start, end]);
+
+  // Persist when UTM changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('pts_utm_filters_v1', JSON.stringify(utm));
+    } catch {
+      // Ignore
+    }
+  }, [utm]);
 
   // Check auth on mount
   useEffect(() => {
@@ -564,6 +589,8 @@ export default function App() {
                         productValue={productSelection}
                         onProductChange={handleProductChange}
                         productLoading={productOptionsLoading}
+                        utm={utm}
+                        onUtmChange={handleUtmChange}
                       />
                     )}
                   </Stack>
@@ -711,19 +738,21 @@ export default function App() {
           >
             <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
             <Container maxWidth="sm" sx={{ pt: { xs: 2.5, sm: 3 } }}>
-            <MobileTopBar
-              value={range}
-              onChange={handleRangeChange}
-              brandKey={activeBrandKey}
-              showProductFilter={false}
-              productOptions={productOptions}
-              productValue={productSelection}
-              onProductChange={handleProductChange}
-              productLoading={productOptionsLoading}
-            />
+              <MobileTopBar
+                value={range}
+                onChange={handleRangeChange}
+                brandKey={activeBrandKey}
+                showProductFilter={false}
+                productOptions={productOptions}
+                productValue={productSelection}
+                onProductChange={handleProductChange}
+                productLoading={productOptionsLoading}
+                utm={utm}
+                onUtmChange={handleUtmChange}
+              />
             </Container>
           </Box>
-            <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
+          <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
             <Stack spacing={{ xs: 1, sm: 1.25 }}>
               <Suspense fallback={<SectionFallback count={4} />}>
                 <KPIs
