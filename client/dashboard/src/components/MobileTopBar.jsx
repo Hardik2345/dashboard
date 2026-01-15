@@ -19,6 +19,7 @@ import {
   Typography,
   Stack,
   Button,
+  Badge,
 } from '@mui/material';
 import CheckIcon from "@mui/icons-material/Check";
 import FilterListIcon from '@mui/icons-material/FilterList';
@@ -133,19 +134,23 @@ export default function MobileTopBar({
     if (!brandKey) return;
     const s = start?.format('YYYY-MM-DD');
     const e = end?.format('YYYY-MM-DD');
+
+    // Use pendingUtm when drawer is open to allow dynamic updates before applying
+    const activeUtm = mobileFilterOpen ? pendingUtm : utm;
+
     getDashboardSummary({
       brand_key: brandKey,
       start: s,
       end: e,
       include_utm_options: true,
-      utm_source: utm?.source, // We use global utm here as this fetches options
-      utm_medium: utm?.medium,
-      utm_campaign: utm?.campaign
+      utm_source: activeUtm?.source,
+      utm_medium: activeUtm?.medium,
+      utm_campaign: activeUtm?.campaign
     })
       .then(res => {
         if (res.filter_options) setUtmOptions(res.filter_options);
       });
-  }, [brandKey, start, end, utm]);
+  }, [brandKey, start, end, utm, pendingUtm, mobileFilterOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -289,6 +294,8 @@ export default function MobileTopBar({
     [onChange]
   );
 
+  const activeUtmCount = [utm?.source, utm?.medium, utm?.campaign].filter(Boolean).length;
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
       {/* Mobile: Product filter on its own row (authors only) */}
@@ -407,7 +414,23 @@ export default function MobileTopBar({
           {showUtmFilter && (
             <>
               <Collapse in={showUtmFilters} orientation="horizontal" unmountOnExit>
-                <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 1 }}>
+                <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 1, alignItems: 'center' }}>
+                  {activeUtmCount > 0 && (
+                    <Button
+                      size="small"
+                      onClick={() => onUtmChange && onUtmChange({ source: '', medium: '', campaign: '' })}
+                      sx={{
+                        fontSize: 12,
+                        textTransform: 'none',
+                        minWidth: 'auto',
+                        whiteSpace: 'nowrap',
+                        color: 'text.secondary',
+                        '&:hover': { color: 'error.main', bgcolor: 'transparent' }
+                      }}
+                    >
+                      Clear all
+                    </Button>
+                  )}
                   {['source', 'medium', 'campaign'].map(field => (
                     <FormControl key={field} size="small" sx={{ width: 110 }}>
                       <InputLabel sx={{ fontSize: 12, textTransform: 'capitalize' }}>{field}</InputLabel>
@@ -553,7 +576,9 @@ export default function MobileTopBar({
                 bgcolor: mobileFilterOpen ? (isDark ? 'rgba(91, 163, 224, 0.1)' : 'rgba(11, 107, 203, 0.05)') : 'transparent',
               }}
             >
-              <FilterListIcon fontSize="small" />
+              <Badge badgeContent={activeUtmCount} color="error" invisible={activeUtmCount === 0}>
+                <FilterListIcon fontSize="small" />
+              </Badge>
             </IconButton>
           )}
 
@@ -802,7 +827,12 @@ export default function MobileTopBar({
                 <List disablePadding>
                   <ListItemButton
                     onClick={() => {
-                      setPendingUtm({ ...pendingUtm, [activeFilterView]: '' });
+                      const newPending = { ...pendingUtm, [activeFilterView]: '' };
+                      if (activeFilterView === 'source') {
+                        newPending.medium = '';
+                        newPending.campaign = '';
+                      }
+                      setPendingUtm(newPending);
                       setActiveFilterView(null);
                     }}
                     selected={!pendingUtm?.[activeFilterView]}
@@ -814,7 +844,12 @@ export default function MobileTopBar({
                     <ListItemButton
                       key={opt}
                       onClick={() => {
-                        setPendingUtm({ ...pendingUtm, [activeFilterView]: opt });
+                        const newPending = { ...pendingUtm, [activeFilterView]: opt };
+                        if (activeFilterView === 'source') {
+                          newPending.medium = '';
+                          newPending.campaign = '';
+                        }
+                        setPendingUtm(newPending);
                         setActiveFilterView(null);
                       }}
                       selected={pendingUtm?.[activeFilterView] === opt}

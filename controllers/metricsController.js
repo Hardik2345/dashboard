@@ -2864,8 +2864,12 @@ function buildMetricsController() {
               return { sql: `SELECT DISTINCT ${field} FROM shopify_orders WHERE ${w} LIMIT 1000`, replacements: r };
             };
 
-            const qSrc = buildOptionQuery('utm_source', filters);
-            const qMed = buildOptionQuery('utm_medium', filters);
+            // Hierarchy: Source -> Medium -> Campaign
+            // Source options: Always show full list for the date range (allows switching source)
+            const qSrc = buildOptionQuery('utm_source', {});
+            // Medium options: Filter by Source only
+            const qMed = buildOptionQuery('utm_medium', { utm_source: filters.utm_source });
+            // Campaign options: Filter by Source and Medium
             const qCamp = buildOptionQuery('utm_campaign', filters);
 
             const [srcRows, medRows, campRows] = await Promise.all([
