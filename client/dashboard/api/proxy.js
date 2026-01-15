@@ -1,5 +1,9 @@
 // Lightweight proxy so the upstream API base can be set via env (API_BASE_URL).
 // Keeps Vercel rewrites dynamic without hardcoding the backend host.
+export const config = {
+  runtime: 'nodejs',
+};
+
 export default async function handler(req, res) {
   const targetBase = (process.env.API_BASE_URL || '').trim().replace(/\/+$/, '');
   if (!targetBase) {
