@@ -109,6 +109,7 @@ export default function MobileTopBar({
   productLoading = false,
   utm = {},
   onUtmChange,
+  showUtmFilter = true,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -403,80 +404,84 @@ export default function MobileTopBar({
 
 
           {/* Desktop UTM Filters (Collapsible) */}
-          <Collapse in={showUtmFilters} orientation="horizontal" unmountOnExit>
-            <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 1 }}>
-              {['source', 'medium', 'campaign'].map(field => (
-                <FormControl key={field} size="small" sx={{ width: 110 }}>
-                  <InputLabel sx={{ fontSize: 12, textTransform: 'capitalize' }}>{field}</InputLabel>
-                  <Select
-                    label={field}
-                    value={utm?.[field] || ''}
-                    onChange={(e) => onUtmChange && onUtmChange({ [field]: e.target.value })}
-                    sx={{
-                      fontSize: 12,
-                      height: 32,
-                      '& .MuiSelect-select': {
-                        py: 0.5,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis'
-                      }
-                    }} // dense + truncation
-                    MenuProps={{
-                      PaperProps: {
-                        sx: {
-                          maxHeight: '40vh',
-                          width: '9vw',
-                        }
-                      },
-                      anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
-                      transformOrigin: { vertical: 'top', horizontal: 'left' },
-                      onEntering: (node) => {
-                        const selectNode = node.parentElement?.querySelector('[role="combobox"]');
-                        if (selectNode) {
-                          node.style.width = `${selectNode.clientWidth}px`;
-                        }
-                      }
-                    }}
-                  >
-                    <MenuItem value=""><em>All</em></MenuItem>
-                    {(utmOptions?.[`utm_${field}`] || []).map(opt => (
-                      <MenuItem
-                        key={opt}
-                        value={opt}
+          {showUtmFilter && (
+            <>
+              <Collapse in={showUtmFilters} orientation="horizontal" unmountOnExit>
+                <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 1 }}>
+                  {['source', 'medium', 'campaign'].map(field => (
+                    <FormControl key={field} size="small" sx={{ width: 110 }}>
+                      <InputLabel sx={{ fontSize: 12, textTransform: 'capitalize' }}>{field}</InputLabel>
+                      <Select
+                        label={field}
+                        value={utm?.[field] || ''}
+                        onChange={(e) => onUtmChange && onUtmChange({ [field]: e.target.value })}
                         sx={{
                           fontSize: 12,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          display: 'block'
+                          height: 32,
+                          '& .MuiSelect-select': {
+                            py: 0.5,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }
+                        }} // dense + truncation
+                        MenuProps={{
+                          PaperProps: {
+                            sx: {
+                              maxHeight: '40vh',
+                              width: '9vw',
+                            }
+                          },
+                          anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
+                          transformOrigin: { vertical: 'top', horizontal: 'left' },
+                          onEntering: (node) => {
+                            const selectNode = node.parentElement?.querySelector('[role="combobox"]');
+                            if (selectNode) {
+                              node.style.width = `${selectNode.clientWidth}px`;
+                            }
+                          }
                         }}
                       >
-                        {opt}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              ))}
-            </Box>
-          </Collapse>
+                        <MenuItem value=""><em>All</em></MenuItem>
+                        {(utmOptions?.[`utm_${field}`] || []).map(opt => (
+                          <MenuItem
+                            key={opt}
+                            value={opt}
+                            sx={{
+                              fontSize: 12,
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              display: 'block'
+                            }}
+                          >
+                            {opt}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  ))}
+                </Box>
+              </Collapse>
 
-          {/* Filter Toggle Icon */}
-          <IconButton
-            onClick={() => setShowUtmFilters(!showUtmFilters)}
-            sx={{
-              width: 32,
-              height: 32,
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: '50%', // Circular
-              display: { xs: 'none', sm: 'flex' },
-              color: showUtmFilters ? 'primary.main' : 'text.secondary',
-              bgcolor: showUtmFilters ? (isDark ? 'rgba(91, 163, 224, 0.1)' : 'rgba(11, 107, 203, 0.05)') : 'transparent',
-            }}
-          >
-            <FilterListIcon fontSize="small" />
-          </IconButton>
+              {/* Filter Toggle Icon */}
+              <IconButton
+                onClick={() => setShowUtmFilters(!showUtmFilters)}
+                sx={{
+                  width: 32,
+                  height: 32,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: '50%', // Circular
+                  display: { xs: 'none', sm: 'flex' },
+                  color: showUtmFilters ? 'primary.main' : 'text.secondary',
+                  bgcolor: showUtmFilters ? (isDark ? 'rgba(91, 163, 224, 0.1)' : 'rgba(11, 107, 203, 0.05)') : 'transparent',
+                }}
+              >
+                <FilterListIcon fontSize="small" />
+              </IconButton>
+            </>
+          )}
 
           {/* Desktop-only compact product filter */}
           {showProductFilter && (
@@ -534,21 +539,23 @@ export default function MobileTopBar({
 
 
           {/* Mobile Filter Toggle Icon */}
-          <IconButton
-            onClick={() => setMobileFilterOpen(true)}
-            sx={{
-              width: 32,
-              height: 32,
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: '50%',
-              display: { xs: 'flex', sm: 'none' },
-              color: mobileFilterOpen ? 'primary.main' : 'text.secondary',
-              bgcolor: mobileFilterOpen ? (isDark ? 'rgba(91, 163, 224, 0.1)' : 'rgba(11, 107, 203, 0.05)') : 'transparent',
-            }}
-          >
-            <FilterListIcon fontSize="small" />
-          </IconButton>
+          {showUtmFilter && (
+            <IconButton
+              onClick={() => setMobileFilterOpen(true)}
+              sx={{
+                width: 32,
+                height: 32,
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: '50%',
+                display: { xs: 'flex', sm: 'none' },
+                color: mobileFilterOpen ? 'primary.main' : 'text.secondary',
+                bgcolor: mobileFilterOpen ? (isDark ? 'rgba(91, 163, 224, 0.1)' : 'rgba(11, 107, 203, 0.05)') : 'transparent',
+              }}
+            >
+              <FilterListIcon fontSize="small" />
+            </IconButton>
+          )}
 
           <Popover
             active={popoverActive}
