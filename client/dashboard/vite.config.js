@@ -14,6 +14,17 @@ export default defineConfig({
       },
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'brand-logo-final.png'],
+      workbox: {
+        // Exclude auth/API routes from service worker to prevent OAuth redirect caching issues
+        navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
+        // Don't cache API responses
+        runtimeCaching: [
+          {
+            urlPattern: /^\/api\//,
+            handler: 'NetworkOnly',
+          },
+        ],
+      },
       manifest: {
         name: 'Datum',
         short_name: 'Datum',
