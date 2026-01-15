@@ -591,6 +591,7 @@ export default function App() {
                         productLoading={productOptionsLoading}
                         utm={utm}
                         onUtmChange={handleUtmChange}
+                        showUtmFilter={true}
                       />
                     )}
                   </Stack>
@@ -742,7 +743,8 @@ export default function App() {
                 value={range}
                 onChange={handleRangeChange}
                 brandKey={activeBrandKey}
-                showProductFilter={false}
+                showProductFilter={!!(isAuthor || user?.isAdmin)}
+                showUtmFilter={!!(isAuthor || user?.isAdmin)}
                 productOptions={productOptions}
                 productValue={productSelection}
                 onProductChange={handleProductChange}
