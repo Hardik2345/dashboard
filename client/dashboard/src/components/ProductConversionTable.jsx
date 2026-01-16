@@ -427,7 +427,7 @@ function DetailedFilterPanel({
     <Box sx={{ width: { xs: '100%', md: 320 }, height: { xs: '100%', md: 800 }, display: 'flex', flexDirection: 'column', bgcolor: 'background.paper', borderLeft: { md: `1px solid ${theme.palette.divider}` } }}>
       {/* Header */}
       <Box sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'background.default' }}>
-        <Typography variant="h6" fontWeight={600} fontSize="0.95rem">Filter Panel</Typography>
+        <Typography variant="h6" fontWeight={600} fontSize="0.95rem" color="text.primary">Filter Panel</Typography>
         <IconButton onClick={onClose} size="small"><CloseIcon fontSize="small" /></IconButton>
       </Box>
 
@@ -435,7 +435,7 @@ function DetailedFilterPanel({
 
         {/* Metrics Section */}
         <Box sx={{ mb: 4 }}>
-          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
+          <Typography variant="subtitle2" color="text.primary" sx={{ mb: 1, textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
             Metrics
           </Typography>
           <Card variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
@@ -480,7 +480,7 @@ function DetailedFilterPanel({
         {/* Filters Section */}
         <Box>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="subtitle2" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
+            <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
               Filters
             </Typography>
             <Tooltip title="Add New Filter">

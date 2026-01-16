@@ -1,8 +1,7 @@
 import { AppBar, Toolbar, Box, Button, IconButton, useTheme, useMediaQuery, Tooltip } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu';
-import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
-import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
+import SkyToggle from './ui/SkyToggle';
 
 export default function Header({ user, onLogout, onMenuClick, showMenuButton = false, darkMode = false, onToggleDarkMode }) {
   const theme = useTheme();
@@ -70,24 +69,9 @@ export default function Header({ user, onLogout, onMenuClick, showMenuButton = f
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
             {/* Dark Mode Toggle */}
             <Tooltip title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'} arrow>
-              <IconButton
-                size="small"
-                onClick={onToggleDarkMode}
-                color="inherit"
-                aria-label="Toggle dark mode"
-                sx={{
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderRadius: 1,
-                  p: 0.75,
-                }}
-              >
-                {darkMode ? (
-                  <LightModeOutlinedIcon fontSize="small" sx={{ color: 'warning.main' }} />
-                ) : (
-                  <DarkModeOutlinedIcon fontSize="small" />
-                )}
-              </IconButton>
+              <Box sx={{ mr: 1 }}>
+                <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
+              </Box>
             </Tooltip>
             <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
               <Button
