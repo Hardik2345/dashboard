@@ -57,7 +57,12 @@ export default async function handler(req, res) {
         }
         // If the redirect stays on the same upstream host, follow it server-side to avoid CORS.
         if (locationUrl.hostname === targetUrl.hostname) {
-          const followRes = await fetch(locationUrl.toString(), {
+          let followUrl = locationUrl;
+          if (followUrl.pathname.startsWith('/alerts') && followUrl.pathname.endsWith('/') && followUrl.pathname !== '/') {
+            followUrl = new URL(followUrl.toString());
+            followUrl.pathname = followUrl.pathname.replace(/\/+$/, '');
+          }
+          const followRes = await fetch(followUrl.toString(), {
             method: req.method,
             headers,
             redirect: 'manual',
