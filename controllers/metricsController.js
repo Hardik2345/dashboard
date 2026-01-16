@@ -2,7 +2,7 @@ const { QueryTypes } = require('sequelize');
 const redisClient = require('../lib/redis');
 const logger = require('../utils/logger');
 const { RangeSchema, isoDate } = require('../validation/schemas');
-const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta } = require('../utils/metricsUtils');
+const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta, computeTotalSessions, computeAtcSessions, hasUtmFilters } = require('../utils/metricsUtils');
 const { previousWindow, prevDayStr, parseIsoDate, formatIsoDate, shiftDays } = require('../utils/dateUtils');
 const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrandConnection } = require('../lib/brandConnectionManager');
@@ -146,9 +146,21 @@ async function calcTotalSalesDelta({ start, end, align, compare, conn, filters }
   return { metric: 'TOTAL_SALES_DELTA', date, ...delta };
 }
 
-async function calcTotalSessionsDelta({ start, end, align, compare, conn }) {
+async function calcTotalSessionsDelta({ start, end, align, compare, conn, filters }) {
   const date = end || start;
   if (!date && !(start && end)) return { metric: 'TOTAL_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
+
+  if (hasUtmFilters(filters)) {
+    const rangeStart = start || date;
+    const rangeEnd = end || date;
+    const curr = await computeTotalSessions({ start: rangeStart, end: rangeEnd, conn, filters });
+    const prevWin = previousWindow(rangeStart, rangeEnd);
+    const prev = await computeTotalSessions({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
+    const diff = curr - prev;
+    const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
+    const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+    return { metric: 'TOTAL_SESSIONS_DELTA', range: { start: rangeStart, end: rangeEnd }, current: curr, previous: prev, diff_pct, direction };
+  }
 
   if (compare === 'prev-range-avg' && start && end) {
     const currAvg = await avgForRange('total_sessions', { start, end, conn });
@@ -219,9 +231,21 @@ async function calcTotalSessionsDelta({ start, end, align, compare, conn }) {
   return { metric: 'TOTAL_SESSIONS_DELTA', date, ...d };
 }
 
-async function calcAtcSessionsDelta({ start, end, align, compare, conn }) {
+async function calcAtcSessionsDelta({ start, end, align, compare, conn, filters }) {
   const date = end || start;
   if (!date && !(start && end)) return { metric: 'ATC_SESSIONS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
+
+  if (hasUtmFilters(filters)) {
+    const rangeStart = start || date;
+    const rangeEnd = end || date;
+    const curr = await computeAtcSessions({ start: rangeStart, end: rangeEnd, conn, filters });
+    const prevWin = previousWindow(rangeStart, rangeEnd);
+    const prev = await computeAtcSessions({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
+    const diff = curr - prev;
+    const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
+    const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+    return { metric: 'ATC_SESSIONS_DELTA', range: { start: rangeStart, end: rangeEnd }, current: curr, previous: prev, diff_pct, direction };
+  }
 
   if (compare === 'prev-range-avg' && start && end) {
     const currAvg = await avgForRange('total_atc_sessions', { start, end, conn });
@@ -421,7 +445,7 @@ async function calcAovDelta({ start, end, align, compare, conn, debug, filters }
   return { metric: 'AOV_DELTA', date, ...d };
 }
 
-async function calcCvrDelta({ start, end, align, compare, conn }) {
+async function calcCvrDelta({ start, end, align, compare, conn, filters }) {
   const target = end || start;
   if (!target && !(start && end)) {
     return { metric: 'CVR_DELTA', date: null, current: null, previous: null, diff_pp: 0, diff_pct: 0, direction: 'flat' };
@@ -430,10 +454,54 @@ async function calcCvrDelta({ start, end, align, compare, conn }) {
   const alignLower = (align || '').toString().toLowerCase();
   const compareLower = (compare || '').toString().toLowerCase();
 
+  // Fix: If filters are present, the hourly_sessions_summary_shopify table cannot be used (it lacks UTMs).
+  // Fallback to day-level calculation using the snapshot table, which supports filters.
+  if (hasUtmFilters(filters)) {
+    let curr, prev;
+    if (start && end) {
+      curr = await cvrForRange({ start, end, conn, filters });
+      const prevWin = previousWindow(start, end);
+      prev = await cvrForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
+      const delta = computePercentDelta(curr.cvr_percent || 0, prev.cvr_percent || 0);
+      // Handle 0 sessions
+      if (curr.total_sessions === 0) {
+        return { metric: 'CVR_DELTA', range: { start, end }, current: curr, previous: prev, diff_pp: 0, diff_pct: 0, direction: 'flat' };
+      }
+      return { metric: 'CVR_DELTA', range: { start, end }, current: curr, previous: prev, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction };
+    } else {
+      // Single day
+      const prevStr = prevDayStr(target);
+      [curr, prev] = await Promise.all([
+        computeCVRForDay(target, conn, filters),
+        computeCVRForDay(prevStr, conn, filters)
+      ]);
+      if (curr.total_sessions === 0) {
+        return { metric: 'CVR_DELTA', date: target, current: curr, previous: prev, diff_pp: 0, diff_pct: 0, direction: 'flat' };
+      }
+      const delta = computePercentDelta(curr.cvr_percent || 0, prev.cvr_percent || 0);
+      return { metric: 'CVR_DELTA', date: target, current: curr, previous: prev, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction };
+    }
+  }
+
   if (compareLower === 'prev-range-avg' && start && end) {
-    const curr = await cvrForRange({ start, end, conn });
+    const curr = await cvrForRange({ start, end, conn, filters });
+
+    // Fix: If current sessions are 0, force CVR delta to 0/flat to avoid misleading percentages.
+    if (curr.total_sessions === 0) {
+      return {
+        metric: 'CVR_DELTA',
+        range: { start, end },
+        current: curr,
+        previous: { cvr_percent: 0 },
+        diff_pp: 0,
+        diff_pct: 0,
+        direction: 'flat',
+        compare: 'prev-range-avg'
+      };
+    }
+
     const prevWin = previousWindow(start, end);
-    const prev = await cvrForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn });
+    const prev = await cvrForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
     const delta = computePercentDelta(curr.cvr_percent || 0, prev.cvr_percent || 0);
     return { metric: 'CVR_DELTA', range: { start, end }, current: curr, previous: prev, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction, compare: 'prev-range-avg' };
   }
@@ -558,9 +626,14 @@ async function calcCvrDelta({ start, end, align, compare, conn }) {
   }
 
   const [current, previous] = await Promise.all([
-    computeCVRForDay(target, conn),
-    computeCVRForDay(prevStr, conn)
+    computeCVRForDay(target, conn, filters),
+    computeCVRForDay(prevStr, conn, filters)
   ]);
+
+  if (current.total_sessions === 0) {
+    return { metric: 'CVR_DELTA', date: target, current, previous, diff_pp: 0, diff_pct: 0, direction: 'flat' };
+  }
+
   const delta = computePercentDelta(current.cvr_percent || 0, previous.cvr_percent || 0);
   return { metric: 'CVR_DELTA', date: target, current, previous, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction };
 }
@@ -2700,10 +2773,10 @@ function buildMetricsController() {
           [orders, sales, sessions, atc, aov, cvr] = await Promise.all([
             calcTotalOrdersDelta({ start, end, align, compare, conn, filters }),
             calcTotalSalesDelta({ start, end, align, compare, conn, filters }),
-            calcTotalSessionsDelta({ start, end, align, compare, conn }),
-            calcAtcSessionsDelta({ start, end, align, compare, conn }),
+            calcTotalSessionsDelta({ start, end, align, compare, conn, filters }),
+            calcAtcSessionsDelta({ start, end, align, compare, conn, filters }),
             calcAovDelta({ start, end, align, compare, conn, filters }),
-            calcCvrDelta({ start, end, align, compare, conn })
+            calcCvrDelta({ start, end, align, compare, conn, filters })
           ]);
         }
 
@@ -2796,9 +2869,9 @@ function buildMetricsController() {
           const [sales, orders, sessions, atc, cvrObj, aovObj] = await Promise.all([
             computeTotalSales({ start: s, end: e, conn, filters }),
             computeTotalOrders({ start: s, end: e, conn, filters }),
-            rawSum('total_sessions', { start: s, end: e, conn }),
-            rawSum('total_atc_sessions', { start: s, end: e, conn }),
-            computeCVR({ start: s, end: e, conn }),
+            computeTotalSessions({ start: s, end: e, conn, filters }),
+            computeAtcSessions({ start: s, end: e, conn, filters }),
+            computeCVR({ start: s, end: e, conn, filters }),
             aovForRange({ start: s, end: e, conn, filters })
           ]);
 
