@@ -45,7 +45,21 @@ export default async function handler(req, res) {
   // If upstream wants to redirect (e.g., /auth/google 302), forward it as-is.
   if (upstreamRes.status >= 300 && upstreamRes.status < 400) {
     const location = upstreamRes.headers.get('location');
-    if (location) res.setHeader('Location', location);
+    if (location) {
+      let rewrittenLocation = location;
+      try {
+        const targetUrl = new URL(targetBase);
+        const locationUrl = new URL(location, targetBase);
+        if (locationUrl.hostname === targetUrl.hostname && locationUrl.protocol === 'http:') {
+          locationUrl.protocol = targetUrl.protocol;
+          locationUrl.port = targetUrl.port;
+          rewrittenLocation = locationUrl.toString();
+        }
+      } catch {
+        // Fall back to the original Location header if parsing fails.
+      }
+      res.setHeader('Location', rewrittenLocation);
+    }
     // Forward Set-Cookie on redirects so sessions stick after auth flows.
     const fromGet = typeof upstreamRes.headers.getSetCookie === 'function' ? upstreamRes.headers.getSetCookie() : [];
     const rawSetCookies = upstreamRes.headers.raw?.()['set-cookie'] || [];
