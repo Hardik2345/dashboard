@@ -15,6 +15,7 @@ export default async function handler(req, res) {
   const cleanedPath = path ? `/${path.replace(/^\/+/, '')}` : '';
   const passthroughPrefixes = ['/auth', '/alerts', '/tenant'];
   const shouldPassthrough = passthroughPrefixes.some((prefix) => cleanedPath === prefix || cleanedPath.startsWith(`${prefix}/`));
+  const isAlerts = cleanedPath === '/alerts' || cleanedPath.startsWith('/alerts/');
   const upstreamPath = shouldPassthrough ? cleanedPath : `/analytics${cleanedPath}`;
   const url = new URL(targetBase + upstreamPath);
   for (const [key, value] of Object.entries(query)) {
@@ -38,7 +39,7 @@ export default async function handler(req, res) {
   const upstreamRes = await fetch(url, {
     method: req.method,
     headers,
-    redirect: 'manual', // preserve upstream redirects (e.g., Google OAuth) for the browser to follow
+    redirect: isAlerts ? 'follow' : 'manual', // preserve auth redirects, but follow alerts server-side to avoid mixed content/CORS
     body: body && ['GET', 'HEAD'].includes(req.method) ? undefined : body,
   });
 
