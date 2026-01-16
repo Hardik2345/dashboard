@@ -290,10 +290,19 @@ export default function KPIs({
   return (
     <>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-        <Typography variant="subtitle2" color="text.secondary">
+        {/* Left Side: Brand (Mobile) or Scope (Desktop) */}
+        <Typography variant="subtitle2" color="text.secondary" sx={{ display: { xs: 'block', md: 'none' } }}>
+          Brand: {brandKey || 'All'}
+        </Typography>
+        <Typography variant="subtitle2" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
           Scope: {scopeLabel}
         </Typography>
+
+        {/* Right Side: Scope (Mobile) or Chips + KPIs Text (Desktop) */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="subtitle2" color="text.secondary" sx={{ display: { xs: 'block', md: 'none' } }}>
+            Scope: {scopeLabel}
+          </Typography>
           {activeFilters.map(f => (
             <Chip
               key={f.key}
@@ -317,7 +326,7 @@ export default function KPIs({
             />
           ))}
           {isProductScoped && (
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
               Using product-level KPIs
             </Typography>
           )}

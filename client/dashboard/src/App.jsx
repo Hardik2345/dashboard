@@ -14,6 +14,7 @@ import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlic
 import { setBrand } from './state/slices/brandSlice.js';
 import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setSelectedMetric, setUtm } from './state/slices/filterSlice.js';
 import MobileTopBar from './components/MobileTopBar.jsx';
+import MobileFilterDrawer from './components/MobileFilterDrawer.jsx'; // New Import
 import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
 import Footer from './components/Footer.jsx';
 
@@ -103,6 +104,7 @@ export default function App() {
 
   const [authorRefreshKey, setAuthorRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false); // Valid New State
   const [darkMode, setDarkMode] = useState(loadInitialThemeMode);
   const [isScrolled, setIsScrolled] = useState(false);
   const [productOptions, setProductOptions] = useState([DEFAULT_PRODUCT_OPTION]);
@@ -579,31 +581,56 @@ export default function App() {
                   transition: 'border-color 0.2s ease',
                 }}
               >
-                <Header user={user} onLogout={handleLogout} onMenuClick={handleSidebarOpen} showMenuButton darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
-                <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: { xs: 1.5, sm: 2 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
-                  <Stack spacing={{ xs: 2, sm: 1 }}>
+                <Header
+                  user={user}
+                  onLogout={handleLogout}
+                  onMenuClick={handleSidebarOpen}
+                  showMenuButton
+                  darkMode={darkMode === 'dark'}
+                  onToggleDarkMode={handleToggleDarkMode}
+                  onFilterClick={() => setMobileFilterOpen(true)}
+                  showFilterButton={true}
+                />
+              </Box>
+              <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: { xs: 0.5, sm: 2 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
+                <Stack spacing={{ xs: 2, sm: 1 }}>
+                  <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
                     <AuthorBrandSelector
                       brands={authorBrands}
                       value={authorBrandKey}
                       loading={authorBrandsLoading}
                       onChange={handleAuthorBrandChange}
                     />
-                    {authorTab === 'dashboard' && hasAuthorBrand && (
-                      <MobileTopBar
-                        value={range}
-                        onChange={handleRangeChange}
-                        brandKey={authorBrandKey}
-                        productOptions={productOptions}
-                        productValue={productSelection}
-                        onProductChange={handleProductChange}
-                        productLoading={productOptionsLoading}
-                        utm={utm}
-                        onUtmChange={handleUtmChange}
-                        showUtmFilter={true}
-                      />
-                    )}
-                  </Stack>
-                </Box>
+                  </Box>
+                  {authorTab === 'dashboard' && hasAuthorBrand && (
+                    <MobileTopBar
+                      value={range}
+                      onChange={handleRangeChange}
+                      brandKey={authorBrandKey}
+                      productOptions={productOptions}
+                      productValue={productSelection}
+                      onProductChange={handleProductChange}
+                      productLoading={productOptionsLoading}
+                      utm={utm}
+                      onUtmChange={handleUtmChange}
+                      showUtmFilter={true}
+                    />
+                  )}
+                  <MobileFilterDrawer
+                    open={mobileFilterOpen}
+                    onClose={() => setMobileFilterOpen(false)}
+                    brandKey={authorBrandKey}
+                    brands={authorBrands}
+                    onBrandChange={handleAuthorBrandChange}
+                    productOptions={productOptions}
+                    productValue={productSelection}
+                    onProductChange={handleProductChange}
+                    utm={utm}
+                    onUtmChange={handleUtmChange}
+                    dateRange={range}
+                    isDark={darkMode === 'dark'}
+                  />
+                </Stack>
               </Box>
 
               <Box
@@ -745,23 +772,44 @@ export default function App() {
               transition: 'border-color 0.2s ease',
             }}
           >
-            <Header user={user} onLogout={handleLogout} darkMode={darkMode === 'dark'} onToggleDarkMode={handleToggleDarkMode} />
-            <Container maxWidth="sm" sx={{ pt: { xs: 2.5, sm: 3 } }}>
-              <MobileTopBar
-                value={range}
-                onChange={handleRangeChange}
-                brandKey={activeBrandKey}
-                showProductFilter={!!(isAuthor || user?.isAdmin)}
-                showUtmFilter={!!(isAuthor || user?.isAdmin)}
-                productOptions={productOptions}
-                productValue={productSelection}
-                onProductChange={handleProductChange}
-                productLoading={productOptionsLoading}
-                utm={utm}
-                onUtmChange={handleUtmChange}
-              />
-            </Container>
+            <Header
+              user={user}
+              onLogout={handleLogout}
+              darkMode={darkMode === 'dark'}
+              onToggleDarkMode={handleToggleDarkMode}
+              onFilterClick={() => setMobileFilterOpen(true)}
+              showFilterButton={!!(isAuthor || user?.isAdmin)}
+            />
           </Box>
+          <Container maxWidth="sm" sx={{ pt: { xs: 1.5, sm: 3 } }}>
+            <MobileTopBar
+              value={range}
+              onChange={handleRangeChange}
+              brandKey={activeBrandKey}
+              showProductFilter={!!(isAuthor || user?.isAdmin)}
+              showUtmFilter={!!(isAuthor || user?.isAdmin)}
+              productOptions={productOptions}
+              productValue={productSelection}
+              onProductChange={handleProductChange}
+              productLoading={productOptionsLoading}
+              utm={utm}
+              onUtmChange={handleUtmChange}
+            />
+            <MobileFilterDrawer
+              open={mobileFilterOpen}
+              onClose={() => setMobileFilterOpen(false)}
+              brandKey={activeBrandKey}
+              brands={isAuthor ? authorBrands : (activeBrandKey ? [{ key: activeBrandKey }] : [])}
+              onBrandChange={isAuthor ? handleAuthorBrandChange : undefined}
+              productOptions={productOptions}
+              productValue={productSelection}
+              onProductChange={handleProductChange}
+              utm={utm}
+              onUtmChange={handleUtmChange}
+              dateRange={range}
+              isDark={darkMode === 'dark'}
+            />
+          </Container>
           <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
             <Stack spacing={{ xs: 1, sm: 1.25 }}>
               <Suspense fallback={<SectionFallback count={4} />}>
