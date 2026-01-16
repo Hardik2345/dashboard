@@ -62,12 +62,33 @@ export default async function handler(req, res) {
             followUrl = new URL(followUrl.toString());
             followUrl.pathname = followUrl.pathname.replace(/\/+$/, '');
           }
-          const followRes = await fetch(followUrl.toString(), {
+          let nextUrl = followUrl.toString();
+          let followRes = await fetch(nextUrl, {
             method: req.method,
             headers,
             redirect: 'manual',
             body: body && ['GET', 'HEAD'].includes(req.method) ? undefined : body,
           });
+          for (let i = 0; i < 3 && followRes.status >= 300 && followRes.status < 400; i += 1) {
+            const nextLocation = followRes.headers.get('location');
+            if (!nextLocation) break;
+            const nextLocationUrl = new URL(nextLocation, targetBase);
+            if (nextLocationUrl.hostname !== targetUrl.hostname) break;
+            if (nextLocationUrl.protocol === 'http:') {
+              nextLocationUrl.protocol = targetUrl.protocol;
+              nextLocationUrl.port = targetUrl.port;
+            }
+            if (nextLocationUrl.pathname.startsWith('/alerts') && nextLocationUrl.pathname.endsWith('/') && nextLocationUrl.pathname !== '/') {
+              nextLocationUrl.pathname = nextLocationUrl.pathname.replace(/\/+$/, '');
+            }
+            nextUrl = nextLocationUrl.toString();
+            followRes = await fetch(nextUrl, {
+              method: req.method,
+              headers,
+              redirect: 'manual',
+              body: body && ['GET', 'HEAD'].includes(req.method) ? undefined : body,
+            });
+          }
           res.status(followRes.status);
           followRes.headers.forEach((value, key) => {
             const k = key.toLowerCase();
