@@ -55,6 +55,37 @@ export default async function handler(req, res) {
           locationUrl.port = targetUrl.port;
           rewrittenLocation = locationUrl.toString();
         }
+        // If the redirect stays on the same upstream host, follow it server-side to avoid CORS.
+        if (locationUrl.hostname === targetUrl.hostname) {
+          const followRes = await fetch(locationUrl.toString(), {
+            method: req.method,
+            headers,
+            redirect: 'manual',
+            body: body && ['GET', 'HEAD'].includes(req.method) ? undefined : body,
+          });
+          res.status(followRes.status);
+          followRes.headers.forEach((value, key) => {
+            const k = key.toLowerCase();
+            if (k === 'transfer-encoding') return;
+            if (k === 'content-encoding') return;
+            if (k === 'content-length') return;
+            if (k === 'set-cookie') return;
+            res.setHeader(key, value);
+          });
+          const followCookies = typeof followRes.headers.getSetCookie === 'function' ? followRes.headers.getSetCookie() : [];
+          const followRawCookies = followRes.headers.raw?.()['set-cookie'] || [];
+          const followSingleCookie = followRes.headers.get('set-cookie');
+          const cookies = (followCookies && followCookies.length)
+            ? followCookies
+            : (followRawCookies.length ? followRawCookies : (followSingleCookie ? [followSingleCookie] : []));
+          if (cookies.length) {
+            const rewritten = cookies.map((c) => c.replace(/;?\s*Domain=[^;]+/i, ''));
+            res.setHeader('Set-Cookie', rewritten);
+          }
+          const buf = Buffer.from(await followRes.arrayBuffer());
+          res.send(buf);
+          return;
+        }
       } catch {
         // Fall back to the original Location header if parsing fails.
       }
