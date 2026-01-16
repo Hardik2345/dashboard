@@ -20,6 +20,7 @@ import {
   Stack,
   Button,
   Badge,
+  Chip, // New Import
 } from '@mui/material';
 import CheckIcon from "@mui/icons-material/Check";
 import FilterListIcon from '@mui/icons-material/FilterList';
@@ -121,22 +122,16 @@ export default function MobileTopBar({
   const [last, setLast] = useState({ loading: true, ts: null, tz: null });
   const [utmOptions, setUtmOptions] = useState(null);
   const [showUtmFilters, setShowUtmFilters] = useState(false);
-  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
-  const [activeFilterView, setActiveFilterView] = useState(null); // 'source', 'medium', 'campaign', or null (main list)
-  const [pendingUtm, setPendingUtm] = useState({});
 
-  useEffect(() => {
-    if (mobileFilterOpen) {
-      setPendingUtm(utm || {});
-    }
-  }, [mobileFilterOpen, utm]);
+
+
   useEffect(() => {
     if (!brandKey) return;
     const s = start?.format('YYYY-MM-DD');
     const e = end?.format('YYYY-MM-DD');
 
     // Use pendingUtm when drawer is open to allow dynamic updates before applying
-    const activeUtm = mobileFilterOpen ? pendingUtm : utm;
+    const activeUtm = utm;
 
     getDashboardSummary({
       brand_key: brandKey,
@@ -150,7 +145,7 @@ export default function MobileTopBar({
       .then(res => {
         if (res.filter_options) setUtmOptions(res.filter_options);
       });
-  }, [brandKey, start, end, utm, pendingUtm, mobileFilterOpen]);
+  }, [brandKey, start, end, utm]);
 
   useEffect(() => {
     let cancelled = false;
@@ -299,55 +294,7 @@ export default function MobileTopBar({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
       {/* Mobile: Product filter on its own row (authors only) */}
-      {showProductFilter && (
-        <Box sx={{ display: { xs: 'block', sm: 'none' }, width: '100%', mb: { xs: 1.5, sm: 0 } }}>
-          <FormControl size="small" fullWidth>
-            <InputLabel id="mobile-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
-            <Select
-              labelId="mobile-product-label"
-              label="Product"
-              value={productValue?.id ?? ''}
-              onChange={(e) => {
-                const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
-                if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
-              }}
-              disabled={productLoading || !productOptions?.length}
-              sx={{ fontSize: 12, height: 36 }}
-              MenuProps={{
-                PaperProps: {
-                  sx: {
-                    maxHeight: '60vh',
-                    width: 'var(--select-width)',
-                    whiteSpace: 'normal',
-                  }
-                },
-                // This ensures the menu matches the select width
-                anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
-                transformOrigin: { vertical: 'top', horizontal: 'left' },
-                onEntering: (node) => {
-                  const selectNode = node.parentElement?.querySelector('[role="combobox"]');
-                  if (selectNode) {
-                    node.style.width = `${selectNode.clientWidth}px`;
-                  }
-                }
-              }}
-            >
-              {(productOptions || []).map((opt) => (
-                <MenuItem
-                  key={opt.id || 'all'}
-                  value={opt.id || ''}
-                  sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.75 }}
-                >
-                  {opt.id ? opt.label : 'All products'}
-                </MenuItem>
-              ))}
-            </Select>
-            {productLoading && (
-              <CircularProgress size={14} sx={{ position: 'absolute', top: 11, right: 28 }} />
-            )}
-          </FormControl>
-        </Box>
-      )}
+      {/* Mobile: Product filter removed (moved to global drawer) */}
 
 
 
@@ -562,25 +509,7 @@ export default function MobileTopBar({
 
 
           {/* Mobile Filter Toggle Icon */}
-          {showUtmFilter && (
-            <IconButton
-              onClick={() => setMobileFilterOpen(true)}
-              sx={{
-                width: 32,
-                height: 32,
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: '50%',
-                display: { xs: 'flex', sm: 'none' },
-                color: mobileFilterOpen ? 'primary.main' : 'text.secondary',
-                bgcolor: mobileFilterOpen ? (isDark ? 'rgba(91, 163, 224, 0.1)' : 'rgba(11, 107, 203, 0.05)') : 'transparent',
-              }}
-            >
-              <Badge badgeContent={activeUtmCount} color="error" invisible={activeUtmCount === 0}>
-                <FilterListIcon fontSize="small" />
-              </Badge>
-            </IconButton>
-          )}
+          {/* Mobile Filter Toggle Icon REMOVED */}
 
           <Popover
             active={popoverActive}
@@ -786,140 +715,12 @@ export default function MobileTopBar({
 
           {/* Mobile Drawer for UTM Filters */}
 
-          <Drawer
-            anchor="bottom"
-            open={mobileFilterOpen}
-            onClose={() => setMobileFilterOpen(false)}
-            PaperProps={{
-              sx: {
-                borderTopLeftRadius: 16,
-                borderTopRightRadius: 16,
-                height: '50vh', // Fixed height for consistency
-                maxHeight: '85vh',
-                display: 'flex',
-                flexDirection: 'column'
-              }
-            }}
-          >
-            {/* Header */}
-            <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              {activeFilterView ? (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <IconButton onClick={() => setActiveFilterView(null)} size="small" edge="start">
-                    <ArrowBackIcon fontSize="small" />
-                  </IconButton>
-                  <Typography variant="h6" fontSize={16} fontWeight={600} sx={{ textTransform: 'capitalize' }}>
-                    {activeFilterView}
-                  </Typography>
-                </Box>
-              ) : (
-                <Typography variant="h6" fontSize={16} fontWeight={600}>Filters</Typography>
-              )}
-              <IconButton onClick={() => setMobileFilterOpen(false)} size="small">
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Box>
-
-            {/* Content */}
-            <Box sx={{ p: 0, overflowY: 'auto', flex: 1 }}>
-              {activeFilterView ? (
-                // Detail View (Options)
-                <List disablePadding>
-                  <ListItemButton
-                    onClick={() => {
-                      const newPending = { ...pendingUtm, [activeFilterView]: '' };
-                      if (activeFilterView === 'source') {
-                        newPending.medium = '';
-                        newPending.campaign = '';
-                      }
-                      setPendingUtm(newPending);
-                      setActiveFilterView(null);
-                    }}
-                    selected={!pendingUtm?.[activeFilterView]}
-                  >
-                    <ListItemText primary="All" primaryTypographyProps={{ fontSize: 14 }} />
-                    {!pendingUtm?.[activeFilterView] && <CheckIcon fontSize="small" color="primary" />}
-                  </ListItemButton>
-                  {(utmOptions?.[`utm_${activeFilterView}`] || []).map(opt => (
-                    <ListItemButton
-                      key={opt}
-                      onClick={() => {
-                        const newPending = { ...pendingUtm, [activeFilterView]: opt };
-                        if (activeFilterView === 'source') {
-                          newPending.medium = '';
-                          newPending.campaign = '';
-                        }
-                        setPendingUtm(newPending);
-                        setActiveFilterView(null);
-                      }}
-                      selected={pendingUtm?.[activeFilterView] === opt}
-                    >
-                      <ListItemText
-                        primary={opt}
-                        primaryTypographyProps={{
-                          fontSize: 14,
-                          noWrap: true,
-                          title: opt // Tooltip on hover (desktop) or long press 
-                        }}
-                      />
-                      {pendingUtm?.[activeFilterView] === opt && <CheckIcon fontSize="small" color="primary" />}
-                    </ListItemButton>
-                  ))}
-                </List>
-              ) : (
-                // Main List (Categories)
-                <List disablePadding>
-                  {['source', 'medium', 'campaign'].map(field => (
-                    <ListItemButton
-                      key={field}
-                      onClick={() => setActiveFilterView(field)}
-                      sx={{ py: 2, justifyContent: 'space-between' }}
-                    >
-                      <Box>
-                        <Typography variant="body2" color="text.secondary" sx={{ textTransform: 'capitalize', fontSize: 12 }}>
-                          {field}
-                        </Typography>
-                        <Typography variant="body1" fontSize={14} fontWeight={500} noWrap sx={{ maxWidth: 260 }}>
-                          {pendingUtm?.[field] || 'All'}
-                        </Typography>
-                      </Box>
-                      <ChevronRightIcon fontSize="small" color="action" />
-                    </ListItemButton>
-                  ))}
-                </List>
-              )}
-            </Box>
-
-            {/* Footer (Main View Only) */}
-            {!activeFilterView && (
-              <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 2 }}>
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  color="error"
-                  disabled={!pendingUtm?.source && !pendingUtm?.medium && !pendingUtm?.campaign}
-                  onClick={() => setPendingUtm({ ...pendingUtm, source: '', medium: '', campaign: '' })}
-                  startIcon={<DeleteIcon />}
-                  sx={{ textTransform: 'none' }}
-                >
-                  Clear
-                </Button>
-                <Button
-                  fullWidth
-                  variant="contained"
-                  onClick={() => {
-                    onUtmChange && onUtmChange(pendingUtm);
-                    setMobileFilterOpen(false);
-                  }}
-                  sx={{ textTransform: 'none' }}
-                >
-                  Apply
-                </Button>
-              </Box>
-            )}
-          </Drawer>
+          {/* Mobile Drawer for UTM Filters Removed (Moved to global MobileFilterDrawer) */}
         </Box>
+
       </Box>
+
+      {/* Active Filters Chips (Scrolling Marquee) */}
     </Box>
   );
 }
