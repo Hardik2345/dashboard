@@ -18,9 +18,17 @@ function resolveApiBase() {
 const API_BASE = resolveApiBase();
 
 function qs(params) {
-  const parts = Object.entries(params)
-    .filter(([, v]) => v)
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+  const parts = [];
+  Object.entries(params).forEach(([k, v]) => {
+    if (!v) return;
+    if (Array.isArray(v)) {
+      v.forEach(val => {
+        if (val) parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(val)}`);
+      });
+    } else {
+      parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+    }
+  });
   return parts.length ? `?${parts.join('&')}` : '';
 }
 
