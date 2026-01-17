@@ -513,6 +513,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       pointHoverRadius: 3,
       pointHitRadius: 8,
       tension: 0.25,
+      hidden: true,
     });
   }
 
@@ -725,6 +726,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                       barPercentage: 0.9,
                       categoryPercentage: 0.8,
                       borderRadius: 2,
+                      hidden: true,
                     }] : []),
                   ],
                 }}
