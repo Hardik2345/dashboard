@@ -156,22 +156,42 @@ async function computeAtcSessions({ start, end, conn, filters }) {
   return rawSum("total_atc_sessions", { start, end, conn });
 }
 
+function appendUtmWhere(sql, params, filters) {
+  if (!filters) return sql;
+  const append = (col, val) => {
+    if (!val) return;
+    const vals = Array.isArray(val) ? val : (typeof val === 'string' && val.includes(',') ? val.split(',') : [val]);
+    if (vals.length === 0) return;
+
+    if (vals.length === 1) {
+      // Trim values just in case
+      sql += ` AND ${col} = ?`;
+      params.push(vals[0].trim());
+    } else {
+      sql += ` AND ${col} IN (${vals.map(() => '?').join(', ')})`;
+      params.push(...vals.map(v => v.trim()));
+    }
+  };
+  append('utm_source', filters.utm_source);
+  append('utm_medium', filters.utm_medium);
+  append('utm_campaign', filters.utm_campaign);
+  return sql;
+}
+
 async function computeSessionsFromSnapshot({ start, end, conn, filters, column }) {
   // Direct query on snapshot with filters
-  const snapshotSql = `
+  let snapshotSql = `
     SELECT COALESCE(SUM(${column}), 0) as total
     FROM product_sessions_snapshot
     WHERE date >= ? AND date <= ?
-    ${filters.utm_source ? 'AND utm_source = ?' : ''}
-    ${filters.utm_medium ? 'AND utm_medium = ?' : ''}
-    ${filters.utm_campaign ? 'AND utm_campaign = ?' : ''}
-    AND landing_page_type = 'Product'
   `;
 
   const snapParams = [start, end];
-  if (filters.utm_source) snapParams.push(filters.utm_source);
-  if (filters.utm_medium) snapParams.push(filters.utm_medium);
-  if (filters.utm_campaign) snapParams.push(filters.utm_campaign);
+
+  // Use shared helper
+  snapshotSql = appendUtmWhere(snapshotSql, snapParams, filters);
+
+  snapshotSql += " AND landing_page_type = 'Product'";
 
   const snapRows = await conn.query(snapshotSql, { type: QueryTypes.SELECT, replacements: snapParams });
   return Number(snapRows[0]?.total || 0);
@@ -195,17 +215,30 @@ function buildShopifyOrdersWhere(start, end, filters) {
     params.push(end);
   }
 
-  if (filters?.utm_source) {
-    parts.push("utm_source = ?");
-    params.push(filters.utm_source);
-  }
-  if (filters?.utm_medium) {
-    parts.push("utm_medium = ?");
-    params.push(filters.utm_medium);
-  }
-  if (filters?.utm_campaign) {
-    parts.push("utm_campaign = ?");
-    params.push(filters.utm_campaign);
+  // Allow multi-select using helper logic, but we need to adapt since this builds parts array
+  // instead of appending to SQL string.
+  // actually we can just build the base string and then use the helper if we change the signature
+  // BUT to keep it compatible let's just do it inline here or adapt helper.
+
+  // Let's just implement the multi-select logic here for parts/params structure
+  const add = (col, val) => {
+    if (!val) return;
+    const vals = Array.isArray(val) ? val : (typeof val === 'string' && val.includes(',') ? val.split(',') : [val]);
+    if (vals.length === 0) return;
+
+    if (vals.length === 1) {
+      parts.push(`${col} = ?`);
+      params.push(vals[0].trim());
+    } else {
+      parts.push(`${col} IN (${vals.map(() => '?').join(', ')})`);
+      params.push(...vals.map(v => v.trim()));
+    }
+  };
+
+  if (filters) {
+    add('utm_source', filters.utm_source);
+    add('utm_medium', filters.utm_medium);
+    add('utm_campaign', filters.utm_campaign);
   }
 
   const where = parts.length ? `WHERE ${parts.join(" AND ")}` : "";
@@ -307,4 +340,17 @@ module.exports = {
   cvrForRange,
   buildShopifyOrdersWhere,
   hasUtmFilters,
+  appendUtmWhere,
+  extractUtmParam,
 };
+
+function extractUtmParam(val) {
+  if (!val) return null;
+  if (Array.isArray(val)) return val.filter(v => v);
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (trimmed.includes(',')) return trimmed.split(',').map(v => v.trim()).filter(Boolean);
+    return trimmed || null;
+  }
+  return null;
+}

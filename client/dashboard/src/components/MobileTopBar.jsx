@@ -20,9 +20,11 @@ import {
   Stack,
   Button,
   Badge,
-  Chip, // New Import
+  Chip,
+  Checkbox, // New Import
 } from '@mui/material';
 import CheckIcon from "@mui/icons-material/Check";
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -112,6 +114,7 @@ export default function MobileTopBar({
   utm = {},
   onUtmChange,
   showUtmFilter = true,
+  utmOptions = null, // Prop
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -120,32 +123,11 @@ export default function MobileTopBar({
   const [month, setMonth] = useState((end || start || dayjs()).month());
   const [year, setYear] = useState((end || start || dayjs()).year());
   const [last, setLast] = useState({ loading: true, ts: null, tz: null });
-  const [utmOptions, setUtmOptions] = useState(null);
   const [showUtmFilters, setShowUtmFilters] = useState(false);
 
 
 
-  useEffect(() => {
-    if (!brandKey) return;
-    const s = start?.format('YYYY-MM-DD');
-    const e = end?.format('YYYY-MM-DD');
 
-    // Use pendingUtm when drawer is open to allow dynamic updates before applying
-    const activeUtm = utm;
-
-    getDashboardSummary({
-      brand_key: brandKey,
-      start: s,
-      end: e,
-      include_utm_options: true,
-      utm_source: activeUtm?.source,
-      utm_medium: activeUtm?.medium,
-      utm_campaign: activeUtm?.campaign
-    })
-      .then(res => {
-        if (res.filter_options) setUtmOptions(res.filter_options);
-      });
-  }, [brandKey, start, end, utm]);
 
   useEffect(() => {
     let cancelled = false;
@@ -300,27 +282,44 @@ export default function MobileTopBar({
 
       {/* Main row: Updated chip | (desktop: product filter) | Date picker */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
-        {/* Left: Updated chip */}
-        {last.loading ? (
-          <Card
-            elevation={0}
-            sx={{
-              px: 0.75,
-              height: 32,
-              display: "flex",
-              alignItems: "center",
-              bgcolor: "background.paper",
-              fontSize: 13,
-            }}
-          >
-            Updating…
-          </Card>
-        ) : last.ts ? (
-          <Tooltip
-            title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${last.tz ? ` ${last.tz}` : ""
-              }`}
-            arrow
-          >
+        {/* Left: Updated chip and Date Label */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {last.loading ? (
+            <Card
+              elevation={0}
+              sx={{
+                px: 0.75,
+                height: 32,
+                display: "flex",
+                alignItems: "center",
+                bgcolor: "background.paper",
+                fontSize: 13,
+              }}
+            >
+              Updating…
+            </Card>
+          ) : last.ts ? (
+            <Tooltip
+              title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${last.tz ? ` ${last.tz}` : ""
+                }`}
+              arrow
+            >
+              <Card
+                elevation={0}
+                sx={{
+                  border: "1px solid",
+                  borderColor: "divider",
+                  px: 0.75,
+                  height: 32,
+                  display: "flex",
+                  alignItems: "center",
+                  fontSize: 12,
+                }}
+              >
+                Updated {last.ts.fromNow()}
+              </Card>
+            </Tooltip>
+          ) : (
             <Card
               elevation={0}
               sx={{
@@ -333,25 +332,12 @@ export default function MobileTopBar({
                 fontSize: 13,
               }}
             >
-              Updated {last.ts.fromNow()}
+              Updated: unavailable
             </Card>
-          </Tooltip>
-        ) : (
-          <Card
-            elevation={0}
-            sx={{
-              border: "1px solid",
-              borderColor: "divider",
-              px: 0.75,
-              height: 32,
-              display: "flex",
-              alignItems: "center",
-              fontSize: 13,
-            }}
-          >
-            Updated: unavailable
-          </Card>
-        )}
+          )}
+
+
+        </Box>
 
         {/* Right: Product filter (desktop only) + Date picker */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -379,12 +365,33 @@ export default function MobileTopBar({
                     </Button>
                   )}
                   {['source', 'medium', 'campaign'].map(field => (
-                    <FormControl key={field} size="small" sx={{ width: 110 }}>
+                    <FormControl key={field} size="small" sx={{ width: 140 }}>
                       <InputLabel sx={{ fontSize: 12, textTransform: 'capitalize' }}>{field}</InputLabel>
                       <Select
                         label={field}
-                        value={utm?.[field] || ''}
-                        onChange={(e) => onUtmChange && onUtmChange({ [field]: e.target.value })}
+                        multiple
+                        value={Array.isArray(utm?.[field]) ? utm?.[field] : (utm?.[field] ? [utm?.[field]] : [])}
+                        onChange={(e, child) => {
+                          const allOptions = utmOptions?.[`utm_${field}`] || [];
+                          const currentVal = Array.isArray(utm?.[field]) ? utm?.[field] : (utm?.[field] ? [utm?.[field]] : []);
+
+                          if (child.props.value === '__ALL__') {
+                            if (currentVal.length === allOptions.length) {
+                              onUtmChange && onUtmChange({ [field]: [] });
+                            } else {
+                              onUtmChange && onUtmChange({ [field]: allOptions });
+                            }
+                            return;
+                          }
+
+                          const val = e.target.value.filter(v => v !== '__ALL__');
+                          const newVal = typeof val === 'string' ? val.split(',') : val;
+                          onUtmChange && onUtmChange({ [field]: newVal });
+                        }}
+                        renderValue={(selected) => {
+                          if (selected.length === 0) return <em>All</em>;
+                          return selected.join(', ');
+                        }}
                         sx={{
                           fontSize: 12,
                           height: 32,
@@ -394,38 +401,35 @@ export default function MobileTopBar({
                             overflow: 'hidden',
                             textOverflow: 'ellipsis'
                           }
-                        }} // dense + truncation
+                        }}
                         MenuProps={{
                           PaperProps: {
                             sx: {
                               maxHeight: '40vh',
-                              width: '9vw',
+                              width: 250,
                             }
                           },
                           anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
-                          transformOrigin: { vertical: 'top', horizontal: 'left' },
-                          onEntering: (node) => {
-                            const selectNode = node.parentElement?.querySelector('[role="combobox"]');
-                            if (selectNode) {
-                              node.style.width = `${selectNode.clientWidth}px`;
-                            }
-                          }
+                          transformOrigin: { vertical: 'top', horizontal: 'left' }
                         }}
                       >
-                        <MenuItem value=""><em>All</em></MenuItem>
+                        <MenuItem value="__ALL__" sx={{ fontSize: 12, py: 0, fontWeight: 500 }}>
+                          <Checkbox
+                            checked={(utmOptions?.[`utm_${field}`] || []).length > 0 && (utm?.[field]?.length === (utmOptions?.[`utm_${field}`] || []).length)}
+                            indeterminate={(utm?.[field]?.length > 0) && (utm?.[field]?.length < (utmOptions?.[`utm_${field}`] || []).length)}
+                            size="small"
+                            sx={{ p: 0.5, mr: 1 }}
+                          />
+                          <ListItemText primary="All" primaryTypographyProps={{ fontSize: 12, fontWeight: 600 }} />
+                        </MenuItem>
                         {(utmOptions?.[`utm_${field}`] || []).map(opt => (
-                          <MenuItem
-                            key={opt}
-                            value={opt}
-                            sx={{
-                              fontSize: 12,
-                              whiteSpace: 'nowrap',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              display: 'block'
-                            }}
-                          >
-                            {opt}
+                          <MenuItem key={opt} value={opt} sx={{ fontSize: 12, py: 0 }}>
+                            <Checkbox
+                              checked={(Array.isArray(utm?.[field]) ? utm?.[field] : (utm?.[field] ? [utm?.[field]] : [])).indexOf(opt) > -1}
+                              size="small"
+                              sx={{ p: 0.5, mr: 1 }}
+                            />
+                            <ListItemText primary={opt} primaryTypographyProps={{ fontSize: 12 }} />
                           </MenuItem>
                         ))}
                       </Select>
@@ -511,48 +515,29 @@ export default function MobileTopBar({
           {/* Mobile Filter Toggle Icon */}
           {/* Mobile Filter Toggle Icon REMOVED */}
 
+
+          {/* Date Label (Visible next to icon) */}
+          <Typography variant="subtitle2" sx={{ fontSize: 13, fontWeight: 600, mr: 1, display: 'block', color: 'text.secondary' }}>
+            {dateLabel}
+          </Typography>
+
           <Popover
             active={popoverActive}
             activator={
-              <Card
-                elevation={0}
+              <IconButton
                 onClick={togglePopover}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    togglePopover();
-                  }
-                }}
                 sx={{
-                  px: 1,
+                  width: 32,
                   height: 32,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  bgcolor: "primary.main",
-                  color: "primary.contrastText",
-                  minWidth: { xs: 120, sm: 140 },
-                  textAlign: "center",
-                  userSelect: "none",
-                  fontSize: 13,
-                  "&:hover": { filter: "brightness(0.98)" },
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: '50%',
+                  color: popoverActive ? 'primary.main' : 'text.secondary',
+                  bgcolor: popoverActive ? (isDark ? 'rgba(91, 163, 224, 0.1)' : 'rgba(11, 107, 203, 0.05)') : 'transparent',
                 }}
               >
-                <span
-                  style={{
-                    display: "inline-block",
-                    maxWidth: "100%",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {dateLabel}
-                </span>
-              </Card>
+                <CalendarMonthIcon fontSize="small" />
+              </IconButton>
             }
             onClose={handleClose}
             fullWidth={false}
