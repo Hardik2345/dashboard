@@ -2,7 +2,7 @@ const { QueryTypes } = require('sequelize');
 const redisClient = require('../lib/redis');
 const logger = require('../utils/logger');
 const { RangeSchema, isoDate } = require('../validation/schemas');
-const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta, computeTotalSessions, computeAtcSessions, hasUtmFilters } = require('../utils/metricsUtils');
+const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta, computeTotalSessions, computeAtcSessions, hasUtmFilters, appendUtmWhere, extractUtmParam } = require('../utils/metricsUtils');
 const { previousWindow, prevDayStr, parseIsoDate, formatIsoDate, shiftDays } = require('../utils/dateUtils');
 const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrandConnection } = require('../lib/brandConnectionManager');
@@ -48,9 +48,7 @@ async function calcTotalOrdersDelta({ start, end, align, conn, filters }) {
     const curReplacements = [rangeStart, rangeEnd, cutoffTime];
 
     if (filters) {
-      if (filters.utm_source) { rangeFilter += ` AND utm_source = ?`; curReplacements.push(filters.utm_source); }
-      if (filters.utm_medium) { rangeFilter += ` AND utm_medium = ?`; curReplacements.push(filters.utm_medium); }
-      if (filters.utm_campaign) { rangeFilter += ` AND utm_campaign = ?`; curReplacements.push(filters.utm_campaign); }
+      rangeFilter = appendUtmWhere(rangeFilter, curReplacements, filters);
     }
 
     const prevWin = previousWindow(rangeStart, rangeEnd);
@@ -59,9 +57,7 @@ async function calcTotalOrdersDelta({ start, end, align, conn, filters }) {
     // For previous window, we need same filters
     const prevReplacements = prevWin ? [prevWin.prevStart, prevWin.prevEnd, cutoffTime] : [];
     if (prevWin && filters) {
-      if (filters.utm_source) prevReplacements.push(filters.utm_source);
-      if (filters.utm_medium) prevReplacements.push(filters.utm_medium);
-      if (filters.utm_campaign) prevReplacements.push(filters.utm_campaign);
+      appendUtmWhere("", prevReplacements, filters);
     }
 
     const currPromise = conn.query(countSql, { type: QueryTypes.SELECT, replacements: curReplacements });
@@ -116,16 +112,12 @@ async function calcTotalSalesDelta({ start, end, align, compare, conn, filters }
     const curReplacements = [rangeStart, rangeEnd, cutoffTime];
 
     if (filters) {
-      if (filters.utm_source) { rangeFilter += ` AND utm_source = ?`; curReplacements.push(filters.utm_source); }
-      if (filters.utm_medium) { rangeFilter += ` AND utm_medium = ?`; curReplacements.push(filters.utm_medium); }
-      if (filters.utm_campaign) { rangeFilter += ` AND utm_campaign = ?`; curReplacements.push(filters.utm_campaign); }
+      rangeFilter = appendUtmWhere(rangeFilter, curReplacements, filters);
     }
 
     const prevReplacements = prevWin ? [prevWin.prevStart, prevWin.prevEnd, cutoffTime] : [];
     if (prevWin && filters) {
-      if (filters.utm_source) prevReplacements.push(filters.utm_source);
-      if (filters.utm_medium) prevReplacements.push(filters.utm_medium);
-      if (filters.utm_campaign) prevReplacements.push(filters.utm_campaign);
+      appendUtmWhere("", prevReplacements, filters);
     }
 
     const salesSql = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE ${rangeFilter}`;
@@ -355,15 +347,11 @@ async function calcAovDelta({ start, end, align, compare, conn, debug, filters }
       let whereExtra = "";
       const curReplacements = [start, end, cutoffTime];
       if (filters) {
-        if (filters.utm_source) { whereExtra += " AND utm_source = ?"; curReplacements.push(filters.utm_source); }
-        if (filters.utm_medium) { whereExtra += " AND utm_medium = ?"; curReplacements.push(filters.utm_medium); }
-        if (filters.utm_campaign) { whereExtra += " AND utm_campaign = ?"; curReplacements.push(filters.utm_campaign); }
+        whereExtra = appendUtmWhere(whereExtra, curReplacements, filters);
       }
       const prevReplacements = [prevWin.prevStart, prevWin.prevEnd, cutoffTime];
       if (filters) {
-        if (filters.utm_source) prevReplacements.push(filters.utm_source);
-        if (filters.utm_medium) prevReplacements.push(filters.utm_medium);
-        if (filters.utm_campaign) prevReplacements.push(filters.utm_campaign);
+        appendUtmWhere("", prevReplacements, filters);
       }
 
       const salesSqlWithFilter = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND created_time < ?` + whereExtra;
@@ -402,15 +390,11 @@ async function calcAovDelta({ start, end, align, compare, conn, debug, filters }
     let whereExtra = "";
     const curReplacements = [date, date, cutoffTime];
     if (filters) {
-      if (filters.utm_source) { whereExtra += " AND utm_source = ?"; curReplacements.push(filters.utm_source); }
-      if (filters.utm_medium) { whereExtra += " AND utm_medium = ?"; curReplacements.push(filters.utm_medium); }
-      if (filters.utm_campaign) { whereExtra += " AND utm_campaign = ?"; curReplacements.push(filters.utm_campaign); }
+      whereExtra = appendUtmWhere(whereExtra, curReplacements, filters);
     }
     const prevReplacements = [prev, prev, cutoffTime];
     if (filters) {
-      if (filters.utm_source) prevReplacements.push(filters.utm_source);
-      if (filters.utm_medium) prevReplacements.push(filters.utm_medium);
-      if (filters.utm_campaign) prevReplacements.push(filters.utm_campaign);
+      appendUtmWhere("", prevReplacements, filters);
     }
 
     const salesSqlWithFilter = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND created_time < ?` + whereExtra;
@@ -1186,9 +1170,9 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         const productIdRaw = (req.query.product_id || '').toString().trim();
         const filters = {
-          utm_source: (req.query.utm_source || '').trim() || null,
-          utm_medium: (req.query.utm_medium || '').trim() || null,
-          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+          utm_source: extractUtmParam(req.query.utm_source),
+          utm_medium: extractUtmParam(req.query.utm_medium),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
         };
         const hasUtm = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign);
 
@@ -1209,9 +1193,7 @@ function buildMetricsController() {
             whereSql += ` AND product_id = ?`;
             replacements.push(productIdRaw);
           }
-          if (filters.utm_source) { whereSql += ` AND utm_source = ?`; replacements.push(filters.utm_source); }
-          if (filters.utm_medium) { whereSql += ` AND utm_medium = ?`; replacements.push(filters.utm_medium); }
-          if (filters.utm_campaign) { whereSql += ` AND utm_campaign = ?`; replacements.push(filters.utm_campaign); }
+          whereSql = appendUtmWhere(whereSql, replacements, filters);
 
           const sql = `
             SELECT payment_type, COUNT(DISTINCT order_name) AS cnt
@@ -1264,17 +1246,15 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         const productIdRaw = (req.query.product_id || '').toString().trim();
         const filters = {
-          utm_source: (req.query.utm_source || '').trim() || null,
-          utm_medium: (req.query.utm_medium || '').trim() || null,
-          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+          utm_source: extractUtmParam(req.query.utm_source),
+          utm_medium: extractUtmParam(req.query.utm_medium),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
         };
 
         let whereSql = `WHERE created_at >= ? AND created_at < ?`;
         let replacements = []; // will be set below
         if (productIdRaw) whereSql += ` AND product_id = ?`;
-        if (filters.utm_source) whereSql += ` AND utm_source = ?`;
-        if (filters.utm_medium) whereSql += ` AND utm_medium = ?`;
-        if (filters.utm_campaign) whereSql += ` AND utm_campaign = ?`;
+        whereSql = appendUtmWhere(whereSql, [], filters);
 
         if (!start && !end) {
           return res.json({ metric: 'PAYMENT_SPLIT_SALES', range: { start: null, end: null }, cod_sales: 0, prepaid_sales: 0, partial_sales: 0, total_sales_from_split: 0, cod_percent: 0, prepaid_percent: 0, partial_percent: 0 });
@@ -1307,9 +1287,7 @@ function buildMetricsController() {
         try {
           replacements = [startTs, endTs];
           if (productIdRaw) replacements.push(productIdRaw);
-          if (filters.utm_source) replacements.push(filters.utm_source);
-          if (filters.utm_medium) replacements.push(filters.utm_medium);
-          if (filters.utm_campaign) replacements.push(filters.utm_campaign);
+          appendUtmWhere("", replacements, filters);
 
           rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements });
         } catch (e) {
@@ -1558,9 +1536,9 @@ function buildMetricsController() {
         const alignHour = Math.max(0, Math.min(23, alignHourRaw));
 
         const filters = {
-          utm_source: (req.query.utm_source || '').trim() || null,
-          utm_medium: (req.query.utm_medium || '').trim() || null,
-          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+          utm_source: extractUtmParam(req.query.utm_source),
+          utm_medium: extractUtmParam(req.query.utm_medium),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
           product_id: (req.query.product_id || '').trim() || null,
         };
         const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
@@ -1588,9 +1566,7 @@ function buildMetricsController() {
                         0 AS number_of_atc_sessions
                  FROM shopify_orders 
                  WHERE created_date >= ? AND created_date <= ?`;
-          if (filters.utm_source) { querySql += ` AND utm_source = ?`; queryReplacements.push(filters.utm_source); }
-          if (filters.utm_medium) { querySql += ` AND utm_medium = ?`; queryReplacements.push(filters.utm_medium); }
-          if (filters.utm_campaign) { querySql += ` AND utm_campaign = ?`; queryReplacements.push(filters.utm_campaign); }
+          querySql = appendUtmWhere(querySql, queryReplacements, filters);
           if (filters.product_id) { querySql += ` AND product_id = ?`; queryReplacements.push(filters.product_id); }
           querySql += ` GROUP BY date, hour`;
         }
@@ -1714,9 +1690,7 @@ function buildMetricsController() {
                          0 AS number_of_atc_sessions
                   FROM shopify_orders 
                   WHERE created_date >= ? AND created_date <= ?`;
-            if (filters.utm_source) { compSql += ` AND utm_source = ?`; compReplacements.push(filters.utm_source); }
-            if (filters.utm_medium) { compSql += ` AND utm_medium = ?`; compReplacements.push(filters.utm_medium); }
-            if (filters.utm_campaign) { compSql += ` AND utm_campaign = ?`; compReplacements.push(filters.utm_campaign); }
+            compSql = appendUtmWhere(compSql, compReplacements, filters);
             if (filters.product_id) { compSql += ` AND product_id = ?`; compReplacements.push(filters.product_id); }
             compSql += ` GROUP BY date, hour`;
           }
@@ -1804,9 +1778,9 @@ function buildMetricsController() {
         }
 
         const filters = {
-          utm_source: (req.query.utm_source || '').trim() || null,
-          utm_medium: (req.query.utm_medium || '').trim() || null,
-          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+          utm_source: extractUtmParam(req.query.utm_source),
+          utm_medium: extractUtmParam(req.query.utm_medium),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
           product_id: (req.query.product_id || '').trim() || null,
         };
         const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
@@ -1839,9 +1813,7 @@ function buildMetricsController() {
                        0 AS atc 
                 FROM shopify_orders 
                 WHERE created_date >= ? AND created_date <= ?`;
-          if (filters.utm_source) { sql += ` AND utm_source = ?`; replacements.push(filters.utm_source); }
-          if (filters.utm_medium) { sql += ` AND utm_medium = ?`; replacements.push(filters.utm_medium); }
-          if (filters.utm_campaign) { sql += ` AND utm_campaign = ?`; replacements.push(filters.utm_campaign); }
+          sql = appendUtmWhere(sql, replacements, filters);
           if (filters.product_id) { sql += ` AND product_id = ?`; replacements.push(filters.product_id); }
           sql += ` GROUP BY date ORDER BY date ASC`;
         }
@@ -1897,9 +1869,7 @@ function buildMetricsController() {
                          0 AS atc 
                   FROM shopify_orders 
                   WHERE created_date >= ? AND created_date <= ?`;
-            if (filters.utm_source) { compSql += ` AND utm_source = ?`; compReplacements.push(filters.utm_source); }
-            if (filters.utm_medium) { compSql += ` AND utm_medium = ?`; compReplacements.push(filters.utm_medium); }
-            if (filters.utm_campaign) { compSql += ` AND utm_campaign = ?`; compReplacements.push(filters.utm_campaign); }
+            compSql = appendUtmWhere(compSql, compReplacements, filters);
             if (filters.product_id) { compSql += ` AND product_id = ?`; compReplacements.push(filters.product_id); }
             compSql += ` GROUP BY date ORDER BY date ASC`;
           }
@@ -1945,9 +1915,9 @@ function buildMetricsController() {
         if (!start || !end) return res.status(400).json({ error: 'Both start and end dates are required' });
 
         const filters = {
-          utm_source: (req.query.utm_source || '').trim() || null,
-          utm_medium: (req.query.utm_medium || '').trim() || null,
-          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+          utm_source: extractUtmParam(req.query.utm_source),
+          utm_medium: extractUtmParam(req.query.utm_medium),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
           product_id: (req.query.product_id || '').trim() || null,
         };
         const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
@@ -1990,9 +1960,7 @@ function buildMetricsController() {
                        0 AS atc 
                 FROM shopify_orders 
                 WHERE created_date >= ? AND created_date <= ?`;
-          if (filters.utm_source) { sql += ` AND utm_source = ?`; replacements.push(filters.utm_source); }
-          if (filters.utm_medium) { sql += ` AND utm_medium = ?`; replacements.push(filters.utm_medium); }
-          if (filters.utm_campaign) { sql += ` AND utm_campaign = ?`; replacements.push(filters.utm_campaign); }
+          sql = appendUtmWhere(sql, replacements, filters);
           if (filters.product_id) { sql += ` AND product_id = ?`; replacements.push(filters.product_id); }
           sql += ` GROUP BY month_start ORDER BY month_start ASC`;
 
@@ -2067,9 +2035,7 @@ function buildMetricsController() {
                          0 AS atc 
                   FROM shopify_orders 
                   WHERE created_date >= ? AND created_date <= ?`;
-            if (filters.utm_source) { compSql += ` AND utm_source = ?`; compReplacements.push(filters.utm_source); }
-            if (filters.utm_medium) { compSql += ` AND utm_medium = ?`; compReplacements.push(filters.utm_medium); }
-            if (filters.utm_campaign) { compSql += ` AND utm_campaign = ?`; compReplacements.push(filters.utm_campaign); }
+            compSql = appendUtmWhere(compSql, compReplacements, filters);
             if (filters.product_id) { compSql += ` AND product_id = ?`; compReplacements.push(filters.product_id); }
             compSql += ` GROUP BY month_start ORDER BY month_start ASC`;
 
@@ -2707,9 +2673,9 @@ function buildMetricsController() {
         if (start > end) return res.status(400).json({ error: 'start must be on or before end' });
 
         const filters = {
-          utm_source: (req.query.utm_source || '').trim() || null,
-          utm_medium: (req.query.utm_medium || '').trim() || null,
-          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+          utm_source: extractUtmParam(req.query.utm_source),
+          utm_medium: extractUtmParam(req.query.utm_medium),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
         };
 
         if (!req.brandDb && req.brandConfig) {
@@ -2813,9 +2779,9 @@ function buildMetricsController() {
         if (start > end) return res.status(400).json({ error: 'start must be on or before end' });
 
         const filters = {
-          utm_source: (req.query.utm_source || '').trim() || null,
-          utm_medium: (req.query.utm_medium || '').trim() || null,
-          utm_campaign: (req.query.utm_campaign || '').trim() || null,
+          utm_source: extractUtmParam(req.query.utm_source),
+          utm_medium: extractUtmParam(req.query.utm_medium),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
         };
         const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign);
 
@@ -2931,9 +2897,13 @@ function buildMetricsController() {
             const buildOptionQuery = (field, otherFilters) => {
               let w = baseWhere + ` AND ${field} IS NOT NULL AND ${field} <> ""`;
               let r = [...baseReplacements];
-              if (otherFilters.utm_source && field !== 'utm_source') { w += ' AND utm_source = ?'; r.push(otherFilters.utm_source); }
-              if (otherFilters.utm_medium && field !== 'utm_medium') { w += ' AND utm_medium = ?'; r.push(otherFilters.utm_medium); }
-              if (otherFilters.utm_campaign && field !== 'utm_campaign') { w += ' AND utm_campaign = ?'; r.push(otherFilters.utm_campaign); }
+              // Filter out the current field
+              const f = { ...otherFilters };
+              if (field === 'utm_source') delete f.utm_source;
+              if (field === 'utm_medium') delete f.utm_medium;
+              if (field === 'utm_campaign') delete f.utm_campaign;
+
+              w = appendUtmWhere(w, r, f);
               return { sql: `SELECT DISTINCT ${field} FROM shopify_orders WHERE ${w} LIMIT 1000`, replacements: r };
             };
 

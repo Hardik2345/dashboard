@@ -32,6 +32,7 @@ export default function KPIs({
   onFunnelData,
   productId,
   productLabel,
+  utmOptions, // Prop from App
 }) {
   const [loading, setLoading] = useState(true);
   const [deltaLoading, setDeltaLoading] = useState(true);
@@ -266,10 +267,19 @@ export default function KPIs({
     ? data.cvrDelta.diff_pct ?? data.cvrDelta.diff_pp
     : undefined;
 
+  const formatUTM = (key, val, options) => {
+    if (!val || !Array.isArray(val) || val.length === 0) return null;
+    const allOptions = options?.[`utm_${key}`] || [];
+    if (allOptions.length > 0 && val.length === allOptions.length) {
+      return `${key}: all`;
+    }
+    return `${key}: ${val}`;
+  };
+
   const activeFilters = [
-    utmSource && { label: `source: ${utmSource}`, key: 'source' },
-    utmMedium && { label: `medium: ${utmMedium}`, key: 'medium' },
-    utmCampaign && { label: `campaign: ${utmCampaign}`, key: 'campaign' }
+    formatUTM('source', utmSource, utmOptions) && { label: formatUTM('source', utmSource, utmOptions), key: 'source' },
+    formatUTM('medium', utmMedium, utmOptions) && { label: formatUTM('medium', utmMedium, utmOptions), key: 'medium' },
+    formatUTM('campaign', utmCampaign, utmOptions) && { label: formatUTM('campaign', utmCampaign, utmOptions), key: 'campaign' }
   ].filter(Boolean);
 
   // Emit funnel data to parent for FunnelChart (avoids redundant API call)

@@ -113,6 +113,7 @@ function DateRangePicker({
   variant = 'default',
   disabled = false,
   singleDate = false,
+  labelPrefix = null,
 
   disableDatesAfter,
   sx = {},
@@ -229,7 +230,14 @@ function DateRangePicker({
               ...sx,
             }}
           >
-            <Typography variant="body2" noWrap sx={{ color: 'inherit' }}>{displayLabel}</Typography>
+            <Typography variant="body2" noWrap sx={{ color: 'inherit' }}>
+              {labelPrefix && (
+                <Box component="span" sx={{ opacity: 0.7, mr: 0.5, fontWeight: 400 }}>
+                  {labelPrefix}
+                </Box>
+              )}
+              {displayLabel}
+            </Typography>
           </Card>
         }
         onClose={handleClose}
@@ -371,7 +379,8 @@ function DetailedFilterPanel({
   filters,
   onAddFilter,
   onRemoveFilter,
-  onClearFilters
+  onClearFilters,
+  height // New prop
 }) {
   const theme = useTheme();
 
@@ -424,7 +433,7 @@ function DetailedFilterPanel({
 
   // Render as a persistent panel (Box/Card style)
   return (
-    <Box sx={{ width: { xs: '100%', md: 320 }, height: { xs: '100%', md: 800 }, display: 'flex', flexDirection: 'column', bgcolor: 'background.paper', borderLeft: { md: `1px solid ${theme.palette.divider}` } }}>
+    <Box sx={{ width: { xs: '100%', md: 320 }, height: { xs: '100%', md: height || 800 }, display: 'flex', flexDirection: 'column', bgcolor: 'background.paper', border: { md: `1px solid ${theme.palette.divider}` }, borderRadius: { md: 3 }, overflow: 'hidden' }}>
       {/* Header */}
       <Box sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'background.default' }}>
         <Typography variant="h6" fontWeight={600} fontSize="0.95rem" color="text.primary">Filter Panel</Typography>
@@ -730,7 +739,16 @@ export default function ProductConversionTable({ brandKey }) {
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const [visibleColumnIds, setVisibleColumnIds] = useState(columns.map(c => c.id));
+
+  // Dynamic Height Calculation for Filter Panel
+  const estimatedRowHeight = 55; // Avg row height with padding
+  const tableHeaderFooterHeight = 56 + 52; // Header + Pagination
+  const estimatedTableHeight = (pageSize * estimatedRowHeight) + tableHeaderFooterHeight;
+
+  // If 10 rows, match table height (approx). Else, 1/3 of table height.
+  // Exception: if table is very small (no data), use min height.
+  const panelHeight = pageSize === 10 ? Math.max(600, estimatedTableHeight) : Math.max(400, estimatedTableHeight / 4);
+  const [visibleColumnIds, setVisibleColumnIds] = useState(['landing_page_path', 'sessions', 'atc', 'cvr']);
 
   // Compute visible columns
   const visibleColumns = useMemo(() => {
@@ -1020,6 +1038,7 @@ export default function ProductConversionTable({ brandKey }) {
               endDate={end}
               onApply={applyDateChange}
               variant="default"
+              labelPrefix="Current:"
               activePresetLabel={activePreset}
               sx={{
                 width: '100%',
@@ -1040,6 +1059,7 @@ export default function ProductConversionTable({ brandKey }) {
                 endDate={compareEnd}
                 onApply={applyCompDateChange}
                 label="Compare"
+                labelPrefix="Compare:"
                 activePresetLabel={activeCompPreset}
                 disableDatesAfter={dayjs().subtract(1, 'day').toDate()}
                 sx={{
@@ -1124,6 +1144,7 @@ export default function ProductConversionTable({ brandKey }) {
             endDate={compareEnd}
             onApply={applyCompDateChange}
             label="Select comparison"
+            labelPrefix="Compare:"
             activePresetLabel={activeCompPreset}
             disabled={!compareMode}
             disableDatesAfter={dayjs().subtract(1, 'day').toDate()}
@@ -1134,6 +1155,7 @@ export default function ProductConversionTable({ brandKey }) {
             endDate={end}
             onApply={applyDateChange}
             variant="primary"
+            labelPrefix="Current:"
             activePresetLabel={activePreset}
             disableDatesAfter={compareMode ? dayjs().subtract(1, 'day').toDate() : null}
           />
@@ -1298,6 +1320,7 @@ export default function ProductConversionTable({ brandKey }) {
               visibleColumnIds={visibleColumnIds}
               setVisibleColumnIds={setVisibleColumnIds}
               filters={productState.filters || []}
+              height={panelHeight}
               onAddFilter={(newFilter) => {
                 const existingIdx = (productState.filters || []).findIndex(f => f.field === newFilter.field && f.operator === newFilter.operator);
                 if (existingIdx !== -1) {

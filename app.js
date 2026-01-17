@@ -541,6 +541,11 @@ if (sessionTrackingEnabled) {
   });
 }
 
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.json({ message: 'datum backend is running' });
+});
+
 // Routers
 app.use('/auth', buildAuthRouter({ passport, accessCache }));
 app.use('/activity', buildActivityRouter({ sessionTrackingEnabled, recordSessionActivity }));
