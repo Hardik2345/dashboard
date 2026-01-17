@@ -24,7 +24,8 @@ import {
     ListItemText,
     Fade,
     Grow,
-    Slide
+    Slide,
+    Checkbox // New Import
 } from '@mui/material';
 import { TransitionGroup } from 'react-transition-group'; // Check if this works, if not we rely on MUI inner
 import { GlassChip } from './ui/GlassChip';
@@ -113,7 +114,10 @@ export default function MobileFilterDrawer({
         }
     };
 
-    const activeUtmCount = [tempUtm?.source, tempUtm?.medium, tempUtm?.campaign].filter(Boolean).length;
+    const activeUtmCount = [tempUtm?.source, tempUtm?.medium, tempUtm?.campaign].map(v => {
+        if (Array.isArray(v)) return v.length > 0;
+        return !!v;
+    }).filter(Boolean).length;
 
     const handleClearAll = () => {
         if (onUtmChange) onUtmChange({ source: '', medium: '', campaign: '' });
@@ -187,23 +191,27 @@ export default function MobileFilterDrawer({
                                 </Grow>
                             )}
                             {/* UTM Chips */}
-                            {['source', 'medium', 'campaign'].map(field => utm?.[field] && (
-                                <Grow key={field} in={true}>
-                                    <div>
-                                        <GlassChip
-                                            label={`${field.charAt(0).toUpperCase() + field.slice(1)}: ${utm[field]}`}
-                                            onDelete={() => {
-                                                const update = { ...utm, [field]: '' };
-                                                if (onUtmChange) onUtmChange(update);
-                                                setTempUtm(update);
-                                            }}
-                                            size="small"
-                                            isDark={isDark}
-                                            sx={{ borderRadius: '9999px' }}
-                                        />
-                                    </div>
-                                </Grow>
-                            ))}
+                            {['source', 'medium', 'campaign'].map(field => {
+                                const val = utm?.[field];
+                                if (!val || (Array.isArray(val) && val.length === 0)) return null;
+                                return (
+                                    <Grow key={field} in={true}>
+                                        <div>
+                                            <GlassChip
+                                                label={`${field.charAt(0).toUpperCase() + field.slice(1)}: ${Array.isArray(val) ? val.join(', ') : val}`}
+                                                onDelete={() => {
+                                                    const update = { ...utm, [field]: '' };
+                                                    if (onUtmChange) onUtmChange(update);
+                                                    setTempUtm(update);
+                                                }}
+                                                size="small"
+                                                isDark={isDark}
+                                                sx={{ borderRadius: '9999px' }}
+                                            />
+                                        </div>
+                                    </Grow>
+                                )
+                            })}
                         </Box>
                     </Box>
                 </Fade>
@@ -360,7 +368,12 @@ export default function MobileFilterDrawer({
                                             {field}
                                         </Typography>
                                         <Typography variant="body1" fontSize={14} fontWeight={500} noWrap>
-                                            {tempUtm?.[field] || 'All'}
+                                            {(() => {
+                                                const val = tempUtm?.[field];
+                                                if (Array.isArray(val) && val.length > 0) return val.join(', ');
+                                                if (val && !Array.isArray(val)) return val;
+                                                return 'All';
+                                            })()}
                                         </Typography>
                                     </Box>
                                     <ChevronRightIcon fontSize="small" color="action" />
@@ -376,29 +389,55 @@ export default function MobileFilterDrawer({
                                 onClick={() => {
                                     const field = view.replace('UTM_', '').toLowerCase();
                                     setTempUtm({ ...tempUtm, [field]: '' });
-                                    handleBack();
+                                    // handleBack(); // Don't close on clear all in multi-select mode? Or maybe just clear selection.
+                                    // Actually better UX: 'All' means clear current selection
                                 }}
-                                selected={!tempUtm?.[view.replace('UTM_', '').toLowerCase()]}
                                 sx={{ py: 1.5 }}
                             >
+                                <Checkbox
+                                    checked={!tempUtm?.[view.replace('UTM_', '').toLowerCase()] || (Array.isArray(tempUtm?.[view.replace('UTM_', '').toLowerCase()]) && tempUtm?.[view.replace('UTM_', '').toLowerCase()].length === 0)}
+                                    size="small"
+                                    sx={{ p: 0.5, mr: 1 }}
+                                />
                                 <ListItemText primary="All" />
-                                {!tempUtm?.[view.replace('UTM_', '').toLowerCase()] && <CheckIcon fontSize="small" color="primary" />}
                             </ListItemButton>
                             {(utmOptions?.[`utm_${view.replace('UTM_', '').toLowerCase()}`] || []).map(opt => {
                                 const field = view.replace('UTM_', '').toLowerCase();
-                                const isSelected = tempUtm?.[field] === opt;
+                                const current = tempUtm?.[field];
+                                const isSelected = Array.isArray(current)
+                                    ? current.includes(opt)
+                                    : current === opt;
+
                                 return (
                                     <ListItemButton
                                         key={opt}
                                         onClick={() => {
-                                            setTempUtm({ ...tempUtm, [field]: opt });
-                                            handleBack();
+                                            let newVal;
+                                            if (Array.isArray(current)) {
+                                                newVal = current.includes(opt)
+                                                    ? current.filter(x => x !== opt)
+                                                    : [...current, opt];
+                                            } else {
+                                                // Was string or null, now array
+                                                // If it was already this val (shouldn't happen if we strictly use arrays but for safety), toggle off
+                                                if (current === opt) newVal = [];
+                                                else newVal = current ? [current, opt] : [opt];
+                                            }
+                                            // Handle the case where user had single string selected before update
+                                            // If current was string and not equal to opt, we make it array [current, opt]
+
+                                            setTempUtm({ ...tempUtm, [field]: newVal });
+                                            // handleBack(); // Keep open for multi-select
                                         }}
                                         selected={isSelected}
-                                        sx={{ py: 1.5 }}
+                                        sx={{ py: 0.5 }} // denser
                                     >
+                                        <Checkbox
+                                            checked={isSelected}
+                                            size="small"
+                                            sx={{ p: 0.5, mr: 1 }}
+                                        />
                                         <ListItemText primary={opt} primaryTypographyProps={{ fontSize: 14, noWrap: true }} />
-                                        {isSelected && <CheckIcon fontSize="small" color="primary" />}
                                     </ListItemButton>
                                 );
                             })}

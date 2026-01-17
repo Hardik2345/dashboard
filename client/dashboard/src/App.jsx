@@ -5,7 +5,7 @@ import enTranslations from '@shopify/polaris/locales/en.json';
 import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, Skeleton } from '@mui/material';
 import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
-import { listAuthorBrands, getTopProducts } from './lib/api.js';
+import { listAuthorBrands, getTopProducts, getDashboardSummary } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
 import Unauthorized from './components/Unauthorized.jsx';
 import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
@@ -110,6 +110,7 @@ export default function App() {
   const [productOptions, setProductOptions] = useState([DEFAULT_PRODUCT_OPTION]);
   const [productOptionsLoading, setProductOptionsLoading] = useState(false);
   const [funnelData, setFunnelData] = useState({ stats: null, deltas: null, loading: true });
+  const [utmOptions, setUtmOptions] = useState(null);
 
   // Keep a data attribute on the body so global CSS (e.g., Polaris overrides) can react to theme changes.
   useEffect(() => {
@@ -420,7 +421,6 @@ export default function App() {
     }
   }, [start, end]);
 
-  // Persist when UTM changes
   useEffect(() => {
     try {
       localStorage.setItem('pts_utm_filters_v1', JSON.stringify(utm));
@@ -428,6 +428,26 @@ export default function App() {
       // Ignore
     }
   }, [utm]);
+
+  // Fetch UTM Options (Lifted from MobileTopBar)
+  useEffect(() => {
+    if (!isAuthor || authorTab !== 'dashboard' || !activeBrandKey) return;
+    const s = formatDate(start);
+    const e = formatDate(end);
+
+    getDashboardSummary({
+      brand_key: activeBrandKey,
+      start: s,
+      end: e,
+      include_utm_options: true,
+      utm_source: utm?.source, // Dependent filtering
+      utm_medium: utm?.medium,
+      utm_campaign: utm?.campaign
+    })
+      .then(res => {
+        if (res.filter_options) setUtmOptions(res.filter_options);
+      });
+  }, [activeBrandKey, start, end, utm, isAuthor, authorTab]);
 
   // Check auth on mount
   useEffect(() => {
@@ -614,6 +634,7 @@ export default function App() {
                       utm={utm}
                       onUtmChange={handleUtmChange}
                       showUtmFilter={true}
+                      utmOptions={utmOptions}
                     />
                   )}
                   <MobileFilterDrawer
@@ -655,6 +676,7 @@ export default function App() {
                             onFunnelData={setFunnelData}
                             productId={productSelection.id}
                             productLabel={productSelection.label}
+                            utmOptions={utmOptions}
                           />
                           <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
                           <WebVitals query={metricsQuery} />
@@ -766,7 +788,7 @@ export default function App() {
               top: 0,
               zIndex: (theme) => theme.zIndex.appBar,
               bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
-              pb: 1,
+              pb: 0,
               borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
               borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
               transition: 'border-color 0.2s ease',
@@ -781,7 +803,7 @@ export default function App() {
               showFilterButton={!!(isAuthor || user?.isAdmin)}
             />
           </Box>
-          <Container maxWidth="sm" sx={{ pt: { xs: 1.5, sm: 3 } }}>
+          <Container maxWidth="sm" sx={{ pt: { xs: 0, sm: 2 }, mt: { xs: -1, sm: 0 }, position: 'relative', zIndex: 1 }}>
             <MobileTopBar
               value={range}
               onChange={handleRangeChange}
