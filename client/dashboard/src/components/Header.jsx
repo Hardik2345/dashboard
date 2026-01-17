@@ -2,6 +2,7 @@ import { AppBar, Toolbar, Box, Button, IconButton, useTheme, useMediaQuery, Tool
 import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu';
 import FilterListIcon from '@mui/icons-material/FilterList'; // New Import
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import SkyToggle from './ui/SkyToggle';
 
 export default function Header({
@@ -27,14 +28,14 @@ export default function Header({
         bgcolor: 'transparent',
       }}
     >
-      <Toolbar sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: { xs: 56, md: 64 }, py: 0 }}>
+      <Toolbar sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: { xs: 48, md: 64 }, py: 0 }}>
 
         {/* Left: Hamburger menu + Mobile Brand Logo */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {showMenuButton && isMobile && (
             <IconButton
               onClick={onMenuClick}
-              size="medium"
+              size="small"
               aria-label="Open navigation menu"
             >
               <MenuIcon />
@@ -50,9 +51,9 @@ export default function Header({
             decoding="async"
             sx={{
               display: { xs: 'block', md: 'none' }, // Mobile only
-              height: { xs: 52, sm: 40 },
+              height: { xs: 54, sm: 40 },
               width: 'auto',
-              ml: 0.5,
+              ml: 0,
               ...(darkMode
                 ? {
                   filter: 'invert(1) hue-rotate(180deg) brightness(1.2)',
@@ -101,35 +102,34 @@ export default function Header({
 
         {/* Right: User info and actions */}
         {user && (
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0 }}>
+
 
             {/* Filter Button (Mobile: First) */}
             {showFilterButton && isMobile && (
-              <Button
+              <IconButton
                 onClick={onFilterClick}
-                endIcon={<FilterListIcon />}
                 size="small"
                 sx={{
-                  textTransform: 'none',
                   color: darkMode ? '#f0f0f0' : 'inherit',
-                  bgcolor: darkMode ? 'rgba(250, 247, 247, 0.05)' : 'rgba(87, 81, 81, 0.05)',
+                  bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                  border: '1px solid',
                   borderColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                  borderRadius: '8px',
                   mr: 1,
-                  fontSize: '0.8rem',
-                  fontWeight: 500,
+                  p: 0.5,
                   '&:hover': {
-                    bgcolor: darkMode ? 'rgba(250, 247, 247, 0.1)' : 'rgba(87, 81, 81, 0.1)',
+                    bgcolor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
                   },
-                  border: '0.5px solid grey',
                 }}
               >
-                Filters
-              </Button>
+                <TuneRoundedIcon fontSize="small" />
+              </IconButton>
             )}
 
             {/* Dark Mode Toggle (Mobile: Second, Desktop: First) */}
             <Tooltip title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'} arrow>
-              <Box sx={{ mr: 0.5 }}>
+              <Box sx={{ mr: { xs: 0.1, sm: 1 } }}>
                 <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
               </Box>
             </Tooltip>
