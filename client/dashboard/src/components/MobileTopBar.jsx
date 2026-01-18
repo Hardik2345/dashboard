@@ -313,7 +313,7 @@ export default function MobileTopBar({
                   height: 32,
                   display: "flex",
                   alignItems: "center",
-                  fontSize: 12,
+                  fontSize: 11.1,
                 }}
               >
                 Updated {last.ts.fromNow()}
@@ -644,10 +644,10 @@ export default function MobileTopBar({
                             py: 1,
                             px: 1.5,
                             bgcolor: isSelected
-                              ? (isDark ? 'action.selected' : 'grey.100')
+                              ? (isDark ? 'action.selecte' : 'grey.100')
                               : 'transparent',
                             '&:hover': {
-                              bgcolor: isDark ? 'action.hover' : 'grey.100',
+                              bgcolor: isDark ? 'black' : 'grey.100',
                             },
                             '&.Mui-selected': {
                               bgcolor: isDark ? 'action.selected' : 'grey.200',

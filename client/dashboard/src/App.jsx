@@ -595,10 +595,8 @@ export default function App() {
                   top: 0,
                   zIndex: (theme) => theme.zIndex.appBar,
                   bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
-                  pb: 1,
-                  borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
-                  borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-                  transition: 'border-color 0.2s ease',
+                  // pb: 1, // Removed to eliminate extra black area
+                  // borderBottom handled in Header.jsx now
                 }}
               >
                 <Header

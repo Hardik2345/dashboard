@@ -248,6 +248,13 @@ export async function getDeltaSummary(args) {
   };
 }
 
+export async function fetchProductTypes(brandKey, start, end) {
+  const params = { brand_key: brandKey };
+  if (start) params.start = start;
+  if (end) params.end = end;
+  return getJSON('/metrics/product-types', params);
+}
+
 export async function getProductConversion(args, options = {}) {
   const params = appendBrandKey({
     start: args.start,
@@ -259,8 +266,28 @@ export async function getProductConversion(args, options = {}) {
     compare_start: args.compareStart,
     compare_end: args.compareEnd,
     filters: args.filters,
+    product_types: args.product_types,
     search: args.search,
   }, args);
+  // Ensure product_types is serialized if needed, but getJSON/qs handles arrays automatically as multiple keys or we might need JSON.stringify if backend expects JSON string.
+  // Backend expects: productTypes = typeof req.query.product_types === 'string' ? JSON.parse(...) : req.query.product_types;
+  // So if we pass array here, qs() currently repeats keys: key=val1&key=val2.
+  // Backend logic: productTypes = ... : req.query.product_types. If express sees multiple keys, it creates an array.
+  // So standard array passing works. UNLESS backend specifically uses JSON.parse on it.
+  // Backend code I wrote:
+  // if (req.query.product_types) { ... JSON.parse ... : req.query.product_types }
+  // So if it's an array (from qs repeating keys), JSON.parse might fail or not be needed.
+  // Wait, if qs repeats keys, express body parser urlencoded extended: true makes it array?
+  // Actually, axios/fetch with qs function I see in api.js:
+  // qs function:
+  // if (Array.isArray(v)) { v.forEach(val => parts.push(...)) }
+  // So ?product_types=A&product_types=B.
+  // Express req.query.product_types will be ['A', 'B'].
+  // My backend code: typeof ... === 'string' ? JSON.parse : ...
+  // If it's array, it falls to else, which is correct.
+  // HOWEVER, implementing JSON.stringify explicitly is wider compatibility safely, like filters.
+  if (params.product_types) params.product_types = JSON.stringify(params.product_types);
+
   const res = await doGet('/metrics/product-conversion', params, { signal: options.signal });
   if (res.error) return { error: true };
   const json = res.data || {};
@@ -283,6 +310,7 @@ export async function exportProductConversionCsv(args) {
     sort_dir: args.sortDir,
     // Fix: Serialize filters array to JSON string to avoid [object Object] in query string
     filters: args.filters ? JSON.stringify(args.filters) : undefined,
+    product_types: args.product_types ? JSON.stringify(args.product_types) : undefined,
     search: args.search,
     visible_columns: args.visible_columns ? JSON.stringify(args.visible_columns) : undefined,
     page: args.page,
