@@ -1382,7 +1382,7 @@ export default function ProductConversionTable({ brandKey }) {
             onClose={() => setShowFilterPanel(false)}
             PaperProps={{
               sx: {
-                height: '80vh',
+                height: '70vh',
                 borderRadius: '16px 16px 0 0',
                 bgcolor: 'background.paper',
                 backgroundImage: 'none',
