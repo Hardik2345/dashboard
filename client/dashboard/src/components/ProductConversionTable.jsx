@@ -38,6 +38,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import KeyboardArrowLeft from '@mui/icons-material/KeyboardArrowLeft';
 import KeyboardArrowRight from '@mui/icons-material/KeyboardArrowRight';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import { GlassChip } from './ui/GlassChip';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import CloseIcon from '@mui/icons-material/Close';
@@ -49,8 +50,8 @@ import { Popover, DatePicker } from '@shopify/polaris';
 import { AppProvider } from '@shopify/polaris';
 import enTranslations from '@shopify/polaris/locales/en.json';
 import { useAppDispatch, useAppSelector } from '../state/hooks.js';
-import { fetchProductConversion, setDateRange, setPage, setPageSize, setSort, setCompareMode, setCompareDateRange, addFilter, removeFilter, clearFilters, setSearch } from '../state/slices/productConversionSlice.js';
-import { exportProductConversionCsv } from '../lib/api.js';
+import { fetchProductConversion, setDateRange, setPage, setPageSize, setSort, setCompareMode, setCompareDateRange, addFilter, removeFilter, clearFilters, setSearch, setSelectedProductTypes } from '../state/slices/productConversionSlice.js';
+import { exportProductConversionCsv, fetchProductTypes } from '../lib/api.js';
 import { useTheme } from '@mui/material/styles';
 import { validateFilter } from '../lib/filterValidation.js';
 
@@ -366,9 +367,10 @@ function DeltaBadge({ current, previous, isPercent }) {
 }
 
 
-import { Collapse, IconButton, Tooltip, Checkbox, ListItem, ListItemIcon, ListItemSecondaryAction, Paper } from '@mui/material';
+import { Collapse, IconButton, Tooltip, Checkbox, ListItem, ListItemIcon, ListItemSecondaryAction, Paper, Accordion, AccordionSummary, AccordionDetails } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 // --- Detailed Filter Panel Component (Persistent Side Panel Mode) ---
 function DetailedFilterPanel({
@@ -380,9 +382,20 @@ function DetailedFilterPanel({
   onAddFilter,
   onRemoveFilter,
   onClearFilters,
+
+  productTypes, // New prop: available types
+  selectedProductTypes, // New prop: selected types
+  onProductTypeChange, // New prop: handler
   height // New prop
 }) {
   const theme = useTheme();
+
+  // Accordion state
+  const [expanded, setExpanded] = useState('metrics'); // 'metrics', 'product_types', 'filters', or false (if allow closing all)
+
+  const handleAccordionChange = (panel) => (event, isExpanded) => {
+    setExpanded(isExpanded ? panel : false);
+  };
 
   // State for new filter creation
   const [showAddForm, setShowAddForm] = useState(false);
@@ -434,20 +447,16 @@ function DetailedFilterPanel({
   // Render as a persistent panel (Box/Card style)
   return (
     <Box sx={{ width: { xs: '100%', md: 320 }, height: { xs: '100%', md: height || 800 }, display: 'flex', flexDirection: 'column', bgcolor: 'background.paper', border: { md: `1px solid ${theme.palette.divider}` }, borderRadius: { md: 3 }, overflow: 'hidden' }}>
-      {/* Header */}
-      <Box sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'background.default' }}>
-        <Typography variant="h6" fontWeight={600} fontSize="0.95rem" color="text.primary">Filter Panel</Typography>
-        <IconButton onClick={onClose} size="small"><CloseIcon fontSize="small" /></IconButton>
-      </Box>
 
-      <Box sx={{ overflowY: 'auto', flex: 1, p: 2 }}>
 
-        {/* Metrics Section */}
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="subtitle2" color="text.primary" sx={{ mb: 1, textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
-            Metrics
-          </Typography>
-          <Card variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+      <Box sx={{ flex: 1, overflowY: 'hidden', display: 'flex', flexDirection: 'column' }}>
+
+        {/* Metrics Accordion */}
+        <Accordion expanded={expanded === 'metrics'} onChange={handleAccordionChange('metrics')} disableGutters elevation={0} sx={{ '&:before': { display: 'none' }, borderBottom: `1px solid ${theme.palette.divider}` }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'background.default', minHeight: 48, '&.Mui-expanded': { minHeight: 48 } }}>
+            <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>Metrics</Typography>
+          </AccordionSummary>
+          <AccordionDetails sx={{ p: 0, maxHeight: height ? height - 150 : 300, overflowY: 'auto' }}>
             <List dense disablePadding>
               {/* "All" Toggle */}
               <ListItem dense divider button onClick={handleToggleAllMetrics}>
@@ -483,56 +492,85 @@ function DetailedFilterPanel({
                 );
               })}
             </List>
-          </Card>
-        </Box>
+          </AccordionDetails>
+        </Accordion>
 
-        {/* Filters Section */}
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
-              Filters
-            </Typography>
-            <Tooltip title="Add New Filter">
-              <IconButton size="small" onClick={() => setShowAddForm(!showAddForm)} color={showAddForm ? 'primary' : 'default'} sx={{ bgcolor: showAddForm ? 'action.selected' : 'transparent', border: '1px solid', borderColor: 'divider' }}>
-                <AddIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Box>
+        {/* Product Type Section */}
+        {/* Product Type Accordion */}
+        <Accordion expanded={expanded === 'product_types'} onChange={handleAccordionChange('product_types')} disableGutters elevation={0} sx={{ '&:before': { display: 'none' }, borderBottom: `1px solid ${theme.palette.divider}` }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'background.default', minHeight: 48, '&.Mui-expanded': { minHeight: 48 } }}>
+            <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>Product Type</Typography>
+          </AccordionSummary>
+          <AccordionDetails sx={{ p: 0, maxHeight: height ? height - 250 : 300, overflowY: 'auto' }}>
+            {(!productTypes || productTypes.length === 0) ? (
+              <Box sx={{ p: 2, textAlign: 'center' }}><Typography variant="caption" color="text.secondary">No types available</Typography></Box>
+            ) : (
+              <List dense disablePadding>
+                {/* "All" Toggle */}
+                <ListItem dense divider button onClick={() => onProductTypeChange([])}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <Checkbox
+                      edge="start"
+                      checked={selectedProductTypes.length === 0}
+                      tabIndex={-1}
+                      disableRipple
+                      size="small"
+                    />
+                  </ListItemIcon>
+                  <ListItemText primary="All" primaryTypographyProps={{ fontWeight: 600, fontSize: '0.875rem' }} />
+                </ListItem>
 
-          {/* Add Filter Form */}
-          <Collapse in={showAddForm} unmountOnExit>
-            <Card variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: 'background.default', borderStyle: 'dashed' }}>
-              <Stack spacing={2}>
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Field</InputLabel>
-                  <Select
-                    value={field}
-                    label="Field"
-                    onChange={(e) => setField(e.target.value)}
-                    MenuProps={{
-                      PaperProps: {
-                        sx: {
-                          width: 'var(--select-width)',
-                        }
-                      },
-                      onEntering: (node) => {
-                        const selectNode = node.parentElement?.querySelector('[role="combobox"]');
-                        if (selectNode) {
-                          node.style.width = `${selectNode.clientWidth}px`;
-                        }
-                      }
-                    }}
-                  >
-                    {allColumns.filter(c => c.id !== 'landing_page_path').map(c => (
-                      <MenuItem key={c.id} value={c.id}>{c.label}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                <Stack direction="row" spacing={1}>
-                  <FormControl size="small" sx={{ width: '40%' }}>
+                {/* Individual Types */}
+                {productTypes.map((type) => {
+                  const isChecked = selectedProductTypes.includes(type);
+                  return (
+                    <ListItem key={type} dense divider button onClick={() => {
+                      const newSelection = isChecked
+                        ? selectedProductTypes.filter(t => t !== type)
+                        : [...selectedProductTypes, type];
+                      onProductTypeChange(newSelection);
+                    }}>
+                      <ListItemIcon sx={{ minWidth: 36 }}>
+                        <Checkbox
+                          edge="start"
+                          checked={isChecked}
+                          tabIndex={-1}
+                          disableRipple
+                          size="small"
+                        />
+                      </ListItemIcon>
+                      <ListItemText primary={type} primaryTypographyProps={{ fontSize: '0.875rem' }} />
+                    </ListItem>
+                  );
+                })}
+              </List>
+            )}
+          </AccordionDetails>
+        </Accordion>
+
+        {/* Filters Accordion */}
+        <Accordion expanded={expanded === 'filters'} onChange={handleAccordionChange('filters')} disableGutters elevation={0} sx={{ '&:before': { display: 'none' }, borderBottom: `1px solid ${theme.palette.divider}` }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'background.default', minHeight: 48, '&.Mui-expanded': { minHeight: 48 } }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', pr: 2 }}>
+              <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>Filters</Typography>
+              <Tooltip title="Add New Filter">
+                <IconButton size="small" onClick={(e) => { e.stopPropagation(); setShowAddForm(!showAddForm); setExpanded('filters'); }} color={showAddForm ? 'primary' : 'default'} sx={{ bgcolor: showAddForm ? 'action.selected' : 'transparent', border: '1px solid', borderColor: 'divider', p: 0.5 }}>
+                  <AddIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+          </AccordionSummary>
+          <AccordionDetails sx={{ p: 2, maxHeight: height ? height - 150 : 300, overflowY: 'auto' }}>
+            {/* Add Filter Form */}
+            <Collapse in={showAddForm} unmountOnExit>
+              <Card variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: 'background.default', borderStyle: 'dashed' }}>
+                <Stack spacing={2}>
+                  <FormControl size="small" fullWidth>
+                    <InputLabel>Field</InputLabel>
                     <Select
-                      value={operator}
-                      onChange={(e) => setOperator(e.target.value)}
+                      value={field}
+                      label="Field"
+                      onChange={(e) => setField(e.target.value)}
                       MenuProps={{
                         PaperProps: {
                           sx: {
@@ -547,70 +585,95 @@ function DetailedFilterPanel({
                         }
                       }}
                     >
-                      <MenuItem value="gt">&gt; (Gt)</MenuItem>
-                      <MenuItem value="lt">&lt; (Lt)</MenuItem>
+                      {allColumns.filter(c => c.id !== 'landing_page_path').map(c => (
+                        <MenuItem key={c.id} value={c.id}>{c.label}</MenuItem>
+                      ))}
                     </Select>
                   </FormControl>
-                  <TextField
-                    size="small"
-                    type="number"
-                    placeholder="Val"
-                    value={value}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '' || Number(val) >= 0) {
-                        setValue(val);
-                      }
-                    }}
-                    inputProps={{ min: 0 }}
-                    sx={{ flex: 1 }}
-                  />
+                  <Stack direction="row" spacing={1}>
+                    <FormControl size="small" sx={{ width: '40%' }}>
+                      <Select
+                        value={operator}
+                        onChange={(e) => setOperator(e.target.value)}
+                        MenuProps={{
+                          PaperProps: {
+                            sx: {
+                              width: 'var(--select-width)',
+                            }
+                          },
+                          onEntering: (node) => {
+                            const selectNode = node.parentElement?.querySelector('[role="combobox"]');
+                            if (selectNode) {
+                              node.style.width = `${selectNode.clientWidth}px`;
+                            }
+                          }
+                        }}
+                      >
+                        <MenuItem value="gt">&gt; (Gt)</MenuItem>
+                        <MenuItem value="lt">&lt; (Lt)</MenuItem>
+                      </Select>
+                    </FormControl>
+                    <TextField
+                      size="small"
+                      type="number"
+                      placeholder="Val"
+                      value={value}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || Number(val) >= 0) {
+                          setValue(val);
+                        }
+                      }}
+                      inputProps={{ min: 0 }}
+                      sx={{ flex: 1 }}
+                    />
+                  </Stack>
+
+                  {!validation.valid && (
+                    <Alert severity="warning" sx={{ py: 0, px: 1, '& .MuiAlert-message': { fontSize: '0.75rem' }, alignItems: 'center' }}>
+                      {validation.message}
+                    </Alert>
+                  )}
+
+                  <Button variant="contained" size="small" disabled={!field || !value || !validation.valid} onClick={handleAddF} sx={{ alignSelf: 'flex-end', textTransform: 'none', borderRadius: 2, boxShadow: 'none' }}>
+                    Apply Filter
+                  </Button>
                 </Stack>
+              </Card>
+            </Collapse>
 
-                {!validation.valid && (
-                  <Alert severity="warning" sx={{ py: 0, px: 1, '& .MuiAlert-message': { fontSize: '0.75rem' }, alignItems: 'center' }}>
-                    {validation.message}
-                  </Alert>
-                )}
-
-                <Button variant="contained" size="small" disabled={!field || !value || !validation.valid} onClick={handleAddF} sx={{ alignSelf: 'flex-end', textTransform: 'none', borderRadius: 2, boxShadow: 'none' }}>
-                  Apply Filter
-                </Button>
-              </Stack>
-            </Card>
-          </Collapse>
-
-          {/* Active Filters List */}
-          {filters.length === 0 && !showAddForm ? (
-            <Box sx={{ p: 3, textAlign: 'center', bgcolor: 'action.hover', borderRadius: 2, border: '1px dashed', borderColor: 'divider' }}>
-              <Typography variant="body2" color="text.secondary">No active filters</Typography>
-              <Typography variant="caption" color="text.secondary">Click + to add one</Typography>
-            </Box>
-          ) : (
-            <Box sx={{ maxHeight: 200, overflowY: 'auto', pr: 0.5 }}>
-              <Stack spacing={1}>
-                {filters.map((f, idx) => {
-                  const col = allColumns.find(c => c.id === f.field);
-                  return (
-                    <Card key={idx} variant="outlined" sx={{ p: 1, pl: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 2, borderColor: 'primary.main' }}>
-                      <Box>
-                        <Typography variant="caption" display="block" color="text.secondary" fontSize="0.65rem" fontWeight={600} sx={{ textTransform: 'uppercase' }}>
-                          {col?.label || f.field}
-                        </Typography>
-                        <Typography variant="body2" fontWeight={500} fontSize="0.75rem">
-                          {f.operator === 'gt' ? 'Greater than' : 'Less than'} <b>{f.value}</b>
-                        </Typography>
-                      </Box>
-                      <IconButton size="small" onClick={() => onRemoveFilter(idx)} sx={{ color: 'text.secondary', '&:hover': { color: 'error.main' } }}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Card>
-                  );
-                })}
-              </Stack>
-            </Box>
-          )}
-        </Box>
+            {/* Active Filters List */}
+            {filters.length === 0 && !showAddForm ? (
+              <Box sx={{ p: 3, textAlign: 'center', bgcolor: 'action.hover', borderRadius: 2, border: '1px dashed', borderColor: 'divider' }}>
+                <Typography variant="body2" color="text.secondary">No active filters</Typography>
+                <Typography variant="caption" color="text.secondary">Click + to add one</Typography>
+              </Box>
+            ) : (
+              <Box sx={{ pr: 0.5 }}>
+                <Stack spacing={1}>
+                  {filters.map((f, idx) => {
+                    const col = allColumns.find(c => c.id === f.field);
+                    return (
+                      <Card key={idx} variant="outlined" sx={{ p: 1, pl: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 2, borderColor: 'primary.main' }}>
+                        <Box>
+                          <Typography variant="caption" display="block" color="text.secondary" fontSize="0.65rem" fontWeight={600} sx={{ textTransform: 'uppercase' }}>
+                            {col?.label || f.field}
+                          </Typography>
+                          <Typography variant="body2" fontWeight={500} fontSize="0.75rem">
+                            {f.operator === 'gt' ? 'Greater than' : 'Less than'} <b>{f.value}</b>
+                          </Typography>
+                        </Box>
+                        <IconButton size="small" onClick={() => onRemoveFilter(idx)} sx={{ color: 'text.secondary', '&:hover': { color: 'error.main' } }}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Card>
+                    );
+                  })}
+                </Stack>
+              </Box>
+            )}
+          </AccordionDetails>
+        </Accordion>
 
       </Box>
 
@@ -720,9 +783,10 @@ export default function ProductConversionTable({ brandKey }) {
 
   const dispatch = useAppDispatch();
   const productState = useAppSelector((state) => state.productConversion);
-  const { start, end, page, pageSize, sortBy, sortDir, rows, totalCount, status, error, compareMode, compareStart, compareEnd } = productState;
+  const { start, end, page, pageSize, sortBy, sortDir, rows, totalCount, status, error, compareMode, compareStart, compareEnd, selectedProductTypes } = productState; // Added selectedProductTypes
   const [exporting, setExporting] = useState(false);
   const [localSearch, setLocalSearch] = useState(productState.search || '');
+  const [availableProductTypes, setAvailableProductTypes] = useState([]); // Local state for available types
 
   // Columns definition (Memoized to prevent recreation)
   const columns = useMemo(() => [
@@ -743,11 +807,20 @@ export default function ProductConversionTable({ brandKey }) {
   // Dynamic Height Calculation for Filter Panel
   const estimatedRowHeight = 55; // Avg row height with padding
   const tableHeaderFooterHeight = 56 + 52; // Header + Pagination
-  const estimatedTableHeight = (pageSize * estimatedRowHeight) + tableHeaderFooterHeight;
+  // Use actual displayed rows for calculation, fallback to pageSize if loading or empty
+  const displayedRowCount = Math.max(1, rows?.length || 0);
+  const estimatedTableHeight = (displayedRowCount * estimatedRowHeight) + tableHeaderFooterHeight;
 
-  // If 10 rows, match table height (approx). Else, 1/3 of table height.
-  // Exception: if table is very small (no data), use min height.
-  const panelHeight = pageSize === 10 ? Math.max(600, estimatedTableHeight) : Math.max(400, estimatedTableHeight / 4);
+  // Calculate height based on actual content, ensuring a reasonable min height
+  const panelHeight = useMemo(() => {
+    // If table is very short (few rows), stick to a minimum height for the panel
+    // If table is long, let the panel grow but capped or scaled
+    const minHeight = 500;
+    const maxHeight = 800;
+
+    // Simply match table height bounded by min/max
+    return Math.min(Math.max(minHeight, estimatedTableHeight), maxHeight);
+  }, [displayedRowCount, estimatedTableHeight]);
   const [visibleColumnIds, setVisibleColumnIds] = useState(['landing_page_path', 'sessions', 'atc', 'cvr']);
 
   // Compute visible columns
@@ -758,7 +831,8 @@ export default function ProductConversionTable({ brandKey }) {
   // Handler for clearing all filters
   const handleClearFilters = () => {
     dispatch(clearFilters());
-    triggerFetch({ filters: [] });
+    dispatch(setSelectedProductTypes([]));
+    triggerFetch({ filters: [], product_types: [] });
   };
 
 
@@ -829,6 +903,21 @@ export default function ProductConversionTable({ brandKey }) {
   }, [localSearch, productState.search, dispatch, triggerFetch]);
 
   useEffect(() => { if (brandKey) runFetch(); }, [brandKey, runFetch]);
+
+  // Fetch product types on mount or brand change OR date change
+  useEffect(() => {
+    if (brandKey) {
+      // Pass start and end to filter available product types
+      fetchProductTypes(brandKey, start, end).then(data => {
+        if (data && data.product_types) setAvailableProductTypes(data.product_types);
+      }).catch(err => console.error('Failed to fetch product types', err));
+    }
+  }, [brandKey, start, end]); // Dependency on start/end added
+
+  const handleProductTypeChange = (newTypes) => {
+    dispatch(setSelectedProductTypes(newTypes));
+    triggerFetch({ product_types: newTypes, page: 1 });
+  };
 
   const applyDateChange = useCallback((s, e) => {
     const nextStart = s ? s.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD');
@@ -945,6 +1034,7 @@ export default function ProductConversionTable({ brandKey }) {
       sortBy,
       sortDir,
       filters: productState.filters,
+      product_types: selectedProductTypes, // Pass to export
       search: productState.search,
       visible_columns: visibleColumnIds,
       page: productState.page,
@@ -1192,15 +1282,32 @@ export default function ProductConversionTable({ brandKey }) {
       </Box>
 
       {/* Filter Summary / Active Chips (optional display if panel is closed) */}
-      {(productState.filters && productState.filters.length > 0 && !showFilterPanel) && (
+      {((productState.filters?.length > 0 || selectedProductTypes?.length > 0) && !showFilterPanel) && (
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Product Type Chips */}
+          {selectedProductTypes.map((type) => (
+            <GlassChip
+              key={`type-${type}`}
+              label={type}
+              size="small"
+              isDark={theme.palette.mode === 'dark'}
+              onDelete={() => {
+                const newTypes = selectedProductTypes.filter(t => t !== type);
+                handleProductTypeChange(newTypes);
+              }}
+              sx={{ borderRadius: 1 }}
+            />
+          ))}
+
+          {/* Metric Filter Chips */}
           {productState.filters.map((f, idx) => {
             const col = columns.find(c => c.id === f.field);
             return (
-              <Chip
+              <GlassChip
                 key={idx}
                 label={`${col?.label || f.field} ${f.operator === 'gt' ? '>' : '<'} ${f.value}`}
                 size="small"
+                isDark={theme.palette.mode === 'dark'}
                 onDelete={() => {
                   dispatch(removeFilter(idx));
                   const newFilters = [...productState.filters];
@@ -1310,10 +1417,13 @@ export default function ProductConversionTable({ brandKey }) {
                 triggerFetch({ filters: newFilters });
               }}
               onClearFilters={handleClearFilters}
+              productTypes={availableProductTypes}
+              selectedProductTypes={selectedProductTypes}
+              onProductTypeChange={handleProductTypeChange}
             />
           </Drawer>
         ) : (
-          <Collapse in={showFilterPanel} orientation="horizontal" timeout={300}>
+          <Collapse in={showFilterPanel} orientation="horizontal" timeout={300} unmountOnExit>
             <DetailedFilterPanel
               onClose={() => setShowFilterPanel(false)}
               allColumns={columns}
@@ -1343,6 +1453,9 @@ export default function ProductConversionTable({ brandKey }) {
                 triggerFetch({ filters: newFilters });
               }}
               onClearFilters={handleClearFilters}
+              productTypes={availableProductTypes}
+              selectedProductTypes={selectedProductTypes}
+              onProductTypeChange={handleProductTypeChange}
             />
           </Collapse>
         )}

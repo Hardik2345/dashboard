@@ -26,6 +26,8 @@ export default function Header({
       sx={{
         borderColor: 'grey.100',
         bgcolor: 'transparent',
+        borderBottom: { xs: '1px solid', md: 'none' }, // Mobile only bottom border
+        borderBottomColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
       }}
     >
       <Toolbar sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: { xs: 48, md: 64 }, py: 0 }}>
@@ -51,9 +53,10 @@ export default function Header({
             decoding="async"
             sx={{
               display: { xs: 'block', md: 'none' }, // Mobile only
-              height: { xs: 54, sm: 40 },
+              height: { xs: 50, sm: 40 },
               width: 'auto',
-              ml: 0,
+              ml: -0.5,
+              mt: 0.3,
               ...(darkMode
                 ? {
                   filter: 'invert(1) hue-rotate(180deg) brightness(1.2)',
