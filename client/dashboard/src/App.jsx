@@ -801,7 +801,7 @@ export default function App() {
               showFilterButton={!!(isAuthor || user?.isAdmin)}
             />
           </Box>
-          <Container maxWidth="sm" sx={{ pt: { xs: 0, sm: 2 }, mt: { xs: -1, sm: 0 }, position: 'relative', zIndex: 1 }}>
+          <Container maxWidth="sm" sx={{ pt: { xs: 1, sm: 2 }, mt: { xs: 1.5, sm: 0 }, position: 'relative', zIndex: 1 }}>
             <MobileTopBar
               value={range}
               onChange={handleRangeChange}
