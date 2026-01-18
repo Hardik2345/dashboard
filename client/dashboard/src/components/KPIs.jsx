@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo } from "react";
 import Grid from "@mui/material/Grid2";
-import { Stack, Typography, Chip, Box } from "@mui/material";
+import { Stack, Typography, Chip, Box, useTheme } from "@mui/material";
 import KPIStat from "./KPIStat.jsx";
+import { GlassChip } from "./ui/GlassChip";
 import {
   getDashboardSummary,
   getDeltaSummary,
@@ -34,6 +35,7 @@ export default function KPIs({
   productLabel,
   utmOptions, // Prop from App
 }) {
+  const theme = useTheme();
   const [loading, setLoading] = useState(true);
   const [deltaLoading, setDeltaLoading] = useState(true);
   const [data, setData] = useState({});
@@ -314,24 +316,17 @@ export default function KPIs({
             Scope: {scopeLabel}
           </Typography>
           {activeFilters.map(f => (
-            <Chip
+            <GlassChip
               key={f.key}
               label={f.label}
               size="small"
-              variant="outlined"
+              isDark={theme.palette.mode === 'dark'}
               sx={{
                 display: { xs: 'none', md: 'flex' },
+                borderRadius: 1,
                 fontSize: 11,
                 height: 24,
                 maxWidth: 200,
-                color: 'text.secondary',
-                borderColor: 'divider',
-                '& .MuiChip-label': {
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  display: 'block',
-                  whiteSpace: 'nowrap'
-                }
               }}
             />
           ))}

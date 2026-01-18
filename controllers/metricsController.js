@@ -2078,6 +2078,39 @@ function buildMetricsController() {
       } catch (e) { console.error('[monthly-trend] failed', e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
+    getProductTypes: async (req, res) => {
+      try {
+        const conn = req.brandDb?.sequelize;
+        if (!conn) return res.status(500).json({ error: 'Brand DB connection unavailable' });
+
+        const { start, end } = req.query;
+        let sql = `SELECT DISTINCT product_type FROM product_landing_mapping WHERE product_type IS NOT NULL AND product_type <> ''`;
+        let replacements = [];
+
+        if (start && end) {
+          // If date range provided, filter by sessions in that range
+          sql = `
+            SELECT DISTINCT plm.product_type
+            FROM product_landing_mapping plm
+            JOIN mv_product_sessions_by_path_daily s ON plm.landing_page_path = s.landing_page_path
+            WHERE plm.product_type IS NOT NULL AND plm.product_type <> ''
+              AND s.date >= ? AND s.date <= ?
+            ORDER BY plm.product_type ASC
+          `;
+          replacements = [start, end];
+        } else {
+          sql += ` ORDER BY product_type ASC`;
+        }
+
+        const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements });
+        const types = rows.map(r => r.product_type);
+        return res.json({ product_types: types });
+      } catch (e) {
+        console.error('[getProductTypes] failed', e);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
     productConversion: async (req, res) => {
       try {
         const todayStr = formatIsoDate(new Date());
@@ -2107,24 +2140,27 @@ function buildMetricsController() {
         const sortCol = allowedSort.get(sortBy) || 'sessions';
         const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
 
-
-
         const validFields = ['sessions', 'atc', 'atc_rate', 'orders', 'sales', 'cvr'];
         const validOps = ['gt', 'lt'];
         let whereClause = '';
         const filterReplacements = [];
 
-        // Parse filters from query: expect JSON array string or nothing
+        // Parse filters from query
         let filters = [];
         try {
           if (req.query.filters) {
             filters = typeof req.query.filters === 'string' ? JSON.parse(req.query.filters) : req.query.filters;
           }
-        } catch (e) {
-          filters = [];
-        }
+        } catch (e) { filters = []; }
 
-        // Also support legacy single filter params or if frontend sends them separately
+        // Parse product_types filter
+        let productTypes = [];
+        try {
+          if (req.query.product_types) {
+            productTypes = typeof req.query.product_types === 'string' ? JSON.parse(req.query.product_types) : req.query.product_types;
+          }
+        } catch (e) { productTypes = []; }
+
         const singleField = (req.query.filter_field || '').toString().toLowerCase();
         if (filters.length === 0 && singleField) {
           filters.push({
@@ -2134,12 +2170,18 @@ function buildMetricsController() {
           });
         }
 
-
         const conditions = [];
+        const isProductTypeFiltered = Array.isArray(productTypes) && productTypes.length > 0;
         const search = (req.query.search || '').trim();
         if (search) {
-          conditions.push(`s.landing_page_path LIKE ?`);
+          conditions.push(`${isProductTypeFiltered ? 'plm' : 's'}.landing_page_path LIKE ?`);
           filterReplacements.push(`%${search}%`);
+        }
+
+        // Product Type Filter Condition
+        if (isProductTypeFiltered) {
+          conditions.push(`plm.product_type IN (?)`);
+          filterReplacements.push(productTypes);
         }
 
         if (Array.isArray(filters) && filters.length > 0) {
@@ -2151,12 +2193,12 @@ function buildMetricsController() {
             if (validFields.includes(fField) && validOps.includes(fOp) && !Number.isNaN(fVal)) {
               let fieldExpr = '';
               switch (fField) {
-                case 'sessions': fieldExpr = 's.sessions'; break;
-                case 'atc': fieldExpr = 's.atc'; break;
-                case 'atc_rate': fieldExpr = '(CASE WHEN s.sessions > 0 THEN s.atc / s.sessions * 100 ELSE 0 END)'; break;
+                case 'sessions': fieldExpr = 'COALESCE(s.sessions, 0)'; break;
+                case 'atc': fieldExpr = 'COALESCE(s.atc, 0)'; break;
+                case 'atc_rate': fieldExpr = '(CASE WHEN COALESCE(s.sessions, 0) > 0 THEN s.atc / s.sessions * 100 ELSE 0 END)'; break;
                 case 'orders': fieldExpr = 'COALESCE(o.orders, 0)'; break;
                 case 'sales': fieldExpr = 'COALESCE(o.sales, 0)'; break;
-                case 'cvr': fieldExpr = '(CASE WHEN s.sessions > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)'; break;
+                case 'cvr': fieldExpr = '(CASE WHEN COALESCE(s.sessions, 0) > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)'; break;
               }
 
               if (fieldExpr) {
@@ -2192,25 +2234,52 @@ function buildMetricsController() {
               SUM(sessions_with_cart_additions) AS atc
             FROM mv_product_sessions_by_path_daily
             WHERE date >= ? AND date <= ?
-              AND product_id IS NOT NULL
             GROUP BY product_id, landing_page_path
           )
         `;
 
+        let selectList = '';
+        let mainQueryBody = '';
+
+        if (isProductTypeFiltered) {
+          selectList = `
+               plm.product_id,
+               plm.landing_page_path,
+               COALESCE(s.sessions, 0) as sessions,
+               COALESCE(s.atc, 0) as atc,
+               CASE WHEN COALESCE(s.sessions, 0) > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
+               COALESCE(o.orders, 0) AS orders,
+               COALESCE(o.sales, 0) AS sales,
+               CASE WHEN COALESCE(s.sessions, 0) > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
+             `;
+          mainQueryBody = `
+               FROM product_landing_mapping plm
+               LEFT JOIN sessions_60d s ON plm.landing_page_path = s.landing_page_path
+               LEFT JOIN orders_60d o ON plm.product_id = o.product_id
+             `;
+        } else {
+          selectList = `
+                s.product_id,
+                s.landing_page_path,
+                s.sessions,
+                s.atc,
+                CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
+                COALESCE(o.orders, 0) AS orders,
+                COALESCE(o.sales, 0) AS sales,
+                CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
+             `;
+          mainQueryBody = `
+               FROM sessions_60d s
+               LEFT JOIN orders_60d o ON s.product_id = o.product_id
+               LEFT JOIN product_landing_mapping plm ON s.landing_page_path = plm.landing_page_path
+             `;
+        }
+
         const sql = `
           ${baseCte}
           SELECT
-            s.product_id,
-            s.landing_page_path,
-            s.sessions,
-            s.atc,
-            CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
-            COALESCE(o.orders, 0) AS orders,
-            COALESCE(o.sales, 0) AS sales,
-            CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
-          FROM sessions_60d s
-          LEFT JOIN orders_60d o
-            ON s.product_id = o.product_id
+            ${selectList}
+          ${mainQueryBody}
           ${whereClause}
           ORDER BY ${sortCol} ${dir}
           LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
@@ -2220,8 +2289,7 @@ function buildMetricsController() {
           ${baseCte}
           SELECT COUNT(*) AS total_count FROM (
             SELECT 1
-            FROM sessions_60d s
-            LEFT JOIN orders_60d o ON s.product_id = o.product_id
+            ${mainQueryBody}
             ${whereClause}
           ) AS filtered
         `;
@@ -2363,10 +2431,22 @@ function buildMetricsController() {
         const validFields = ['sessions', 'atc', 'atc_rate', 'orders', 'sales', 'cvr'];
         const validOps = ['gt', 'lt'];
 
-        let filters = req.query.filters;
-        if (typeof filters === 'string') {
-          try { filters = JSON.parse(filters); } catch (e) { filters = []; }
-        }
+        // Parse filters from query
+        let filters = [];
+        try {
+          if (req.query.filters) {
+            filters = typeof req.query.filters === 'string' ? JSON.parse(req.query.filters) : req.query.filters;
+          }
+        } catch (e) { filters = []; }
+
+        // Parse product_types filter
+        let productTypes = [];
+        try {
+          if (req.query.product_types) {
+            productTypes = typeof req.query.product_types === 'string' ? JSON.parse(req.query.product_types) : req.query.product_types;
+          }
+        } catch (e) { productTypes = []; }
+
         const search = (req.query.search || '').trim();
         const conditions = [];
         const filterReplacements = [];
@@ -2374,6 +2454,12 @@ function buildMetricsController() {
         if (search) {
           conditions.push(`s.landing_page_path LIKE ?`);
           filterReplacements.push(`%${search}%`);
+        }
+
+        // Product Type Filter Condition
+        if (Array.isArray(productTypes) && productTypes.length > 0) {
+          conditions.push(`plm.product_type IN (?)`);
+          filterReplacements.push(productTypes);
         }
 
         if (Array.isArray(filters) && filters.length > 0) {
@@ -2439,8 +2525,8 @@ function buildMetricsController() {
             COALESCE(o.sales, 0) AS sales,
             CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
           FROM sessions_60d s
-          LEFT JOIN orders_60d o
-            ON s.product_id = o.product_id
+          LEFT JOIN orders_60d o ON s.product_id = o.product_id
+          LEFT JOIN product_landing_mapping plm ON s.landing_page_path = plm.landing_page_path
           ${whereClause}
           ORDER BY ${sortCol} ${dir}
           ${(page > 0 && pageSize > 0) ? `LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}` : ''}
