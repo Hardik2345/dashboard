@@ -54,19 +54,21 @@ export default defineConfig({
       },
       // Auth goes to gateway root
       '/api/auth/': {
-        target: 'http://localhost:18080',
+        target: 'http://localhost:80',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
       // Alerts now live at gateway /alerts
+      // Alerts now live at gateway /alerts
       '/api/alerts': {
-        target: 'http://localhost:18080/alerts',
+        target: 'http://localhost:80/alerts',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
       // Route all other app API calls through the gateway analytics prefix (dev)
+      // Route all other app API calls through the gateway analytics prefix (dev)
       '/api': {
-        target: 'http://localhost:18080/analytics',
+        target: 'http://localhost:80/analytics',
         changeOrigin: true,
         // Strip /api prefix; gateway expects /analytics/... paths
         rewrite: (path) => path.replace(/^\/api/, ''),
@@ -85,8 +87,9 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
+      // Alerts now live at gateway /alerts
       '/api/alerts': {
-        target: 'http://localhost:18080/alerts',
+        target: 'http://localhost:80/alerts',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
