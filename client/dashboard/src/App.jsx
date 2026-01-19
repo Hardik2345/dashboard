@@ -71,7 +71,7 @@ export default function App() {
   const {
     user, initialized, loginStatus, loginError,
   } = authState;
-  const { range, selectedMetric, productSelection } = useAppSelector((state) => state.filters);
+  const { range, selectedMetric, productSelection, utm } = useAppSelector((state) => state.filters);
   const loggingIn = loginStatus === 'loading';
   // range holds ISO strings; normalize to dayjs for components that expect it
   const [start, end] = useMemo(
@@ -149,12 +149,12 @@ export default function App() {
   const activeBrandKey = isAuthor
     ? (authorBrandKey || user?.primary_brand_id || '')
     : (
-        (globalBrandKey || '').toString().trim().toUpperCase() ||
-        (user?.primary_brand_id || '').toString().trim().toUpperCase() ||
-        (user?.brandKey || '').toString().trim().toUpperCase() ||
-        viewerBrands[0] ||
-        ''
-      );
+      (globalBrandKey || '').toString().trim().toUpperCase() ||
+      (user?.primary_brand_id || '').toString().trim().toUpperCase() ||
+      (user?.brandKey || '').toString().trim().toUpperCase() ||
+      viewerBrands[0] ||
+      ''
+    );
 
   const viewerPermissions = useMemo(() => {
     if (isAuthor) return ['all'];
@@ -602,6 +602,7 @@ export default function App() {
                     const target = base.startsWith('http') ? base : `${window.location.origin}${base}`;
                     const redirect = encodeURIComponent(window.location.origin);
                     window.location.href = `${target.replace(/\/$/, '')}/auth/google/start?redirect=${redirect}`;
+                    console.log(window.location.href);
                   }}
                 >
                   <div className="gsi-material-button-state"></div>

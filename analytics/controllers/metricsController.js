@@ -1533,8 +1533,15 @@ function buildMetricsController() {
         const alignHourRaw = end === todayIst ? currentHourIst : 23;
         const alignHour = Math.max(0, Math.min(23, alignHourRaw));
 
-        const rows = await req.brandDb.sequelize.query(
-          `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, hour, total_sales, number_of_orders,
+        const filters = {
+          utm_source: extractUtmParam(req.query.utm_source),
+          utm_medium: extractUtmParam(req.query.utm_medium),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
+          product_id: (req.query.product_id || '').trim() || null,
+        };
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
+
+        let querySql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, hour, total_sales, number_of_orders,
         COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
         adjusted_number_of_sessions,
         number_of_sessions AS raw_number_of_sessions,
@@ -1657,8 +1664,7 @@ function buildMetricsController() {
         let comparison = null;
         if (prevWin?.prevStart && prevWin?.prevEnd) {
           const comparisonAlignHour = end === todayIst ? alignHour : 23;
-          const comparisonRows = await req.brandDb.sequelize.query(
-            `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, hour, total_sales, number_of_orders,
+          let compSql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, hour, total_sales, number_of_orders,
     COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
     adjusted_number_of_sessions,
     number_of_sessions AS raw_number_of_sessions,
@@ -2671,7 +2677,7 @@ function buildMetricsController() {
 
         if (!req.brandDb && req.brandConfig) {
           try {
-                        req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
+            req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
           } catch (connErr) {
             console.error("Lazy connection failed", connErr);
           }
@@ -2813,7 +2819,7 @@ function buildMetricsController() {
           if (!req.brandDb && req.brandConfig) {
             logger.debug(`[LAZY CONNECT] Connecting to ${req.brandConfig.key} for fallback`);
             try {
-                            req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
+              req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
             } catch (connErr) {
               console.error("Lazy connection failed", connErr);
             }
