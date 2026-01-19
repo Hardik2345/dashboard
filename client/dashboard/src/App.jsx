@@ -668,7 +668,7 @@ export default function App() {
                 top: 0,
                 zIndex: (theme) => theme.zIndex.appBar,
                 bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
-                pb: 1,
+                pb: { xs: 0.5, md: 1 },
                 borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
                 borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
                 transition: 'border-color 0.2s ease',
@@ -681,17 +681,21 @@ export default function App() {
                 showMenuButton={isAuthor}
                 darkMode={darkMode === 'dark'}
                 onToggleDarkMode={handleToggleDarkMode}
+                showFilterButton={true}
+                onFilterClick={() => setMobileFilterOpen(true)}
               />
-              <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: { xs: 1.5, sm: 2 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
-                <Stack spacing={{ xs: 2, sm: 1 }}>
+              <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: { xs: 0.5, sm: 2 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
+                <Stack spacing={{ xs: 3, sm: 1 }}>
                   {/* Brand Selector - unified for both roles */}
                   {(isAuthor || showMultipleBrands) && (
-                    <AuthorBrandSelector
-                      brands={isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }))}
-                      value={activeBrandKey}
-                      loading={isAuthor ? authorBrandsLoading : false}
-                      onChange={isAuthor ? handleAuthorBrandChange : (val) => dispatch(setBrand((val || '').toString().trim().toUpperCase()))}
-                    />
+                    <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+                      <AuthorBrandSelector
+                        brands={isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }))}
+                        value={activeBrandKey}
+                        loading={isAuthor ? authorBrandsLoading : false}
+                        onChange={isAuthor ? handleAuthorBrandChange : (val) => dispatch(setBrand((val || '').toString().trim().toUpperCase()))}
+                      />
+                    </Box>
                   )}
                   {/* Date range and product filter - show on dashboard tab */}
                   {authorTab === 'dashboard' && hasBrand && (
@@ -704,6 +708,12 @@ export default function App() {
                       productValue={productSelection}
                       onProductChange={handleProductChange}
                       productLoading={productOptionsLoading}
+                      utm={utm}
+                      onUtmChange={handleUtmChange}
+                      utmOptions={utmOptions}
+                      utmOptions={utmOptions}
+                      showUtmFilter={isAuthor}
+                      onOpenFilter={() => setMobileFilterOpen(true)}
                     />
                   )}
                 </Stack>
@@ -808,6 +818,20 @@ export default function App() {
               </Stack>
             </Box>
             <Footer />
+            <MobileFilterDrawer
+              open={mobileFilterOpen}
+              onClose={() => setMobileFilterOpen(false)}
+              brands={isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }))}
+              brandKey={activeBrandKey}
+              onBrandChange={isAuthor ? handleAuthorBrandChange : (val) => dispatch(setBrand((val || '').toString().trim().toUpperCase()))}
+              productOptions={productOptions}
+              productValue={productSelection}
+              onProductChange={handleProductChange}
+              utm={utm}
+              onUtmChange={handleUtmChange}
+              dateRange={normalizedRange}
+              isDark={darkMode === 'dark'}
+            />
           </Box>
         </Box>
       </AppProvider>

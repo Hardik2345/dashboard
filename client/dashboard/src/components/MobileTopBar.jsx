@@ -274,48 +274,11 @@ export default function MobileTopBar({
   const activeUtmCount = [utm?.source, utm?.medium, utm?.campaign].filter(Boolean).length;
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
-      {/* Mobile: Product filter (permission-gated) */}
-      {showProductFilter && (
-        <Box sx={{ display: { xs: 'block', sm: 'none' }, width: '100%', mb: { xs: 1.5, sm: 0 } }}>
-          <FormControl size="small" fullWidth sx={{ maxWidth: 240 }}>
-            <InputLabel id="mobile-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
-            <Select
-              labelId="mobile-product-label"
-              label="Product"
-              value={productValue?.id ?? ''}
-              onChange={(e) => {
-                const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
-                if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
-              }}
-              disabled={productLoading || !productOptions?.length}
-              sx={{ fontSize: 12, height: 36 }}
-              MenuProps={{
-                PaperProps: {
-                  sx: {
-                    maxHeight: '60vh',
-                    width: { xs: '100%', sm: 280 },
-                    whiteSpace: 'normal',
-                  }
-                }
-              }}
-            >
-              {(productOptions || []).map((opt) => (
-                <MenuItem
-                  key={opt.id || 'all'}
-                  value={opt.id || ''}
-                  sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.75 }}
-                >
-                  {opt.id ? opt.label : 'All products'}
-                </MenuItem>
-              ))}
-            </Select>
-            {productLoading && (
-              <CircularProgress size={14} sx={{ position: 'absolute', top: 11, right: 28 }} />
-            )}
-          </FormControl>
-        </Box>
-      )}
+    <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2 }}>
+      {/* Mobile: Product filter on its own row (authors only) */}
+      {/* Mobile: Product filter removed (moved to global drawer) */}
+
+
 
       {/* Main row: Updated chip | (desktop: product filter) | Date picker */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
@@ -330,7 +293,7 @@ export default function MobileTopBar({
                 display: "flex",
                 alignItems: "center",
                 bgcolor: "background.paper",
-                fontSize: 13,
+                fontSize: 12,
               }}
             >
               Updating…
@@ -350,7 +313,7 @@ export default function MobileTopBar({
                   height: 32,
                   display: "flex",
                   alignItems: "center",
-                  fontSize: 12,
+                  fontSize: 10.9,
                 }}
               >
                 Updated {last.ts.fromNow()}
@@ -496,7 +459,7 @@ export default function MobileTopBar({
 
           {/* Desktop-only compact product filter */}
           {showProductFilter && (
-            <FormControl size="small" sx={{ width: { xs: '100%', sm: 260 }, maxWidth: 280, display: { xs: 'none', sm: 'flex' } }}>
+            <FormControl size="small" sx={{ width: { xs: '100%', sm: 200 }, display: { xs: 'none', sm: 'flex' } }}>
               <InputLabel id="desktop-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
               <Select
                 labelId="desktop-product-label"
@@ -522,7 +485,7 @@ export default function MobileTopBar({
                   PaperProps: {
                     sx: {
                       maxHeight: '60vh',
-                      width: { xs: '100%', sm: 300 },
+                      width: 'var(--select-width)',
                       whiteSpace: 'normal',
                     }
                   },
@@ -681,10 +644,10 @@ export default function MobileTopBar({
                             py: 1,
                             px: 1.5,
                             bgcolor: isSelected
-                              ? (isDark ? 'action.selected' : 'grey.100')
+                              ? (isDark ? 'action.selecte' : 'grey.100')
                               : 'transparent',
                             '&:hover': {
-                              bgcolor: isDark ? 'action.hover' : 'grey.100',
+                              bgcolor: isDark ? 'black' : 'grey.100',
                             },
                             '&.Mui-selected': {
                               bgcolor: isDark ? 'action.selected' : 'grey.200',
@@ -740,6 +703,23 @@ export default function MobileTopBar({
           {/* Mobile Drawer for UTM Filters Removed (Moved to global MobileFilterDrawer) */}
         </Box>
 
+      </Box>
+
+      {/* Row 2: Brand + Scope */}
+      <Box sx={{ display: { xs: 'flex', md: 'none' }, justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography sx={{ fontSize: 13, color: 'text.secondary', fontWeight: 500 }}>
+          Brand: {brandKey}
+        </Typography>
+
+        <Typography
+          sx={{
+            fontSize: 13,
+            color: 'primary.main',
+            fontWeight: 500
+          }}
+        >
+          Scope: {productValue?.id ? productValue.label : 'All products'}
+        </Typography>
       </Box>
 
       {/* Active Filters Chips (Scrolling Marquee) */}
