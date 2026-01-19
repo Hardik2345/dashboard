@@ -595,10 +595,8 @@ export default function App() {
                   top: 0,
                   zIndex: (theme) => theme.zIndex.appBar,
                   bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
-                  pb: 1,
-                  borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
-                  borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-                  transition: 'border-color 0.2s ease',
+                  // pb: 1, // Removed to eliminate extra black area
+                  // borderBottom handled in Header.jsx now
                 }}
               >
                 <Header
@@ -803,7 +801,7 @@ export default function App() {
               showFilterButton={!!(isAuthor || user?.isAdmin)}
             />
           </Box>
-          <Container maxWidth="sm" sx={{ pt: { xs: 0, sm: 2 }, mt: { xs: -1, sm: 0 }, position: 'relative', zIndex: 1 }}>
+          <Container maxWidth="sm" sx={{ pt: { xs: 1, sm: 2 }, mt: { xs: 1.5, sm: 0 }, position: 'relative', zIndex: 1 }}>
             <MobileTopBar
               value={range}
               onChange={handleRangeChange}
