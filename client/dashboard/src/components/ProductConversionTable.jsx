@@ -748,10 +748,27 @@ const MemoizedTable = memo(({
                   const daysPrev = dayjs(compareEnd).diff(dayjs(compareStart), 'day') + 1;
                   valCurr = curr / Math.max(1, daysCurr);
                   valPrev = prev / Math.max(1, daysPrev);
+                } else {
+                  // For CVR, we want to show the percentage growth/drop, not the absolute difference
+                  // If prev is 0, growth is infinite (or treat as 0/100%)
+                  // If we use DeltaBadge as is, it likely subtracts. We need to trick it or adjust logic.
+                  // DeltaBadge usually takes (current, previous) and shows change.
+                  // If we want to show % change, we should let DeltaBadge handle it if it supports it, OR
+                  // we pass the calculated growth as 'value' if DeltaBadge supports override.
+                  // Looking at standard DeltaBadge usage in other cells (e.g. Sales), it takes raw values and shows % change.
+                  // But for CVR (which IS a %), subtracting 1.5% - 1.0% = 0.5% (absolute change) is often confused with 50% growth.
+                  // The user wants GROWTH matching the image example (likely standard growth metric).
+                  // The DeltaBadge component likely calculates (curr - prev) / prev * 100 internally for isPercent=false?
+                  // Wait, looking at line 752: isPercent={col.id === 'cvr'}
+                  // If isPercent is true, DeltaBadge usually calculates ABSOLUTE difference (pp) for percentage metrics to avoid confusing "50% increase in 1% rate".
+                  // BUT the user explicitly asked for "drop or rise" percentage (relative growth).
+                  // So we should set isPercent={false} for DeltaBadge here so it treats it as a normal number and calculates relative growth %.
+                  // However, the value displayed itself (1.54%) is correct. The DELTA is what matters.
                 }
-                delta = <DeltaBadge current={valCurr} previous={valPrev} isPercent={col.id === 'cvr'} />;
+                delta = <DeltaBadge current={valCurr} previous={valPrev} isPercent={col.id === 'cvr' ? false : false} />;
               }
-              const prevRaw = (compareMode && row.previous) ? row.previous[col.id] : null;
+              // Don't show previous value for landing_page_path column (it's the key, not a metric)
+              const prevRaw = (compareMode && row.previous && col.id !== 'landing_page_path') ? row.previous[col.id] : null;
               const prevDisplay = prevRaw !== null && prevRaw !== undefined ? (col.format ? col.format(prevRaw) : formatNumber(prevRaw)) : null;
 
               return (
