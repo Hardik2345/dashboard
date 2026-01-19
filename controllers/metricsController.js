@@ -2307,16 +2307,36 @@ function buildMetricsController() {
         const compareEnd = req.query.compare_end;
         if (compareStart && compareEnd && rows.length > 0) {
           const productIds = [...new Set(rows.map(r => r.product_id).filter(Boolean))];
+          const landingPaths = [...new Set(rows.map(r => r.landing_page_path).filter(Boolean))];
 
-          if (productIds.length > 0) {
+          if (productIds.length > 0 || landingPaths.length > 0) {
             try {
-              // Re-use logic for comparison range, filtering by specific productIds
-              // We use NAMED replacements to handle array of IDs safely if using sequelizes replacements, 
-              // OR we use indexed replacements if we are careful. 
-              // Better to use a clean new query with replacement params.
+              // Reverting to positional replacements (?) as mysql2 format used by brandConnectionManager doesn't support named placeholders by default.
+              // Note: We need multiple placeholders if we use them multiple times, OR rely on mysql2 formatting.
+              // We will pass: [start, end, productIds (if used), start, end, landingPaths] 
+              // Wait, conditional logic needed for replacements order.
+              // Simpler: Just bind all potential inputs.
 
-              // Using positional replacements (?) to ensure compatibility
-              const compReplacements = [compareStart, compareEnd, productIds, compareStart, compareEnd, productIds];
+              const compReplacements = [];
+
+              // Orders CTE always needs productIds? If no productIds, orders_comp will return nothing, which is fine.
+              // But we can't do "IN (?)" with empty array.
+              // So if productIds empty, we should output "1=0" or similar, or just not select orders?
+              // The main query LEFT JOINs orders.
+
+              let ordersWhere = '1=0'; // default false
+              if (productIds.length > 0) {
+                ordersWhere = 'created_date >= ? AND created_date <= ? AND product_id IN (?)';
+                compReplacements.push(compareStart, compareEnd, productIds);
+              }
+
+              let sessionsWhere = '1=0';
+              if (landingPaths.length > 0) {
+                sessionsWhere = 'date >= ? AND date <= ? AND landing_page_path IN (?)';
+                compReplacements.push(compareStart, compareEnd, landingPaths);
+              }
+
+              logger.info(`[productConversion] Comp Start: ${compareStart}, IDs: ${productIds.length}, Paths: ${landingPaths.length}`);
 
               const compCte = `
               WITH orders_comp AS (
@@ -2325,19 +2345,18 @@ function buildMetricsController() {
                   COUNT(DISTINCT order_name) AS orders,
                   SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity) AS sales
                 FROM shopify_orders
-                WHERE created_date >= ? AND created_date <= ?
-                  AND product_id IN (?)
+                WHERE ${ordersWhere}
                 GROUP BY product_id
               ),
               sessions_comp AS (
                 SELECT
                   product_id,
+                  landing_page_path,
                   SUM(sessions) AS sessions,
                   SUM(sessions_with_cart_additions) AS atc
                 FROM mv_product_sessions_by_path_daily
-                WHERE date >= ? AND date <= ?
-                  AND product_id IN (?)
-                GROUP BY product_id
+                WHERE ${sessionsWhere}
+                GROUP BY product_id, landing_page_path
               )
             `;
 
@@ -2345,6 +2364,7 @@ function buildMetricsController() {
               ${compCte}
               SELECT
                 s.product_id,
+                s.landing_page_path,
                 s.sessions,
                 s.atc,
                 CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
@@ -2357,20 +2377,20 @@ function buildMetricsController() {
 
               // Important: The query result is an array of rows
               const rowsRAW = await conn.query(compSql, { type: QueryTypes.SELECT, replacements: compReplacements });
-              // Check if result is wrapped or just rows. QueryTypes.SELECT usually returns just the rows.
               const compRows = rowsRAW;
 
-              // Merge
+              // Merge - prioritize landing_page_path, fallback to product_id
               const compMap = new Map();
-              compRows.forEach(r => compMap.set(r.product_id, r));
+              compRows.forEach(r => {
+                if (r.landing_page_path) compMap.set(r.landing_page_path, r);
+                else if (r.product_id) compMap.set(`pid:${r.product_id}`, r);
+              });
 
               rows = rows.map(r => {
-                const prev = compMap.get(r.product_id);
-                // If no previous data found (e.g. 0 sessions), we might want to default to 0s so frontend sees "0" instead of null?
-                // The frontend treats null/undefined as "no data".
-                // If product didn't exist in that period, it won't be in compRows (INNER JOINS or WHERE IN).
-                // If we want to show 0 for previous period, we should provide an object with 0s.
-                // Let's provide an object of 0s if missing, so we can show "infinite growth" from 0.
+                let prev = null;
+                if (r.landing_page_path) prev = compMap.get(r.landing_page_path);
+                if (!prev && r.product_id) prev = compMap.get(`pid:${r.product_id}`);
+
                 return {
                   ...r,
                   previous: prev || { sessions: 0, atc: 0, atc_rate: 0, orders: 0, sales: 0, cvr: 0 }
