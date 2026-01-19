@@ -38,6 +38,11 @@ function _M.check_limit(key, limit_type, custom_rate, custom_burst)
 end
 
 function _M.enforce()
+    -- In dev, bypass rate limiting to avoid latency
+    if os.getenv("RATE_LIMIT_DISABLED") == "1" then
+        return
+    end
+
     local ip = ngx.var.binary_remote_addr
     local user_id = ngx.req.get_headers()["x-user-id"]
     local brand_id = ngx.req.get_headers()["x-brand-id"]

@@ -3,7 +3,8 @@ local cjson = require("cjson")
 
 local _M = {}
 
-local JWKS_URL = "http://auth-service:3000/auth/.well-known/jwks.json"
+-- Point to auth service inside Docker network
+local JWKS_URL = "http://auth-service:3001/auth/.well-known/jwks.json"
 
 -- Base64URL Decode
 local function base64url_decode(s)
