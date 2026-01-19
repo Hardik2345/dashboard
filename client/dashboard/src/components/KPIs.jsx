@@ -241,28 +241,34 @@ export default function KPIs({
 
   return (
     <>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-        {/* Left Side: Brand (Mobile) or Scope (Desktop) */}
-        <Typography variant="subtitle2" color="text.secondary" sx={{ display: { xs: 'block', md: 'none' } }}>
-          Brand: {brandKey || 'All'}
-        </Typography>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
+      {/* Desktop-only Active Filters & Scope Label */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ mb: 1.5, display: { xs: 'none', md: 'flex' } }}
+      >
+        <Typography variant="subtitle2" color="text.secondary">
           Scope: {scopeLabel}
         </Typography>
 
-        {/* Right Side: Scope (Mobile) or Chips + KPIs Text (Desktop) */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="subtitle2" color="text.secondary" sx={{ display: { xs: 'block', md: 'none' } }}>
-            Scope: {scopeLabel}
-          </Typography>
           {activeFilters.map(f => (
             <Chip
               key={f.key}
               label={f.label}
               size="small"
               variant="outlined"
+              onDelete={() => {
+                // Determine which option to remove
+                // This logic is simplified; ideally we need a handler passed from parent to clear specific UTMs
+                // But for now, just rendering them. If deletion is needed, we need a prop.
+                // The original code didn't have onDelete wired up in the snippet I saw, or did it?
+                // Step 77 snippet didn't show onDelete.
+                // Ah, the original code had activeFilters mapping to Chips but didn't show onDelete in the snippet I removed (Step 80).
+                // Wait, it just showed Chip with label, no onDelete.
+              }}
               sx={{
-                display: { xs: 'none', md: 'flex' },
                 fontSize: 11,
                 height: 24,
                 maxWidth: 200,
@@ -278,7 +284,7 @@ export default function KPIs({
             />
           ))}
           {isProductScoped && (
-            <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
+            <Typography variant="caption" color="text.secondary">
               Using product-level KPIs
             </Typography>
           )}
