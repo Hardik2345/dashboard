@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// https://vite.dev/config/
+// https://vite.dev/config/ 
 export default defineConfig({
   plugins: [
     react(),
@@ -15,10 +15,12 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'brand-logo-final.png'],
       workbox: {
-        navigateFallbackDenylist: [/^\/api/],
+        // Exclude auth/API routes from service worker to prevent OAuth redirect caching issues
+        navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
+        // Don't cache API responses
         runtimeCaching: [
           {
-            urlPattern: /^\/api/,
+            urlPattern: /^\/api\//,
             handler: 'NetworkOnly',
           },
         ],
@@ -50,10 +52,23 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/external-pagespeed/, '/api'),
       },
-      '/api': {
-        target: 'http://localhost:3000',
+      // Auth goes to gateway root
+      '/api/auth/': {
+        target: 'http://localhost:18080',
         changeOrigin: true,
-        // Remove the /api prefix because backend routes are mounted at root
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      // Alerts now live at gateway /alerts
+      '/api/alerts': {
+        target: 'http://localhost:18080/alerts',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      // Route all other app API calls through the gateway analytics prefix (dev)
+      '/api': {
+        target: 'http://localhost:18080/analytics',
+        changeOrigin: true,
+        // Strip /api prefix; gateway expects /analytics/... paths
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
@@ -65,10 +80,20 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/external-pagespeed/, '/api'),
       },
-      '/api': {
-        target: 'http://localhost:3000',
+      '/api/auth/': {
+        target: 'http://localhost:18080',
         changeOrigin: true,
-        // Remove the /api prefix because backend routes are mounted at root
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      '/api/alerts': {
+        target: 'http://localhost:18080/alerts',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      // Route all app API calls through the gateway analytics prefix (preview)
+      '/api': {
+        target: 'http://localhost:18080/analytics',
+        changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },

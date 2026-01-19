@@ -275,10 +275,47 @@ export default function MobileTopBar({
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
-      {/* Mobile: Product filter on its own row (authors only) */}
-      {/* Mobile: Product filter removed (moved to global drawer) */}
-
-
+      {/* Mobile: Product filter (permission-gated) */}
+      {showProductFilter && (
+        <Box sx={{ display: { xs: 'block', sm: 'none' }, width: '100%', mb: { xs: 1.5, sm: 0 } }}>
+          <FormControl size="small" fullWidth sx={{ maxWidth: 240 }}>
+            <InputLabel id="mobile-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
+            <Select
+              labelId="mobile-product-label"
+              label="Product"
+              value={productValue?.id ?? ''}
+              onChange={(e) => {
+                const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
+                if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
+              }}
+              disabled={productLoading || !productOptions?.length}
+              sx={{ fontSize: 12, height: 36 }}
+              MenuProps={{
+                PaperProps: {
+                  sx: {
+                    maxHeight: '60vh',
+                    width: { xs: '100%', sm: 280 },
+                    whiteSpace: 'normal',
+                  }
+                }
+              }}
+            >
+              {(productOptions || []).map((opt) => (
+                <MenuItem
+                  key={opt.id || 'all'}
+                  value={opt.id || ''}
+                  sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.75 }}
+                >
+                  {opt.id ? opt.label : 'All products'}
+                </MenuItem>
+              ))}
+            </Select>
+            {productLoading && (
+              <CircularProgress size={14} sx={{ position: 'absolute', top: 11, right: 28 }} />
+            )}
+          </FormControl>
+        </Box>
+      )}
 
       {/* Main row: Updated chip | (desktop: product filter) | Date picker */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
@@ -459,7 +496,7 @@ export default function MobileTopBar({
 
           {/* Desktop-only compact product filter */}
           {showProductFilter && (
-            <FormControl size="small" sx={{ width: { xs: '100%', sm: 200 }, display: { xs: 'none', sm: 'flex' } }}>
+            <FormControl size="small" sx={{ width: { xs: '100%', sm: 260 }, maxWidth: 280, display: { xs: 'none', sm: 'flex' } }}>
               <InputLabel id="desktop-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
               <Select
                 labelId="desktop-product-label"
@@ -485,7 +522,7 @@ export default function MobileTopBar({
                   PaperProps: {
                     sx: {
                       maxHeight: '60vh',
-                      width: 'var(--select-width)',
+                      width: { xs: '100%', sm: 300 },
                       whiteSpace: 'normal',
                     }
                   },

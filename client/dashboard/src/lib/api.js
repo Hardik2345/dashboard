@@ -1,20 +1,9 @@
 function resolveApiBase() {
   const envBase = (import.meta.env.VITE_API_BASE || '').trim();
   if (!envBase) return '/api';
-
-  // If env base is absolute but on a different host, fall back to same-origin proxy to keep cookies working.
-  try {
-    const envUrl = new URL(envBase, window.location.origin);
-    if (envUrl.origin !== window.location.origin) {
-      return '/api';
-    }
-  } catch {
-    // Ignore parse errors, fall through to envBase
-  }
   return envBase;
 }
 
-// Keep API calls on same origin so session cookies stick.
 const API_BASE = resolveApiBase();
 
 function qs(params) {
@@ -71,10 +60,56 @@ function filenameFromDisposition(disposition) {
   return null;
 }
 
+function authHeaders() {
+  const token = window.localStorage.getItem('gateway_access_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function refreshAccessToken() {
+  try {
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.access_token) {
+      window.localStorage.removeItem('gateway_access_token');
+      return false;
+    }
+    window.localStorage.setItem('gateway_access_token', json.access_token);
+    return true;
+  } catch {
+    window.localStorage.removeItem('gateway_access_token');
+    return false;
+  }
+}
+
+let refreshPromise = null;
+async function ensureFreshToken() {
+  if (!refreshPromise) {
+    refreshPromise = refreshAccessToken().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+async function fetchWithAuth(url, options = {}, retry = true) {
+  const opts = { ...options, headers: { ...(options.headers || {}), ...authHeaders() } };
+  const res = await fetch(url, opts);
+  if (res.status === 401 && retry) {
+    const refreshed = await ensureFreshToken();
+    if (!refreshed) return res;
+    const retryOpts = { ...options, headers: { ...(options.headers || {}), ...authHeaders() } };
+    return fetch(url, retryOpts);
+  }
+  return res;
+}
+
 async function getJSON(path, params) {
   const url = `${API_BASE}${path}${qs(params || {})}`;
   try {
-    const res = await fetch(url, { credentials: 'include' });
+    const res = await fetchWithAuth(url);
     if (!res.ok) throw new Error(`${res.status}`);
     return await res.json();
   } catch (e) {
@@ -87,7 +122,7 @@ async function getJSON(path, params) {
 async function doGet(path, params, options = {}) {
   const url = `${API_BASE}${path}${qs(params || {})}`;
   try {
-    const res = await fetch(url, { credentials: 'include', signal: options.signal });
+    const res = await fetchWithAuth(url, { signal: options.signal });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) return { error: true, status: res.status, data: json };
     return { error: false, data: json };
@@ -99,10 +134,9 @@ async function doGet(path, params, options = {}) {
 async function doPost(path, body) {
   const url = `${API_BASE}${path}`;
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithAuth(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify(body || {})
     });
     const json = await res.json().catch(() => ({}));
@@ -116,10 +150,9 @@ async function doPost(path, body) {
 async function doPut(path, body) {
   const url = `${API_BASE}${path}`;
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithAuth(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify(body || {}),
     });
     const json = await res.json().catch(() => ({}));
@@ -133,7 +166,7 @@ async function doPut(path, body) {
 async function doDelete(path) {
   const url = `${API_BASE}${path}`;
   try {
-    const res = await fetch(url, { method: 'DELETE', credentials: 'include' });
+    const res = await fetchWithAuth(url, { method: 'DELETE' });
     // Some deletes return 204 with no JSON
     let json = {};
     try { json = await res.json(); } catch {
@@ -155,8 +188,10 @@ export async function login(email, password) {
       credentials: 'include',
       body: JSON.stringify({ email, password })
     });
-    if (!res.ok) return { error: true, status: res.status, data: await res.json().catch(() => ({})) };
-    return { error: false, data: await res.json() };
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.access_token) return { error: true, status: res.status, data: json };
+    window.localStorage.setItem('gateway_access_token', json.access_token);
+    return { error: false, data: json };
   } catch {
     return { error: true };
   }
@@ -164,7 +199,8 @@ export async function login(email, password) {
 
 export async function logout() {
   try {
-    await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
+    window.localStorage.removeItem('gateway_access_token');
+    await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: authHeaders(), credentials: 'include' });
   } catch {
     // ignore logout errors
   }
@@ -172,8 +208,9 @@ export async function logout() {
 
 export async function me() {
   try {
-    const res = await fetch(`${API_BASE}/auth/me`, { credentials: 'include' });
-    if (!res.ok) return { authenticated: false };
+    const res = await fetchWithAuth(`${API_BASE}/auth/me`);
+    if (res.status === 401) return { authenticated: false, status: res.status };
+    if (!res.ok) return { authenticated: false, status: res.status };
     const json = await res.json();
     return { authenticated: true, user: json.user, expiresAt: json.expiresAt };
   } catch {
@@ -186,7 +223,6 @@ export async function sendHeartbeat(meta = null) {
     const res = await fetch(`${API_BASE}/activity/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       keepalive: true,
       body: JSON.stringify({ meta }),
     });
@@ -216,6 +252,32 @@ export async function removeWhitelist(id) {
   return doDelete(`/author/access-control/whitelist/${id}`);
 }
 
+// ---- Admin user management (Access Control) -------------------------------
+export async function adminListUsers() {
+  return doGet('/auth/admin/users');
+}
+
+export async function adminUpsertUser(payload) {
+  return doPost('/auth/admin/users', payload);
+}
+
+export async function adminDeleteUser(email) {
+  return doDelete(`/auth/admin/users/${encodeURIComponent(email)}`);
+}
+
+// ---- Admin domain rules ---------------------------------------------------
+export async function listDomainRules() {
+  return doGet('/auth/admin/domain-rules');
+}
+
+export async function upsertDomainRule(payload) {
+  return doPost('/auth/admin/domain-rules', payload);
+}
+
+export async function deleteDomainRule(domain) {
+  return doDelete(`/auth/admin/domain-rules/${encodeURIComponent(domain)}`);
+}
+
 export async function getDashboardSummary(args) {
   const params = appendBrandKey({
     ...args,
@@ -228,22 +290,6 @@ export async function getDashboardSummary(args) {
     range: json?.range || { start: params.start || null, end: params.end || null },
     prev_range: json?.prev_range || null,
     filter_options: json?.filter_options || null,
-    error: json?.__error
-  };
-}
-
-export async function getDeltaSummary(args) {
-  const params = appendBrandKey({
-    start: args.start || args.date,
-    end: args.end || args.date || args.start,
-    align: args.align,
-    compare: args.compare,
-  }, args);
-  const json = await getJSON('/metrics/delta-summary', params);
-  return {
-    metrics: json?.metrics || null,
-    range: json?.range || { start: params.start || null, end: params.end || null },
-    prev_range: json?.prev_range || null,
     error: json?.__error
   };
 }
@@ -443,9 +489,10 @@ export async function getLastUpdatedPTS(arg = undefined) {
   const search = brandKey ? `?brand_key=${encodeURIComponent(brandKey)}` : '';
   const url = `${API_BASE}/external/last-updated/pts${search}`;
   try {
-    const res = await fetch(url, { cache: 'no-store', credentials: 'include' });
+    const res = await fetchWithAuth(url, { cache: 'no-store' });
     if (!res.ok) throw new Error('Failed');
     const json = await res.json();
+    console.log("Last updated PTS response: ",json);
     return { raw: json["Last successful run completed at"], timezone: json.timezone, error: false };
   } catch (e) {
     console.error('Last updated fetch error', e);
@@ -453,93 +500,28 @@ export async function getLastUpdatedPTS(arg = undefined) {
   }
 }
 
-// ---------------- Author: Session adjustments ----------------
-export async function listAdjustmentBuckets({ brandKey, active } = {}) {
-  const params = { brand_key: brandKey };
-  if (active != null) params.active = active ? '1' : '0';
-  return getJSON('/author/adjustment-buckets', params);
-}
-
-export async function createAdjustmentBucket(payload) {
-  try {
-    const res = await fetch(`${API_BASE}/author/adjustment-buckets`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify(payload)
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) return { error: true, data: json };
-    return { error: false, data: json };
-  } catch { return { error: true }; }
-}
-
-export async function updateAdjustmentBucket(id, payload) {
-  try {
-    const res = await fetch(`${API_BASE}/author/adjustment-buckets/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify(payload)
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) return { error: true, data: json };
-    return { error: false, data: json };
-  } catch { return { error: true }; }
-}
-
-export async function deactivateAdjustmentBucket(id, { brandKey, start, end, scope }) {
-  try {
-    const params = new URLSearchParams({ brand_key: brandKey });
-    if (start) params.set('start', start);
-    if (end) params.set('end', end);
-    if (scope) params.set('scope', scope);
-    const url = `${API_BASE}/author/adjustment-buckets/${id}?${params.toString()}`;
-    const res = await fetch(url, { method: 'DELETE', credentials: 'include' });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) return { error: true, data: json };
-    return { error: false, data: json };
-  } catch { return { error: true }; }
-}
-
-export async function activateAdjustmentBucket(id, { brandKey, start, end, onlyThisBucket = false }) {
-  try {
-    const params = new URLSearchParams({ brand_key: brandKey });
-    if (start) params.set('start', start);
-    if (end) params.set('end', end);
-    if (onlyThisBucket) params.set('only_this_bucket', '1');
-    const url = `${API_BASE}/author/adjustment-buckets/${id}/activate?${params.toString()}`;
-    const res = await fetch(url, { method: 'POST', credentials: 'include' });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) return { error: true, data: json };
-    return { error: false, data: json };
-  } catch { return { error: true }; }
-}
-
-// Legacy preview/apply endpoints removed from UI; keep server endpoints until deprecated.
-
 // Author brands helper (list)
 export async function listAuthorBrands() {
-  return getJSON('/author/brands');
+  return doGet('/author/brands');
 }
 
 // ---------------- Author: Alerts admin ----------------
 export async function listAlerts(params) {
-  return doGet('/author/alerts', params);
+  return doGet('/alerts', params);
 }
 
 export async function createAlert(payload) {
-  return doPost('/author/alerts', payload);
+  return doPost('/alerts', payload);
 }
 
 export async function updateAlert(id, payload) {
-  return doPut(`/author/alerts/${id}`, payload);
+  return doPut(`/alerts/${id}`, payload);
 }
 
 export async function deleteAlert(id) {
-  return doDelete(`/author/alerts/${id}`);
+  return doDelete(`/alerts/${id}`);
 }
 
 export async function setAlertActive(id, isActive) {
-  return doPost(`/author/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
+  return doPost(`/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
 }
