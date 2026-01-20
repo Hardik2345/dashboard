@@ -294,6 +294,17 @@ export async function getDashboardSummary(args) {
   };
 }
 
+// Product Types
+export async function getProductTypes(args) {
+  const params = appendBrandKey({ date: args.date }, args);
+  const json = await getJSON('/metrics/product-types', params);
+  return {
+    types: Array.isArray(json?.types) ? json.types : [],
+    date: json?.date || null,
+    error: json?.__error
+  };
+}
+
 export async function getProductConversion(args, options = {}) {
   const params = appendBrandKey({
     start: args.start,
@@ -306,6 +317,8 @@ export async function getProductConversion(args, options = {}) {
     compare_end: args.compareEnd,
     filters: args.filters,
     search: args.search,
+    // Add product_types support
+    product_types: args.productTypes ? JSON.stringify(args.productTypes) : undefined,
   }, args);
   const res = await doGet('/metrics/product-conversion', params, { signal: options.signal });
   if (res.error) return { error: true };
@@ -335,6 +348,7 @@ export async function exportProductConversionCsv(args) {
     page_size: args.pageSize,
     compare_start: args.compareStart,
     compare_end: args.compareEnd,
+    product_types: args.productTypes ? JSON.stringify(args.productTypes) : undefined,
   }, args);
   const dateSuffix = formatDateRangeSuffix(params.start, params.end);
   const fallbackName = dateSuffix ? `product_conversion_${dateSuffix}.csv` : 'product_conversion.csv';
@@ -350,6 +364,7 @@ export async function exportProductConversionCsv(args) {
     return { error: true };
   }
 }
+
 
 export async function getOrderSplit(args) {
   const params = appendBrandKey({ start: args.start, end: args.end, product_id: args.product_id }, args);
@@ -492,7 +507,7 @@ export async function getLastUpdatedPTS(arg = undefined) {
     const res = await fetchWithAuth(url, { cache: 'no-store' });
     if (!res.ok) throw new Error('Failed');
     const json = await res.json();
-    console.log("Last updated PTS response: ",json);
+    console.log("Last updated PTS response: ", json);
     return { raw: json["Last successful run completed at"], timezone: json.timezone, error: false };
   } catch (e) {
     console.error('Last updated fetch error', e);

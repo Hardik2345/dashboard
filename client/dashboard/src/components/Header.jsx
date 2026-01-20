@@ -55,7 +55,7 @@ export default function Header({
               display: { xs: 'block', md: 'none' }, // Mobile only
               height: { xs: 50, sm: 40 },
               width: 'auto',
-              ml: -0.5,
+              ml: 0,
               mt: 0.3,
               ...(darkMode
                 ? {

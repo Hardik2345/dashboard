@@ -19,6 +19,8 @@ export const fetchProductConversion = createAsyncThunk(
 
     let filters = params.filters || state.filters || [];
     const search = params.search !== undefined ? params.search : (state.search || '');
+    let productTypes = params.productTypes || state.productTypes || [];
+    if (!Array.isArray(productTypes)) productTypes = [];
 
     // Ensure it is always an array
     if (!Array.isArray(filters)) filters = [];
@@ -27,6 +29,7 @@ export const fetchProductConversion = createAsyncThunk(
       start, end, page, pageSize, sortBy, sortDir, brand_key: params.brand_key,
       filters: JSON.stringify(filters),
       search,
+      productTypes,
     };
 
     if (compareMode && compareStart && compareEnd) {
@@ -52,7 +55,8 @@ export const fetchProductConversion = createAsyncThunk(
       compareEnd,
 
       filters,
-      search
+      search,
+      productTypes
     };
   }
 );
@@ -68,6 +72,7 @@ const saveState = (state) => {
       compareEnd: state.compareEnd,
       pageSize: state.pageSize,
       filters: state.filters,
+      productTypes: state.productTypes,
     };
     localStorage.setItem('productConversionState', JSON.stringify(toSave));
   } catch (e) {
@@ -104,6 +109,7 @@ const initialState = {
   compareEnd: saved.compareEnd || null,
 
   filters: Array.isArray(saved.filters) ? saved.filters : [],
+  productTypes: Array.isArray(saved.productTypes) ? saved.productTypes : [],
   search: '',
 };
 
@@ -156,6 +162,11 @@ const productConversionSlice = createSlice({
       state.page = 1;
       saveState(state);
     },
+    setProductTypes(state, action) {
+      state.productTypes = Array.isArray(action.payload) ? action.payload : [];
+      state.page = 1;
+      saveState(state);
+    },
     setPage(state, action) {
       state.page = action.payload || 1;
     },
@@ -198,6 +209,7 @@ const productConversionSlice = createSlice({
         state.compareEnd = action.payload.compareEnd;
         state.filters = action.payload.filters || [];
         state.search = action.payload.search || '';
+        state.productTypes = action.payload.productTypes || [];
       })
       .addCase(fetchProductConversion.rejected, (state, action) => {
         state.status = 'failed';
@@ -206,7 +218,7 @@ const productConversionSlice = createSlice({
   },
 });
 
-export const { setDateRange, setCompareMode, setCompareDateRange, setPage, setPageSize, setSort, resetProductConversion, setFilter, addFilter, removeFilter, clearFilters, setSearch } = productConversionSlice.actions;
+export const { setDateRange, setCompareMode, setCompareDateRange, setPage, setPageSize, setSort, resetProductConversion, setFilter, addFilter, removeFilter, clearFilters, setSearch, setProductTypes } = productConversionSlice.actions;
 export default productConversionSlice.reducer;
 
 

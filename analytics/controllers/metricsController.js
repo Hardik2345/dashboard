@@ -2139,6 +2139,25 @@ function buildMetricsController() {
           filterReplacements.push(`%${search}%`);
         }
 
+        let productTypes = req.query.product_types;
+        if (typeof productTypes === 'string') {
+          try { productTypes = JSON.parse(productTypes); } catch (e) { productTypes = []; }
+        }
+
+        if (Array.isArray(productTypes) && productTypes.length > 0) {
+          const syncDate = end || start || formatIsoDate(new Date());
+          conditions.push(`s.landing_page_path IN (
+             SELECT landing_page_path 
+             FROM product_landing_mapping 
+             WHERE product_type IN (?) 
+               AND DATE(last_synced_at) = (
+                 SELECT MAX(DATE(last_synced_at)) FROM product_landing_mapping WHERE DATE(last_synced_at) <= ?
+               )
+           )`);
+          filterReplacements.push(productTypes);
+          filterReplacements.push(syncDate);
+        }
+
         if (Array.isArray(filters) && filters.length > 0) {
           for (const f of filters) {
             const fField = (f.field || '').toString().toLowerCase();
@@ -2323,6 +2342,41 @@ function buildMetricsController() {
       }
     },
 
+    productTypes: async (req, res) => {
+      try {
+        const conn = req.brandDb?.sequelize;
+        if (!conn) return res.status(500).json({ error: "Brand DB connection unavailable" });
+
+        const date = req.query.date || formatIsoDate(new Date());
+
+        // Select distinct product types for the given sync date (or latest available)
+        const sql = `
+          SELECT DISTINCT product_type 
+          FROM product_landing_mapping 
+          WHERE DATE(last_synced_at) = (
+            SELECT MAX(DATE(last_synced_at)) FROM product_landing_mapping WHERE DATE(last_synced_at) <= ?
+          )
+            AND product_type IS NOT NULL 
+            AND product_type != ''
+          ORDER BY product_type ASC
+        `;
+
+        const types = await conn.query(sql, {
+          type: QueryTypes.SELECT,
+          replacements: [date]
+        });
+
+        // Return array of strings
+        return res.json({
+          date,
+          types: types.map(t => t.product_type)
+        });
+      } catch (e) {
+        console.error('[product-types] failed', e);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
     productConversionCsv: async (req, res) => {
       try {
         const todayStr = formatIsoDate(new Date());
@@ -2371,6 +2425,25 @@ function buildMetricsController() {
         if (search) {
           conditions.push(`s.landing_page_path LIKE ?`);
           filterReplacements.push(`%${search}%`);
+        }
+
+        let productTypes = req.query.product_types;
+        if (typeof productTypes === 'string') {
+          try { productTypes = JSON.parse(productTypes); } catch (e) { productTypes = []; }
+        }
+
+        if (Array.isArray(productTypes) && productTypes.length > 0) {
+          const syncDate = end || start || formatIsoDate(new Date());
+          conditions.push(`s.landing_page_path IN (
+             SELECT landing_page_path 
+             FROM product_landing_mapping 
+             WHERE product_type IN (?) 
+               AND DATE(last_synced_at) = (
+                 SELECT MAX(DATE(last_synced_at)) FROM product_landing_mapping WHERE DATE(last_synced_at) <= ?
+               )
+           )`);
+          filterReplacements.push(productTypes);
+          filterReplacements.push(syncDate);
         }
 
         if (Array.isArray(filters) && filters.length > 0) {

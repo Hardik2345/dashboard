@@ -49,8 +49,9 @@ import { Popover, DatePicker } from '@shopify/polaris';
 import { AppProvider } from '@shopify/polaris';
 import enTranslations from '@shopify/polaris/locales/en.json';
 import { useAppDispatch, useAppSelector } from '../state/hooks.js';
-import { fetchProductConversion, setDateRange, setPage, setPageSize, setSort, setCompareMode, setCompareDateRange, addFilter, removeFilter, clearFilters, setSearch } from '../state/slices/productConversionSlice.js';
-import { exportProductConversionCsv } from '../lib/api.js';
+import { fetchProductConversion, setDateRange, setPage, setPageSize, setSort, setCompareMode, setCompareDateRange, addFilter, removeFilter, clearFilters, setSearch, setProductTypes } from '../state/slices/productConversionSlice.js';
+
+import { exportProductConversionCsv, getProductTypes } from '../lib/api.js';
 import { useTheme } from '@mui/material/styles';
 import { validateFilter } from '../lib/filterValidation.js';
 
@@ -380,9 +381,48 @@ function DetailedFilterPanel({
   onAddFilter,
   onRemoveFilter,
   onClearFilters,
-  height // New prop
+  height,
+  brandKey,
+  date,
+  productTypes = [],
+  onProductTypeChange
 }) {
   const theme = useTheme();
+
+  // Product Types State
+  const [availableProductTypes, setAvailableProductTypes] = useState([]);
+  const [loadingTypes, setLoadingTypes] = useState(false);
+
+  useEffect(() => {
+    if (!brandKey) return;
+    setLoadingTypes(true);
+    getProductTypes({
+      brand_key: brandKey,
+      date: date ? dayjs(date).format('YYYY-MM-DD') : undefined
+    }).then(res => {
+      if (res.types) setAvailableProductTypes(res.types);
+    }).finally(() => setLoadingTypes(false));
+  }, [brandKey, date]);
+
+  const handleToggleType = (type) => {
+    const current = productTypes || [];
+    if (current.includes(type)) {
+      onProductTypeChange(current.filter(t => t !== type));
+    } else {
+      onProductTypeChange([...current, type]);
+    }
+  };
+
+  const handleToggleAllTypes = () => {
+    if (productTypes.length === availableProductTypes.length) {
+      onProductTypeChange([]);
+    } else {
+      onProductTypeChange([...availableProductTypes]);
+    }
+  };
+
+  const isAllTypesSelected = availableProductTypes.length > 0 && productTypes.length === availableProductTypes.length;
+  const isIndeterminateTypes = productTypes.length > 0 && productTypes.length < availableProductTypes.length;
 
   // State for new filter creation
   const [showAddForm, setShowAddForm] = useState(false);
@@ -441,6 +481,56 @@ function DetailedFilterPanel({
       </Box>
 
       <Box sx={{ overflowY: 'auto', flex: 1, p: 2 }}>
+
+        {/* Product Types Section */}
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="subtitle2" color="text.primary" sx={{ mb: 1, textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
+            Product Types
+          </Typography>
+          <Card variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+            {loadingTypes ? (
+              <Box sx={{ p: 2, display: 'flex', justifyContent: 'center' }}><CircularProgress size={20} /></Box>
+            ) : (
+              <List dense disablePadding>
+                <ListItem dense divider button onClick={handleToggleAllTypes}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <Checkbox
+                      edge="start"
+                      checked={isAllTypesSelected}
+                      indeterminate={isIndeterminateTypes}
+                      tabIndex={-1}
+                      disableRipple
+                      size="small"
+                    />
+                  </ListItemIcon>
+                  <ListItemText primary="Select All" primaryTypographyProps={{ fontWeight: 600, fontSize: '0.875rem' }} />
+                </ListItem>
+                {availableProductTypes.map((type) => {
+                  const isChecked = productTypes.includes(type);
+                  return (
+                    <ListItem key={type} dense divider button onClick={() => handleToggleType(type)}>
+                      <ListItemIcon sx={{ minWidth: 36 }}>
+                        <Checkbox
+                          edge="start"
+                          checked={isChecked}
+                          tabIndex={-1}
+                          disableRipple
+                          size="small"
+                        />
+                      </ListItemIcon>
+                      <ListItemText primary={type} primaryTypographyProps={{ fontSize: '0.875rem' }} />
+                    </ListItem>
+                  );
+                })}
+                {availableProductTypes.length === 0 && (
+                  <ListItem>
+                    <ListItemText primary="No types found" primaryTypographyProps={{ fontSize: '0.875rem', color: 'text.secondary', textAlign: 'center' }} />
+                  </ListItem>
+                )}
+              </List>
+            )}
+          </Card>
+        </Box>
 
         {/* Metrics Section */}
         <Box sx={{ mb: 4 }}>
@@ -720,7 +810,7 @@ export default function ProductConversionTable({ brandKey }) {
 
   const dispatch = useAppDispatch();
   const productState = useAppSelector((state) => state.productConversion);
-  const { start, end, page, pageSize, sortBy, sortDir, rows, totalCount, status, error, compareMode, compareStart, compareEnd } = productState;
+  const { start, end, page, pageSize, sortBy, sortDir, rows, totalCount, status, error, compareMode, compareStart, compareEnd, productTypes } = productState;
   const [exporting, setExporting] = useState(false);
   const [localSearch, setLocalSearch] = useState(productState.search || '');
 
@@ -737,6 +827,7 @@ export default function ProductConversionTable({ brandKey }) {
 
   // Panel State (Boolean togglable)
   const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [showTypeFilter, setShowTypeFilter] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -759,6 +850,11 @@ export default function ProductConversionTable({ brandKey }) {
   const handleClearFilters = () => {
     dispatch(clearFilters());
     triggerFetch({ filters: [] });
+  };
+
+  const handleProductTypeChange = (types) => {
+    dispatch(setProductTypes(types));
+    triggerFetch({ productTypes: types, page: 1 });
   };
 
 
@@ -1006,6 +1102,7 @@ export default function ProductConversionTable({ brandKey }) {
           >
             {exporting ? <CircularProgress size={16} /> : <DownloadIcon fontSize="small" />}
           </IconButton>
+
           <IconButton
             size="small"
             onClick={() => setShowFilterPanel(true)}
@@ -1160,6 +1257,8 @@ export default function ProductConversionTable({ brandKey }) {
             disableDatesAfter={compareMode ? dayjs().subtract(1, 'day').toDate() : null}
           />
 
+
+
           <Button
             variant="outlined"
             size="small"
@@ -1310,6 +1409,10 @@ export default function ProductConversionTable({ brandKey }) {
                 triggerFetch({ filters: newFilters });
               }}
               onClearFilters={handleClearFilters}
+              brandKey={brandKey}
+              date={end}
+              productTypes={productTypes}
+              onProductTypeChange={handleProductTypeChange}
             />
           </Drawer>
         ) : (
@@ -1343,6 +1446,10 @@ export default function ProductConversionTable({ brandKey }) {
                 triggerFetch({ filters: newFilters });
               }}
               onClearFilters={handleClearFilters}
+              brandKey={brandKey}
+              date={end}
+              productTypes={productTypes}
+              onProductTypeChange={handleProductTypeChange}
             />
           </Collapse>
         )}
