@@ -5,12 +5,13 @@
 // Option B (new): BRANDS_CONFIG = JSON array of brand objects
 //   e.g. [{"key":"PTS","dbHost":"...","dbPort":3306,"dbUser":"...","dbPass":"...","dbName":"PTS"}]
 
-const REQUIRED_SUFFIXES = ['DB_HOST','DB_USER','DB_PASS'];
+const REQUIRED_SUFFIXES = ['DB_HOST', 'DB_USER', 'DB_PASS'];
 const DEFAULT_BRAND_IDS = Object.freeze({
   PTS: 1,
   BBB: 2,
   TMC: 3,
   MILA: 4,
+  AJMAL: 5,
 });
 
 function normalizeDomain(d) {
