@@ -55,6 +55,7 @@ import { fetchProductConversion, setDateRange, setPage, setPageSize, setSort, se
 import { exportProductConversionCsv, getProductTypes } from '../lib/api.js';
 import { useTheme } from '@mui/material/styles';
 import { validateFilter } from '../lib/filterValidation.js';
+import { GlassChip } from './ui/GlassChip.jsx';
 
 const DATE_PRESETS = [
   { label: 'Today', getValue: () => [dayjs().startOf('day'), dayjs().startOf('day')], group: 1 },
@@ -890,12 +891,19 @@ export default function ProductConversionTable({ brandKey }) {
   // Handler for clearing all filters
   const handleClearFilters = () => {
     dispatch(clearFilters());
-    triggerFetch({ filters: [] });
+    dispatch(setProductTypes([]));
+    triggerFetch({ filters: [], productTypes: [] });
   };
 
   const handleProductTypeChange = (types) => {
     dispatch(setProductTypes(types));
     triggerFetch({ productTypes: types, page: 1 });
+  };
+
+  const handleRemoveProductType = (typeToRemove) => {
+    const newTypes = (productTypes || []).filter(t => t !== typeToRemove);
+    dispatch(setProductTypes(newTypes));
+    triggerFetch({ productTypes: newTypes, page: 1 });
   };
 
 
@@ -1332,26 +1340,56 @@ export default function ProductConversionTable({ brandKey }) {
       </Box>
 
       {/* Filter Summary / Active Chips (optional display if panel is closed) */}
-      {(productState.filters && productState.filters.length > 0 && !showFilterPanel) && (
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* Filter Summary / Active Chips (Scrollable Row) */}
+      {((productState.filters && productState.filters.length > 0) || (productTypes && productTypes.length > 0)) && (
+        <Box sx={{ display: 'flex', gap: 1, overflowX: 'auto', alignItems: 'center', pb: 0.5, 'scrollbarWidth': 'none', '&::-webkit-scrollbar': { display: 'none' } }}>
+
+          {/* Product Types */}
+          {(productTypes || []).map((type) => (
+            <Grow key={`type-${type}`} in={true}>
+              <div>
+                <GlassChip
+                  label={`Type: ${type}`}
+                  onDelete={() => handleRemoveProductType(type)}
+                  size="small"
+                  isDark={theme.palette.mode === 'dark'}
+                  sx={{ borderRadius: '9999px', whiteSpace: 'nowrap' }}
+                />
+              </div>
+            </Grow>
+          ))}
+
+          {/* Metric Filters */}
           {productState.filters.map((f, idx) => {
             const col = columns.find(c => c.id === f.field);
             return (
-              <Chip
-                key={idx}
-                label={`${col?.label || f.field} ${f.operator === 'gt' ? '>' : '<'} ${f.value}`}
-                size="small"
-                onDelete={() => {
-                  dispatch(removeFilter(idx));
-                  const newFilters = [...productState.filters];
-                  newFilters.splice(idx, 1);
-                  triggerFetch({ filters: newFilters });
-                }}
-                sx={{ borderRadius: 1 }}
-              />
+              <Grow key={`filter-${idx}`} in={true}>
+                <div>
+                  <GlassChip
+                    label={`${col?.label || f.field} ${f.operator === 'gt' ? '>' : '<'} ${f.value}`}
+                    size="small"
+                    onDelete={() => {
+                      dispatch(removeFilter(idx));
+                      const newFilters = [...productState.filters];
+                      newFilters.splice(idx, 1);
+                      triggerFetch({ filters: newFilters });
+                    }}
+                    isDark={theme.palette.mode === 'dark'}
+                    sx={{ borderRadius: '9999px', whiteSpace: 'nowrap' }}
+                  />
+                </div>
+              </Grow>
             );
           })}
-          <Button size="small" color="primary" onClick={handleClearFilters} sx={{ textTransform: 'none', fontSize: '0.75rem' }}>Clear all</Button>
+
+          <Button
+            size="small"
+            color="primary"
+            onClick={handleClearFilters}
+            sx={{ textTransform: 'none', fontSize: '0.75rem', minWidth: 'auto', whiteSpace: 'nowrap' }}
+          >
+            Clear all
+          </Button>
         </Box>
       )}
 
