@@ -723,6 +723,8 @@ export default function MobileTopBar({
                   sx={{
                     p: 1,
                     minWidth: 200,
+                    maxWidth: 320,
+                    bgcolor: "background.paper",
                   }}
                 >
                   <DatePicker
