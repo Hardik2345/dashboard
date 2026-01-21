@@ -1,11 +1,16 @@
 const AuthService = require('../services/auth.service');
 const logger = require('../utils/logger');
+const TokenService = require('../services/token.service');
+const GlobalUser = require('../models/GlobalUser.model');
+const crypto = require('crypto');
+const AdminUserService = require('../services/adminUser.service');
+const AdminDomainRuleService = require('../services/adminDomainRule.service');
 
 const COOKIE_OPTIONS = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'Strict',
-    path: '/auth',
+    sameSite: 'Lax',
+    path: '/', // ensure refresh cookie is sent on /api/auth/* via proxy
     maxAge: 7 * 24 * 60 * 60 * 1000
 };
 
@@ -27,6 +32,41 @@ exports.login = async (req, res) => {
         if (err.message === 'Invalid credentials') return res.status(401).json({ error: 'Invalid credentials' });
         if (err.message === 'User suspended') return res.status(403).json({ error: 'User suspended' });
         if (err.message === 'No active brand memberships') return res.status(403).json({ error: 'No active brand memberships' });
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+};
+
+exports.signup = async (req, res) => {
+    try {
+        const { email, password, primary_brand_id, role } = req.body || {};
+        if (!email || !password || !primary_brand_id) {
+            return res.status(400).json({ error: 'email, password, primary_brand_id required' });
+        }
+
+        const result = await AuthService.signup({
+            email,
+            password,
+            primaryBrandId: primary_brand_id,
+            role
+        });
+
+        res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
+        logger.info('AuthController', 'Signup success', { email, brand: primary_brand_id });
+        res.status(201).json({
+            access_token: result.accessToken,
+            user: {
+                id: result.user._id,
+                email: result.user.email,
+                role: result.user.role,
+                primary_brand_id: result.user.primary_brand_id,
+                brand_memberships: result.user.brand_memberships,
+                status: result.user.status,
+            }
+        });
+    } catch (err) {
+        logger.error('AuthController', 'Signup error', { error: err.message });
+        if (err.message === 'User already exists') return res.status(409).json({ error: 'User already exists' });
+        if (err.message === 'Missing required fields') return res.status(400).json({ error: 'Missing required fields' });
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };
@@ -86,5 +126,277 @@ exports.logoutAllSelf = async (req, res) => {
     } catch (err) {
         logger.error('AuthController', 'Logout All Self error', { error: err.message });
         res.status(401).json({ error: 'Unauthorized' });
+    }
+};
+
+exports.me = async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) return res.status(401).json({ error: 'Access token required' });
+
+        const payload = TokenService.verifyAccessToken(token);
+        const user = await GlobalUser.findById(payload.sub);
+        if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+        return res.json({
+            user: {
+                id: user._id,
+                email: user.email,
+                role: user.role,
+                primary_brand_id: user.primary_brand_id,
+                brand_memberships: user.brand_memberships,
+                status: user.status,
+            },
+            expiresAt: payload.exp ? payload.exp * 1000 : null,
+        });
+    } catch (err) {
+        logger.error('AuthController', 'Me error', { error: err.message });
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+};
+
+function requireAdminOrAuthor(req) {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) throw new Error('unauthorized');
+    const payload = TokenService.verifyAccessToken(token);
+    if (!payload || (payload.role !== 'admin' && payload.role !== 'author')) {
+        throw new Error('forbidden');
+    }
+    return payload;
+}
+
+exports.adminUpsertUser = async (req, res) => {
+    try {
+        requireAdminOrAuthor(req);
+        const { email, role, brand_ids, primary_brand_id, status, permissions } = req.body || {};
+        const user = await AdminUserService.upsertUser({ email, role, brand_ids, primary_brand_id, status, permissions });
+        return res.status(200).json({
+            user: {
+                id: user._id,
+                email: user.email,
+                role: user.role,
+                status: user.status,
+                primary_brand_id: user.primary_brand_id,
+                brand_memberships: user.brand_memberships
+            }
+        });
+    } catch (err) {
+        if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
+        if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
+        if (err.message === 'email required' || err.message === 'invalid role') return res.status(400).json({ error: err.message });
+        logger.error('AuthController', 'Admin upsert user error', { error: err.message });
+        return res.status(500).json({ error: 'Failed to upsert user' });
+    }
+};
+
+exports.adminDeleteUser = async (req, res) => {
+    try {
+        requireAdminOrAuthor(req);
+        const emailParam = req.params.email || req.body?.email;
+        if (!emailParam) return res.status(400).json({ error: 'email required' });
+        const deleted = await AdminUserService.deleteUserByEmail(emailParam);
+        if (deleted === 0) return res.status(404).json({ error: 'User not found' });
+        return res.status(200).json({ message: 'User deleted' });
+    } catch (err) {
+        if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
+        if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
+        logger.error('AuthController', 'Admin delete user error', { error: err.message });
+        return res.status(500).json({ error: 'Failed to delete user' });
+    }
+};
+
+exports.adminListUsers = async (req, res) => {
+    try {
+        requireAdminOrAuthor(req);
+        const users = await AdminUserService.listUsers();
+        return res.status(200).json({ users });
+    } catch (err) {
+        if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
+        if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
+        logger.error('AuthController', 'Admin list users error', { error: err.message });
+        return res.status(500).json({ error: 'Failed to list users' });
+    }
+};
+
+exports.adminUpsertDomainRule = async (req, res) => {
+    try {
+        requireAdminOrAuthor(req);
+        const rule = await AdminDomainRuleService.upsertRule(req.body || {});
+        return res.status(200).json({ rule });
+    } catch (err) {
+        if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
+        if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
+        if (err.message === 'invalid domain' || err.message === 'invalid role' || err.message === 'primary_brand_id required') {
+            return res.status(400).json({ error: err.message });
+        }
+        logger.error('AuthController', 'Admin upsert domain rule error', { error: err.message });
+        return res.status(500).json({ error: 'Failed to upsert domain rule' });
+    }
+};
+
+exports.adminListDomainRules = async (req, res) => {
+    try {
+        requireAdminOrAuthor(req);
+        const rules = await AdminDomainRuleService.listRules();
+        return res.status(200).json({ rules });
+    } catch (err) {
+        if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
+        if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
+        logger.error('AuthController', 'Admin list domain rules error', { error: err.message });
+        return res.status(500).json({ error: 'Failed to list domain rules' });
+    }
+};
+
+exports.adminDeleteDomainRule = async (req, res) => {
+    try {
+        requireAdminOrAuthor(req);
+        const domain = req.params.domain;
+        if (!domain) return res.status(400).json({ error: 'domain required' });
+        const deleted = await AdminDomainRuleService.deleteRule(domain);
+        if (!deleted) return res.status(404).json({ error: 'Not found' });
+        return res.status(200).json({ deleted: true });
+    } catch (err) {
+        if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
+        if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
+        logger.error('AuthController', 'Admin delete domain rule error', { error: err.message });
+        return res.status(500).json({ error: 'Failed to delete domain rule' });
+    }
+};
+
+// ---------- Google OAuth ----------
+function buildState(params = {}) {
+    const json = JSON.stringify(params);
+    return Buffer.from(json).toString('base64url');
+}
+
+function parseState(state) {
+    try {
+        const json = Buffer.from(state, 'base64url').toString('utf8');
+        return JSON.parse(json);
+    } catch {
+        return {};
+    }
+}
+
+exports.googleStart = async (req, res) => {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+    if (!clientId || !redirectUri) {
+        return res.status(500).json({ error: 'Google OAuth not configured' });
+    }
+    const brand_id = req.query.brand_id || req.query.brand || undefined;
+    const redirect = req.query.redirect || req.query.next || undefined;
+    const state = buildState({ brand_id, redirect });
+    const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    url.searchParams.set('client_id', clientId);
+    url.searchParams.set('redirect_uri', redirectUri);
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('scope', 'openid email profile');
+    url.searchParams.set('access_type', 'offline');
+    url.searchParams.set('prompt', 'consent');
+    url.searchParams.set('state', state);
+    return res.redirect(url.toString());
+};
+
+exports.googleCallback = async (req, res) => {
+    try {
+        const code = req.query.code;
+        const stateRaw = req.query.state;
+        const { brand_id, redirect } = parseState(stateRaw || '');
+
+        if (!code) return res.status(400).json({ error: 'Missing code' });
+        const clientId = process.env.GOOGLE_CLIENT_ID;
+        const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+        const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+        if (!clientId || !clientSecret || !redirectUri) {
+            return res.status(500).json({ error: 'Google OAuth not configured' });
+        }
+
+        // Exchange code for tokens
+        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                code,
+                client_id: clientId,
+                client_secret: clientSecret,
+                redirect_uri: redirectUri,
+                grant_type: 'authorization_code'
+            })
+        });
+        if (!tokenRes.ok) {
+            const text = await tokenRes.text();
+            logger.error('AuthController', 'Google token exchange failed', { status: tokenRes.status, text });
+            return res.status(401).json({ error: 'Google auth failed' });
+        }
+        const tokenJson = await tokenRes.json();
+        const idToken = tokenJson.id_token;
+        if (!idToken) return res.status(401).json({ error: 'Google auth failed' });
+
+        // Validate id_token using tokeninfo (Google verifies signature/audience)
+        const infoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+        if (!infoRes.ok) {
+            const text = await infoRes.text();
+            logger.error('AuthController', 'Google tokeninfo failed', { status: infoRes.status, text });
+            return res.status(401).json({ error: 'Google auth failed' });
+        }
+        const info = await infoRes.json();
+        if (info.aud !== clientId) {
+            logger.error('AuthController', 'Google aud mismatch', { aud: info.aud });
+            return res.status(401).json({ error: 'Google auth failed' });
+        }
+        if (info.email_verified !== 'true' && info.email_verified !== true) {
+            return res.status(403).json({ error: 'Email not verified' });
+        }
+
+        const profile = {
+            email: info.email,
+            name: info.name,
+            sub: info.sub,
+            brandId: brand_id
+        };
+        console.log('Google profile:', profile);
+
+        let result;
+        try {
+            result = await AuthService.loginWithGoogle(profile);
+        } catch (err) {
+            if (err.message === 'User not allowed') {
+                // Attempt domain-rule-based provision on the fly
+                const provisionedUser = await AuthService.provisionUserByDomainRule(profile.email);
+                console.log('Provisioned user via domain rule:', provisionedUser);
+                if (!provisionedUser) return res.status(403).json({ error: 'User not allowed' });
+                const tokens = await AuthService.issueTokensForUser(provisionedUser, 'google-oauth');
+                console.log('Issued tokens for provisioned user');
+                result = { ...tokens, user: provisionedUser };
+            } else {
+                console.error('AuthController', 'Google login error', { error: err.message, stack: err.stack });
+                throw err;
+            }
+        }
+
+        res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
+        const payload = {
+            access_token: result.accessToken,
+            user: {
+                id: result.user._id,
+                email: result.user.email,
+                primary_brand_id: result.user.primary_brand_id,
+                brand_memberships: result.user.brand_memberships,
+                status: result.user.status,
+            }
+        };
+
+        if (redirect) {
+            const redirectUrl = new URL(redirect);
+            redirectUrl.searchParams.set('access_token', payload.access_token);
+            redirectUrl.searchParams.set('email', payload.user.email);
+            return res.redirect(redirectUrl.toString());
+        }
+
+        return res.json(payload);
+    } catch (err) {
+        logger.error('AuthController', 'Google callback error', { error: err.message, stack: err.stack });
+        return res.status(500).json({ error: 'Google auth failed' });
     }
 };

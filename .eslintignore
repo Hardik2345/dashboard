@@ -1,1 +1,6 @@
 scripts/sessions_export.js
+node_modules/
+coverage/
+dist/
+client/
+api-gateway/*_temp/

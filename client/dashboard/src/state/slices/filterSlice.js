@@ -8,7 +8,7 @@ export const DEFAULT_PRODUCT_OPTION = { id: '', label: 'All products', detail: '
 
 function defaultRangeYesterdayToday() {
   const today = dayjs();
-  return [today, today];
+  return [today.toISOString(), today.toISOString()];
 }
 
 const UTM_KEY = 'pts_utm_filters_v1';
@@ -20,7 +20,7 @@ function loadInitialRange() {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.start && parsed.end && parsed.savedAt) {
         if (Date.now() - parsed.savedAt < TTL_MS) {
-          return [dayjs(parsed.start), dayjs(parsed.end)];
+          return [parsed.start, parsed.end];
         }
         if (typeof localStorage !== 'undefined') localStorage.removeItem(RANGE_KEY);
       }
@@ -56,7 +56,11 @@ const filterSlice = createSlice({
     setRange(state, action) {
       const next = Array.isArray(action.payload) ? action.payload : [];
       const [start, end] = next;
-      state.range = [start, end];
+      const toIso = (v) => {
+        const d = dayjs(v);
+        return d.isValid() ? d.toISOString() : null;
+      };
+      state.range = [toIso(start), toIso(end)];
     },
     setSelectedMetric(state, action) {
       state.selectedMetric = action.payload || DEFAULT_TREND_METRIC;

@@ -2,7 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "trailingSlash": false,
-
   "rewrites": [
     {
       "source": "/api/external-pagespeed/(.*)",

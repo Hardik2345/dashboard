@@ -4,7 +4,7 @@ const { randomUUID } = require('crypto');
 const RefreshTokenSchema = new mongoose.Schema({
     _id: {
         type: String,
-        default: randomUUID
+        default: () => randomUUID()
     },
     user_id: {
         type: String,
