@@ -1,0 +1,121 @@
+version: "3.9"
+
+services:
+  api-gateway:
+    container_name: api-gateway
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "80:18080"
+    env_file:
+      - .env
+      - ./api-gateway/.env
+    environment:
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET}
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      tenant-router:
+        condition: service_healthy
+      alerts-service:
+        condition: service_healthy
+      analytics-service:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - saas-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:18080/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  auth-service:
+    container_name: auth-service
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile.auth
+    env_file:
+      - .env
+      - ./api-gateway/.env
+    environment:
+      PORT: 3001
+      NODE_ENV: production
+    restart: unless-stopped
+    networks:
+      - saas-net
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3001/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  tenant-router:
+    container_name: tenant-router
+    build:
+      context: ./tenant-router
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+      - ./tenant-router/.env
+    environment:
+      PORT: 3004
+      NODE_ENV: production
+    restart: unless-stopped
+    networks:
+      - saas-net
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3004/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  alerts-service:
+    container_name: alerts-service
+    build:
+      context: ./alerts-service
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+      - ./alerts-service/.env
+    environment:
+      PORT: 5005
+      NODE_ENV: production
+    restart: unless-stopped
+    networks:
+      - saas-net
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:5005/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  analytics-service:
+    container_name: analytics-service
+    build:
+      context: ./analytics
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+      - ./analytics/.env
+    environment:
+      PORT: 3006
+      NODE_ENV: production
+    restart: unless-stopped
+    networks:
+      - saas-net
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3006/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+networks:
+  saas-net:
+    driver: bridge

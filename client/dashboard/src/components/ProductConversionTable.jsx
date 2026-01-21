@@ -31,6 +31,7 @@ import {
   Chip,
   Popover as MuiPopover,
   InputAdornment,
+  Grow,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -38,7 +39,6 @@ import CheckIcon from '@mui/icons-material/Check';
 import KeyboardArrowLeft from '@mui/icons-material/KeyboardArrowLeft';
 import KeyboardArrowRight from '@mui/icons-material/KeyboardArrowRight';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import { GlassChip } from './ui/GlassChip';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import CloseIcon from '@mui/icons-material/Close';
@@ -46,14 +46,16 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import SwapVertIcon from '@mui/icons-material/SwapVert';
 import { useMediaQuery, Drawer } from '@mui/material';
 
-import { Popover, DatePicker } from '@shopify/polaris';
+import { DatePicker } from '@shopify/polaris';
 import { AppProvider } from '@shopify/polaris';
 import enTranslations from '@shopify/polaris/locales/en.json';
 import { useAppDispatch, useAppSelector } from '../state/hooks.js';
-import { fetchProductConversion, setDateRange, setPage, setPageSize, setSort, setCompareMode, setCompareDateRange, addFilter, removeFilter, clearFilters, setSearch, setSelectedProductTypes } from '../state/slices/productConversionSlice.js';
-import { exportProductConversionCsv, fetchProductTypes } from '../lib/api.js';
+import { fetchProductConversion, setDateRange, setPage, setPageSize, setSort, setCompareMode, setCompareDateRange, addFilter, removeFilter, clearFilters, setSearch, setProductTypes } from '../state/slices/productConversionSlice.js';
+
+import { exportProductConversionCsv, getProductTypes } from '../lib/api.js';
 import { useTheme } from '@mui/material/styles';
 import { validateFilter } from '../lib/filterValidation.js';
+import { GlassChip } from './ui/GlassChip.jsx';
 
 const DATE_PRESETS = [
   { label: 'Today', getValue: () => [dayjs().startOf('day'), dayjs().startOf('day')], group: 1 },
@@ -119,7 +121,8 @@ function DateRangePicker({
   disableDatesAfter,
   sx = {},
 }) {
-  const [active, setActive] = useState(false);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const active = Boolean(anchorEl);
   const [month, setMonth] = useState(dayjs().month());
   const [year, setYear] = useState(dayjs().year());
   const [internalStart, setInternalStart] = useState(null);
@@ -127,22 +130,22 @@ function DateRangePicker({
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
 
-  const toggle = useCallback(() => {
+  const toggle = useCallback((event) => {
     if (disabled) return;
-    setActive(prev => {
-      if (!prev) {
-        const s = startDate ? dayjs(startDate) : dayjs();
-        const e = endDate ? dayjs(endDate) : s;
-        setInternalStart(s);
-        setInternalEnd(e);
-        setMonth(e.month());
-        setYear(e.year());
-      }
-      return !prev;
-    });
-  }, [startDate, endDate, disabled]);
+    if (anchorEl) {
+      setAnchorEl(null);
+    } else {
+      setAnchorEl(event.currentTarget);
+      const s = startDate ? dayjs(startDate) : dayjs();
+      const e = endDate ? dayjs(endDate) : s;
+      setInternalStart(s);
+      setInternalEnd(e);
+      setMonth(e.month());
+      setYear(e.year());
+    }
+  }, [startDate, endDate, disabled, anchorEl]);
 
-  const handleClose = useCallback(() => setActive(false), []);
+  const handleClose = useCallback(() => setAnchorEl(null), []);
   const handleMonthChange = useCallback((m, y) => { setMonth(m); setYear(y); }, []);
 
   const handleRangeChange = useCallback(({ start: sRaw, end: eRaw }) => {
@@ -156,7 +159,7 @@ function DateRangePicker({
     if (singleDate) {
       if (s) {
         onApply(s, s);
-        setActive(false);
+        setAnchorEl(null);
       }
       return;
     }
@@ -188,7 +191,7 @@ function DateRangePicker({
     setInternalStart(ps);
     setInternalEnd(pe);
     onApply(ps, pe);
-    setActive(false);
+    setAnchorEl(null);
   }, [onApply, disableDatesAfter]);
 
   const selectedRange = useMemo(() => {
@@ -210,50 +213,52 @@ function DateRangePicker({
 
   return (
     <AppProvider i18n={enTranslations} theme={{ colorScheme: isDark ? 'dark' : 'light' }}>
-      <Popover
-        active={active}
-        activator={
-          <Card
-            elevation={0}
-            onClick={toggle}
-            role="button"
-            tabIndex={0}
-            sx={{
-              px: 1.25, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: disabled ? 'default' : 'pointer',
-              minWidth: { xs: 160, md: 200 }, textAlign: 'center', userSelect: 'none',
-              border: '1px solid', borderColor: disabled ? 'action.disabledBackground' : 'divider', boxShadow: 'none',
-              bgcolor: disabled ? 'transparent' : (variant === 'primary' ? '#5ba3e0' : bgColor),
-              color: disabled ? 'text.disabled' : (variant === 'primary' ? '#0a1f33' : textColor),
-              opacity: disabled ? 0.6 : 1,
-              pointerEvents: disabled ? 'none' : 'auto',
-              '&:hover': { filter: disabled ? 'none' : 'brightness(0.97)' },
-              ...sx,
-            }}
-          >
-            <Typography variant="body2" noWrap sx={{ color: 'inherit' }}>
-              {labelPrefix && (
-                <Box component="span" sx={{ opacity: 0.7, mr: 0.5, fontWeight: 400 }}>
-                  {labelPrefix}
-                </Box>
-              )}
-              {displayLabel}
-            </Typography>
-          </Card>
-        }
-        onClose={handleClose}
-        preferredAlignment="right"
+      <Card
+        elevation={0}
+        onClick={toggle}
+        role="button"
+        tabIndex={0}
+        sx={{
+          px: 1.25, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: disabled ? 'default' : 'pointer',
+          minWidth: { xs: 160, md: 200 }, textAlign: 'center', userSelect: 'none',
+          border: '1px solid', borderColor: disabled ? 'action.disabledBackground' : 'divider', boxShadow: 'none',
+          bgcolor: disabled ? 'transparent' : (variant === 'primary' ? '#5ba3e0' : bgColor),
+          color: disabled ? 'text.disabled' : (variant === 'primary' ? '#0a1f33' : textColor),
+          opacity: disabled ? 0.6 : 1,
+          pointerEvents: disabled ? 'none' : 'auto',
+          '&:hover': { filter: disabled ? 'none' : 'brightness(0.97)' },
+          ...sx,
+        }}
       >
-        <Box sx={{ display: 'flex', flexDirection: 'row', maxHeight: '80vh', overflowX: 'hidden', overflowY: 'auto', borderRadius: 1 }}>
+        <Typography variant="body2" noWrap sx={{ color: 'inherit' }}>
+          {labelPrefix && (
+            <Box component="span" sx={{ opacity: 0.7, mr: 0.5, fontWeight: 400 }}>
+              {labelPrefix}
+            </Box>
+          )}
+          {displayLabel}
+        </Typography>
+      </Card>
+
+      <MuiPopover
+        open={active}
+        anchorEl={anchorEl}
+        onClose={handleClose}
+        TransitionComponent={Grow}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        PaperProps={{
+          sx: { borderRadius: 1, mt: 1, overflow: 'hidden', boxShadow: theme.shadows[8] }
+        }}
+      >
+        <Box sx={{ display: 'flex', flexDirection: 'row', maxHeight: '80vh', overflowX: 'hidden', overflowY: 'auto' }}>
           {!singleDate && (
             <Box sx={{ minWidth: 120, maxHeight: 320, overflowY: 'auto', borderRight: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', display: { xs: 'block', md: 'none' } }}>
               <List disablePadding>
                 {presets.map((preset, idx) => {
                   const isSelected = activePresetLabel === preset.label;
                   const [ps, pe] = preset.getValue();
-                  // Only disable if it's strictly a single day (Today) that is disabled, OR if shifting isn't possible (e.g. future single day)
-                  // For ranges (Last 7 days), we allow them and shift them in handlePreset.
-                  // "Today" is start==end.
                   const isSingleDay = ps.isSame(pe, 'day');
                   const isDisabled = disableDatesAfter && isSingleDay && pe.isAfter(dayjs(disableDatesAfter).endOf('day'));
 
@@ -290,7 +295,6 @@ function DateRangePicker({
                 {presets.map((preset, idx) => {
                   const isSelected = activePresetLabel === preset.label;
                   const [ps, pe] = preset.getValue();
-                  // Only disable if it's strictly a single day (Today) that is disabled
                   const isSingleDay = ps.isSame(pe, 'day');
                   const isDisabled = disableDatesAfter && isSingleDay && pe.isAfter(dayjs(disableDatesAfter).endOf('day'));
 
@@ -319,7 +323,7 @@ function DateRangePicker({
               </List>
             </Box>
           )}
-          <Box sx={{ flex: 1, p: 1, minWidth: 200, bgcolor: 'background.paper' }}>
+          <Box sx={{ flex: 1, p: 1, minWidth: 200, maxWidth: 320, bgcolor: 'background.paper' }}>
             <DatePicker
               month={month}
               year={year}
@@ -331,8 +335,8 @@ function DateRangePicker({
             />
           </Box>
         </Box>
-      </Popover >
-    </AppProvider >
+      </MuiPopover>
+    </AppProvider>
   );
 }
 
@@ -382,20 +386,54 @@ function DetailedFilterPanel({
   onAddFilter,
   onRemoveFilter,
   onClearFilters,
-
-  productTypes, // New prop: available types
-  selectedProductTypes, // New prop: selected types
-  onProductTypeChange, // New prop: handler
-  height // New prop
+  height,
+  brandKey,
+  date,
+  productTypes = [],
+  onProductTypeChange
 }) {
   const theme = useTheme();
 
-  // Accordion state
-  const [expanded, setExpanded] = useState('metrics'); // 'metrics', 'product_types', 'filters', or false (if allow closing all)
+  const [expanded, setExpanded] = useState('metrics');
 
   const handleAccordionChange = (panel) => (event, isExpanded) => {
     setExpanded(isExpanded ? panel : false);
   };
+
+  // Product Types State
+  const [availableProductTypes, setAvailableProductTypes] = useState([]);
+  const [loadingTypes, setLoadingTypes] = useState(false);
+
+  useEffect(() => {
+    if (!brandKey) return;
+    setLoadingTypes(true);
+    getProductTypes({
+      brand_key: brandKey,
+      date: date ? dayjs(date).format('YYYY-MM-DD') : undefined
+    }).then(res => {
+      if (res.types) setAvailableProductTypes(res.types);
+    }).finally(() => setLoadingTypes(false));
+  }, [brandKey, date]);
+
+  const handleToggleType = (type) => {
+    const current = productTypes || [];
+    if (current.includes(type)) {
+      onProductTypeChange(current.filter(t => t !== type));
+    } else {
+      onProductTypeChange([...current, type]);
+    }
+  };
+
+  const handleToggleAllTypes = () => {
+    if (productTypes.length === availableProductTypes.length) {
+      onProductTypeChange([]);
+    } else {
+      onProductTypeChange([...availableProductTypes]);
+    }
+  };
+
+  const isAllTypesSelected = availableProductTypes.length > 0 && productTypes.length === availableProductTypes.length;
+  const isIndeterminateTypes = productTypes.length > 0 && productTypes.length < availableProductTypes.length;
 
   // State for new filter creation
   const [showAddForm, setShowAddForm] = useState(false);
@@ -447,16 +485,30 @@ function DetailedFilterPanel({
   // Render as a persistent panel (Box/Card style)
   return (
     <Box sx={{ width: { xs: '100%', md: 320 }, height: { xs: '100%', md: height || 800 }, display: 'flex', flexDirection: 'column', bgcolor: 'background.paper', border: { md: `1px solid ${theme.palette.divider}` }, borderRadius: { md: 3 }, overflow: 'hidden' }}>
+      {/* Header */}
+      <Box sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'background.default' }}>
+        <Typography variant="h6" fontWeight={600} fontSize="0.95rem" color="text.primary">Filter Panel</Typography>
+        <IconButton onClick={onClose} size="small"><CloseIcon fontSize="small" /></IconButton>
+      </Box>
 
+      <Box sx={{ overflowY: 'auto', flex: 1, p: 2 }}>
 
-      <Box sx={{ flex: 1, overflowY: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {/* NEW ACCORDION LAYOUT */}
 
-        {/* Metrics Accordion */}
-        <Accordion expanded={expanded === 'metrics'} onChange={handleAccordionChange('metrics')} disableGutters elevation={0} sx={{ '&:before': { display: 'none' }, borderBottom: `1px solid ${theme.palette.divider}` }}>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'background.default', minHeight: 48, '&.Mui-expanded': { minHeight: 48 } }}>
-            <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>Metrics</Typography>
+        {/* 1. Metrics Section */}
+        <Accordion
+          expanded={expanded === 'metrics'}
+          onChange={handleAccordionChange('metrics')}
+          disableGutters
+          elevation={0}
+          sx={{ '&:before': { display: 'none' }, borderBottom: `1px solid ${theme.palette.divider}` }}
+        >
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
+              Metrics
+            </Typography>
           </AccordionSummary>
-          <AccordionDetails sx={{ p: 0, maxHeight: height ? height - 150 : 300, overflowY: 'auto' }}>
+          <AccordionDetails sx={{ p: 0, pb: 2 }}>
             <List dense disablePadding>
               {/* "All" Toggle */}
               <ListItem dense divider button onClick={handleToggleAllMetrics}>
@@ -495,72 +547,88 @@ function DetailedFilterPanel({
           </AccordionDetails>
         </Accordion>
 
-        {/* Product Type Section */}
-        {/* Product Type Accordion */}
-        <Accordion expanded={expanded === 'product_types'} onChange={handleAccordionChange('product_types')} disableGutters elevation={0} sx={{ '&:before': { display: 'none' }, borderBottom: `1px solid ${theme.palette.divider}` }}>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'background.default', minHeight: 48, '&.Mui-expanded': { minHeight: 48 } }}>
-            <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>Product Type</Typography>
+        {/* 2. Product Types Section */}
+        <Accordion
+          expanded={expanded === 'productTypes'}
+          onChange={handleAccordionChange('productTypes')}
+          disableGutters
+          elevation={0}
+          sx={{ '&:before': { display: 'none' }, borderBottom: `1px solid ${theme.palette.divider}` }}
+        >
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
+              Product Types
+            </Typography>
           </AccordionSummary>
-          <AccordionDetails sx={{ p: 0, maxHeight: height ? height - 250 : 300, overflowY: 'auto' }}>
-            {(!productTypes || productTypes.length === 0) ? (
-              <Box sx={{ p: 2, textAlign: 'center' }}><Typography variant="caption" color="text.secondary">No types available</Typography></Box>
-            ) : (
-              <List dense disablePadding>
-                {/* "All" Toggle */}
-                <ListItem dense divider button onClick={() => onProductTypeChange([])}>
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    <Checkbox
-                      edge="start"
-                      checked={selectedProductTypes.length === 0}
-                      tabIndex={-1}
-                      disableRipple
-                      size="small"
-                    />
-                  </ListItemIcon>
-                  <ListItemText primary="All" primaryTypographyProps={{ fontWeight: 600, fontSize: '0.875rem' }} />
-                </ListItem>
-
-                {/* Individual Types */}
-                {productTypes.map((type) => {
-                  const isChecked = selectedProductTypes.includes(type);
-                  return (
-                    <ListItem key={type} dense divider button onClick={() => {
-                      const newSelection = isChecked
-                        ? selectedProductTypes.filter(t => t !== type)
-                        : [...selectedProductTypes, type];
-                      onProductTypeChange(newSelection);
-                    }}>
-                      <ListItemIcon sx={{ minWidth: 36 }}>
-                        <Checkbox
-                          edge="start"
-                          checked={isChecked}
-                          tabIndex={-1}
-                          disableRipple
-                          size="small"
-                        />
-                      </ListItemIcon>
-                      <ListItemText primary={type} primaryTypographyProps={{ fontSize: '0.875rem' }} />
+          <AccordionDetails sx={{ p: 0, pb: 2 }}>
+            <Box sx={{ maxHeight: 300, overflowY: 'auto' }}>
+              {loadingTypes ? (
+                <Box sx={{ p: 2, display: 'flex', justifyContent: 'center' }}><CircularProgress size={20} /></Box>
+              ) : (
+                <List dense disablePadding>
+                  <ListItem dense divider button onClick={handleToggleAllTypes}>
+                    <ListItemIcon sx={{ minWidth: 36 }}>
+                      <Checkbox
+                        edge="start"
+                        checked={isAllTypesSelected}
+                        indeterminate={isIndeterminateTypes}
+                        tabIndex={-1}
+                        disableRipple
+                        size="small"
+                      />
+                    </ListItemIcon>
+                    <ListItemText primary="Select All" primaryTypographyProps={{ fontWeight: 600, fontSize: '0.875rem' }} />
+                  </ListItem>
+                  {availableProductTypes.map((type) => {
+                    const isChecked = productTypes.includes(type);
+                    return (
+                      <ListItem key={type} dense divider button onClick={() => handleToggleType(type)}>
+                        <ListItemIcon sx={{ minWidth: 36 }}>
+                          <Checkbox
+                            edge="start"
+                            checked={isChecked}
+                            tabIndex={-1}
+                            disableRipple
+                            size="small"
+                          />
+                        </ListItemIcon>
+                        <ListItemText primary={type} primaryTypographyProps={{ fontSize: '0.875rem' }} />
+                      </ListItem>
+                    );
+                  })}
+                  {availableProductTypes.length === 0 && (
+                    <ListItem>
+                      <ListItemText primary="No types found" primaryTypographyProps={{ fontSize: '0.875rem', color: 'text.secondary', textAlign: 'center' }} />
                     </ListItem>
-                  );
-                })}
-              </List>
-            )}
+                  )}
+                </List>
+              )}
+            </Box>
           </AccordionDetails>
         </Accordion>
 
-        {/* Filters Accordion */}
-        <Accordion expanded={expanded === 'filters'} onChange={handleAccordionChange('filters')} disableGutters elevation={0} sx={{ '&:before': { display: 'none' }, borderBottom: `1px solid ${theme.palette.divider}` }}>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'background.default', minHeight: 48, '&.Mui-expanded': { minHeight: 48 } }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', pr: 2 }}>
-              <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>Filters</Typography>
+        {/* 3. Filters Section */}
+        <Accordion
+          expanded={expanded === 'filters'}
+          onChange={handleAccordionChange('filters')}
+          disableGutters
+          elevation={0}
+          sx={{ '&:before': { display: 'none' } }}
+        >
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
+              Filters
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails sx={{ p: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mb: 1 }}>
               <Tooltip title="Add New Filter">
-                <IconButton size="small" onClick={(e) => { e.stopPropagation(); setShowAddForm(!showAddForm); setExpanded('filters'); }} color={showAddForm ? 'primary' : 'default'} sx={{ bgcolor: showAddForm ? 'action.selected' : 'transparent', border: '1px solid', borderColor: 'divider', p: 0.5 }}>
+                <IconButton size="small" onClick={() => setShowAddForm(!showAddForm)} color={showAddForm ? 'primary' : 'default'} sx={{ bgcolor: showAddForm ? 'action.selected' : 'transparent', border: '1px solid', borderColor: 'divider' }}>
                   <AddIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
             </Box>
-          </AccordionSummary>
-          <AccordionDetails sx={{ p: 2, maxHeight: height ? height - 150 : 300, overflowY: 'auto' }}>
+
             {/* Add Filter Form */}
             <Collapse in={showAddForm} unmountOnExit>
               <Card variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: 'background.default', borderStyle: 'dashed' }}>
@@ -649,7 +717,7 @@ function DetailedFilterPanel({
                 <Typography variant="caption" color="text.secondary">Click + to add one</Typography>
               </Box>
             ) : (
-              <Box sx={{ pr: 0.5 }}>
+              <Box sx={{ maxHeight: 200, overflowY: 'auto', pr: 0.5 }}>
                 <Stack spacing={1}>
                   {filters.map((f, idx) => {
                     const col = allColumns.find(c => c.id === f.field);
@@ -672,6 +740,7 @@ function DetailedFilterPanel({
                 </Stack>
               </Box>
             )}
+
           </AccordionDetails>
         </Accordion>
 
@@ -748,27 +817,10 @@ const MemoizedTable = memo(({
                   const daysPrev = dayjs(compareEnd).diff(dayjs(compareStart), 'day') + 1;
                   valCurr = curr / Math.max(1, daysCurr);
                   valPrev = prev / Math.max(1, daysPrev);
-                } else {
-                  // For CVR, we want to show the percentage growth/drop, not the absolute difference
-                  // If prev is 0, growth is infinite (or treat as 0/100%)
-                  // If we use DeltaBadge as is, it likely subtracts. We need to trick it or adjust logic.
-                  // DeltaBadge usually takes (current, previous) and shows change.
-                  // If we want to show % change, we should let DeltaBadge handle it if it supports it, OR
-                  // we pass the calculated growth as 'value' if DeltaBadge supports override.
-                  // Looking at standard DeltaBadge usage in other cells (e.g. Sales), it takes raw values and shows % change.
-                  // But for CVR (which IS a %), subtracting 1.5% - 1.0% = 0.5% (absolute change) is often confused with 50% growth.
-                  // The user wants GROWTH matching the image example (likely standard growth metric).
-                  // The DeltaBadge component likely calculates (curr - prev) / prev * 100 internally for isPercent=false?
-                  // Wait, looking at line 752: isPercent={col.id === 'cvr'}
-                  // If isPercent is true, DeltaBadge usually calculates ABSOLUTE difference (pp) for percentage metrics to avoid confusing "50% increase in 1% rate".
-                  // BUT the user explicitly asked for "drop or rise" percentage (relative growth).
-                  // So we should set isPercent={false} for DeltaBadge here so it treats it as a normal number and calculates relative growth %.
-                  // However, the value displayed itself (1.54%) is correct. The DELTA is what matters.
                 }
-                delta = <DeltaBadge current={valCurr} previous={valPrev} isPercent={col.id === 'cvr' ? false : false} />;
+                delta = <DeltaBadge current={valCurr} previous={valPrev} isPercent={col.id === 'cvr'} />;
               }
-              // Don't show previous value for landing_page_path column (it's the key, not a metric)
-              const prevRaw = (compareMode && row.previous && col.id !== 'landing_page_path') ? row.previous[col.id] : null;
+              const prevRaw = (compareMode && row.previous) ? row.previous[col.id] : null;
               const prevDisplay = prevRaw !== null && prevRaw !== undefined ? (col.format ? col.format(prevRaw) : formatNumber(prevRaw)) : null;
 
               return (
@@ -800,10 +852,9 @@ export default function ProductConversionTable({ brandKey }) {
 
   const dispatch = useAppDispatch();
   const productState = useAppSelector((state) => state.productConversion);
-  const { start, end, page, pageSize, sortBy, sortDir, rows, totalCount, status, error, compareMode, compareStart, compareEnd, selectedProductTypes } = productState; // Added selectedProductTypes
+  const { start, end, page, pageSize, sortBy, sortDir, rows, totalCount, status, error, compareMode, compareStart, compareEnd, productTypes } = productState;
   const [exporting, setExporting] = useState(false);
   const [localSearch, setLocalSearch] = useState(productState.search || '');
-  const [availableProductTypes, setAvailableProductTypes] = useState([]); // Local state for available types
 
   // Columns definition (Memoized to prevent recreation)
   const columns = useMemo(() => [
@@ -818,26 +869,18 @@ export default function ProductConversionTable({ brandKey }) {
 
   // Panel State (Boolean togglable)
   const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [showTypeFilter, setShowTypeFilter] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   // Dynamic Height Calculation for Filter Panel
   const estimatedRowHeight = 55; // Avg row height with padding
   const tableHeaderFooterHeight = 56 + 52; // Header + Pagination
-  // Use actual displayed rows for calculation, fallback to pageSize if loading or empty
-  const displayedRowCount = Math.max(1, rows?.length || 0);
-  const estimatedTableHeight = (displayedRowCount * estimatedRowHeight) + tableHeaderFooterHeight;
+  const estimatedTableHeight = (pageSize * estimatedRowHeight) + tableHeaderFooterHeight;
 
-  // Calculate height based on actual content, ensuring a reasonable min height
-  const panelHeight = useMemo(() => {
-    // If table is very short (few rows), stick to a minimum height for the panel
-    // If table is long, let the panel grow but capped or scaled
-    const minHeight = 500;
-    const maxHeight = 800;
-
-    // Simply match table height bounded by min/max
-    return Math.min(Math.max(minHeight, estimatedTableHeight), maxHeight);
-  }, [displayedRowCount, estimatedTableHeight]);
+  // If 10 rows, match table height (approx). Else, 1/3 of table height.
+  // Exception: if table is very small (no data), use min height.
+  const panelHeight = pageSize === 10 ? Math.max(600, estimatedTableHeight) : Math.max(400, estimatedTableHeight / 4);
   const [visibleColumnIds, setVisibleColumnIds] = useState(['landing_page_path', 'sessions', 'atc', 'cvr']);
 
   // Compute visible columns
@@ -848,8 +891,19 @@ export default function ProductConversionTable({ brandKey }) {
   // Handler for clearing all filters
   const handleClearFilters = () => {
     dispatch(clearFilters());
-    dispatch(setSelectedProductTypes([]));
-    triggerFetch({ filters: [], product_types: [] });
+    dispatch(setProductTypes([]));
+    triggerFetch({ filters: [], productTypes: [] });
+  };
+
+  const handleProductTypeChange = (types) => {
+    dispatch(setProductTypes(types));
+    triggerFetch({ productTypes: types, page: 1 });
+  };
+
+  const handleRemoveProductType = (typeToRemove) => {
+    const newTypes = (productTypes || []).filter(t => t !== typeToRemove);
+    dispatch(setProductTypes(newTypes));
+    triggerFetch({ productTypes: newTypes, page: 1 });
   };
 
 
@@ -920,21 +974,6 @@ export default function ProductConversionTable({ brandKey }) {
   }, [localSearch, productState.search, dispatch, triggerFetch]);
 
   useEffect(() => { if (brandKey) runFetch(); }, [brandKey, runFetch]);
-
-  // Fetch product types on mount or brand change OR date change
-  useEffect(() => {
-    if (brandKey) {
-      // Pass start and end to filter available product types
-      fetchProductTypes(brandKey, start, end).then(data => {
-        if (data && data.product_types) setAvailableProductTypes(data.product_types);
-      }).catch(err => console.error('Failed to fetch product types', err));
-    }
-  }, [brandKey, start, end]); // Dependency on start/end added
-
-  const handleProductTypeChange = (newTypes) => {
-    dispatch(setSelectedProductTypes(newTypes));
-    triggerFetch({ product_types: newTypes, page: 1 });
-  };
 
   const applyDateChange = useCallback((s, e) => {
     const nextStart = s ? s.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD');
@@ -1051,7 +1090,6 @@ export default function ProductConversionTable({ brandKey }) {
       sortBy,
       sortDir,
       filters: productState.filters,
-      product_types: selectedProductTypes, // Pass to export
       search: productState.search,
       visible_columns: visibleColumnIds,
       page: productState.page,
@@ -1113,6 +1151,7 @@ export default function ProductConversionTable({ brandKey }) {
           >
             {exporting ? <CircularProgress size={16} /> : <DownloadIcon fontSize="small" />}
           </IconButton>
+
           <IconButton
             size="small"
             onClick={() => setShowFilterPanel(true)}
@@ -1267,6 +1306,8 @@ export default function ProductConversionTable({ brandKey }) {
             disableDatesAfter={compareMode ? dayjs().subtract(1, 'day').toDate() : null}
           />
 
+
+
           <Button
             variant="outlined"
             size="small"
@@ -1299,43 +1340,56 @@ export default function ProductConversionTable({ brandKey }) {
       </Box>
 
       {/* Filter Summary / Active Chips (optional display if panel is closed) */}
-      {((productState.filters?.length > 0 || selectedProductTypes?.length > 0) && !showFilterPanel) && (
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* Product Type Chips */}
-          {selectedProductTypes.map((type) => (
-            <GlassChip
-              key={`type-${type}`}
-              label={type}
-              size="small"
-              isDark={theme.palette.mode === 'dark'}
-              onDelete={() => {
-                const newTypes = selectedProductTypes.filter(t => t !== type);
-                handleProductTypeChange(newTypes);
-              }}
-              sx={{ borderRadius: 1 }}
-            />
+      {/* Filter Summary / Active Chips (Scrollable Row) */}
+      {((productState.filters && productState.filters.length > 0) || (productTypes && productTypes.length > 0)) && (
+        <Box sx={{ display: 'flex', gap: 1, overflowX: 'auto', alignItems: 'center', pb: 0.5, 'scrollbarWidth': 'none', '&::-webkit-scrollbar': { display: 'none' } }}>
+
+          {/* Product Types */}
+          {(productTypes || []).map((type) => (
+            <Grow key={`type-${type}`} in={true}>
+              <div>
+                <GlassChip
+                  label={`Type: ${type}`}
+                  onDelete={() => handleRemoveProductType(type)}
+                  size="small"
+                  isDark={theme.palette.mode === 'dark'}
+                  sx={{ borderRadius: '9999px', whiteSpace: 'nowrap' }}
+                />
+              </div>
+            </Grow>
           ))}
 
-          {/* Metric Filter Chips */}
+          {/* Metric Filters */}
           {productState.filters.map((f, idx) => {
             const col = columns.find(c => c.id === f.field);
             return (
-              <GlassChip
-                key={idx}
-                label={`${col?.label || f.field} ${f.operator === 'gt' ? '>' : '<'} ${f.value}`}
-                size="small"
-                isDark={theme.palette.mode === 'dark'}
-                onDelete={() => {
-                  dispatch(removeFilter(idx));
-                  const newFilters = [...productState.filters];
-                  newFilters.splice(idx, 1);
-                  triggerFetch({ filters: newFilters });
-                }}
-                sx={{ borderRadius: 1 }}
-              />
+              <Grow key={`filter-${idx}`} in={true}>
+                <div>
+                  <GlassChip
+                    label={`${col?.label || f.field} ${f.operator === 'gt' ? '>' : '<'} ${f.value}`}
+                    size="small"
+                    onDelete={() => {
+                      dispatch(removeFilter(idx));
+                      const newFilters = [...productState.filters];
+                      newFilters.splice(idx, 1);
+                      triggerFetch({ filters: newFilters });
+                    }}
+                    isDark={theme.palette.mode === 'dark'}
+                    sx={{ borderRadius: '9999px', whiteSpace: 'nowrap' }}
+                  />
+                </div>
+              </Grow>
             );
           })}
-          <Button size="small" color="primary" onClick={handleClearFilters} sx={{ textTransform: 'none', fontSize: '0.75rem' }}>Clear all</Button>
+
+          <Button
+            size="small"
+            color="primary"
+            onClick={handleClearFilters}
+            sx={{ textTransform: 'none', fontSize: '0.75rem', minWidth: 'auto', whiteSpace: 'nowrap' }}
+          >
+            Clear all
+          </Button>
         </Box>
       )}
 
@@ -1399,7 +1453,7 @@ export default function ProductConversionTable({ brandKey }) {
             onClose={() => setShowFilterPanel(false)}
             PaperProps={{
               sx: {
-                height: '70vh',
+                height: '80vh',
                 borderRadius: '16px 16px 0 0',
                 bgcolor: 'background.paper',
                 backgroundImage: 'none',
@@ -1434,13 +1488,14 @@ export default function ProductConversionTable({ brandKey }) {
                 triggerFetch({ filters: newFilters });
               }}
               onClearFilters={handleClearFilters}
-              productTypes={availableProductTypes}
-              selectedProductTypes={selectedProductTypes}
+              brandKey={brandKey}
+              date={end}
+              productTypes={productTypes}
               onProductTypeChange={handleProductTypeChange}
             />
           </Drawer>
         ) : (
-          <Collapse in={showFilterPanel} orientation="horizontal" timeout={300} unmountOnExit>
+          <Collapse in={showFilterPanel} orientation="horizontal" timeout={300}>
             <DetailedFilterPanel
               onClose={() => setShowFilterPanel(false)}
               allColumns={columns}
@@ -1470,8 +1525,9 @@ export default function ProductConversionTable({ brandKey }) {
                 triggerFetch({ filters: newFilters });
               }}
               onClearFilters={handleClearFilters}
-              productTypes={availableProductTypes}
-              selectedProductTypes={selectedProductTypes}
+              brandKey={brandKey}
+              date={end}
+              productTypes={productTypes}
               onProductTypeChange={handleProductTypeChange}
             />
           </Collapse>
