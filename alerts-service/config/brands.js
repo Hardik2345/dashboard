@@ -2,7 +2,7 @@ const DEFAULT_BRAND_IDS = Object.freeze({
   PTS: 1,
   BBB: 2,
   TMC: 3,
-  MILA: 4,
+  AJMAL: 4,
 });
 
 function loadBrands() {
