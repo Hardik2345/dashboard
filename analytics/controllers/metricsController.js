@@ -2300,75 +2300,74 @@ function buildMetricsController() {
         const compareEnd = req.query.compare_end;
         if (compareStart && compareEnd && rows.length > 0) {
           const productIds = [...new Set(rows.map(r => r.product_id).filter(Boolean))];
+          const paths = [...new Set(rows.map(r => r.landing_page_path).filter(Boolean))];
 
-          if (productIds.length > 0) {
+          if (productIds.length > 0 || paths.length > 0) {
             try {
-              // Re-use logic for comparison range, filtering by specific productIds
-              // We use NAMED replacements to handle array of IDs safely if using sequelizes replacements, 
-              // OR we use indexed replacements if we are careful. 
-              // Better to use a clean new query with replacement params.
+              // 1. Fetch Previous Orders (by Product ID, compatible with main query logic)
+              let prevOrdersMap = new Map();
+              if (productIds.length > 0) {
+                const ordersSql = `
+                  SELECT
+                    product_id,
+                    COUNT(DISTINCT order_name) AS orders,
+                    SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity) AS sales
+                  FROM shopify_orders
+                  WHERE created_date >= ? AND created_date <= ?
+                    AND product_id IN (?)
+                  GROUP BY product_id
+                `;
+                const ordersRows = await conn.query(ordersSql, { type: QueryTypes.SELECT, replacements: [compareStart, compareEnd, productIds] });
+                ordersRows.forEach(r => prevOrdersMap.set(r.product_id, { orders: Number(r.orders || 0), sales: Number(r.sales || 0) }));
+              }
 
-              // Using positional replacements (?) to ensure compatibility
-              const compReplacements = [compareStart, compareEnd, productIds, compareStart, compareEnd, productIds];
+              // 2. Fetch Previous Sessions (by Landing Page Path, to match granular rows)
+              let prevSessionsMap = new Map();
+              if (paths.length > 0) {
+                console.log('[DEBUG] Fetching comparison sessions for paths:', paths.length, 'Start:', compareStart, 'End:', compareEnd);
+                const sessionsSql = `
+                  SELECT
+                    landing_page_path,
+                    SUM(sessions) AS sessions,
+                    SUM(sessions_with_cart_additions) AS atc
+                  FROM mv_product_sessions_by_path_daily
+                  WHERE date >= ? AND date <= ?
+                    AND landing_page_path IN (?)
+                  GROUP BY landing_page_path
+                `;
+                const sessionsRows = await conn.query(sessionsSql, { type: QueryTypes.SELECT, replacements: [compareStart, compareEnd, paths] });
+                console.log('[DEBUG] Comparison sessions rows found:', sessionsRows.length);
+                if (sessionsRows.length > 0) {
+                  console.log('[DEBUG] Sample row:', sessionsRows[0]);
+                } else {
+                  console.log('[DEBUG] No session rows found for paths:', JSON.stringify(paths));
+                }
+                sessionsRows.forEach(r => prevSessionsMap.set(r.landing_page_path, { sessions: Number(r.sessions || 0), atc: Number(r.atc || 0) }));
+              }
 
-              const compCte = `
-              WITH orders_comp AS (
-                SELECT
-                  product_id,
-                  COUNT(DISTINCT order_name) AS orders,
-                  SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity) AS sales
-                FROM shopify_orders
-                WHERE created_date >= ? AND created_date <= ?
-                  AND product_id IN (?)
-                GROUP BY product_id
-              ),
-              sessions_comp AS (
-                SELECT
-                  product_id,
-                  SUM(sessions) AS sessions,
-                  SUM(sessions_with_cart_additions) AS atc
-                FROM mv_product_sessions_by_path_daily
-                WHERE date >= ? AND date <= ?
-                  AND product_id IN (?)
-                GROUP BY product_id
-              )
-            `;
-
-              const compSql = `
-              ${compCte}
-              SELECT
-                s.product_id,
-                s.sessions,
-                s.atc,
-                CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
-                COALESCE(o.orders, 0) AS orders,
-                COALESCE(o.sales, 0) AS sales,
-                CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
-              FROM sessions_comp s
-              LEFT JOIN orders_comp o ON s.product_id = o.product_id
-            `;
-
-              // Important: The query result is an array of rows
-              const rowsRAW = await conn.query(compSql, { type: QueryTypes.SELECT, replacements: compReplacements });
-              // Check if result is wrapped or just rows. QueryTypes.SELECT usually returns just the rows.
-              const compRows = rowsRAW;
-
-              // Merge
-              const compMap = new Map();
-              compRows.forEach(r => compMap.set(r.product_id, r));
-
+              // 3. Merge into rows
               rows = rows.map(r => {
-                const prev = compMap.get(r.product_id);
-                // If no previous data found (e.g. 0 sessions), we might want to default to 0s so frontend sees "0" instead of null?
-                // The frontend treats null/undefined as "no data".
-                // If product didn't exist in that period, it won't be in compRows (INNER JOINS or WHERE IN).
-                // If we want to show 0 for previous period, we should provide an object with 0s.
-                // Let's provide an object of 0s if missing, so we can show "infinite growth" from 0.
+                const pOrders = prevOrdersMap.get(r.product_id) || { orders: 0, sales: 0 };
+                const pSessions = prevSessionsMap.get(r.landing_page_path) || { sessions: 0, atc: 0 };
+
+                // Calculate derived metrics
+                // Note: ATC Rate and CVR are derived
+                const atcRate = pSessions.sessions > 0 ? (pSessions.atc / pSessions.sessions * 100) : 0;
+                const cvr = pSessions.sessions > 0 ? (pOrders.orders / pSessions.sessions * 100) : 0;
+
                 return {
                   ...r,
-                  previous: prev || { sessions: 0, atc: 0, atc_rate: 0, orders: 0, sales: 0, cvr: 0 }
+                  previous: {
+                    orders: pOrders.orders,
+                    sales: pOrders.sales,
+                    sessions: pSessions.sessions,
+                    atc: pSessions.atc,
+                    atc_rate: atcRate,
+                    cvr: cvr
+                  }
                 };
               });
+
             } catch (e) { console.error('[product-conversion] comparison logic failed', e); }
           }
         }

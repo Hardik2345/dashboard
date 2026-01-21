@@ -72,7 +72,7 @@ export default function MobileFilterDrawer({
             setTempProductTypes(productTypes || []);
             setView('ROOT');
         }
-    }, [open, brandKey, productValue, utm, productTypes]);
+    }, [open]);
 
     // Fetch UTM options
     useEffect(() => {

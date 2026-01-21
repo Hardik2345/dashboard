@@ -240,10 +240,10 @@ export default function MobileTopBar({
   // Prevent body scroll when the date picker popover is open (especially on mobile)
   useEffect(() => {
     if (!popoverActive) return undefined;
-    const prev = document.body.style.overflow;
+
     document.body.style.overflow = 'hidden';
     return () => {
-      document.body.style.overflow = prev;
+      document.body.style.overflow = '';
     };
   }, [popoverActive]);
 
@@ -562,6 +562,7 @@ export default function MobileTopBar({
             />
 
             <Popover
+              disableScrollLock
               open={popoverActive}
               anchorEl={anchorRef.current}
               onClose={handleClose}
