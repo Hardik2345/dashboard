@@ -31,6 +31,7 @@ import {
   Chip,
   Popover as MuiPopover,
   InputAdornment,
+  Grow,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -45,7 +46,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import SwapVertIcon from '@mui/icons-material/SwapVert';
 import { useMediaQuery, Drawer } from '@mui/material';
 
-import { Popover, DatePicker } from '@shopify/polaris';
+import { DatePicker } from '@shopify/polaris';
 import { AppProvider } from '@shopify/polaris';
 import enTranslations from '@shopify/polaris/locales/en.json';
 import { useAppDispatch, useAppSelector } from '../state/hooks.js';
@@ -119,7 +120,8 @@ function DateRangePicker({
   disableDatesAfter,
   sx = {},
 }) {
-  const [active, setActive] = useState(false);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const active = Boolean(anchorEl);
   const [month, setMonth] = useState(dayjs().month());
   const [year, setYear] = useState(dayjs().year());
   const [internalStart, setInternalStart] = useState(null);
@@ -127,22 +129,22 @@ function DateRangePicker({
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
 
-  const toggle = useCallback(() => {
+  const toggle = useCallback((event) => {
     if (disabled) return;
-    setActive(prev => {
-      if (!prev) {
-        const s = startDate ? dayjs(startDate) : dayjs();
-        const e = endDate ? dayjs(endDate) : s;
-        setInternalStart(s);
-        setInternalEnd(e);
-        setMonth(e.month());
-        setYear(e.year());
-      }
-      return !prev;
-    });
-  }, [startDate, endDate, disabled]);
+    if (anchorEl) {
+      setAnchorEl(null);
+    } else {
+      setAnchorEl(event.currentTarget);
+      const s = startDate ? dayjs(startDate) : dayjs();
+      const e = endDate ? dayjs(endDate) : s;
+      setInternalStart(s);
+      setInternalEnd(e);
+      setMonth(e.month());
+      setYear(e.year());
+    }
+  }, [startDate, endDate, disabled, anchorEl]);
 
-  const handleClose = useCallback(() => setActive(false), []);
+  const handleClose = useCallback(() => setAnchorEl(null), []);
   const handleMonthChange = useCallback((m, y) => { setMonth(m); setYear(y); }, []);
 
   const handleRangeChange = useCallback(({ start: sRaw, end: eRaw }) => {
@@ -156,7 +158,7 @@ function DateRangePicker({
     if (singleDate) {
       if (s) {
         onApply(s, s);
-        setActive(false);
+        setAnchorEl(null);
       }
       return;
     }
@@ -188,7 +190,7 @@ function DateRangePicker({
     setInternalStart(ps);
     setInternalEnd(pe);
     onApply(ps, pe);
-    setActive(false);
+    setAnchorEl(null);
   }, [onApply, disableDatesAfter]);
 
   const selectedRange = useMemo(() => {
@@ -210,50 +212,52 @@ function DateRangePicker({
 
   return (
     <AppProvider i18n={enTranslations} theme={{ colorScheme: isDark ? 'dark' : 'light' }}>
-      <Popover
-        active={active}
-        activator={
-          <Card
-            elevation={0}
-            onClick={toggle}
-            role="button"
-            tabIndex={0}
-            sx={{
-              px: 1.25, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: disabled ? 'default' : 'pointer',
-              minWidth: { xs: 160, md: 200 }, textAlign: 'center', userSelect: 'none',
-              border: '1px solid', borderColor: disabled ? 'action.disabledBackground' : 'divider', boxShadow: 'none',
-              bgcolor: disabled ? 'transparent' : (variant === 'primary' ? '#5ba3e0' : bgColor),
-              color: disabled ? 'text.disabled' : (variant === 'primary' ? '#0a1f33' : textColor),
-              opacity: disabled ? 0.6 : 1,
-              pointerEvents: disabled ? 'none' : 'auto',
-              '&:hover': { filter: disabled ? 'none' : 'brightness(0.97)' },
-              ...sx,
-            }}
-          >
-            <Typography variant="body2" noWrap sx={{ color: 'inherit' }}>
-              {labelPrefix && (
-                <Box component="span" sx={{ opacity: 0.7, mr: 0.5, fontWeight: 400 }}>
-                  {labelPrefix}
-                </Box>
-              )}
-              {displayLabel}
-            </Typography>
-          </Card>
-        }
-        onClose={handleClose}
-        preferredAlignment="right"
+      <Card
+        elevation={0}
+        onClick={toggle}
+        role="button"
+        tabIndex={0}
+        sx={{
+          px: 1.25, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: disabled ? 'default' : 'pointer',
+          minWidth: { xs: 160, md: 200 }, textAlign: 'center', userSelect: 'none',
+          border: '1px solid', borderColor: disabled ? 'action.disabledBackground' : 'divider', boxShadow: 'none',
+          bgcolor: disabled ? 'transparent' : (variant === 'primary' ? '#5ba3e0' : bgColor),
+          color: disabled ? 'text.disabled' : (variant === 'primary' ? '#0a1f33' : textColor),
+          opacity: disabled ? 0.6 : 1,
+          pointerEvents: disabled ? 'none' : 'auto',
+          '&:hover': { filter: disabled ? 'none' : 'brightness(0.97)' },
+          ...sx,
+        }}
       >
-        <Box sx={{ display: 'flex', flexDirection: 'row', maxHeight: '80vh', overflowX: 'hidden', overflowY: 'auto', borderRadius: 1 }}>
+        <Typography variant="body2" noWrap sx={{ color: 'inherit' }}>
+          {labelPrefix && (
+            <Box component="span" sx={{ opacity: 0.7, mr: 0.5, fontWeight: 400 }}>
+              {labelPrefix}
+            </Box>
+          )}
+          {displayLabel}
+        </Typography>
+      </Card>
+
+      <MuiPopover
+        open={active}
+        anchorEl={anchorEl}
+        onClose={handleClose}
+        TransitionComponent={Grow}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        PaperProps={{
+          sx: { borderRadius: 1, mt: 1, overflow: 'hidden', boxShadow: theme.shadows[8] }
+        }}
+      >
+        <Box sx={{ display: 'flex', flexDirection: 'row', maxHeight: '80vh', overflowX: 'hidden', overflowY: 'auto' }}>
           {!singleDate && (
             <Box sx={{ minWidth: 120, maxHeight: 320, overflowY: 'auto', borderRight: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', display: { xs: 'block', md: 'none' } }}>
               <List disablePadding>
                 {presets.map((preset, idx) => {
                   const isSelected = activePresetLabel === preset.label;
                   const [ps, pe] = preset.getValue();
-                  // Only disable if it's strictly a single day (Today) that is disabled, OR if shifting isn't possible (e.g. future single day)
-                  // For ranges (Last 7 days), we allow them and shift them in handlePreset.
-                  // "Today" is start==end.
                   const isSingleDay = ps.isSame(pe, 'day');
                   const isDisabled = disableDatesAfter && isSingleDay && pe.isAfter(dayjs(disableDatesAfter).endOf('day'));
 
@@ -290,7 +294,6 @@ function DateRangePicker({
                 {presets.map((preset, idx) => {
                   const isSelected = activePresetLabel === preset.label;
                   const [ps, pe] = preset.getValue();
-                  // Only disable if it's strictly a single day (Today) that is disabled
                   const isSingleDay = ps.isSame(pe, 'day');
                   const isDisabled = disableDatesAfter && isSingleDay && pe.isAfter(dayjs(disableDatesAfter).endOf('day'));
 
@@ -319,7 +322,7 @@ function DateRangePicker({
               </List>
             </Box>
           )}
-          <Box sx={{ flex: 1, p: 1, minWidth: 200, bgcolor: 'background.paper' }}>
+          <Box sx={{ flex: 1, p: 1, minWidth: 200, maxWidth: 320, bgcolor: 'background.paper' }}>
             <DatePicker
               month={month}
               year={year}
@@ -331,8 +334,8 @@ function DateRangePicker({
             />
           </Box>
         </Box>
-      </Popover >
-    </AppProvider >
+      </MuiPopover>
+    </AppProvider>
   );
 }
 
@@ -367,9 +370,10 @@ function DeltaBadge({ current, previous, isPercent }) {
 }
 
 
-import { Collapse, IconButton, Tooltip, Checkbox, ListItem, ListItemIcon, ListItemSecondaryAction, Paper } from '@mui/material';
+import { Collapse, IconButton, Tooltip, Checkbox, ListItem, ListItemIcon, ListItemSecondaryAction, Paper, Accordion, AccordionSummary, AccordionDetails } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 // --- Detailed Filter Panel Component (Persistent Side Panel Mode) ---
 function DetailedFilterPanel({
@@ -388,6 +392,12 @@ function DetailedFilterPanel({
   onProductTypeChange
 }) {
   const theme = useTheme();
+
+  const [expanded, setExpanded] = useState('metrics');
+
+  const handleAccordionChange = (panel) => (event, isExpanded) => {
+    setExpanded(isExpanded ? panel : false);
+  };
 
   // Product Types State
   const [availableProductTypes, setAvailableProductTypes] = useState([]);
@@ -482,62 +492,22 @@ function DetailedFilterPanel({
 
       <Box sx={{ overflowY: 'auto', flex: 1, p: 2 }}>
 
-        {/* Product Types Section */}
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="subtitle2" color="text.primary" sx={{ mb: 1, textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
-            Product Types
-          </Typography>
-          <Card variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-            {loadingTypes ? (
-              <Box sx={{ p: 2, display: 'flex', justifyContent: 'center' }}><CircularProgress size={20} /></Box>
-            ) : (
-              <List dense disablePadding>
-                <ListItem dense divider button onClick={handleToggleAllTypes}>
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    <Checkbox
-                      edge="start"
-                      checked={isAllTypesSelected}
-                      indeterminate={isIndeterminateTypes}
-                      tabIndex={-1}
-                      disableRipple
-                      size="small"
-                    />
-                  </ListItemIcon>
-                  <ListItemText primary="Select All" primaryTypographyProps={{ fontWeight: 600, fontSize: '0.875rem' }} />
-                </ListItem>
-                {availableProductTypes.map((type) => {
-                  const isChecked = productTypes.includes(type);
-                  return (
-                    <ListItem key={type} dense divider button onClick={() => handleToggleType(type)}>
-                      <ListItemIcon sx={{ minWidth: 36 }}>
-                        <Checkbox
-                          edge="start"
-                          checked={isChecked}
-                          tabIndex={-1}
-                          disableRipple
-                          size="small"
-                        />
-                      </ListItemIcon>
-                      <ListItemText primary={type} primaryTypographyProps={{ fontSize: '0.875rem' }} />
-                    </ListItem>
-                  );
-                })}
-                {availableProductTypes.length === 0 && (
-                  <ListItem>
-                    <ListItemText primary="No types found" primaryTypographyProps={{ fontSize: '0.875rem', color: 'text.secondary', textAlign: 'center' }} />
-                  </ListItem>
-                )}
-              </List>
-            )}
-          </Card>
-        </Box>
+        {/* NEW ACCORDION LAYOUT */}
 
-        {/* Metrics Section */}
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="subtitle2" color="text.primary" sx={{ mb: 1, textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
-            Metrics
-          </Typography>
-          <Card variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+        {/* 1. Metrics Section */}
+        <Accordion
+          expanded={expanded === 'metrics'}
+          onChange={handleAccordionChange('metrics')}
+          disableGutters
+          elevation={0}
+          sx={{ '&:before': { display: 'none' }, borderBottom: `1px solid ${theme.palette.divider}` }}
+        >
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
+              Metrics
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails sx={{ p: 0, pb: 2 }}>
             <List dense disablePadding>
               {/* "All" Toggle */}
               <ListItem dense divider button onClick={handleToggleAllMetrics}>
@@ -573,56 +543,101 @@ function DetailedFilterPanel({
                 );
               })}
             </List>
-          </Card>
-        </Box>
+          </AccordionDetails>
+        </Accordion>
 
-        {/* Filters Section */}
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+        {/* 2. Product Types Section */}
+        <Accordion
+          expanded={expanded === 'productTypes'}
+          onChange={handleAccordionChange('productTypes')}
+          disableGutters
+          elevation={0}
+          sx={{ '&:before': { display: 'none' }, borderBottom: `1px solid ${theme.palette.divider}` }}
+        >
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
+              Product Types
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails sx={{ p: 0, pb: 2 }}>
+            <Box sx={{ maxHeight: 300, overflowY: 'auto' }}>
+              {loadingTypes ? (
+                <Box sx={{ p: 2, display: 'flex', justifyContent: 'center' }}><CircularProgress size={20} /></Box>
+              ) : (
+                <List dense disablePadding>
+                  <ListItem dense divider button onClick={handleToggleAllTypes}>
+                    <ListItemIcon sx={{ minWidth: 36 }}>
+                      <Checkbox
+                        edge="start"
+                        checked={isAllTypesSelected}
+                        indeterminate={isIndeterminateTypes}
+                        tabIndex={-1}
+                        disableRipple
+                        size="small"
+                      />
+                    </ListItemIcon>
+                    <ListItemText primary="Select All" primaryTypographyProps={{ fontWeight: 600, fontSize: '0.875rem' }} />
+                  </ListItem>
+                  {availableProductTypes.map((type) => {
+                    const isChecked = productTypes.includes(type);
+                    return (
+                      <ListItem key={type} dense divider button onClick={() => handleToggleType(type)}>
+                        <ListItemIcon sx={{ minWidth: 36 }}>
+                          <Checkbox
+                            edge="start"
+                            checked={isChecked}
+                            tabIndex={-1}
+                            disableRipple
+                            size="small"
+                          />
+                        </ListItemIcon>
+                        <ListItemText primary={type} primaryTypographyProps={{ fontSize: '0.875rem' }} />
+                      </ListItem>
+                    );
+                  })}
+                  {availableProductTypes.length === 0 && (
+                    <ListItem>
+                      <ListItemText primary="No types found" primaryTypographyProps={{ fontSize: '0.875rem', color: 'text.secondary', textAlign: 'center' }} />
+                    </ListItem>
+                  )}
+                </List>
+              )}
+            </Box>
+          </AccordionDetails>
+        </Accordion>
+
+        {/* 3. Filters Section */}
+        <Accordion
+          expanded={expanded === 'filters'}
+          onChange={handleAccordionChange('filters')}
+          disableGutters
+          elevation={0}
+          sx={{ '&:before': { display: 'none' } }}
+        >
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
               Filters
             </Typography>
-            <Tooltip title="Add New Filter">
-              <IconButton size="small" onClick={() => setShowAddForm(!showAddForm)} color={showAddForm ? 'primary' : 'default'} sx={{ bgcolor: showAddForm ? 'action.selected' : 'transparent', border: '1px solid', borderColor: 'divider' }}>
-                <AddIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Box>
+          </AccordionSummary>
+          <AccordionDetails sx={{ p: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mb: 1 }}>
+              <Tooltip title="Add New Filter">
+                <IconButton size="small" onClick={() => setShowAddForm(!showAddForm)} color={showAddForm ? 'primary' : 'default'} sx={{ bgcolor: showAddForm ? 'action.selected' : 'transparent', border: '1px solid', borderColor: 'divider' }}>
+                  <AddIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
 
-          {/* Add Filter Form */}
-          <Collapse in={showAddForm} unmountOnExit>
-            <Card variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: 'background.default', borderStyle: 'dashed' }}>
-              <Stack spacing={2}>
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Field</InputLabel>
-                  <Select
-                    value={field}
-                    label="Field"
-                    onChange={(e) => setField(e.target.value)}
-                    MenuProps={{
-                      PaperProps: {
-                        sx: {
-                          width: 'var(--select-width)',
-                        }
-                      },
-                      onEntering: (node) => {
-                        const selectNode = node.parentElement?.querySelector('[role="combobox"]');
-                        if (selectNode) {
-                          node.style.width = `${selectNode.clientWidth}px`;
-                        }
-                      }
-                    }}
-                  >
-                    {allColumns.filter(c => c.id !== 'landing_page_path').map(c => (
-                      <MenuItem key={c.id} value={c.id}>{c.label}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                <Stack direction="row" spacing={1}>
-                  <FormControl size="small" sx={{ width: '40%' }}>
+            {/* Add Filter Form */}
+            <Collapse in={showAddForm} unmountOnExit>
+              <Card variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: 'background.default', borderStyle: 'dashed' }}>
+                <Stack spacing={2}>
+                  <FormControl size="small" fullWidth>
+                    <InputLabel>Field</InputLabel>
                     <Select
-                      value={operator}
-                      onChange={(e) => setOperator(e.target.value)}
+                      value={field}
+                      label="Field"
+                      onChange={(e) => setField(e.target.value)}
                       MenuProps={{
                         PaperProps: {
                           sx: {
@@ -637,70 +652,96 @@ function DetailedFilterPanel({
                         }
                       }}
                     >
-                      <MenuItem value="gt">&gt; (Gt)</MenuItem>
-                      <MenuItem value="lt">&lt; (Lt)</MenuItem>
+                      {allColumns.filter(c => c.id !== 'landing_page_path').map(c => (
+                        <MenuItem key={c.id} value={c.id}>{c.label}</MenuItem>
+                      ))}
                     </Select>
                   </FormControl>
-                  <TextField
-                    size="small"
-                    type="number"
-                    placeholder="Val"
-                    value={value}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '' || Number(val) >= 0) {
-                        setValue(val);
-                      }
-                    }}
-                    inputProps={{ min: 0 }}
-                    sx={{ flex: 1 }}
-                  />
+                  <Stack direction="row" spacing={1}>
+                    <FormControl size="small" sx={{ width: '40%' }}>
+                      <Select
+                        value={operator}
+                        onChange={(e) => setOperator(e.target.value)}
+                        MenuProps={{
+                          PaperProps: {
+                            sx: {
+                              width: 'var(--select-width)',
+                            }
+                          },
+                          onEntering: (node) => {
+                            const selectNode = node.parentElement?.querySelector('[role="combobox"]');
+                            if (selectNode) {
+                              node.style.width = `${selectNode.clientWidth}px`;
+                            }
+                          }
+                        }}
+                      >
+                        <MenuItem value="gt">&gt; (Gt)</MenuItem>
+                        <MenuItem value="lt">&lt; (Lt)</MenuItem>
+                      </Select>
+                    </FormControl>
+                    <TextField
+                      size="small"
+                      type="number"
+                      placeholder="Val"
+                      value={value}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || Number(val) >= 0) {
+                          setValue(val);
+                        }
+                      }}
+                      inputProps={{ min: 0 }}
+                      sx={{ flex: 1 }}
+                    />
+                  </Stack>
+
+                  {!validation.valid && (
+                    <Alert severity="warning" sx={{ py: 0, px: 1, '& .MuiAlert-message': { fontSize: '0.75rem' }, alignItems: 'center' }}>
+                      {validation.message}
+                    </Alert>
+                  )}
+
+                  <Button variant="contained" size="small" disabled={!field || !value || !validation.valid} onClick={handleAddF} sx={{ alignSelf: 'flex-end', textTransform: 'none', borderRadius: 2, boxShadow: 'none' }}>
+                    Apply Filter
+                  </Button>
                 </Stack>
+              </Card>
+            </Collapse>
 
-                {!validation.valid && (
-                  <Alert severity="warning" sx={{ py: 0, px: 1, '& .MuiAlert-message': { fontSize: '0.75rem' }, alignItems: 'center' }}>
-                    {validation.message}
-                  </Alert>
-                )}
+            {/* Active Filters List */}
+            {filters.length === 0 && !showAddForm ? (
+              <Box sx={{ p: 3, textAlign: 'center', bgcolor: 'action.hover', borderRadius: 2, border: '1px dashed', borderColor: 'divider' }}>
+                <Typography variant="body2" color="text.secondary">No active filters</Typography>
+                <Typography variant="caption" color="text.secondary">Click + to add one</Typography>
+              </Box>
+            ) : (
+              <Box sx={{ maxHeight: 200, overflowY: 'auto', pr: 0.5 }}>
+                <Stack spacing={1}>
+                  {filters.map((f, idx) => {
+                    const col = allColumns.find(c => c.id === f.field);
+                    return (
+                      <Card key={idx} variant="outlined" sx={{ p: 1, pl: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 2, borderColor: 'primary.main' }}>
+                        <Box>
+                          <Typography variant="caption" display="block" color="text.secondary" fontSize="0.65rem" fontWeight={600} sx={{ textTransform: 'uppercase' }}>
+                            {col?.label || f.field}
+                          </Typography>
+                          <Typography variant="body2" fontWeight={500} fontSize="0.75rem">
+                            {f.operator === 'gt' ? 'Greater than' : 'Less than'} <b>{f.value}</b>
+                          </Typography>
+                        </Box>
+                        <IconButton size="small" onClick={() => onRemoveFilter(idx)} sx={{ color: 'text.secondary', '&:hover': { color: 'error.main' } }}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Card>
+                    );
+                  })}
+                </Stack>
+              </Box>
+            )}
 
-                <Button variant="contained" size="small" disabled={!field || !value || !validation.valid} onClick={handleAddF} sx={{ alignSelf: 'flex-end', textTransform: 'none', borderRadius: 2, boxShadow: 'none' }}>
-                  Apply Filter
-                </Button>
-              </Stack>
-            </Card>
-          </Collapse>
-
-          {/* Active Filters List */}
-          {filters.length === 0 && !showAddForm ? (
-            <Box sx={{ p: 3, textAlign: 'center', bgcolor: 'action.hover', borderRadius: 2, border: '1px dashed', borderColor: 'divider' }}>
-              <Typography variant="body2" color="text.secondary">No active filters</Typography>
-              <Typography variant="caption" color="text.secondary">Click + to add one</Typography>
-            </Box>
-          ) : (
-            <Box sx={{ maxHeight: 200, overflowY: 'auto', pr: 0.5 }}>
-              <Stack spacing={1}>
-                {filters.map((f, idx) => {
-                  const col = allColumns.find(c => c.id === f.field);
-                  return (
-                    <Card key={idx} variant="outlined" sx={{ p: 1, pl: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 2, borderColor: 'primary.main' }}>
-                      <Box>
-                        <Typography variant="caption" display="block" color="text.secondary" fontSize="0.65rem" fontWeight={600} sx={{ textTransform: 'uppercase' }}>
-                          {col?.label || f.field}
-                        </Typography>
-                        <Typography variant="body2" fontWeight={500} fontSize="0.75rem">
-                          {f.operator === 'gt' ? 'Greater than' : 'Less than'} <b>{f.value}</b>
-                        </Typography>
-                      </Box>
-                      <IconButton size="small" onClick={() => onRemoveFilter(idx)} sx={{ color: 'text.secondary', '&:hover': { color: 'error.main' } }}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Card>
-                  );
-                })}
-              </Stack>
-            </Box>
-          )}
-        </Box>
+          </AccordionDetails>
+        </Accordion>
 
       </Box>
 

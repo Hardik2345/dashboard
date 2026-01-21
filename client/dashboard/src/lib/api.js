@@ -354,7 +354,10 @@ export async function exportProductConversionCsv(args) {
   const fallbackName = dateSuffix ? `product_conversion_${dateSuffix}.csv` : 'product_conversion.csv';
   const url = `${resolveApiBase()}/metrics/product-conversion/export${qs(params)}`;
   try {
-    const res = await fetch(url, { credentials: 'include' });
+    const res = await fetch(url, {
+      credentials: 'include',
+      headers: { ...authHeaders() }
+    });
     if (!res.ok) return { error: true, status: res.status };
     const blob = await res.blob();
     const fromHeader = filenameFromDisposition(res.headers.get('Content-Disposition'));

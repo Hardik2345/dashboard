@@ -2145,17 +2145,8 @@ function buildMetricsController() {
         }
 
         if (Array.isArray(productTypes) && productTypes.length > 0) {
-          const syncDate = end || start || formatIsoDate(new Date());
-          conditions.push(`s.landing_page_path IN (
-             SELECT landing_page_path 
-             FROM product_landing_mapping 
-             WHERE product_type IN (?) 
-               AND DATE(last_synced_at) = (
-                 SELECT MAX(DATE(last_synced_at)) FROM product_landing_mapping WHERE DATE(last_synced_at) <= ?
-               )
-           )`);
-          filterReplacements.push(productTypes);
-          filterReplacements.push(syncDate);
+          // If filtering by product types, we want to show ALL products in that type, even if 0 sessions.
+          // Condition moved to WHERE clause of main query, but we also flag to switch base table.
         }
 
         if (Array.isArray(filters) && filters.length > 0) {
@@ -2184,10 +2175,6 @@ function buildMetricsController() {
           }
         }
 
-        if (conditions.length > 0) {
-          whereClause = `WHERE ${conditions.join(' AND ')}`;
-        }
-
         const replacements = [start, end, start, end, ...filterReplacements];
         const baseCte = `
           WITH orders_60d AS (
@@ -2213,42 +2200,100 @@ function buildMetricsController() {
           )
         `;
 
-        const sql = `
-          ${baseCte}
-          SELECT
-            s.product_id,
-            s.landing_page_path,
-            s.sessions,
-            s.atc,
-            CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
-            COALESCE(o.orders, 0) AS orders,
-            COALESCE(o.sales, 0) AS sales,
-            CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
-          FROM sessions_60d s
-          LEFT JOIN orders_60d o
-            ON s.product_id = o.product_id
-          ${whereClause}
-          ORDER BY ${sortCol} ${dir}
-          LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
-        `;
+        let sql, countSql;
 
-        const countSql = `
-          ${baseCte}
-          SELECT COUNT(*) AS total_count FROM (
-            SELECT 1
-            FROM sessions_60d s
-            LEFT JOIN orders_60d o ON s.product_id = o.product_id
+        if (Array.isArray(productTypes) && productTypes.length > 0) {
+          conditions.push(`m.product_type IN (?)`);
+          filterReplacements.push(productTypes);
+
+          if (conditions.length > 0) {
+            whereClause = `WHERE ${conditions.join(' AND ')}`;
+          }
+
+          // Re-build replacements order: [start, end, start, end, ...filterReplacements]
+          // Note: filterReplacements now includes productTypes at the end
+          const finalReplacements = [start, end, start, end, ...filterReplacements];
+
+          sql = `
+            ${baseCte}
+            SELECT
+              m.product_id,
+              m.landing_page_path,
+              COALESCE(s.sessions, 0) AS sessions,
+              COALESCE(s.atc, 0) AS atc,
+              CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
+              COALESCE(o.orders, 0) AS orders,
+              COALESCE(o.sales, 0) AS sales,
+              CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
+            FROM product_landing_mapping m
+            LEFT JOIN sessions_60d s ON m.landing_page_path = s.landing_page_path
+            LEFT JOIN orders_60d o ON m.product_id = o.product_id
             ${whereClause}
-          ) AS filtered
-        `;
+            ORDER BY ${sortCol} ${dir}
+            LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
+          `;
 
-        const [rowsRAW, countRows] = await Promise.all([
-          conn.query(sql, { type: QueryTypes.SELECT, replacements }),
-          conn.query(countSql, { type: QueryTypes.SELECT, replacements }),
-        ]);
+          countSql = `
+            ${baseCte}
+            SELECT COUNT(*) AS total_count FROM (
+              SELECT 1
+              FROM product_landing_mapping m
+              LEFT JOIN sessions_60d s ON m.landing_page_path = s.landing_page_path
+              LEFT JOIN orders_60d o ON m.product_id = o.product_id
+              ${whereClause}
+            ) AS filtered
+          `;
 
-        let rows = rowsRAW.map(r => ({ ...r, previous: null }));
-        const total = Number(countRows?.[0]?.total_count || 0);
+          const [rowsRAW, countRows] = await Promise.all([
+            conn.query(sql, { type: QueryTypes.SELECT, replacements: finalReplacements }),
+            conn.query(countSql, { type: QueryTypes.SELECT, replacements: finalReplacements }),
+          ]);
+          rows = rowsRAW.map(r => ({ ...r, previous: null }));
+          total = Number(countRows?.[0]?.total_count || 0);
+
+        } else {
+          // Default behavior: Drive from sessions
+          if (conditions.length > 0) {
+            whereClause = `WHERE ${conditions.join(' AND ')}`;
+          }
+          const finalReplacements = [start, end, start, end, ...filterReplacements];
+
+          sql = `
+            ${baseCte}
+            SELECT
+              s.product_id,
+              s.landing_page_path,
+              s.sessions,
+              s.atc,
+              CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
+              COALESCE(o.orders, 0) AS orders,
+              COALESCE(o.sales, 0) AS sales,
+              CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
+            FROM sessions_60d s
+            LEFT JOIN orders_60d o
+              ON s.product_id = o.product_id
+            ${whereClause}
+            ORDER BY ${sortCol} ${dir}
+            LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
+          `;
+
+          countSql = `
+            ${baseCte}
+            SELECT COUNT(*) AS total_count FROM (
+              SELECT 1
+              FROM sessions_60d s
+              LEFT JOIN orders_60d o ON s.product_id = o.product_id
+              ${whereClause}
+            ) AS filtered
+          `;
+
+          const [rowsRAW, countRows] = await Promise.all([
+            conn.query(sql, { type: QueryTypes.SELECT, replacements: finalReplacements }),
+            conn.query(countSql, { type: QueryTypes.SELECT, replacements: finalReplacements }),
+          ]);
+          rows = rowsRAW.map(r => ({ ...r, previous: null }));
+          total = Number(countRows?.[0]?.total_count || 0);
+        }
 
         // --- Comparison Logic ---
         const compareStart = req.query.compare_start;
@@ -2349,21 +2394,17 @@ function buildMetricsController() {
 
         const date = req.query.date || formatIsoDate(new Date());
 
-        // Select distinct product types for the given sync date (or latest available)
+        // Select distinct product types (ignoring date as mapping is current-state only)
         const sql = `
           SELECT DISTINCT product_type 
           FROM product_landing_mapping 
-          WHERE DATE(last_synced_at) = (
-            SELECT MAX(DATE(last_synced_at)) FROM product_landing_mapping WHERE DATE(last_synced_at) <= ?
-          )
-            AND product_type IS NOT NULL 
+          WHERE product_type IS NOT NULL 
             AND product_type != ''
           ORDER BY product_type ASC
         `;
 
         const types = await conn.query(sql, {
-          type: QueryTypes.SELECT,
-          replacements: [date]
+          type: QueryTypes.SELECT
         });
 
         // Return array of strings
@@ -2433,17 +2474,12 @@ function buildMetricsController() {
         }
 
         if (Array.isArray(productTypes) && productTypes.length > 0) {
-          const syncDate = end || start || formatIsoDate(new Date());
           conditions.push(`s.landing_page_path IN (
              SELECT landing_page_path 
              FROM product_landing_mapping 
              WHERE product_type IN (?) 
-               AND DATE(last_synced_at) = (
-                 SELECT MAX(DATE(last_synced_at)) FROM product_landing_mapping WHERE DATE(last_synced_at) <= ?
-               )
            )`);
           filterReplacements.push(productTypes);
-          filterReplacements.push(syncDate);
         }
 
         if (Array.isArray(filters) && filters.length > 0) {
