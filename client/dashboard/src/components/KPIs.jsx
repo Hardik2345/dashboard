@@ -293,7 +293,7 @@ export default function KPIs({
       deltas: {
         sessions: data.sessDelta || null,
         atc: data.atcDelta || null,
-        orders: data.ordersDelta || null,
+        orders: data.cvrDelta || null,
       },
       loading: loading || deltaLoading,
     });
