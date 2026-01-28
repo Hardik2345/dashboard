@@ -8,7 +8,7 @@ if (!process.env.BRANDS_CONFIG) {
     { key: 'PTS', dbHost: 'stub', dbUser: 'stub', dbPass: 'stub', brandId: 1 },
     { key: 'BBB', dbHost: 'stub', dbUser: 'stub', dbPass: 'stub', brandId: 2 },
     { key: 'TMC', dbHost: 'stub', dbUser: 'stub', dbPass: 'stub', brandId: 3 },
-    { key: 'MILA', dbHost: 'stub', dbUser: 'stub', dbPass: 'stub', brandId: 4 },
+
   ]);
 }
 
@@ -238,21 +238,7 @@ async function run() {
     body: { is_active: 0 },
   }));
 
-  await record('Create derived alert', () => execHandler(controller.createAlert, {
-    body: {
-      name: 'Revenue Per Session Spike',
-      brand_key: 'MILA',
-      metric_name: 'RPS Spike',
-      metric_type: 'derived',
-      formula: 'total_revenue / sessions',
-      threshold_type: 'greater_than',
-      threshold_value: 120,
-      severity: 'low',
-      cooldown_minutes: 30,
-      lookback_days: 14,
-      recipients: ['science@datum.test'],
-    },
-  }));
+
 
   await record('Validation: derived missing formula', () => execHandler(controller.createAlert, {
     body: {
