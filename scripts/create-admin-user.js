@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Usage: node scripts/create-admin-user.js --email pts@trytechit.co --password 'pts@techit' [--force]
 // Creates (or updates) an admin user in the brand-specific database determined by the email prefix.
-// Brand resolution: prefix before '@' uppercased -> BRAND_KEY. Ex: pts -> PTS, mila -> MILA.
+// Brand resolution: prefix before '@' uppercased -> BRAND_KEY. Ex: pts -> PTS.
 // Required env vars per brand: <BRAND_KEY>_DB_HOST, _DB_USER, _DB_PASS, _DB_NAME (or defaults to key)
 require('dotenv').config();
 const { Sequelize, DataTypes } = require('sequelize');
@@ -75,12 +75,12 @@ async function main() {
     const hash = await bcrypt.hash(password, 10);
 
     if (!user) {
-  user = await User.create({ email, password_hash: hash, role: 'admin', is_active: true });
-  console.log(`Created admin user ${email} in brand ${brandKey}`);
+      user = await User.create({ email, password_hash: hash, role: 'admin', is_active: true });
+      console.log(`Created admin user ${email} in brand ${brandKey}`);
     } else {
       if (force) {
         await user.update({ password_hash: hash, role: 'admin', is_active: true });
-  console.log(`Updated existing user as admin and reset password: ${email} (brand ${brandKey})`);
+        console.log(`Updated existing user as admin and reset password: ${email} (brand ${brandKey})`);
       } else {
         console.log('User already exists. Use --force to update password/role.');
       }
