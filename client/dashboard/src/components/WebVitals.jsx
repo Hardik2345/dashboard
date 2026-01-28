@@ -66,9 +66,6 @@ const WebVitals = ({ query }) => {
     case "PTS":
       brand_name = "SkincarePersonalTouch";
       break;
-    case "MILA":
-      brand_name = "MilaBeaute";
-      break;
     default:
       brand_name = activeBrandKey || "";
   }
