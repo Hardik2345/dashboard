@@ -1,5 +1,5 @@
 // Load per-brand database configuration from environment.
-// Option A (legacy): BRAND_LIST = comma-separated list of brand keys (e.g. PTS,MILA,BBB)
+// Option A (legacy): BRAND_LIST = comma-separated list of brand keys (e.g. PTS,BBB)
 //   For each BRAND expect env vars:
 //     <BRAND>_DB_HOST, <BRAND>_DB_PORT (optional, default 3306), <BRAND>_DB_USER, <BRAND>_DB_PASS, <BRAND>_DB_NAME (optional; default BRAND)
 // Option B (new): BRANDS_CONFIG = JSON array of brand objects

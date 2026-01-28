@@ -365,6 +365,14 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                 atc: d.number_of_atc_sessions
               }
             }));
+            // Filter todayPoints if start is today (IST)
+            const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+            if (viewMode === 'hourly' && start === todayIST) {
+              const currentHour = parseInt(new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour12: false, hour: 'numeric' }));
+              todayPoints = todayPoints.filter(p => p.hour <= currentHour);
+            }
+
             const yesterdayPoints = res.data.yesterday.data.map(d => ({
               hour: d.hour,
               metrics: {
@@ -436,6 +444,15 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           comparisonValues = comparisonPoints.map((p) => configNext.accessor(p.metrics || {}));
         } else {
           points = Array.isArray(res.points) ? res.points : [];
+
+          // Filter points if start is today (IST)
+          const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+          if (viewMode === 'hourly' && start === todayIST) {
+            const currentHour = parseInt(new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour12: false, hour: 'numeric' }));
+            points = points.filter(p => p.hour <= currentHour);
+          }
+
           labels = points.map((p) => formatHourLabel(p.hour));
           values = points.map((p) => configNext.accessor(p.metrics || {}));
           comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
