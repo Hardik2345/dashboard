@@ -54,7 +54,7 @@ export default defineConfig({
       },
       // Target Staging API for all /api requests
       // Auth service
-      '/api/auth': {
+      '/api/auth/': {
         target: 'https://api.trytechit.co/staging',
         changeOrigin: true,
         secure: false,
