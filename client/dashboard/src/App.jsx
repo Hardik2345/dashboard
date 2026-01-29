@@ -516,6 +516,15 @@ export default function App() {
 
   // Check auth on mount
   useEffect(() => {
+    // Check for access_token in URL (OAuth callback)
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('access_token');
+    if (token) {
+      window.localStorage.setItem('gateway_access_token', token);
+      // Clean URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     dispatch(fetchCurrentUser());
   }, [dispatch]);
 
@@ -599,9 +608,14 @@ export default function App() {
                   className="gsi-material-button"
                   onClick={() => {
                     const base = import.meta.env.VITE_API_BASE || '/api';
-                    const target = base.startsWith('http') ? base : `${window.location.origin}${base}`;
-                    const redirect = encodeURIComponent(window.location.origin);
-                    window.location.href = `${target.replace(/\/$/, '')}/auth/google/start?redirect=${redirect}`;
+                    const target = base.startsWith('http')
+                      ? base
+                      : `${window.location.origin}${base}`;
+
+                    const redirect = import.meta.env.VITE_OAUTH_REDIRECT || window.location.origin;
+
+                    window.location.href =
+                      `${target.replace(/\/$/, '')}/auth/google/start?redirect=${encodeURIComponent(redirect)}`;
                     console.log(window.location.href);
                   }}
                 >
@@ -710,7 +724,6 @@ export default function App() {
                       productLoading={productOptionsLoading}
                       utm={utm}
                       onUtmChange={handleUtmChange}
-                      utmOptions={utmOptions}
                       utmOptions={utmOptions}
                       showUtmFilter={isAuthor}
                       onOpenFilter={() => setMobileFilterOpen(true)}

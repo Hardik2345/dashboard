@@ -356,7 +356,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         try {
           const res = await getHourlySalesSummary({ brand_key: brandKey });
           if (!cancelled && res.data && res.data.today && res.data.today.date === start) {
-            const todayPoints = res.data.today.data.map(d => ({
+            let todayPoints = res.data.today.data.map(d => ({
               hour: d.hour,
               metrics: {
                 sales: d.total_sales,

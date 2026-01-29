@@ -52,26 +52,34 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/external-pagespeed/, '/api'),
       },
-      // Auth goes to gateway root
-      '/api/auth/': {
-        target: 'http://localhost:80',
+      // Target Staging API for all /api requests
+      // Auth service
+      '/api/auth': {
+        target: 'https://api.trytechit.co/staging',
         changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
-      // Alerts now live at gateway /alerts
-      // Alerts now live at gateway /alerts
+      // Author service (part of analytics)
+      '/api/author': {
+        target: 'https://api.trytechit.co/staging',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, '/analytics'),
+      },
+      // Alerts service
       '/api/alerts': {
-        target: 'http://localhost:80/alerts',
+        target: 'https://api.trytechit.co/staging',
         changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
-      // Route all other app API calls through the gateway analytics prefix (dev)
-      // Route all other app API calls through the gateway analytics prefix (dev)
+      // Analytics service (default)
       '/api': {
-        target: 'http://localhost:80/analytics',
+        target: 'https://api.trytechit.co/staging',
         changeOrigin: true,
-        // Strip /api prefix; gateway expects /analytics/... paths
-        rewrite: (path) => path.replace(/^\/api/, ''),
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, '/analytics'),
       },
     },
   },
