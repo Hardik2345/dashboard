@@ -7,7 +7,7 @@ services:
       context: ./api-gateway
       dockerfile: Dockerfile
     ports:
-      - "80:18080"
+      - "8082:18080"
     env_file:
       - .env
       - ./api-gateway/.env
