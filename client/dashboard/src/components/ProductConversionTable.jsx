@@ -351,12 +351,9 @@ function DeltaBadge({ current, previous, isPercent }) {
   if (previous === 0) {
     diffPct = 100; // Treat as 100% increase if starting from 0
   } else {
-    diffPct = isPercent
-      ? (diff) // Use arithmetic difference for percents (pp) or relative?
-      // Re-reading user request: "comparison delta (up or down)"
-      // Let's use relative change for everything if posssible.
-      // (2.5 - 2.0) / 2.0 * 100 = 25%.
-      : (diff / previous) * 100;
+    // ALWAYS use relative change.
+    // (2.5 - 2.0) / 2.0 * 100 = 25%.
+    diffPct = (diff / previous) * 100;
   }
 
   const color = diff >= 0 ? 'success.main' : 'error.main';

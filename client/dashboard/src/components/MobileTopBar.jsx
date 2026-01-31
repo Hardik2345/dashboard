@@ -578,7 +578,7 @@ export default function MobileTopBar({
               PaperProps={{
                 sx: {
                   borderRadius: 1,
-                  bgcolor: "black", // Match user preference
+                  bgcolor: "background.paper", // Match user preference
                   backgroundImage: 'none',
                   boxShadow: theme.shadows[8],
                   overflow: 'hidden',
@@ -604,7 +604,7 @@ export default function MobileTopBar({
                     overflowY: "auto",
                     borderRight: "1px solid",
                     borderColor: "divider",
-                    bgcolor: "black",
+                    bgcolor: "background.paper",
                   }}
                 >
                   <List disablePadding>
