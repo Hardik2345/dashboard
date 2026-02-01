@@ -322,11 +322,10 @@ export async function getProductConversion(args, options = {}) {
     sort_dir: args.sortDir,
     compare_start: args.compareStart,
     compare_end: args.compareEnd,
-    filters: args.filters,
-    product_types: args.product_types,
     search: args.search,
+    filters: args.filters,
     // Add product_types support
-    product_types: args.productTypes ? JSON.stringify(args.productTypes) : undefined,
+    product_types: (args.productTypes || args.product_types) ? JSON.stringify(args.productTypes || args.product_types) : undefined,
   }, args);
   // Ensure product_types is serialized if needed, but getJSON/qs handles arrays automatically as multiple keys or we might need JSON.stringify if backend expects JSON string.
   // Backend expects: productTypes = typeof req.query.product_types === 'string' ? JSON.parse(...) : req.query.product_types;
@@ -345,7 +344,7 @@ export async function getProductConversion(args, options = {}) {
   // My backend code: typeof ... === 'string' ? JSON.parse : ...
   // If it's array, it falls to else, which is correct.
   // HOWEVER, implementing JSON.stringify explicitly is wider compatibility safely, like filters.
-  if (params.product_types) params.product_types = JSON.stringify(params.product_types);
+  // if (params.product_types) params.product_types = JSON.stringify(params.product_types);
 
   const res = await doGet('/metrics/product-conversion', params, { signal: options.signal });
   if (res.error) return { error: true };
@@ -366,17 +365,15 @@ export async function exportProductConversionCsv(args) {
     end: args.end,
     sort_by: args.sortBy,
     sort_dir: args.sortDir,
-    sort_dir: args.sortDir,
     // Fix: Serialize filters array to JSON string to avoid [object Object] in query string
     filters: args.filters ? JSON.stringify(args.filters) : undefined,
-    product_types: args.product_types ? JSON.stringify(args.product_types) : undefined,
     search: args.search,
     visible_columns: args.visible_columns ? JSON.stringify(args.visible_columns) : undefined,
     page: args.page,
     page_size: args.pageSize,
     compare_start: args.compareStart,
     compare_end: args.compareEnd,
-    product_types: args.productTypes ? JSON.stringify(args.productTypes) : undefined,
+    product_types: (args.productTypes || args.product_types) ? JSON.stringify(args.productTypes || args.product_types) : undefined,
   }, args);
   const dateSuffix = formatDateRangeSuffix(params.start, params.end);
   const fallbackName = dateSuffix ? `product_conversion_${dateSuffix}.csv` : 'product_conversion.csv';
