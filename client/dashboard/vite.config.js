@@ -2,22 +2,17 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// https://vite.dev/config/ 
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // Disable automatic service worker generation during `vite` dev server runs
-      // so `dev-dist/sw.js` and workbox files aren't rewritten on every reload.
       devOptions: {
-        enabled: false
+        enabled: false,
       },
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'brand-logo-final.png'],
       workbox: {
-        // Exclude auth/API routes from service worker to prevent OAuth redirect caching issues
         navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
-        // Don't cache API responses
         runtimeCaching: [
           {
             urlPattern: /^\/api\//,
@@ -34,78 +29,109 @@ export default defineConfig({
           {
             src: 'favicon.png',
             sizes: '192x192',
-            type: 'image/png'
+            type: 'image/png',
           },
           {
             src: 'favicon.png',
             sizes: '512x512',
-            type: 'image/png'
-          }
-        ]
-      }
-    })
+            type: 'image/png',
+          },
+        ],
+      },
+    }),
   ],
+
+  /*
+   |--------------------------------------------------------------------------
+   | DEV SERVER (vite)
+   | Routes to STAGING API
+   |--------------------------------------------------------------------------
+   */
   server: {
     proxy: {
+      // 1️⃣ External service (most specific)
       '/api/external-pagespeed': {
         target: 'https://speed-audit-service.onrender.com',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/external-pagespeed/, '/api'),
+        rewrite: (path) =>
+          path.replace(/^\/api\/external-pagespeed/, '/api'),
       },
-      // Target Staging API for all /api requests
-      // Auth service
+
+      // 2️⃣ Auth
       '/api/auth/': {
-        target: 'https://api.trytechit.co/staging',
+        target: 'https://api.trytechit.co/main',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
-      // Author service (part of analytics)
+
+      // 3️⃣ Alerts
+      '/api/alerts': {
+        target: 'http://localhost:18080',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
+      // 4️⃣ Author (analytics sub-route)
       '/api/author': {
-        target: 'https://api.trytechit.co/staging',
+        target: 'https://api.trytechit.co/main',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, '/analytics'),
       },
-      // Alerts service
-      '/api/alerts': {
-        target: 'https://api.trytechit.co/staging',
-        changeOrigin: true,
-        secure: false,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-      },
-      // Analytics service (default)
+
+      // 5️⃣ Catch-all analytics (MUST BE LAST)
       '/api': {
-        target: 'https://api.trytechit.co/staging',
+        target: 'https://api.trytechit.co/main',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, '/analytics'),
       },
     },
   },
+
+  /*
+   |--------------------------------------------------------------------------
+   | PREVIEW MODE (vite preview)
+   | Routes to LOCAL DOCKER API GATEWAY (port 18080)
+   |--------------------------------------------------------------------------
+   */
   preview: {
     proxy: {
       '/api/external-pagespeed': {
         target: 'https://speed-audit-service.onrender.com',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/external-pagespeed/, '/api'),
+        rewrite: (path) =>
+          path.replace(/^\/api\/external-pagespeed/, '/api'),
       },
+
+      // Auth via gateway
       '/api/auth/': {
+        target: 'https://api.trytechit.co/main',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
+      // Alerts via gateway
+      '/api/alerts': {
         target: 'http://localhost:18080',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
-      // Alerts now live at gateway /alerts
-      '/api/alerts': {
-        target: 'http://localhost:80/alerts',
+
+      // Author via analytics prefix
+      '/api/author': {
+        target: 'https://api.trytechit.co/main',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+        rewrite: (path) => path.replace(/^\/api/, '/analytics'),
       },
-      // Route all app API calls through the gateway analytics prefix (preview)
+
+      // Catch-all analytics
       '/api': {
-        target: 'http://localhost:18080/analytics',
+        target: 'https://api.trytechit.co/main',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+        rewrite: (path) => path.replace(/^\/api/, '/analytics'),
       },
     },
   },

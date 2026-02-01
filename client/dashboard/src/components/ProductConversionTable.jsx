@@ -907,7 +907,7 @@ export default function ProductConversionTable({ brandKey }) {
   // const isDark = theme.palette.mode === 'dark'; // Handled in DateRangePicker
   const fetchTimer = useRef(null);
   const inflight = useRef(null);
-  const paramsRef = useRef({ start, end, page, pageSize, sortBy, sortDir, compareMode, compareStart, compareEnd });
+  const paramsRef = useRef({ start, end, page, pageSize, sortBy, sortDir, compareMode, compareStart, compareEnd, filters: productState.filters, search: productState.search, productTypes: productState.productTypes });
 
   // Effects for paramsRef and fetch cancellation
   useEffect(() => {
@@ -918,8 +918,8 @@ export default function ProductConversionTable({ brandKey }) {
   }, []);
 
   useEffect(() => {
-    paramsRef.current = { start, end, page, pageSize, sortBy, sortDir, compareMode, compareStart, compareEnd };
-  }, [start, end, page, pageSize, sortBy, sortDir, compareMode, compareStart, compareEnd]);
+    paramsRef.current = { start, end, page, pageSize, sortBy, sortDir, compareMode, compareStart, compareEnd, filters: productState.filters, search: productState.search, productTypes: productState.productTypes };
+  }, [start, end, page, pageSize, sortBy, sortDir, compareMode, compareStart, compareEnd, productState.filters, productState.search, productState.productTypes]);
 
   const runFetch = useCallback((params = {}) => {
     if (fetchTimer.current) { clearTimeout(fetchTimer.current); fetchTimer.current = null; }
