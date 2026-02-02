@@ -146,15 +146,23 @@ export default function App() {
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
 
-  const activeBrandKey = isAuthor
-    ? (authorBrandKey || user?.primary_brand_id || '')
-    : (
-      (globalBrandKey || '').toString().trim().toUpperCase() ||
+  const activeBrandKey = useMemo(() => {
+    if (isAuthor) {
+      return (authorBrandKey || user?.primary_brand_id || '');
+    }
+    // For viewers:
+    // 1. Get the candidate key (from Redux/State or User primary)
+    const candidate = (globalBrandKey || '').toString().trim().toUpperCase() ||
       (user?.primary_brand_id || '').toString().trim().toUpperCase() ||
-      (user?.brandKey || '').toString().trim().toUpperCase() ||
-      viewerBrands[0] ||
-      ''
-    );
+      (user?.brandKey || '').toString().trim().toUpperCase();
+
+    // 2. Validate it exists in their allowed list
+    if (candidate && viewerBrands.includes(candidate)) {
+      return candidate;
+    }
+    // 3. Fallback to first allowed brand
+    return viewerBrands[0] || '';
+  }, [isAuthor, authorBrandKey, user, globalBrandKey, viewerBrands]);
 
   const viewerPermissions = useMemo(() => {
     if (isAuthor) return ['all'];
@@ -288,7 +296,8 @@ export default function App() {
 
   useEffect(() => {
     // Only authors should see/use product filters; reset for everyone else.
-    if (!isAuthor) {
+    // Only authors OR users with product_filter permission should see/use product filters.
+    if (!isAuthor && !hasPermission('product_filter')) {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
       setProductSelection(DEFAULT_PRODUCT_OPTION);
       setProductOptionsLoading(false);
