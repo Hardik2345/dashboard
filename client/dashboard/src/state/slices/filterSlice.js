@@ -48,6 +48,7 @@ const filterSlice = createSlice({
   name: 'filters',
   initialState: {
     range: loadInitialRange(),
+    compareMode: null,
     selectedMetric: DEFAULT_TREND_METRIC,
     productSelection: DEFAULT_PRODUCT_OPTION,
     utm: loadInitialUtm(),
@@ -57,6 +58,9 @@ const filterSlice = createSlice({
       const next = Array.isArray(action.payload) ? action.payload : [];
       const [start, end] = next;
       state.range = [start, end];
+    },
+    setCompareMode(state, action) {
+      state.compareMode = action.payload || null;
     },
     setSelectedMetric(state, action) {
       state.selectedMetric = action.payload || DEFAULT_TREND_METRIC;
@@ -75,5 +79,5 @@ const filterSlice = createSlice({
   },
 });
 
-export const { setRange, setSelectedMetric, setProductSelection, setUtm } = filterSlice.actions;
+export const { setRange, setCompareMode, setSelectedMetric, setProductSelection, setUtm } = filterSlice.actions;
 export default filterSlice.reducer;
