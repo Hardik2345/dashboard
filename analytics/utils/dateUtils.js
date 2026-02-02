@@ -40,4 +40,20 @@ module.exports = {
   shiftDays,
   previousWindow,
   prevDayStr,
+  getComparisonRange,
 };
+
+function getComparisonRange(start, end, mode) {
+  if (!start || !end) return null;
+  const m = (mode || '').toLowerCase();
+
+  if (m === 'last_week' || m === 'week_over_week' || m === 'wow') {
+    // Shift both start and end back by 7 days
+    const pStart = shiftDays(start, -7);
+    const pEnd = shiftDays(end, -7);
+    return { prevStart: pStart, prevEnd: pEnd };
+  }
+
+  // Default: previous window (contiguous)
+  return previousWindow(start, end);
+}
