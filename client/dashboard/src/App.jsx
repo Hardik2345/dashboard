@@ -837,25 +837,74 @@ export default function App() {
                   </Suspense>
                 )}
 
-                {isAuthor && authorTab === 'alerts' && (
-                  authorBrands.length ? (
-                    <Suspense fallback={<SectionFallback />}>
-                      <AlertsAdmin
-                        brands={authorBrands}
-                        defaultBrandKey={activeBrandKey}
-                      />
-                    </Suspense>
-                  ) : (
-                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Add at least one brand to start configuring alerts.
-                      </Typography>
-                    </Paper>
-                  )
-                )}
-              </Stack>
+                  {authorTab === 'alerts' && (
+                    authorBrands.length ? (
+                      <Suspense fallback={<SectionFallback />}>
+                        <AlertsAdmin
+                          brands={authorBrands}
+                          defaultBrandKey={authorBrandKey}
+                        />
+                      </Suspense>
+                    ) : (
+                      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                        <Typography variant="body2" color="text.secondary">
+                          Add at least one brand to start configuring alerts.
+                        </Typography>
+                      </Paper>
+                    )
+                  )}
+                </Stack>
+              </Box>
+              <Footer />
             </Box>
-            <Footer />
+          </Box>
+        </AppProvider>
+      </ThemeProvider>
+    );
+  }
+
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <AppProvider i18n={enTranslations} theme={{ colorScheme: darkMode === 'dark' ? 'dark' : 'light' }}>
+        <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
+          {/* Sticky Top Panel (mobile only) */}
+          <Box
+            sx={{
+              position: { xs: 'sticky', md: 'static' },
+              top: 0,
+              zIndex: (theme) => theme.zIndex.appBar,
+              bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
+              pb: 0,
+              borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
+              borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+              transition: 'border-color 0.2s ease',
+            }}
+          >
+            <Header
+              user={user}
+              onLogout={handleLogout}
+              darkMode={darkMode === 'dark'}
+              onToggleDarkMode={handleToggleDarkMode}
+              onFilterClick={() => setMobileFilterOpen(true)}
+              showFilterButton={!!(isAuthor || user?.isAdmin)}
+            />
+          </Box>
+          <Container maxWidth="sm" sx={{ pt: { xs: 1, sm: 2 }, mt: { xs: 1.5, sm: 0 }, position: 'relative', zIndex: 1 }}>
+            <MobileTopBar
+              value={range}
+              onChange={handleRangeChange}
+              brandKey={activeBrandKey}
+              compareMode={compareMode}
+              showProductFilter={!!(isAuthor || user?.isAdmin)}
+              showUtmFilter={!!(isAuthor || user?.isAdmin)}
+              productOptions={productOptions}
+              productValue={productSelection}
+              onProductChange={handleProductChange}
+              productLoading={productOptionsLoading}
+              utm={utm}
+              onUtmChange={handleUtmChange}
+            />
             <MobileFilterDrawer
               open={mobileFilterOpen}
               onClose={() => setMobileFilterOpen(false)}
