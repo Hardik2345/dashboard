@@ -809,6 +809,7 @@ export default function App() {
               value={range}
               onChange={handleRangeChange}
               brandKey={activeBrandKey}
+              compareMode={compareMode}
               showProductFilter={!!(isAuthor || user?.isAdmin)}
               showUtmFilter={!!(isAuthor || user?.isAdmin)}
               productOptions={productOptions}
