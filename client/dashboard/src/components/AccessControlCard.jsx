@@ -36,7 +36,7 @@ import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import { adminListUsers, adminUpsertUser, adminDeleteUser, listAuthorBrands, listDomainRules, upsertDomainRule, deleteDomainRule } from '../lib/api';
 
-const PERMISSION_OPTIONS = ["all", "product_filter", "web_vitals", "payment_split_order", "payment_split_sales"];
+const PERMISSION_OPTIONS = ["all", "product_filter", "utm_filter", "web_vitals", "payment_split_order", "payment_split_sales"];
 
 const emptyForm = {
   email: '',
@@ -288,8 +288,8 @@ export default function AccessControlCard() {
         }
       />
       <CardContent>
-          <Stack spacing={2}>
-            {error && <Alert severity="error">{error}</Alert>}
+        <Stack spacing={2}>
+          {error && <Alert severity="error">{error}</Alert>}
           <Stack direction="row" spacing={2} alignItems="center">
             <Typography variant="body2">Filter by role:</Typography>
             <FormControl size="small" sx={{ minWidth: 80 }}>
@@ -297,7 +297,7 @@ export default function AccessControlCard() {
                 size="small"
                 value={filterRole}
                 onChange={(e) => setFilterRole(e.target.value)}
-                sx={{ 
+                sx={{
                   fontSize: '0.8rem',
                   '& .MuiSelect-select': { py: 0.5, px: 1.5 }
                 }}
@@ -309,93 +309,93 @@ export default function AccessControlCard() {
             </FormControl>
           </Stack>
           <Box sx={{ position: 'relative' }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Email</TableCell>
-                <TableCell>Role</TableCell>
-                <TableCell>Primary Brand</TableCell>
-                <TableCell>Brands</TableCell>
-                <TableCell>Permissions</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredUsers.map((u) => (
-                <TableRow key={u.id || u.email}>
-                  <TableCell sx={cellSx}>
-                    <Tooltip title={u.email}>
-                      <Box component="span" sx={{ display: 'inline-block', maxWidth: '100%', ...cellSx }}>{u.email}</Box>
-                    </Tooltip>
-                  </TableCell>
-                  <TableCell sx={cellSx}>
-                    <Chip
-                      size="small"
-                      icon={u.role === 'author' ? <ShieldOutlinedIcon fontSize="small" /> : <PersonOutlineIcon fontSize="small" />}
-                      label={u.role}
-                      color={u.role === 'author' ? 'primary' : 'default'}
-                      variant={u.role === 'author' ? 'filled' : 'outlined'}
-                    />
-                  </TableCell>
-                  <TableCell sx={cellSx}>{u.primary_brand_id || '-'}</TableCell>
-                  <TableCell sx={cellSx}>
-                    {renderChips(
-                      (() => {
-                        const ids = (u.brand_memberships || []).map(b => b.brand_id).filter(Boolean);
-                        if (u.role === 'author') return [...new Set(ids), 'ALL'];
-                        return ids;
-                      })(),
-                      2
-                    )}
-                  </TableCell>
-                  <TableCell sx={cellSx}>
-                    {renderChips(u.role === 'author' ? ['all'] : (u.brand_memberships?.[0]?.permissions || []), 2)}
-                  </TableCell>
-                  <TableCell sx={cellSx}>
-                    <Chip
-                      size="small"
-                      label={u.status}
-                      color={u.status === 'active' ? 'success' : 'error'}
-                      variant="outlined"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Stack direction="row" spacing={1}>
-                      <Tooltip title="Edit">
-                        <IconButton size="small" color="primary" onClick={() => openEdit(u)}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Delete">
-                        <IconButton size="small" color="error" onClick={() => handleDelete(u.email)}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Stack>
-                  </TableCell>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Email</TableCell>
+                  <TableCell>Role</TableCell>
+                  <TableCell>Primary Brand</TableCell>
+                  <TableCell>Brands</TableCell>
+                  <TableCell>Permissions</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Actions</TableCell>
                 </TableRow>
-              ))}
-              {!loading && filteredUsers.length === 0 && (
-                <TableRow><TableCell colSpan={7}><Typography variant="body2">No users</Typography></TableCell></TableRow>
-              )}
-            </TableBody>
-          </Table>
-          {loading && (
-            <Box
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                bgcolor: 'rgba(0,0,0,0.12)',
-                pointerEvents: 'none',
-              }}
-            >
-              <CircularProgress size={24} />
-            </Box>
-          )}
+              </TableHead>
+              <TableBody>
+                {filteredUsers.map((u) => (
+                  <TableRow key={u.id || u.email}>
+                    <TableCell sx={cellSx}>
+                      <Tooltip title={u.email}>
+                        <Box component="span" sx={{ display: 'inline-block', maxWidth: '100%', ...cellSx }}>{u.email}</Box>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell sx={cellSx}>
+                      <Chip
+                        size="small"
+                        icon={u.role === 'author' ? <ShieldOutlinedIcon fontSize="small" /> : <PersonOutlineIcon fontSize="small" />}
+                        label={u.role}
+                        color={u.role === 'author' ? 'primary' : 'default'}
+                        variant={u.role === 'author' ? 'filled' : 'outlined'}
+                      />
+                    </TableCell>
+                    <TableCell sx={cellSx}>{u.primary_brand_id || '-'}</TableCell>
+                    <TableCell sx={cellSx}>
+                      {renderChips(
+                        (() => {
+                          const ids = (u.brand_memberships || []).map(b => b.brand_id).filter(Boolean);
+                          if (u.role === 'author') return [...new Set(ids), 'ALL'];
+                          return ids;
+                        })(),
+                        2
+                      )}
+                    </TableCell>
+                    <TableCell sx={cellSx}>
+                      {renderChips(u.role === 'author' ? ['all'] : (u.brand_memberships?.[0]?.permissions || []), 2)}
+                    </TableCell>
+                    <TableCell sx={cellSx}>
+                      <Chip
+                        size="small"
+                        label={u.status}
+                        color={u.status === 'active' ? 'success' : 'error'}
+                        variant="outlined"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Stack direction="row" spacing={1}>
+                        <Tooltip title="Edit">
+                          <IconButton size="small" color="primary" onClick={() => openEdit(u)}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete">
+                          <IconButton size="small" color="error" onClick={() => handleDelete(u.email)}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {!loading && filteredUsers.length === 0 && (
+                  <TableRow><TableCell colSpan={7}><Typography variant="body2">No users</Typography></TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+            {loading && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  bgcolor: 'rgba(0,0,0,0.12)',
+                  pointerEvents: 'none',
+                }}
+              >
+                <CircularProgress size={24} />
+              </Box>
+            )}
           </Box>
 
           <Typography variant="h6" sx={{ mt: 2 }}>Domain rules</Typography>

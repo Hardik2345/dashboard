@@ -23,7 +23,7 @@ const DomainRuleSchema = new mongoose.Schema({
   permissions: {
     type: [String],
     default: ['all'],
-    enum: ['all', 'product_filter', 'web_vitals', 'payment_split_order', 'payment_split_sales'],
+    enum: ['all', 'product_filter', 'utm_filter', 'web_vitals', 'payment_split_order', 'payment_split_sales'],
   },
   status: {
     type: String,

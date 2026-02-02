@@ -733,7 +733,7 @@ export default function App() {
                       utm={utm}
                       onUtmChange={handleUtmChange}
                       utmOptions={utmOptions}
-                      showUtmFilter={isAuthor}
+                      showUtmFilter={hasPermission('utm_filter')}
                       onOpenFilter={() => setMobileFilterOpen(true)}
                     />
                   )}
@@ -851,7 +851,11 @@ export default function App() {
               utm={utm}
               onUtmChange={handleUtmChange}
               dateRange={normalizedRange}
+
               isDark={darkMode === 'dark'}
+              showBrandFilter={showMultipleBrands}
+              showProductFilter={hasPermission('product_filter')}
+              showUtmFilter={hasPermission('utm_filter')}
             />
           </Box>
         </Box>
