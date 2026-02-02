@@ -306,6 +306,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   const utmMedium = query?.utm_medium;
   const utmCampaign = query?.utm_campaign;
   const productId = query?.product_id;
+  const compare = query?.compare;
   const theme = useTheme();
 
   const totalDaysSelected = useMemo(() => {
@@ -351,8 +352,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         product_id: productId,
       };
 
-      // optimization: use cached hourly summary if sales + hourly view + single day match
-      if (viewMode === 'hourly' && (metric === 'sales' || metric === 'total_sales') && start === end && !utmParams.utm_source && !utmParams.utm_medium && !utmParams.utm_campaign && !utmParams.product_id) {
+      // optimization: use cached hourly summary if sales + hourly view + single day match + no custom comparison
+      if (viewMode === 'hourly' && (metric === 'sales' || metric === 'total_sales') && start === end && !utmParams.utm_source && !utmParams.utm_medium && !utmParams.utm_campaign && !utmParams.product_id && !compare) {
         try {
           const res = await getHourlySalesSummary({ brand_key: brandKey });
           if (!cancelled && res.data && res.data.today && res.data.today.date === start) {
@@ -403,12 +404,17 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         }
       }
 
+      const isLastWeekMode = compare === 'last_week';
+
+      // Special optimization logic for 'last_week' if available client-side (future)
+      // For now, rely on backend return or manual calculation for updated optimization blocks if we add them.
+
       if (cancelled) return;
 
       const fetcher = viewMode === 'monthly' ? getMonthlyTrend : (viewMode === 'daily' ? getDailyTrend : getHourlyTrend);
       const base = (viewMode === 'daily' || viewMode === 'monthly')
-        ? { start, end, ...utmParams }
-        : { start, end, aggregate: 'avg-by-hour', ...utmParams };
+        ? { start, end, compare, ...utmParams }
+        : { start, end, compare, aggregate: 'avg-by-hour', ...utmParams };
       const params = brandKey ? { ...base, brand_key: brandKey } : base;
 
       try {
@@ -493,7 +499,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     loadData();
 
     return () => { cancelled = true; };
-  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, productId]);
+  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, productId, compare]);
 
   const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
 
@@ -503,7 +509,15 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     : theme.palette.text.primary;
 
   const primaryLabel = state.rangeLabel ? `${config.label} (${state.rangeLabel})` : config.label;
-  const comparisonLabel = state.comparisonLabel ? `${config.label} (${state.comparisonLabel})` : `${config.label} · Prev window`;
+
+  let compLabelText = 'Prev window';
+  if (state.comparisonLabel) {
+    compLabelText = state.comparisonLabel;
+  } else if (compare === 'last_week') {
+    compLabelText = 'Same day last week';
+  }
+
+  const comparisonLabel = `${config.label} (${compLabelText})`;
 
   const datasets = [
     {
