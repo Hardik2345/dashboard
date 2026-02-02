@@ -370,7 +370,7 @@ export async function getHourlySalesSummary(args = {}) {
 }
 
 export async function getHourlyTrend(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end, aggregate: args.aggregate }, args);
+  const params = appendBrandKey({ start: args.start, end: args.end, aggregate: args.aggregate, compare: args.compare }, args);
   const json = await getJSON('/metrics/hourly-trend', params);
   const comparison = json?.comparison;
   return {
