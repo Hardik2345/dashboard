@@ -675,14 +675,13 @@ export default function App() {
               width: isAuthor ? { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` } : '100%',
             }}
           >
-            {/* Sticky Top Panel */}
+            {/* Sticky Header */}
             <Box
               sx={{
                 position: { xs: 'sticky', md: 'static' },
                 top: 0,
                 zIndex: (theme) => theme.zIndex.appBar,
                 bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
-                pb: { xs: 0.5, md: 1 },
                 borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
                 borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
                 transition: 'border-color 0.2s ease',
@@ -698,6 +697,15 @@ export default function App() {
                 showFilterButton={true}
                 onFilterClick={() => setMobileFilterOpen(true)}
               />
+            </Box>
+
+            {/* Non-Sticky Sub-Header (MobileTopBar etc) */}
+            <Box
+              sx={{
+                bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
+                pb: { xs: 0.5, md: 1 },
+              }}
+            >
               <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: { xs: 0.5, sm: 2 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
                 <Stack spacing={{ xs: 3, sm: 1 }}>
                   {/* Brand Selector - unified for both roles */}
