@@ -496,7 +496,8 @@ export default function App() {
 
   // Fetch UTM Options (Lifted from MobileTopBar)
   useEffect(() => {
-    if (!isAuthor || authorTab !== 'dashboard' || !activeBrandKey) return;
+    const canViewUtm = isAuthor || hasPermission('utm_filter');
+    if (!canViewUtm || authorTab !== 'dashboard' || !activeBrandKey) return;
     const s = formatDate(start);
     const e = formatDate(end);
 
@@ -512,7 +513,7 @@ export default function App() {
       .then(res => {
         if (res.filter_options) setUtmOptions(res.filter_options);
       });
-  }, [activeBrandKey, start, end, utm, isAuthor, authorTab]);
+  }, [activeBrandKey, start, end, utm, isAuthor, authorTab, hasPermission]);
 
   // Check auth on mount
   useEffect(() => {
