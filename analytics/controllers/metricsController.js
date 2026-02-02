@@ -3,7 +3,7 @@ const redisClient = require('../lib/redis');
 const logger = require('../utils/logger');
 const { RangeSchema, isoDate } = require('../validation/schemas');
 const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta, computeTotalSessions, computeAtcSessions, hasUtmFilters, appendUtmWhere, extractUtmParam } = require('../utils/metricsUtils');
-const { previousWindow, prevDayStr, parseIsoDate, formatIsoDate, shiftDays } = require('../utils/dateUtils');
+const { previousWindow, prevDayStr, parseIsoDate, formatIsoDate, shiftDays, getComparisonRange } = require('../utils/dateUtils');
 const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrands } = require('../config/brands');
 const { getBrandConnection } = require('../lib/brandConnectionManager');
@@ -14,7 +14,7 @@ const MEM_CACHE = new Map();
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds
 const IST_OFFSET_MIN = 330;
 
-async function calcTotalOrdersDelta({ start, end, align, conn, filters }) {
+async function calcTotalOrdersDelta({ start, end, align, compare, conn, filters }) {
   const date = end || start;
   if (!date && !(start && end)) {
     return { metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
@@ -51,7 +51,7 @@ async function calcTotalOrdersDelta({ start, end, align, conn, filters }) {
       rangeFilter = appendUtmWhere(rangeFilter, curReplacements, filters);
     }
 
-    const prevWin = previousWindow(rangeStart, rangeEnd);
+    const prevWin = getComparisonRange(rangeStart, rangeEnd, compare);
     const countSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE ${rangeFilter}`;
 
     // For previous window, we need same filters
@@ -84,7 +84,7 @@ async function calcTotalSalesDelta({ start, end, align, compare, conn, filters }
 
   if (compare === 'prev-range-avg' && start && end) {
     const currAvg = await avgForRange('total_sales', { start, end, conn });
-    const prevWin = previousWindow(start, end);
+    const prevWin = getComparisonRange(start, end, compare);
     const prevAvg = await avgForRange('total_sales', { start: prevWin.prevStart, end: prevWin.prevEnd, conn });
     const diff = currAvg - prevAvg;
     const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
@@ -106,7 +106,7 @@ async function calcTotalSalesDelta({ start, end, align, compare, conn, filters }
     const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
     const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
     const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : `${pad2(Math.floor(effectiveSeconds / 3600))}:${pad2(Math.floor((effectiveSeconds % 3600) / 60))}:${pad2(effectiveSeconds % 60)}`;
-    const prevWin = previousWindow(rangeStart, rangeEnd);
+    const prevWin = getComparisonRange(rangeStart, rangeEnd, compare);
 
     let rangeFilter = `created_date >= ? AND created_date <= ? AND created_time < ?`;
     const curReplacements = [rangeStart, rangeEnd, cutoffTime];
@@ -146,7 +146,7 @@ async function calcTotalSessionsDelta({ start, end, align, compare, conn, filter
     const rangeStart = start || date;
     const rangeEnd = end || date;
     const curr = await computeTotalSessions({ start: rangeStart, end: rangeEnd, conn, filters });
-    const prevWin = previousWindow(rangeStart, rangeEnd);
+    const prevWin = getComparisonRange(rangeStart, rangeEnd, compare);
     const prev = await computeTotalSessions({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
     const diff = curr - prev;
     const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
@@ -156,7 +156,7 @@ async function calcTotalSessionsDelta({ start, end, align, compare, conn, filter
 
   if (compare === 'prev-range-avg' && start && end) {
     const currAvg = await avgForRange('total_sessions', { start, end, conn });
-    const prevWin = previousWindow(start, end);
+    const prevWin = getComparisonRange(start, end, compare);
     const prevAvg = await avgForRange('total_sessions', { start: prevWin.prevStart, end: prevWin.prevEnd, conn });
     const diff = currAvg - prevAvg;
     const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
@@ -176,7 +176,7 @@ async function calcTotalSessionsDelta({ start, end, align, compare, conn, filter
 
     if (start && end) {
       const targetHour = resolveTargetHour(end);
-      const prevWin = previousWindow(start, end);
+      const prevWin = getComparisonRange(start, end, compare);
       const isCurrentRangeToday = isToday(start) || isToday(end);
       const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
       const sqlRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
@@ -231,7 +231,7 @@ async function calcAtcSessionsDelta({ start, end, align, compare, conn, filters 
     const rangeStart = start || date;
     const rangeEnd = end || date;
     const curr = await computeAtcSessions({ start: rangeStart, end: rangeEnd, conn, filters });
-    const prevWin = previousWindow(rangeStart, rangeEnd);
+    const prevWin = getComparisonRange(rangeStart, rangeEnd, compare);
     const prev = await computeAtcSessions({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
     const diff = curr - prev;
     const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
@@ -241,7 +241,7 @@ async function calcAtcSessionsDelta({ start, end, align, compare, conn, filters 
 
   if (compare === 'prev-range-avg' && start && end) {
     const currAvg = await avgForRange('total_atc_sessions', { start, end, conn });
-    const prevWin = previousWindow(start, end);
+    const prevWin = getComparisonRange(start, end, compare);
     const prevAvg = await avgForRange('total_atc_sessions', { start: prevWin.prevStart, end: prevWin.prevEnd, conn });
     const diff = currAvg - prevAvg;
     const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
@@ -260,7 +260,7 @@ async function calcAtcSessionsDelta({ start, end, align, compare, conn, filters 
 
     if (start && end) {
       const targetHour = resolveTargetHour(end);
-      const prevWin = previousWindow(start, end);
+      const prevWin = getComparisonRange(start, end, compare);
       const isCurrentRangeToday = isToday(start) || isToday(end);
       const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
       const sqlRange = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
@@ -314,7 +314,7 @@ async function calcAovDelta({ start, end, align, compare, conn, debug, filters }
 
   if ((compare || '').toString().toLowerCase() === 'prev-range-avg' && start && end) {
     const curr = await aovForRange({ start, end, conn, filters });
-    const prevWin = previousWindow(start, end);
+    const prevWin = getComparisonRange(start, end, compare);
     const prev = await aovForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
     const diff = curr - prev;
     const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
@@ -342,7 +342,7 @@ async function calcAovDelta({ start, end, align, compare, conn, debug, filters }
       const targetHour = resolveTargetHour(end);
       const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(end)));
       const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
-      const prevWin = previousWindow(start, end);
+      const prevWin = getComparisonRange(start, end, compare);
 
       let whereExtra = "";
       const curReplacements = [start, end, cutoffTime];
@@ -444,7 +444,7 @@ async function calcCvrDelta({ start, end, align, compare, conn, filters }) {
     let curr, prev;
     if (start && end) {
       curr = await cvrForRange({ start, end, conn, filters });
-      const prevWin = previousWindow(start, end);
+      const prevWin = getComparisonRange(start, end, compare);
       prev = await cvrForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
       const delta = computePercentDelta(curr.cvr_percent || 0, prev.cvr_percent || 0);
       // Handle 0 sessions
@@ -484,7 +484,7 @@ async function calcCvrDelta({ start, end, align, compare, conn, filters }) {
       };
     }
 
-    const prevWin = previousWindow(start, end);
+    const prevWin = getComparisonRange(start, end, compare);
     const prev = await cvrForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
     const delta = computePercentDelta(curr.cvr_percent || 0, prev.cvr_percent || 0);
     return { metric: 'CVR_DELTA', range: { start, end }, current: curr, previous: prev, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction, compare: 'prev-range-avg' };
@@ -529,7 +529,7 @@ async function calcCvrDelta({ start, end, align, compare, conn, filters }) {
       const orderRangeSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
       const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
 
-      const prevWin = previousWindow(rangeStart, rangeEnd);
+      const prevWin = getComparisonRange(rangeStart, rangeEnd, compare);
 
       const [sessCurRows, sessPrevRows, ordCurRows, ordPrevRows, overallCurrSess] = await Promise.all([
         conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, targetHour] }),
@@ -1660,7 +1660,8 @@ function buildMetricsController() {
           });
         }
 
-        const prevWin = previousWindow(start, end);
+        const compare = (req.query.compare || '').toString().toLowerCase();
+        const prevWin = getComparisonRange(start, end, compare);
         let comparison = null;
         if (prevWin?.prevStart && prevWin?.prevEnd) {
           const comparisonAlignHour = end === todayIst ? alignHour : 23;
@@ -1836,7 +1837,8 @@ function buildMetricsController() {
         });
 
         let comparison = null;
-        const prevWin = previousWindow(start, end);
+        const compare = (req.query.compare || '').toString().toLowerCase();
+        const prevWin = getComparisonRange(start, end, compare);
         if (prevWin?.prevStart && prevWin?.prevEnd) {
           let compSql = `
             SELECT date, 
@@ -1992,7 +1994,8 @@ function buildMetricsController() {
         });
 
         let comparison = null;
-        const prevWin = previousWindow(start, end);
+        const compare = (req.query.compare || '').toString().toLowerCase();
+        const prevWin = getComparisonRange(start, end, compare);
         if (prevWin?.prevStart && prevWin?.prevEnd) {
           let compSql = `
             SELECT 
@@ -2804,7 +2807,7 @@ function buildMetricsController() {
 
         if (isSingleDay && !hasFilters && !align && !compare) {
           try {
-            const prevWin = previousWindow(start, end);
+            const prevWin = getComparisonRange(start, end, compare);
             const [cached, cachedPrev] = await fetchCachedMetricsBatch(brandQuery, [start, prevWin.prevStart]);
 
             if (cached && cachedPrev) {
@@ -2850,7 +2853,7 @@ function buildMetricsController() {
           ]);
         }
 
-        const prevWin = previousWindow(start, end);
+        const prevWin = getComparisonRange(start, end, compare);
         const response = {
           range: { start, end },
           prev_range: prevWin ? { start: prevWin.prevStart, end: prevWin.prevEnd } : null,
@@ -2895,7 +2898,8 @@ function buildMetricsController() {
         mark('params');
 
         const isSingleDay = start === end;
-        const prevWin = previousWindow(start, end);
+        const compare = (req.query.compare || '').toString().toLowerCase();
+        const prevWin = getComparisonRange(start, end, compare);
         const prevStart = prevWin?.prevStart;
         const prevEnd = prevWin?.prevEnd;
 

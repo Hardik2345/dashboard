@@ -58,6 +58,13 @@ const DATE_PRESETS = [
     ],
     group: 1,
   },
+  {
+    label: "Same day Last week",
+    getValue: () => [dayjs().startOf("day"), dayjs().startOf("day")],
+    compareMode: 'last_week',
+    isComparisonToggle: true,
+    group: 1,
+  },
   // Days
   {
     label: "Last 7 days",
@@ -106,6 +113,7 @@ const DATE_PRESETS = [
 
 export default function MobileTopBar({
   value,
+  compareMode,
   onChange,
   brandKey,
   showProductFilter = true,
@@ -249,24 +257,37 @@ export default function MobileTopBar({
 
   const handlePresetSelect = useCallback(
     (preset) => {
+      if (preset.isComparisonToggle) {
+        // Keep current dates, just switch mode. Default to Today if no specific dates set.
+        const effectiveStart = start || dayjs().startOf("day");
+        const effectiveEnd = end || effectiveStart;
+        // Check if mode is already active? If so, maybe toggle off? User requirement implies enabling it.
+        // We'll enforce enabling it. 
+        onChange([effectiveStart, effectiveEnd], preset.compareMode);
+        return;
+      }
       const [presetStart, presetEnd] = preset.getValue();
       setMonth(presetEnd.month());
       setYear(presetEnd.year());
-      onChange([presetStart, presetEnd]);
+      onChange([presetStart, presetEnd], preset.compareMode || null);
     },
-    [onChange]
+    [onChange, start, end]
   );
 
-  // Check which preset is currently active
   const activePreset = useMemo(() => {
+    // If a specific comparison mode is active, prioritize showing that preset as active
+    if (compareMode === 'last_week') {
+      return "Same day Last week";
+    }
     if (!start || !end) return null;
     return (
       DATE_PRESETS.find((preset) => {
+        if (preset.isComparisonToggle) return false;
         const [presetStart, presetEnd] = preset.getValue();
         return start.isSame(presetStart, "day") && end.isSame(presetEnd, "day");
       })?.label || null
     );
-  }, [start, end]);
+  }, [start, end, compareMode]);
 
   const handleRangeChange = useCallback(
     ({ start: ns, end: ne }) => {
@@ -278,16 +299,16 @@ export default function MobileTopBar({
         setYear(focus.year());
       }
       if (s && e && s.isAfter(e)) {
-        onChange([e, s]);
+        onChange([e, s], compareMode);
         return;
       }
       if (s && !e) {
-        onChange([s, s]);
+        onChange([s, s], compareMode);
         return;
       }
-      onChange([s, e ?? s ?? null]);
+      onChange([s, e ?? s ?? null], compareMode);
     },
-    [onChange]
+    [onChange, compareMode]
   );
 
   const activeUtmCount = [utm?.source, utm?.medium, utm?.campaign].filter(Boolean).length;
