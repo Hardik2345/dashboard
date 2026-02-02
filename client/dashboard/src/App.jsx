@@ -12,7 +12,7 @@ import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
 import { useAppDispatch, useAppSelector } from './state/hooks.js';
 import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
 import { setBrand } from './state/slices/brandSlice.js';
-import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setSelectedMetric, setUtm } from './state/slices/filterSlice.js';
+import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setCompareMode, setSelectedMetric, setUtm } from './state/slices/filterSlice.js';
 import MobileTopBar from './components/MobileTopBar.jsx';
 import MobileFilterDrawer from './components/MobileFilterDrawer.jsx'; // New Import
 import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
@@ -75,7 +75,7 @@ export default function App() {
     ...state.auth,
     GlobalBrandKey: state.brand.brand
   }));
-  const { range, selectedMetric, productSelection, utm } = useAppSelector((state) => state.filters);
+  const { range, compareMode, selectedMetric, productSelection, utm } = useAppSelector((state) => state.filters);
   const loggingIn = loginStatus === 'loading';
   const [start, end] = range;
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
@@ -142,8 +142,9 @@ export default function App() {
       base.refreshKey = authorRefreshKey;
       if (productSelection?.id) base.product_id = productSelection.id;
     }
+    if (compareMode) base.compare = compareMode;
     return base;
-  }, [start, end, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id, utm]);
+  }, [start, end, compareMode, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id, utm]);
 
   const handleAuthorBrandChange = useCallback((nextKeyRaw) => {
     const normalized = (nextKeyRaw || '').toString().trim().toUpperCase();
@@ -306,9 +307,10 @@ export default function App() {
     dispatch(setSelectedMetric(TREND_METRICS.has(metricKey) ? metricKey : DEFAULT_TREND_METRIC));
   }, [dispatch]);
 
-  const handleRangeChange = useCallback((nextRange) => {
+  const handleRangeChange = useCallback((nextRange, mode = null) => {
     if (!Array.isArray(nextRange)) return;
     dispatch(setRange(nextRange));
+    dispatch(setCompareMode(mode));
   }, [dispatch]);
 
   const handleProductChange = useCallback((option) => {
@@ -623,6 +625,7 @@ export default function App() {
                   {authorTab === 'dashboard' && hasAuthorBrand && (
                     <MobileTopBar
                       value={range}
+                      compareMode={compareMode}
                       onChange={handleRangeChange}
                       brandKey={authorBrandKey}
                       productOptions={productOptions}
