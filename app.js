@@ -32,6 +32,7 @@ const { buildApiKeysRouter } = require('./routes/apiKeys');
 const { buildShopifyRouter } = require('./routes/shopify');
 const { buildWebhooksRouter } = require('./routes/webhooks');
 const { buildNotificationsRouter } = require('./routes/notifications'); // [NEW]
+const { connectMongo } = require('./lib/mongo');
 
 const app = express();
 app.use(helmet());
@@ -124,7 +125,7 @@ const SessionAdjustmentBucket = sequelize.define('session_adjustment_buckets', {
   brand_key: { type: DataTypes.STRING(32), allowNull: false },
   lower_bound_sessions: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
   upper_bound_sessions: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
-  offset_pct: { type: DataTypes.DECIMAL(5,2), allowNull: false }, // e.g. -8.00 to +12.50
+  offset_pct: { type: DataTypes.DECIMAL(5, 2), allowNull: false }, // e.g. -8.00 to +12.50
   active: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 1 },
   priority: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 100 },
   effective_from: { type: DataTypes.DATEONLY, allowNull: true },
@@ -140,7 +141,7 @@ const SessionAdjustmentAudit = sequelize.define('session_adjustment_audit', {
   id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
   brand_key: { type: DataTypes.STRING(32), allowNull: false },
   bucket_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
-  action: { type: DataTypes.ENUM('CREATE','UPDATE','DEACTIVATE','DELETE'), allowNull: false },
+  action: { type: DataTypes.ENUM('CREATE', 'UPDATE', 'DEACTIVATE', 'DELETE'), allowNull: false },
   before_json: { type: DataTypes.JSON, allowNull: true },
   after_json: { type: DataTypes.JSON, allowNull: true },
   author_user_id: { type: DataTypes.BIGINT, allowNull: true },
@@ -191,7 +192,7 @@ const BrandAlertChannel = sequelize.define('brands_alert_channel', {
 // Tables are created idempotently on startup (MySQL CREATE TABLE IF NOT EXISTS)
 sequelize.define('access_control_settings', {
   id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
-  mode: { type: DataTypes.ENUM('domain','whitelist'), allowNull: false, defaultValue: 'domain' },
+  mode: { type: DataTypes.ENUM('domain', 'whitelist'), allowNull: false, defaultValue: 'domain' },
   auto_provision_brand_user: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 0 },
   updated_by: { type: DataTypes.BIGINT, allowNull: true },
   updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP') }
@@ -476,7 +477,7 @@ passport.deserializeUser(async (obj, done) => {
       // Fallback to legacy local author via master DB user
       const authorEmail = (process.env.AUTHOR_EMAIL || '').toLowerCase();
       if (authorEmail !== email.toLowerCase()) return done(null, false);
-      const authorUser = await User.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
+      const authorUser = await User.findByPk(obj.id, { attributes: ['id', 'email', 'role', 'is_active'] });
       if (!authorUser || !authorUser.is_active || authorUser.role !== 'author') return done(null, false);
       return cacheResult({ id: authorUser.id, email: authorUser.email, role: 'author', brandKey: null, isAuthor: true });
     }
@@ -553,7 +554,8 @@ app.use('/author/access-control', buildAccessControlRouter({ sequelize, getAcces
 app.use('/author', buildAuthorBrandsRouter(sequelize));
 app.use('/author', buildAuthorRouter());
 app.use('/author/adjustment-buckets', buildAdjustmentBucketsRouter({ SessionAdjustmentBucket, SessionAdjustmentAudit }));
-app.use('/author/alerts', buildAlertsRouter({ Alert, AlertChannel, BrandAlertChannel }));
+const { getMongoDb } = require('./lib/mongo');
+app.use('/author/alerts', buildAlertsRouter({ Alert, AlertChannel, BrandAlertChannel, getMongoDb }));
 app.use('/author', buildAdjustmentsRouter({ SessionAdjustmentBucket, SessionAdjustmentAudit }));
 app.use('/metrics', buildMetricsRouter(sequelize));
 app.use('/external', buildExternalRouter());
@@ -576,6 +578,17 @@ async function init() {
   try { await sequelize.models.api_keys.sync(); } catch (e) { console.warn('API keys sync skipped', e?.message); }
   try { await Alert.sync(); } catch (e) { console.warn('Alert sync skipped', e?.message); }
   try { await AlertChannel.sync(); } catch (e) { console.warn('AlertChannel sync skipped', e?.message); }
+
+  // Detect Mongo URI
+  const mongoUri = process.env.MONGO_URI;
+  if (mongoUri) {
+    try {
+      await connectMongo(mongoUri);
+    } catch (err) {
+      console.error('Failed to connect to Mongo', err);
+    }
+  }
+
   // seed admin if none
   if (!(await User.findOne({ where: { email: process.env.ADMIN_EMAIL || 'admin@example.com' } }))) {
     const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'ChangeMe123!', 12);
