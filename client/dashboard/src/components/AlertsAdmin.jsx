@@ -248,9 +248,32 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
       setForm(prev => {
         const next = { ...prev, [field]: value };
         if (isBase) next.metric_type = 'base';
+
+        // [Modified] Logic for Conversion Rate and AOV
+        if (value === 'conversion_rate') {
+          next.metric_type = 'derived';
+          next.formula = '(total_orders / total_sessions)*100';
+        } else if (value === 'aov') {
+          // For AOV, if they are already on derived or switch to it, we want a default.
+          // But here we just switched metric. If the new metric is AOV and type is derived (or we default?), set formula.
+          // If we don't force derived, we just check current type.
+          if (prev.metric_type === 'derived') {
+            next.formula = 'total_sales / total_orders';
+          }
+        }
+
         if (isPerformance) {
-          next.threshold_type = 'greater_than'; // Default to one of the allowed types
-          next.lookback_days = ''; // Clear lookback days
+          next.threshold_type = 'greater_than';
+          next.lookback_days = '';
+        }
+        return next;
+      });
+    } else if (field === 'metric_type') {
+      setForm((prev) => {
+        const next = { ...prev, [field]: value };
+        // If switching TO derived for AOV, set default
+        if (value === 'derived' && prev.metric_name === 'aov') {
+          next.formula = 'total_sales / total_orders';
         }
         return next;
       });
@@ -557,9 +580,12 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                   value={form.metric_type}
                   onChange={handleInputChange('metric_type')}
                   label="Logic Type"
-                  disabled={BASE_METRICS.includes(form.metric_name)}
+                  disabled={BASE_METRICS.includes(form.metric_name) || form.metric_name === 'conversion_rate'}
                 >
-                  {METRIC_TYPES.map((option) => (
+                  {METRIC_TYPES.filter(opt => {
+                    if (form.metric_name === 'conversion_rate') return opt.value === 'derived';
+                    return true;
+                  }).map((option) => (
                     <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
                   ))}
                 </Select>
@@ -594,6 +620,9 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                   {THRESHOLD_TYPES.filter(opt => {
                     if (form.metric_name === 'performance') {
                       return ['greater_than', 'less_than'].includes(opt.value);
+                    }
+                    if (form.metric_name === 'conversion_rate') {
+                      return !['greater_than', 'less_than'].includes(opt.value);
                     }
                     return true;
                   }).map((option) => (
