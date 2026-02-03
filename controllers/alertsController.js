@@ -235,10 +235,9 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getMong
       }
 
       return res.status(201).json({ alert: formatAlertDocument(inserted, channelConfig) });
-
     } catch (err) {
       console.error('[alerts-mongo] create failed', err);
-      return res.status(500).json({ error: 'Failed to create alert' });
+      return res.status(500).json({ error: 'Failed to create alert', details: err.message });
     }
   }
 
