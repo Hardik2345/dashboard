@@ -67,16 +67,16 @@ const DATE_PRESETS = [
   {
     label: "Last 7 days",
     getValue: () => [
-      dayjs().subtract(6, "day").startOf("day"),
-      dayjs().startOf("day"),
+      dayjs().subtract(7, "day").startOf("day"),
+      dayjs().subtract(1, "day").startOf("day"),
     ],
     group: 2,
   },
   {
     label: "Last 30 days",
     getValue: () => [
-      dayjs().subtract(29, "day").startOf("day"),
-      dayjs().startOf("day"),
+      dayjs().subtract(30, "day").startOf("day"),
+      dayjs().subtract(1, "day").startOf("day"),
     ],
     group: 2,
   },
@@ -102,8 +102,8 @@ const DATE_PRESETS = [
   {
     label: "Last 90 days",
     getValue: () => [
-      dayjs().subtract(89, "day").startOf("day"),
-      dayjs().startOf("day"),
+      dayjs().subtract(90, "day").startOf("day"),
+      dayjs().subtract(1, "day").startOf("day"),
     ],
     group: 2,
   },
