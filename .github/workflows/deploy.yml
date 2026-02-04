@@ -3,7 +3,6 @@ name: Build and Push Images
 on:
   push:
     branches:
-      - newArch/main
       - main
 
 jobs:
@@ -17,28 +16,26 @@ jobs:
       - name: Login to Docker Hub
         run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-      - name: Build and Push Auth Service
-        run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/datum-auth-service:latest ./auth-service
-          docker push ${{ secrets.DOCKER_USERNAME }}/datum-auth-service:latest
-
+      # ---------------- ANALYTICS ----------------
       - name: Build and Push Analytics Service
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/datum-analytics-service:latest ./analytics-service
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/datum-analytics-service:latest ./analytics
           docker push ${{ secrets.DOCKER_USERNAME }}/datum-analytics-service:latest
 
-      - name: Build and Push API Gateway
-        run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/datum-api-gateway:latest ./api-gateway
-          docker push ${{ secrets.DOCKER_USERNAME }}/datum-api-gateway:latest
-
+      # ---------------- ALERTS ----------------
       - name: Build and Push Alerts Service
         run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/datum-alerts-service:latest ./alerts-service
           docker push ${{ secrets.DOCKER_USERNAME }}/datum-alerts-service:latest
 
+      # ---------------- API GATEWAY ----------------
+      - name: Build and Push API Gateway
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/datum-api-gateway:latest ./api-gateway
+          docker push ${{ secrets.DOCKER_USERNAME }}/datum-api-gateway:latest
+
+      # ---------------- TENANT ROUTER ----------------
       - name: Build and Push Tenant Router
         run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/datum-tenant-router:latest ./tenant-router
           docker push ${{ secrets.DOCKER_USERNAME }}/datum-tenant-router:latest
-
