@@ -3,7 +3,7 @@ const redisClient = require('../lib/redis');
 const logger = require('../utils/logger');
 const { RangeSchema, isoDate } = require('../validation/schemas');
 const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta, computeTotalSessions, computeAtcSessions, hasUtmFilters, appendUtmWhere, extractUtmParam } = require('../utils/metricsUtils');
-const { previousWindow, prevDayStr, parseIsoDate, formatIsoDate, shiftDays, getComparisonRange } = require('../utils/dateUtils');
+const { previousWindow, prevDayStr, parseIsoDate, formatIsoDate, shiftDays } = require('../utils/dateUtils');
 const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrands } = require('../config/brands');
 const { getBrandConnection } = require('../lib/brandConnectionManager');
@@ -14,7 +14,7 @@ const MEM_CACHE = new Map();
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds
 const IST_OFFSET_MIN = 330;
 
-async function calcTotalOrdersDelta({ start, end, align, compare, conn, filters }) {
+async function calcTotalOrdersDelta({ start, end, align, conn, filters }) {
   const date = end || start;
   if (!date && !(start && end)) {
     return { metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' };
@@ -51,7 +51,7 @@ async function calcTotalOrdersDelta({ start, end, align, compare, conn, filters 
       rangeFilter = appendUtmWhere(rangeFilter, curReplacements, filters);
     }
 
-    const prevWin = getComparisonRange(rangeStart, rangeEnd, compare);
+    const prevWin = previousWindow(rangeStart, rangeEnd);
     const countSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE ${rangeFilter}`;
 
     // For previous window, we need same filters
@@ -84,7 +84,7 @@ async function calcTotalSalesDelta({ start, end, align, compare, conn, filters }
 
   if (compare === 'prev-range-avg' && start && end) {
     const currAvg = await avgForRange('total_sales', { start, end, conn });
-    const prevWin = getComparisonRange(start, end, compare);
+    const prevWin = previousWindow(start, end);
     const prevAvg = await avgForRange('total_sales', { start: prevWin.prevStart, end: prevWin.prevEnd, conn });
     const diff = currAvg - prevAvg;
     const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
@@ -106,7 +106,7 @@ async function calcTotalSalesDelta({ start, end, align, compare, conn, filters }
     const resolveSeconds = (targetDate) => (targetDate === todayIst ? secondsNow : fullDaySeconds);
     const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(rangeEnd)));
     const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : `${pad2(Math.floor(effectiveSeconds / 3600))}:${pad2(Math.floor((effectiveSeconds % 3600) / 60))}:${pad2(effectiveSeconds % 60)}`;
-    const prevWin = getComparisonRange(rangeStart, rangeEnd, compare);
+    const prevWin = previousWindow(rangeStart, rangeEnd);
 
     let rangeFilter = `created_date >= ? AND created_date <= ? AND created_time < ?`;
     const curReplacements = [rangeStart, rangeEnd, cutoffTime];
@@ -146,7 +146,7 @@ async function calcTotalSessionsDelta({ start, end, align, compare, conn, filter
     const rangeStart = start || date;
     const rangeEnd = end || date;
     const curr = await computeTotalSessions({ start: rangeStart, end: rangeEnd, conn, filters });
-    const prevWin = getComparisonRange(rangeStart, rangeEnd, compare);
+    const prevWin = previousWindow(rangeStart, rangeEnd);
     const prev = await computeTotalSessions({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
     const diff = curr - prev;
     const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
@@ -156,7 +156,7 @@ async function calcTotalSessionsDelta({ start, end, align, compare, conn, filter
 
   if (compare === 'prev-range-avg' && start && end) {
     const currAvg = await avgForRange('total_sessions', { start, end, conn });
-    const prevWin = getComparisonRange(start, end, compare);
+    const prevWin = previousWindow(start, end);
     const prevAvg = await avgForRange('total_sessions', { start: prevWin.prevStart, end: prevWin.prevEnd, conn });
     const diff = currAvg - prevAvg;
     const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
@@ -176,7 +176,7 @@ async function calcTotalSessionsDelta({ start, end, align, compare, conn, filter
 
     if (start && end) {
       const targetHour = resolveTargetHour(end);
-      const prevWin = getComparisonRange(start, end, compare);
+      const prevWin = previousWindow(start, end);
       const isCurrentRangeToday = isToday(start) || isToday(end);
       const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
       const sqlRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
@@ -231,7 +231,7 @@ async function calcAtcSessionsDelta({ start, end, align, compare, conn, filters 
     const rangeStart = start || date;
     const rangeEnd = end || date;
     const curr = await computeAtcSessions({ start: rangeStart, end: rangeEnd, conn, filters });
-    const prevWin = getComparisonRange(rangeStart, rangeEnd, compare);
+    const prevWin = previousWindow(rangeStart, rangeEnd);
     const prev = await computeAtcSessions({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
     const diff = curr - prev;
     const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
@@ -241,7 +241,7 @@ async function calcAtcSessionsDelta({ start, end, align, compare, conn, filters 
 
   if (compare === 'prev-range-avg' && start && end) {
     const currAvg = await avgForRange('total_atc_sessions', { start, end, conn });
-    const prevWin = getComparisonRange(start, end, compare);
+    const prevWin = previousWindow(start, end);
     const prevAvg = await avgForRange('total_atc_sessions', { start: prevWin.prevStart, end: prevWin.prevEnd, conn });
     const diff = currAvg - prevAvg;
     const diff_pct = prevAvg > 0 ? (diff / prevAvg) * 100 : (currAvg > 0 ? 100 : 0);
@@ -260,7 +260,7 @@ async function calcAtcSessionsDelta({ start, end, align, compare, conn, filters 
 
     if (start && end) {
       const targetHour = resolveTargetHour(end);
-      const prevWin = getComparisonRange(start, end, compare);
+      const prevWin = previousWindow(start, end);
       const isCurrentRangeToday = isToday(start) || isToday(end);
       const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
       const sqlRange = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
@@ -314,7 +314,7 @@ async function calcAovDelta({ start, end, align, compare, conn, debug, filters }
 
   if ((compare || '').toString().toLowerCase() === 'prev-range-avg' && start && end) {
     const curr = await aovForRange({ start, end, conn, filters });
-    const prevWin = getComparisonRange(start, end, compare);
+    const prevWin = previousWindow(start, end);
     const prev = await aovForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
     const diff = curr - prev;
     const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
@@ -342,7 +342,7 @@ async function calcAovDelta({ start, end, align, compare, conn, debug, filters }
       const targetHour = resolveTargetHour(end);
       const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, resolveSeconds(end)));
       const cutoffTime = effectiveSeconds >= fullDaySeconds ? '24:00:00' : secondsToTime(effectiveSeconds);
-      const prevWin = getComparisonRange(start, end, compare);
+      const prevWin = previousWindow(start, end);
 
       let whereExtra = "";
       const curReplacements = [start, end, cutoffTime];
@@ -444,7 +444,7 @@ async function calcCvrDelta({ start, end, align, compare, conn, filters }) {
     let curr, prev;
     if (start && end) {
       curr = await cvrForRange({ start, end, conn, filters });
-      const prevWin = getComparisonRange(start, end, compare);
+      const prevWin = previousWindow(start, end);
       prev = await cvrForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
       const delta = computePercentDelta(curr.cvr_percent || 0, prev.cvr_percent || 0);
       // Handle 0 sessions
@@ -484,7 +484,7 @@ async function calcCvrDelta({ start, end, align, compare, conn, filters }) {
       };
     }
 
-    const prevWin = getComparisonRange(start, end, compare);
+    const prevWin = previousWindow(start, end);
     const prev = await cvrForRange({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters });
     const delta = computePercentDelta(curr.cvr_percent || 0, prev.cvr_percent || 0);
     return { metric: 'CVR_DELTA', range: { start, end }, current: curr, previous: prev, diff_pp: delta.diff_pp, diff_pct: delta.diff_pct, direction: delta.direction, compare: 'prev-range-avg' };
@@ -529,7 +529,7 @@ async function calcCvrDelta({ start, end, align, compare, conn, filters }) {
       const orderRangeSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
       const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
 
-      const prevWin = getComparisonRange(rangeStart, rangeEnd, compare);
+      const prevWin = previousWindow(rangeStart, rangeEnd);
 
       const [sessCurRows, sessPrevRows, ordCurRows, ordPrevRows, overallCurrSess] = await Promise.all([
         conn.query(sqlSessRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, targetHour] }),
@@ -1660,8 +1660,7 @@ function buildMetricsController() {
           });
         }
 
-        const compare = (req.query.compare || '').toString().toLowerCase();
-        const prevWin = getComparisonRange(start, end, compare);
+        const prevWin = previousWindow(start, end);
         let comparison = null;
         if (prevWin?.prevStart && prevWin?.prevEnd) {
           const comparisonAlignHour = end === todayIst ? alignHour : 23;
@@ -1774,7 +1773,6 @@ function buildMetricsController() {
         for (let ts = sTs; ts <= eTs; ts += DAY_MS) {
           dayList.push(formatIsoDate(new Date(ts)));
         }
-
         const filters = {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
@@ -1784,7 +1782,7 @@ function buildMetricsController() {
         const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
 
         let sql = `
-          SELECT date, 
+          SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, 
             SUM(total_sales) AS sales,
             SUM(number_of_orders) AS orders,
             SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)) AS sessions,
@@ -1802,7 +1800,7 @@ function buildMetricsController() {
             ? `COALESCE(SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity), 0)`
             : `SUM(total_price)`;
 
-          sql = `SELECT created_date AS date, 
+          sql = `SELECT DATE_FORMAT(created_date, '%Y-%m-%d') AS date, 
                        ${salesExpr} AS sales, 
                        COUNT(DISTINCT order_name) AS orders,
                        0 AS sessions, 
@@ -1817,31 +1815,52 @@ function buildMetricsController() {
         }
 
         const rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: replacements });
-        const map = new Map(rows.map(r => [r.date, { sales: Number(r.sales || 0), orders: Number(r.orders || 0), sessions: Number(r.sessions || 0), adjusted_sessions: Number(r.adjusted_sessions || 0), raw_sessions: Number(r.raw_sessions || 0), atc: Number(r.atc || 0) }]));
+        const debugInfo = { brand: req.brandKey, rows: rows.slice(0, 5), overallRows: [] };
+
+        const map = new Map(rows.map(r => {
+          const d = String(r.date);
+          return [d, { sales: Number(r.sales || 0), orders: Number(r.orders || 0), sessions: Number(r.sessions || 0), adjusted_sessions: Number(r.adjusted_sessions || 0), raw_sessions: Number(r.raw_sessions || 0), atc: Number(r.atc || 0) }];
+        }));
 
         let overallMap = new Map();
         if (!hasFilters) {
           const overallRows = await req.brandDb.sequelize.query(
-            `SELECT date, total_sessions, adjusted_total_sessions FROM overall_summary WHERE date >= ? AND date <= ?`,
+            `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, total_sessions, adjusted_total_sessions FROM overall_summary WHERE date >= ? AND date <= ?`,
             { type: QueryTypes.SELECT, replacements: [start, end] }
           );
-          overallMap = new Map(overallRows.map(r => [r.date, { total_sessions: Number(r.total_sessions || 0), adjusted_total_sessions: r.adjusted_total_sessions == null ? null : Number(r.adjusted_total_sessions) }]));
+          debugInfo.overallRows = overallRows.slice(0, 5);
+          overallMap = new Map(overallRows.map(r => {
+            const d = String(r.date);
+            return [d, { total_sessions: Number(r.total_sessions || 0), adjusted_total_sessions: r.adjusted_total_sessions == null ? null : Number(r.adjusted_total_sessions) }];
+          }));
         }
 
         const points = dayList.map(d => {
           const metrics = map.get(d) || { sales: 0, orders: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, atc: 0 };
           const over = overallMap.get(d);
-          const bestSession = over && over.adjusted_total_sessions != null ? Number(over.adjusted_total_sessions) : metrics.sessions;
+
+          // Priority Logic for Sessions:
+          // 1. adjusted_total_sessions (overall_summary)
+          // 2. total_sessions (overall_summary)
+          // 3. metrics.sessions (hour_wise_sales)
+          let bestSession = metrics.sessions;
+          if (over) {
+            if (over.adjusted_total_sessions != null) {
+              bestSession = over.adjusted_total_sessions;
+            } else if (over.total_sessions != null) {
+              bestSession = over.total_sessions;
+            }
+          }
+
           const cvrRatio = bestSession > 0 ? metrics.orders / bestSession : 0;
           return { date: d, metrics: { sales: metrics.sales, orders: metrics.orders, sessions: bestSession, adjusted_sessions: metrics.adjusted_sessions, raw_sessions: metrics.raw_sessions, atc: metrics.atc, cvr_ratio: cvrRatio, cvr_percent: cvrRatio * 100 } };
         });
 
         let comparison = null;
-        const compare = (req.query.compare || '').toString().toLowerCase();
-        const prevWin = getComparisonRange(start, end, compare);
+        const prevWin = previousWindow(start, end);
         if (prevWin?.prevStart && prevWin?.prevEnd) {
           let compSql = `
-            SELECT date, 
+            SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, 
               SUM(total_sales) AS sales,
               SUM(number_of_orders) AS orders,
               SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)) AS sessions,
@@ -1859,7 +1878,7 @@ function buildMetricsController() {
               ? `COALESCE(SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity), 0)`
               : `SUM(total_price)`;
 
-            compSql = `SELECT created_date AS date, 
+            compSql = `SELECT DATE_FORMAT(created_date, '%Y-%m-%d') AS date, 
                          ${salesExpr} AS sales, 
                          COUNT(DISTINCT order_name) AS orders,
                          0 AS sessions, 
@@ -1874,15 +1893,21 @@ function buildMetricsController() {
           }
 
           const rowsPrev = await req.brandDb.sequelize.query(compSql, { type: QueryTypes.SELECT, replacements: compReplacements });
-          const mapPrev = new Map(rowsPrev.map(r => [r.date, { sales: Number(r.sales || 0), orders: Number(r.orders || 0), sessions: Number(r.sessions || 0), adjusted_sessions: Number(r.adjusted_sessions || 0), raw_sessions: Number(r.raw_sessions || 0), atc: Number(r.atc || 0) }]));
+          const mapPrev = new Map(rowsPrev.map(r => {
+            const d = String(r.date);
+            return [d, { sales: Number(r.sales || 0), orders: Number(r.orders || 0), sessions: Number(r.sessions || 0), adjusted_sessions: Number(r.adjusted_sessions || 0), raw_sessions: Number(r.raw_sessions || 0), atc: Number(r.atc || 0) }];
+          }));
 
           let overallMapPrev = new Map();
           if (!hasFilters) {
             const overallRowsPrev = await req.brandDb.sequelize.query(
-              `SELECT date, total_sessions, adjusted_total_sessions FROM overall_summary WHERE date >= ? AND date <= ?`,
+              `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, total_sessions, adjusted_total_sessions FROM overall_summary WHERE date >= ? AND date <= ?`,
               { type: QueryTypes.SELECT, replacements: [prevWin.prevStart, prevWin.prevEnd] }
             );
-            overallMapPrev = new Map(overallRowsPrev.map(r => [r.date, { total_sessions: Number(r.total_sessions || 0), adjusted_total_sessions: r.adjusted_total_sessions == null ? null : Number(r.adjusted_total_sessions) }]));
+            overallMapPrev = new Map(overallRowsPrev.map(r => {
+              const d = String(r.date);
+              return [d, { total_sessions: Number(r.total_sessions || 0), adjusted_total_sessions: r.adjusted_total_sessions == null ? null : Number(r.adjusted_total_sessions) }];
+            }));
           }
 
           const prevPoints = [];
@@ -1890,7 +1915,17 @@ function buildMetricsController() {
             const d = formatIsoDate(new Date(ts));
             const metrics = mapPrev.get(d) || { sales: 0, orders: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, atc: 0 };
             const over = overallMapPrev.get(d);
-            const bestSession = over && over.adjusted_total_sessions != null ? Number(over.adjusted_total_sessions) : metrics.sessions;
+
+            // Comparison Priority Logic
+            let bestSession = metrics.sessions;
+            if (over) {
+              if (over.adjusted_total_sessions != null) {
+                bestSession = over.adjusted_total_sessions;
+              } else if (over.total_sessions != null) {
+                bestSession = over.total_sessions;
+              }
+            }
+
             const cvrRatio = bestSession > 0 ? metrics.orders / bestSession : 0;
             prevPoints.push({ date: d, metrics: { sales: metrics.sales, orders: metrics.orders, sessions: bestSession, adjusted_sessions: metrics.adjusted_sessions, raw_sessions: metrics.raw_sessions, atc: metrics.atc, cvr_ratio: cvrRatio, cvr_percent: cvrRatio * 100 } });
           }
@@ -1994,8 +2029,7 @@ function buildMetricsController() {
         });
 
         let comparison = null;
-        const compare = (req.query.compare || '').toString().toLowerCase();
-        const prevWin = getComparisonRange(start, end, compare);
+        const prevWin = previousWindow(start, end);
         if (prevWin?.prevStart && prevWin?.prevEnd) {
           let compSql = `
             SELECT 
@@ -2807,7 +2841,7 @@ function buildMetricsController() {
 
         if (isSingleDay && !hasFilters && !align && !compare) {
           try {
-            const prevWin = getComparisonRange(start, end, compare);
+            const prevWin = previousWindow(start, end);
             const [cached, cachedPrev] = await fetchCachedMetricsBatch(brandQuery, [start, prevWin.prevStart]);
 
             if (cached && cachedPrev) {
@@ -2853,7 +2887,7 @@ function buildMetricsController() {
           ]);
         }
 
-        const prevWin = getComparisonRange(start, end, compare);
+        const prevWin = previousWindow(start, end);
         const response = {
           range: { start, end },
           prev_range: prevWin ? { start: prevWin.prevStart, end: prevWin.prevEnd } : null,
@@ -2898,8 +2932,7 @@ function buildMetricsController() {
         mark('params');
 
         const isSingleDay = start === end;
-        const compare = (req.query.compare || '').toString().toLowerCase();
-        const prevWin = getComparisonRange(start, end, compare);
+        const prevWin = previousWindow(start, end);
         const prevStart = prevWin?.prevStart;
         const prevEnd = prevWin?.prevEnd;
 
