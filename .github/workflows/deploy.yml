@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - newArch/main
+      - main
 
 jobs:
   build:
@@ -41,4 +42,3 @@ jobs:
           docker build -t ${{ secrets.DOCKER_USERNAME }}/datum-tenant-router:latest ./tenant-router
           docker push ${{ secrets.DOCKER_USERNAME }}/datum-tenant-router:latest
 
-          
