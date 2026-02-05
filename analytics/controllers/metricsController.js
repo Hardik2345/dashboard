@@ -2994,27 +2994,98 @@ function buildMetricsController() {
           };
         };
 
-        const [current, previous] = await Promise.all([
-          (async () => {
-            const s = Date.now();
-            const resCur = await getMetricsForRange(start, end, cached);
-            mark('current_fetch', s);
-            return resCur;
-          })(),
-          (async () => {
-            const s = Date.now();
-            const resPrev = await getMetricsForRange(prevStart, prevEnd, cachedPrev);
-            mark('previous_fetch', s);
-            return resPrev;
-          })()
-        ]);
 
-        const calcDelta = (cur, prev) => {
-          const diff = cur - prev;
-          const diff_pct = prev > 0 ? (diff / prev) * 100 : (cur > 0 ? 100 : 0);
-          const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-          return { diff, diff_pct, direction };
-        };
+        const nowUtc = new Date();
+        const nowIst = new Date(nowUtc.getTime() + (330 * 60 * 1000)); // IST_OFFSET_MIN = 330
+        const pad2 = (n) => String(n).padStart(2, '0');
+        const todayIstStr = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
+        const isTodayIst = isSingleDay && start === todayIstStr;
+
+        let total_orders, total_sales, average_order_value, conversion_rate, total_sessions, total_atc_sessions;
+        let sources = { current: 'db', previous: 'db' };
+
+        if (isTodayIst) {
+          // Use time-aligned delta calculation
+          if (!req.brandDb && req.brandConfig) {
+            try { req.brandDbName = req.brandConfig.dbName || req.brandConfig.key; } catch (e) { }
+          }
+          const conn = req.brandDb ? req.brandDb.sequelize : null;
+          if (!conn) throw new Error("Database connection missing (tenant router required)");
+
+          const [ordersRes, salesRes, sessionsRes, atcRes, aovRes, cvrRes] = await Promise.all([
+            calcTotalOrdersDelta({ start, end, align: 'hour', conn, filters }),
+            calcTotalSalesDelta({ start, end, align: 'hour', conn, filters }),
+            calcTotalSessionsDelta({ start, end, align: 'hour', conn, filters }),
+            calcAtcSessionsDelta({ start, end, align: 'hour', conn, filters }),
+            calcAovDelta({ start, end, align: 'hour', conn, filters }),
+            calcCvrDelta({ start, end, align: 'hour', conn, filters })
+          ]);
+
+          const mkMetric = (res) => ({
+            value: res.current,
+            previous: res.previous,
+            diff: res.current - res.previous,
+            diff_pct: res.diff_pct,
+            direction: res.direction
+          });
+
+          total_orders = mkMetric(ordersRes);
+          total_sales = mkMetric(salesRes);
+          total_sessions = mkMetric(sessionsRes);
+          total_atc_sessions = mkMetric(atcRes);
+          average_order_value = mkMetric(aovRes);
+          conversion_rate = { ...mkMetric(cvrRes), value: cvrRes.current?.cvr_percent || 0, previous: cvrRes.previous?.cvr_percent || 0, diff: (cvrRes.current?.cvr_percent || 0) - (cvrRes.previous?.cvr_percent || 0) }; // CVR returns complex object in current/previous sometimes
+
+          // Fix CVR structure if calcCvrDelta returned simple numbers (it shouldn't for 'hour' align but strictly)
+          if (typeof cvrRes.current === 'number') {
+            conversion_rate = mkMetric(cvrRes);
+          } else {
+            // For calcCvrDelta with align='hour', it returns objects with total_orders, etc.
+            // We need to extract the percentage
+            const curPct = cvrRes.current.cvr_percent || 0;
+            const prevPct = cvrRes.previous.cvr_percent || 0;
+            const d = computePercentDelta(curPct, prevPct);
+            conversion_rate = {
+              value: curPct,
+              previous: prevPct,
+              diff: d.diff_pp, // Use pp for CVR? or pct? varying generic UI usually expects pct change of the value
+              diff_pct: d.diff_pct,
+              direction: d.direction
+            };
+          }
+
+        } else {
+          // Standard full-day calculation (existing logic)
+          const [current, previous] = await Promise.all([
+            (async () => {
+              const s = Date.now();
+              const resCur = await getMetricsForRange(start, end, cached);
+              mark('current_fetch', s);
+              return resCur;
+            })(),
+            (async () => {
+              const s = Date.now();
+              const resPrev = await getMetricsForRange(prevStart, prevEnd, cachedPrev);
+              mark('previous_fetch', s);
+              return resPrev;
+            })()
+          ]);
+          sources = { current: current?.source || 'db', previous: previous?.source || 'db' };
+
+          const calcDelta = (cur, prev) => {
+            const diff = cur - prev;
+            const diff_pct = prev > 0 ? (diff / prev) * 100 : (cur > 0 ? 100 : 0);
+            const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+            return { diff, diff_pct, direction };
+          };
+
+          total_orders = { value: current?.total_orders || 0, previous: previous?.total_orders || 0, ...calcDelta(current?.total_orders || 0, previous?.total_orders || 0) };
+          total_sales = { value: current?.total_sales || 0, previous: previous?.total_sales || 0, ...calcDelta(current?.total_sales || 0, previous?.total_sales || 0) };
+          average_order_value = { value: current?.average_order_value || 0, previous: previous?.average_order_value || 0, ...calcDelta(current?.average_order_value || 0, previous?.average_order_value || 0) };
+          conversion_rate = { value: current?.conversion_rate_percent || 0, previous: previous?.conversion_rate_percent || 0, ...calcDelta(current?.conversion_rate_percent || 0, previous?.conversion_rate_percent || 0) };
+          total_sessions = { value: current?.total_sessions || 0, previous: previous?.total_sessions || 0, ...calcDelta(current?.total_sessions || 0, previous?.total_sessions || 0) };
+          total_atc_sessions = { value: current?.total_atc_sessions || 0, previous: previous?.total_atc_sessions || 0, ...calcDelta(current?.total_atc_sessions || 0, previous?.total_atc_sessions || 0) };
+        }
 
         let filterOptions = null;
         if (req.query.include_utm_options === 'true') {
@@ -3074,38 +3145,14 @@ function buildMetricsController() {
           range: { start, end },
           prev_range: prevStart && prevEnd ? { start: prevStart, end: prevEnd } : null,
           metrics: {
-            total_orders: {
-              value: current?.total_orders || 0,
-              previous: previous?.total_orders || 0,
-              ...calcDelta(current?.total_orders || 0, previous?.total_orders || 0)
-            },
-            total_sales: {
-              value: current?.total_sales || 0,
-              previous: previous?.total_sales || 0,
-              ...calcDelta(current?.total_sales || 0, previous?.total_sales || 0)
-            },
-            average_order_value: {
-              value: current?.average_order_value || 0,
-              previous: previous?.average_order_value || 0,
-              ...calcDelta(current?.average_order_value || 0, previous?.average_order_value || 0)
-            },
-            conversion_rate: {
-              value: current?.conversion_rate_percent || 0,
-              previous: previous?.conversion_rate_percent || 0,
-              ...calcDelta(current?.conversion_rate_percent || 0, previous?.conversion_rate_percent || 0)
-            },
-            total_sessions: {
-              value: current?.total_sessions || 0,
-              previous: previous?.total_sessions || 0,
-              ...calcDelta(current?.total_sessions || 0, previous?.total_sessions || 0)
-            },
-            total_atc_sessions: {
-              value: current?.total_atc_sessions || 0,
-              previous: previous?.total_atc_sessions || 0,
-              ...calcDelta(current?.total_atc_sessions || 0, previous?.total_atc_sessions || 0)
-            }
+            total_orders,
+            total_sales,
+            average_order_value,
+            conversion_rate,
+            total_sessions,
+            total_atc_sessions
           },
-          sources: { current: current?.source || 'db', previous: previous?.source || 'db' }
+          sources
         };
 
         logger.debug(

@@ -59,17 +59,17 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
     const src = typeof row.toJSON === 'function' ? row.toJSON() : row;
     const brandMeta = getBrandById(src.brand_id);
     let recipients = [];
-    
+
     if (src.have_recipients && options.individualChannel) {
-      recipients = Array.isArray(options.individualChannel.channel_config?.to) 
-        ? options.individualChannel.channel_config.to 
+      recipients = Array.isArray(options.individualChannel.channel_config?.to)
+        ? options.individualChannel.channel_config.to
         : [];
     } else if (options.channelConfig) {
       recipients = Array.isArray(options.channelConfig?.to) ? options.channelConfig.to : [];
     }
 
     return {
-      id: src.id,
+      id: src.id != null ? src.id : src._id,
       name: src.name || null,
       brand_id: src.brand_id,
       brand_key: brandMeta?.key || null,
@@ -171,7 +171,15 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
 
       // Load individual recipients if needed
       const individualChannelMap = new Map();
-      const haveRecipAlertIds = alerts.filter(a => a.have_recipients).map(a => a.id);
+      const haveRecipAlertIds = alerts.filter(a => a.have_recipients).map(a => a.id).filter(id => id != null);
+      // NOTE: If using _id, we might need to query by that too? 
+      // Current system AlertChannel maps to alert_id which is numeric id.
+      // If we are migrating to _id, we have a bigger problem: AlertChannel needs to link via _id?
+      // Assuming legacy data has `id` and new data might just use _id?
+      // But wait, createAlert assigns `id` from sequence. So `id` MUST exist for new alerts too.
+      // The issue is likely some alerts were manually created or migrated without `id`.
+      // We will assume if `id` exists we use it, otherwise we skip link for now (or fix separately).
+
       if (AlertChannel && haveRecipAlertIds.length) {
         const individualChannels = await AlertChannel.find({
           alert_id: { $in: haveRecipAlertIds },
@@ -183,7 +191,7 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
       }
 
       const payload = alerts.map((alert) => {
-        return formatAlertRow(alert, { 
+        return formatAlertRow(alert, {
           channelConfig: channelMap.get(alert.brand_id),
           individualChannel: individualChannelMap.get(alert.id)
         });
@@ -205,10 +213,10 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
       const brandInfo = await resolveBrand(data.brand_key);
       if (brandInfo.error) return res.status(400).json({ error: brandInfo.error });
       const values = buildAlertValues({ ...data, brand_key: brandInfo.key }, brandInfo.brandId);
-      
+
       const nextId = await getNextSeq('alerts');
       const created = await Alert.create({ ...values, id: nextId });
-      
+
       // If individual recipients toggled on, create AlertChannel
       let individualChannel = null;
       if (data.have_recipients && data.recipients?.length) {
@@ -239,11 +247,18 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
     }
   }
 
+  function resolveAlertQuery(idParam) {
+    const num = Number(idParam);
+    if (Number.isFinite(num)) {
+      return { id: num };
+    }
+    return { _id: idParam };
+  }
+
   async function updateAlert(req, res) {
     try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid alert id' });
-      const existing = await Alert.findOne({ id });
+      const query = resolveAlertQuery(req.params.id);
+      const existing = await Alert.findOne(query);
       if (!existing) return res.status(404).json({ error: 'Alert not found' });
 
       const parsed = AlertSchema.safeParse(req.body || {});
@@ -255,28 +270,33 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
       if (brandInfo.error) return res.status(400).json({ error: brandInfo.error });
       const values = buildAlertValues({ ...data, brand_key: brandInfo.key }, brandInfo.brandId, existing);
 
-      await Alert.updateOne({ id }, { $set: values });
+      await Alert.updateOne(query, { $set: values });
+
+      // If we have a numeric ID (either queried or existing), use it for AlertChannel
+      const alertId = existing.id;
 
       // Update / upsert individual recipients
       let individualChannel = null;
-      if (data.have_recipients && data.recipients?.length) {
-        const payload = {
-          alert_id: id,
-          brand_id: brandInfo.brandId,
-          channel_type: 'email',
-          channel_config: { to: data.recipients },
-        };
-        const existingChannel = await AlertChannel.findOne({ alert_id: id, channel_type: 'email' });
-        if (existingChannel) {
-          await AlertChannel.updateOne({ alert_id: id, channel_type: 'email' }, { $set: payload });
-          individualChannel = await AlertChannel.findOne({ alert_id: id, channel_type: 'email' }).lean();
+      if (alertId != null) {
+        if (data.have_recipients && data.recipients?.length) {
+          const payload = {
+            alert_id: alertId,
+            brand_id: brandInfo.brandId,
+            channel_type: 'email',
+            channel_config: { to: data.recipients },
+          };
+          const existingChannel = await AlertChannel.findOne({ alert_id: alertId, channel_type: 'email' });
+          if (existingChannel) {
+            await AlertChannel.updateOne({ alert_id: alertId, channel_type: 'email' }, { $set: payload });
+            individualChannel = await AlertChannel.findOne({ alert_id: alertId, channel_type: 'email' }).lean();
+          } else {
+            payload.id = await getNextSeq('alert_channels');
+            individualChannel = await AlertChannel.create(payload);
+          }
         } else {
-          payload.id = await getNextSeq('alert_channels');
-          individualChannel = await AlertChannel.create(payload);
+          // toggle off
+          await AlertChannel.deleteMany({ alert_id: alertId });
         }
-      } else {
-        // toggle off
-        await AlertChannel.deleteMany({ alert_id: id });
       }
 
       let brandChannel = null;
@@ -288,7 +308,7 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
         }).lean();
       }
 
-      const updated = await Alert.findOne({ id });
+      const updated = await Alert.findOne(query);
       return res.json({ alert: formatAlertRow(updated, { channelConfig: parseChannelConfig(brandChannel?.channel_config), individualChannel }) });
     } catch (err) {
       logger.error('[alerts] update failed', err);
@@ -298,10 +318,16 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
 
   async function deleteAlert(req, res) {
     try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid alert id' });
-      await AlertChannel.deleteMany({ alert_id: id });
-      const deleted = await Alert.deleteOne({ id });
+      const query = resolveAlertQuery(req.params.id);
+      // If deleting by _id, we might not have alert_id for channel deletion unless we look it up.
+      const existing = await Alert.findOne(query);
+      if (!existing) return res.status(404).json({ error: 'Alert not found' });
+
+      if (existing.id != null) {
+        await AlertChannel.deleteMany({ alert_id: existing.id });
+      }
+
+      const deleted = await Alert.deleteOne(query);
       if (!deleted.deletedCount) return res.status(404).json({ error: 'Alert not found' });
       return res.json({ success: true });
     } catch (err) {
@@ -312,21 +338,20 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
 
   async function setAlertStatus(req, res) {
     try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid alert id' });
+      const query = resolveAlertQuery(req.params.id);
       const parsed = AlertStatusSchema.safeParse(req.body || {});
       if (!parsed.success) {
         return res.status(400).json({ error: 'Invalid input', details: parsed.error.flatten() });
       }
       const payload = parsed.data;
-      const existing = await Alert.findOne({ id });
+      const existing = await Alert.findOne(query);
       if (!existing) return res.status(404).json({ error: 'Alert not found' });
 
       const brandInfo = await resolveBrand(payload.brand_key || getBrandById(existing.brand_id)?.key);
       if (brandInfo.error) return res.status(400).json({ error: brandInfo.error });
 
-      await Alert.updateOne({ id }, { $set: { is_active: payload.is_active ? 1 : 0 } });
-      const updated = await Alert.findOne({ id });
+      await Alert.updateOne(query, { $set: { is_active: payload.is_active ? 1 : 0 } });
+      const updated = await Alert.findOne(query);
 
       let brandChannel = null;
       if (BrandAlertChannel) {
