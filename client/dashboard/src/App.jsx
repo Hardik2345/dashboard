@@ -12,7 +12,7 @@ import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
 import { useAppDispatch, useAppSelector } from './state/hooks.js';
 import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
 import { setBrand } from './state/slices/brandSlice.js';
-import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setCompareMode, setSelectedMetric, setUtm } from './state/slices/filterSlice.js';
+import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setSelectedMetric, setUtm } from './state/slices/filterSlice.js';
 import MobileTopBar from './components/MobileTopBar.jsx';
 import MobileFilterDrawer from './components/MobileFilterDrawer.jsx'; // New Import
 import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
@@ -70,12 +70,8 @@ export default function App() {
   const globalBrandKey = useAppSelector((state) => state.brand.brand);
   const {
     user, initialized, loginStatus, loginError,
-    GlobalBrandKey: globalBrandKey,
-  } = useAppSelector((state) => ({
-    ...state.auth,
-    GlobalBrandKey: state.brand.brand
-  }));
-  const { range, compareMode, selectedMetric, productSelection, utm } = useAppSelector((state) => state.filters);
+  } = authState;
+  const { range, selectedMetric, productSelection, utm } = useAppSelector((state) => state.filters);
   const loggingIn = loginStatus === 'loading';
   // range holds ISO strings; normalize to dayjs for components that expect it
   const [start, end] = useMemo(
@@ -150,23 +146,15 @@ export default function App() {
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
 
-  const activeBrandKey = useMemo(() => {
-    if (isAuthor) {
-      return (authorBrandKey || user?.primary_brand_id || '');
-    }
-    // For viewers:
-    // 1. Get the candidate key (from Redux/State or User primary)
-    const candidate = (globalBrandKey || '').toString().trim().toUpperCase() ||
+  const activeBrandKey = isAuthor
+    ? (authorBrandKey || user?.primary_brand_id || '')
+    : (
+      (globalBrandKey || '').toString().trim().toUpperCase() ||
       (user?.primary_brand_id || '').toString().trim().toUpperCase() ||
-      (user?.brandKey || '').toString().trim().toUpperCase();
-
-    // 2. Validate it exists in their allowed list
-    if (candidate && viewerBrands.includes(candidate)) {
-      return candidate;
-    }
-    // 3. Fallback to first allowed brand
-    return viewerBrands[0] || '';
-  }, [isAuthor, authorBrandKey, user, globalBrandKey, viewerBrands]);
+      (user?.brandKey || '').toString().trim().toUpperCase() ||
+      viewerBrands[0] ||
+      ''
+    );
 
   const viewerPermissions = useMemo(() => {
     if (isAuthor) return ['all'];
@@ -205,9 +193,8 @@ export default function App() {
       base.refreshKey = authorRefreshKey;
       if (productSelection?.id) base.product_id = productSelection.id;
     }
-    if (compareMode) base.compare = compareMode;
     return base;
-  }, [start, end, compareMode, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id, utm]);
+  }, [start, end, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id, utm]);
 
   const handleAuthorBrandChange = useCallback((nextKeyRaw) => {
     const normalized = (nextKeyRaw || '').toString().trim().toUpperCase();
@@ -301,8 +288,7 @@ export default function App() {
 
   useEffect(() => {
     // Only authors should see/use product filters; reset for everyone else.
-    // Only authors OR users with product_filter permission should see/use product filters.
-    if (!isAuthor && !hasPermission('product_filter')) {
+    if (!isAuthor) {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
       setProductSelection(DEFAULT_PRODUCT_OPTION);
       setProductOptionsLoading(false);
@@ -381,10 +367,9 @@ export default function App() {
     dispatch(setSelectedMetric(TREND_METRICS.has(metricKey) ? metricKey : DEFAULT_TREND_METRIC));
   }, [dispatch]);
 
-  const handleRangeChange = useCallback((nextRange, mode = null) => {
+  const handleRangeChange = useCallback((nextRange) => {
     if (!Array.isArray(nextRange)) return;
     dispatch(setRange(nextRange));
-    dispatch(setCompareMode(mode));
   }, [dispatch]);
 
   const handleProductChange = useCallback((option) => {
@@ -511,8 +496,7 @@ export default function App() {
 
   // Fetch UTM Options (Lifted from MobileTopBar)
   useEffect(() => {
-    const canViewUtm = isAuthor || hasPermission('utm_filter');
-    if (!canViewUtm || authorTab !== 'dashboard' || !activeBrandKey) return;
+    if (!isAuthor || authorTab !== 'dashboard' || !activeBrandKey) return;
     const s = formatDate(start);
     const e = formatDate(end);
 
@@ -528,7 +512,7 @@ export default function App() {
       .then(res => {
         if (res.filter_options) setUtmOptions(res.filter_options);
       });
-  }, [activeBrandKey, start, end, utm, isAuthor, authorTab, hasPermission]);
+  }, [activeBrandKey, start, end, utm, isAuthor, authorTab]);
 
   // Check auth on mount
   useEffect(() => {
@@ -738,8 +722,7 @@ export default function App() {
                   {/* Date range and product filter - show on dashboard tab */}
                   {authorTab === 'dashboard' && hasBrand && (
                     <MobileTopBar
-                      value={range}
-                      compareMode={compareMode}
+                      value={normalizedRange}
                       onChange={handleRangeChange}
                       brandKey={activeBrandKey}
                       showProductFilter={hasPermission('product_filter')}
@@ -837,74 +820,25 @@ export default function App() {
                   </Suspense>
                 )}
 
-                  {authorTab === 'alerts' && (
-                    authorBrands.length ? (
-                      <Suspense fallback={<SectionFallback />}>
-                        <AlertsAdmin
-                          brands={authorBrands}
-                          defaultBrandKey={authorBrandKey}
-                        />
-                      </Suspense>
-                    ) : (
-                      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                        <Typography variant="body2" color="text.secondary">
-                          Add at least one brand to start configuring alerts.
-                        </Typography>
-                      </Paper>
-                    )
-                  )}
-                </Stack>
-              </Box>
-              <Footer />
+                {isAuthor && authorTab === 'alerts' && (
+                  authorBrands.length ? (
+                    <Suspense fallback={<SectionFallback />}>
+                      <AlertsAdmin
+                        brands={authorBrands}
+                        defaultBrandKey={activeBrandKey}
+                      />
+                    </Suspense>
+                  ) : (
+                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        Add at least one brand to start configuring alerts.
+                      </Typography>
+                    </Paper>
+                  )
+                )}
+              </Stack>
             </Box>
-          </Box>
-        </AppProvider>
-      </ThemeProvider>
-    );
-  }
-
-  return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <AppProvider i18n={enTranslations} theme={{ colorScheme: darkMode === 'dark' ? 'dark' : 'light' }}>
-        <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
-          {/* Sticky Top Panel (mobile only) */}
-          <Box
-            sx={{
-              position: { xs: 'sticky', md: 'static' },
-              top: 0,
-              zIndex: (theme) => theme.zIndex.appBar,
-              bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
-              pb: 0,
-              borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
-              borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-              transition: 'border-color 0.2s ease',
-            }}
-          >
-            <Header
-              user={user}
-              onLogout={handleLogout}
-              darkMode={darkMode === 'dark'}
-              onToggleDarkMode={handleToggleDarkMode}
-              onFilterClick={() => setMobileFilterOpen(true)}
-              showFilterButton={!!(isAuthor || user?.isAdmin)}
-            />
-          </Box>
-          <Container maxWidth="sm" sx={{ pt: { xs: 1, sm: 2 }, mt: { xs: 1.5, sm: 0 }, position: 'relative', zIndex: 1 }}>
-            <MobileTopBar
-              value={range}
-              onChange={handleRangeChange}
-              brandKey={activeBrandKey}
-              compareMode={compareMode}
-              showProductFilter={!!(isAuthor || user?.isAdmin)}
-              showUtmFilter={!!(isAuthor || user?.isAdmin)}
-              productOptions={productOptions}
-              productValue={productSelection}
-              onProductChange={handleProductChange}
-              productLoading={productOptionsLoading}
-              utm={utm}
-              onUtmChange={handleUtmChange}
-            />
+            <Footer />
             <MobileFilterDrawer
               open={mobileFilterOpen}
               onClose={() => setMobileFilterOpen(false)}
