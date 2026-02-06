@@ -70,12 +70,8 @@ const filterSlice = createSlice({
       state.selectedMetric = action.payload || DEFAULT_TREND_METRIC;
     },
     setProductSelection(state, action) {
-      const val = action.payload;
-      if (val && typeof val === 'object') {
-        state.productSelection = val;
-      } else {
-        state.productSelection = DEFAULT_PRODUCT_OPTION;
-      }
+      // Revert to single value
+      state.productSelection = action.payload || DEFAULT_PRODUCT_OPTION;
     },
     setUtm(state, action) {
       state.utm = { ...state.utm, ...action.payload };

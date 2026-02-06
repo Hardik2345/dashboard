@@ -60,8 +60,11 @@ export default function MobileFilterDrawer({
 
     const [view, setView] = useState('ROOT'); // ROOT, BRAND, PRODUCT, UTM, UTM_SOURCE, UTM_MEDIUM, UTM_CAMPAIGN, PRODUCT_TYPE
     const [utmOptions, setUtmOptions] = useState(null);
-    const [availableProductTypes, setAvailableProductTypes] = useState([]);
-    const [typesLoading, setTypesLoading] = useState(false);
+    const [searchText, setSearchText] = useState('');
+
+    useEffect(() => {
+        setSearchText('');
+    }, [view]);
 
     // Sync local state with props when drawer opens
     useEffect(() => {
@@ -409,30 +412,42 @@ export default function MobileFilterDrawer({
 
                     {/* PRODUCT VIEW */}
                     {view === 'PRODUCT' && (
-                        <List disablePadding>
-                            {productOptions.map((opt) => {
-                                const isSelected = (tempProduct?.id || '') === (opt.id || '');
-                                return (
-                                    <ListItemButton
-                                        key={opt.id || 'all'}
-                                        onClick={() => {
-                                            setTempProduct(opt);
-                                            handleBack();
-                                        }}
-                                        selected={isSelected}
-                                        sx={{ py: 1.5 }}
-                                    >
-                                        <ListItemText
-                                            primary={opt.id ? opt.label : 'All products'}
-                                            secondary={opt.detail}
-                                            primaryTypographyProps={{ fontWeight: isSelected ? 600 : 400, fontSize: 14 }}
-                                            secondaryTypographyProps={{ fontSize: 12 }}
-                                        />
-                                        {isSelected && <CheckIcon fontSize="small" color="primary" />}
-                                    </ListItemButton>
-                                );
-                            })}
-                        </List>
+                        <Box>
+                            <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', position: 'sticky', top: 0, bgcolor: 'background.paper', zIndex: 5 }}>
+                                <TextField
+                                    size="small"
+                                    fullWidth
+                                    placeholder="Search products..."
+                                    value={searchText}
+                                    onChange={e => setSearchText(e.target.value)}
+                                    autoFocus
+                                />
+                            </Box>
+                            <List disablePadding>
+                                {productOptions.filter(opt => !searchText || (opt.label || '').toLowerCase().includes(searchText.toLowerCase())).map((opt) => {
+                                    const isSelected = (tempProduct?.id || '') === (opt.id || '');
+                                    return (
+                                        <ListItemButton
+                                            key={opt.id || 'all'}
+                                            onClick={() => {
+                                                setTempProduct(opt);
+                                                handleBack();
+                                            }}
+                                            selected={isSelected}
+                                            sx={{ py: 1.5 }}
+                                        >
+                                            <ListItemText
+                                                primary={opt.id ? opt.label : 'All products'}
+                                                secondary={opt.detail}
+                                                primaryTypographyProps={{ fontWeight: isSelected ? 600 : 400, fontSize: 14 }}
+                                                secondaryTypographyProps={{ fontSize: 12 }}
+                                            />
+                                            {isSelected && <CheckIcon fontSize="small" color="primary" />}
+                                        </ListItemButton>
+                                    );
+                                })}
+                            </List>
+                        </Box>
                     )}
 
                     {/* PRODUCT TYPE VIEW */}
@@ -517,57 +532,78 @@ export default function MobileFilterDrawer({
 
                     {/* UTM OPTIONS VIEWS */}
                     {['UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN'].includes(view) && (
-                        <List disablePadding>
-                            <ListItemButton
-                                onClick={() => {
-                                    const field = view.replace('UTM_', '').toLowerCase();
-                                    setTempUtm({ ...tempUtm, [field]: '' });
-                                }}
-                                sx={{ py: 1.5 }}
-                            >
-                                <Checkbox
-                                    checked={!tempUtm?.[view.replace('UTM_', '').toLowerCase()] || (Array.isArray(tempUtm?.[view.replace('UTM_', '').toLowerCase()]) && tempUtm?.[view.replace('UTM_', '').toLowerCase()].length === 0)}
+                        <Box>
+                            <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', position: 'sticky', top: 0, bgcolor: 'background.paper', zIndex: 5 }}>
+                                <TextField
                                     size="small"
-                                    sx={{ p: 0.5, mr: 1 }}
+                                    fullWidth
+                                    placeholder={`Search ${view.replace('UTM_', '').toLowerCase()}...`}
+                                    value={searchText}
+                                    onChange={e => setSearchText(e.target.value)}
+                                    autoFocus
                                 />
-                                <ListItemText primary="All" />
-                            </ListItemButton>
-                            {(utmOptions?.[`utm_${view.replace('UTM_', '').toLowerCase()}`] || []).map(opt => {
-                                const field = view.replace('UTM_', '').toLowerCase();
-                                const current = tempUtm?.[field];
-                                const isSelected = Array.isArray(current)
-                                    ? current.includes(opt)
-                                    : current === opt;
+                            </Box>
+                            <List disablePadding>
+                                <ListItemButton
+                                    onClick={() => {
+                                        const field = view.replace('UTM_', '').toLowerCase();
+                                        setTempUtm({ ...tempUtm, [field]: '' });
+                                        // handleBack(); // Don't close on clear all in multi-select mode? Or maybe just clear selection.
+                                        // Actually better UX: 'All' means clear current selection
+                                    }}
+                                    sx={{ py: 1.5 }}
+                                >
+                                    <Checkbox
+                                        checked={!tempUtm?.[view.replace('UTM_', '').toLowerCase()] || (Array.isArray(tempUtm?.[view.replace('UTM_', '').toLowerCase()]) && tempUtm?.[view.replace('UTM_', '').toLowerCase()].length === 0)}
+                                        size="small"
+                                        sx={{ p: 0.5, mr: 1 }}
+                                    />
+                                    <ListItemText primary="All" />
+                                </ListItemButton>
+                                {(utmOptions?.[`utm_${view.replace('UTM_', '').toLowerCase()}`] || [])
+                                    .filter(opt => !searchText || String(opt).toLowerCase().includes(searchText.toLowerCase()))
+                                    .map(opt => {
+                                        const field = view.replace('UTM_', '').toLowerCase();
+                                        const current = tempUtm?.[field];
+                                        const isSelected = Array.isArray(current)
+                                            ? current.includes(opt)
+                                            : current === opt;
 
-                                return (
-                                    <ListItemButton
-                                        key={opt}
-                                        onClick={() => {
-                                            let newVal;
-                                            if (Array.isArray(current)) {
-                                                newVal = current.includes(opt)
-                                                    ? current.filter(x => x !== opt)
-                                                    : [...current, opt];
-                                            } else {
-                                                if (current === opt) newVal = [];
-                                                else newVal = current ? [current, opt] : [opt];
-                                            }
+                                        return (
+                                            <ListItemButton
+                                                key={opt}
+                                                onClick={() => {
+                                                    let newVal;
+                                                    if (Array.isArray(current)) {
+                                                        newVal = current.includes(opt)
+                                                            ? current.filter(x => x !== opt)
+                                                            : [...current, opt];
+                                                    } else {
+                                                        // Was string or null, now array
+                                                        // If it was already this val (shouldn't happen if we strictly use arrays but for safety), toggle off
+                                                        if (current === opt) newVal = [];
+                                                        else newVal = current ? [current, opt] : [opt];
+                                                    }
+                                                    // Handle the case where user had single string selected before update
+                                                    // If current was string and not equal to opt, we make it array [current, opt]
 
-                                            setTempUtm({ ...tempUtm, [field]: newVal });
-                                        }}
-                                        selected={isSelected}
-                                        sx={{ py: 0.5 }}
-                                    >
-                                        <Checkbox
-                                            checked={isSelected}
-                                            size="small"
-                                            sx={{ p: 0.5, mr: 1 }}
-                                        />
-                                        <ListItemText primary={opt} primaryTypographyProps={{ fontSize: 14, noWrap: true }} />
-                                    </ListItemButton>
-                                );
-                            })}
-                        </List>
+                                                    setTempUtm({ ...tempUtm, [field]: newVal });
+                                                    // handleBack(); // Keep open for multi-select
+                                                }}
+                                                selected={isSelected}
+                                                sx={{ py: 0.5 }} // denser
+                                            >
+                                                <Checkbox
+                                                    checked={isSelected}
+                                                    size="small"
+                                                    sx={{ p: 0.5, mr: 1 }}
+                                                />
+                                                <ListItemText primary={opt} primaryTypographyProps={{ fontSize: 14, noWrap: true }} />
+                                            </ListItemButton>
+                                        );
+                                    })}
+                            </List>
+                        </Box>
                     )}
 
                 </Box>
