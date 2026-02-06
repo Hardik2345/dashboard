@@ -21,3 +21,6 @@ api-gateway/scgi_temp/
 # Logs & pid
 api-gateway/logs/
 *.pid
+alerts-service/.env
+analytics/.env
+tenant-router/.env
