@@ -305,6 +305,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   const utmSource = query?.utm_source;
   const utmMedium = query?.utm_medium;
   const utmCampaign = query?.utm_campaign;
+  const salesChannel = query?.sales_channel;
   const productId = query?.product_id;
   const compare = query?.compare;
   const theme = useTheme();
@@ -349,6 +350,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         utm_source: utmSource,
         utm_medium: utmMedium,
         utm_campaign: utmCampaign,
+        sales_channel: salesChannel,
         product_id: productId,
       };
 
@@ -499,7 +501,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     loadData();
 
     return () => { cancelled = true; };
-  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, productId, compare]);
+  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, productId, compare]);
 
   const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
 
