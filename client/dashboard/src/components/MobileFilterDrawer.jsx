@@ -57,6 +57,8 @@ export default function MobileFilterDrawer({
     const [tempProduct, setTempProduct] = useState(productValue);
     const [tempUtm, setTempUtm] = useState(utm);
     const [tempProductTypes, setTempProductTypes] = useState(productTypes || []);
+    const [availableProductTypes, setAvailableProductTypes] = useState([]);
+    const [typesLoading, setTypesLoading] = useState(false);
 
     const [view, setView] = useState('ROOT'); // ROOT, BRAND, PRODUCT, UTM, UTM_SOURCE, UTM_MEDIUM, UTM_CAMPAIGN, PRODUCT_TYPE
     const [utmOptions, setUtmOptions] = useState(null);
