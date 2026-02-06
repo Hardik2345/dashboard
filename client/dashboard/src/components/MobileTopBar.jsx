@@ -124,6 +124,8 @@ export default function MobileTopBar({
   onUtmChange,
   showUtmFilter = true,
   utmOptions = null, // Prop
+  salesChannel = '',
+  onSalesChannelChange,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -370,6 +372,23 @@ export default function MobileTopBar({
             <>
               <Collapse in={showUtmFilters} orientation="horizontal" unmountOnExit>
                 <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 1, alignItems: 'center' }}>
+                  <SearchableSelect
+                    label="Sales Channel"
+                    options={utmOptions?.sales_channel || []}
+                    value={salesChannel}
+                    onChange={onSalesChannelChange}
+                    sx={{ width: 140 }}
+                    labelSx={{
+                      fontSize: 12,
+                      transform: 'translate(14px, 8px) scale(1)',
+                      '&.MuiInputLabel-shrink': { transform: 'translate(14px, -9px) scale(0.75)' }
+                    }}
+                    selectSx={{
+                      fontSize: 12,
+                      height: 32,
+                      '& .MuiSelect-select': { py: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+                    }}
+                  />
                   {activeUtmCount > 0 && (
                     <Button
                       size="small"

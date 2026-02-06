@@ -12,7 +12,7 @@ import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
 import { useAppDispatch, useAppSelector } from './state/hooks.js';
 import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
 import { setBrand } from './state/slices/brandSlice.js';
-import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setSelectedMetric, setUtm } from './state/slices/filterSlice.js';
+import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setCompareMode, setSelectedMetric, setUtm, setSalesChannel } from './state/slices/filterSlice.js';
 import MobileTopBar from './components/MobileTopBar.jsx';
 import MobileFilterDrawer from './components/MobileFilterDrawer.jsx'; // New Import
 import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
@@ -68,10 +68,8 @@ export default function App() {
   const dispatch = useAppDispatch();
   const authState = useAppSelector((state) => state.auth);
   const globalBrandKey = useAppSelector((state) => state.brand.brand);
-  const {
-    user, initialized, loginStatus, loginError,
-  } = authState;
-  const { range, selectedMetric, productSelection, utm } = useAppSelector((state) => state.filters);
+  const { user, initialized, loginStatus, loginError } = useAppSelector((state) => state.auth);
+  const { range, compareMode, selectedMetric, productSelection, utm, salesChannel } = useAppSelector((state) => state.filters);
   const loggingIn = loginStatus === 'loading';
   // range holds ISO strings; normalize to dayjs for components that expect it
   const [start, end] = useMemo(
@@ -188,6 +186,7 @@ export default function App() {
     if (utm?.source) base.utm_source = utm.source;
     if (utm?.medium) base.utm_medium = utm.medium;
     if (utm?.campaign) base.utm_campaign = utm.campaign;
+    if (salesChannel) base.sales_channel = salesChannel;
 
     if (isAuthor) {
       base.refreshKey = authorRefreshKey;
@@ -196,7 +195,7 @@ export default function App() {
       }
     }
     return base;
-  }, [start, end, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id, utm]);
+  }, [start, end, compareMode, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id, utm, salesChannel]);
 
   const handleAuthorBrandChange = useCallback((nextKeyRaw) => {
     const normalized = (nextKeyRaw || '').toString().trim().toUpperCase();
@@ -399,6 +398,10 @@ export default function App() {
     }
   }, [dispatch]);
 
+  const handleSalesChannelChange = useCallback((val) => {
+    dispatch(setSalesChannel(val));
+  }, [dispatch]);
+
   const handleSidebarOpen = useCallback(() => setSidebarOpen(true), []);
   const handleSidebarClose = useCallback(() => setSidebarOpen(false), []);
   const handleSidebarTabChange = useCallback((tabId) => {
@@ -511,12 +514,13 @@ export default function App() {
       include_utm_options: true,
       utm_source: utm?.source, // Dependent filtering
       utm_medium: utm?.medium,
-      utm_campaign: utm?.campaign
+      utm_campaign: utm?.campaign,
+      sales_channel: salesChannel
     })
       .then(res => {
         if (res.filter_options) setUtmOptions(res.filter_options);
       });
-  }, [activeBrandKey, start, end, utm, isAuthor, authorTab]);
+  }, [activeBrandKey, start, end, utm, isAuthor, authorTab, salesChannel]);
 
   // Check auth on mount
   useEffect(() => {
@@ -736,11 +740,29 @@ export default function App() {
                       productLoading={productOptionsLoading}
                       utm={utm}
                       onUtmChange={handleUtmChange}
+                      salesChannel={salesChannel}
+                      onSalesChannelChange={handleSalesChannelChange}
+                      showUtmFilter={true}
                       utmOptions={utmOptions}
-                      showUtmFilter={hasPermission('utm_filter')}
-                      onOpenFilter={() => setMobileFilterOpen(true)}
                     />
                   )}
+                  <MobileFilterDrawer
+                    open={mobileFilterOpen}
+                    onClose={() => setMobileFilterOpen(false)}
+                    brandKey={authorBrandKey}
+                    brands={authorBrands}
+                    onBrandChange={handleAuthorBrandChange}
+                    productOptions={productOptions}
+                    productValue={productSelection}
+                    onProductChange={handleProductChange}
+                    utm={utm}
+                    onUtmChange={handleUtmChange}
+                    salesChannel={salesChannel}
+                    onSalesChannelChange={handleSalesChannelChange}
+                    utmOptions={utmOptions}
+                    dateRange={range}
+                    isDark={darkMode === 'dark'}
+                  />
                 </Stack>
               </Box>
             </Box>
@@ -824,12 +846,12 @@ export default function App() {
                   </Suspense>
                 )}
 
-                {isAuthor && authorTab === 'alerts' && (
+                {authorTab === 'alerts' && (
                   authorBrands.length ? (
                     <Suspense fallback={<SectionFallback />}>
                       <AlertsAdmin
                         brands={authorBrands}
-                        defaultBrandKey={activeBrandKey}
+                        defaultBrandKey={authorBrandKey}
                       />
                     </Suspense>
                   ) : (
@@ -843,27 +865,10 @@ export default function App() {
               </Stack>
             </Box>
             <Footer />
-            <MobileFilterDrawer
-              open={mobileFilterOpen}
-              onClose={() => setMobileFilterOpen(false)}
-              brands={isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }))}
-              brandKey={activeBrandKey}
-              onBrandChange={isAuthor ? handleAuthorBrandChange : (val) => dispatch(setBrand((val || '').toString().trim().toUpperCase()))}
-              productOptions={productOptions}
-              productValue={productSelection}
-              onProductChange={handleProductChange}
-              utm={utm}
-              onUtmChange={handleUtmChange}
-              dateRange={normalizedRange}
-
-              isDark={darkMode === 'dark'}
-              showBrandFilter={showMultipleBrands}
-              showProductFilter={hasPermission('product_filter')}
-              showUtmFilter={hasPermission('utm_filter')}
-            />
           </Box>
         </Box>
       </AppProvider>
     </ThemeProvider>
   );
 }
+

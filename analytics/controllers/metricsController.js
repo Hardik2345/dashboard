@@ -791,7 +791,14 @@ function buildMetricsController() {
           }
         }
 
-        const result = await computeAOV({ start, end, conn: req.brandDb.sequelize });
+        const result = await computeAOV({
+          start, end, conn: req.brandDb.sequelize, filters: {
+            utm_source: extractUtmParam(req.query.utm_source),
+            utm_medium: extractUtmParam(req.query.utm_medium),
+            utm_campaign: extractUtmParam(req.query.utm_campaign),
+            sales_channel: extractUtmParam(req.query.sales_channel),
+          }
+        });
         logger.debug(`[DB FETCH] AOV for ${req.brandKey} on range ${start} to ${end} | Result: ${JSON.stringify({ total_sales: result.total_sales, total_orders: result.total_orders, aov: result.aov })}`);
         return res.json({ metric: "AOV", range: { start: start || null, end: end || null }, total_sales: result.total_sales, total_orders: result.total_orders, aov: result.aov });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
@@ -819,7 +826,14 @@ function buildMetricsController() {
           }
         }
 
-        const result = await computeCVR({ start, end, conn: req.brandDb.sequelize });
+        const result = await computeCVR({
+          start, end, conn: req.brandDb.sequelize, filters: {
+            utm_source: extractUtmParam(req.query.utm_source),
+            utm_medium: extractUtmParam(req.query.utm_medium),
+            utm_campaign: extractUtmParam(req.query.utm_campaign),
+            sales_channel: extractUtmParam(req.query.sales_channel),
+          }
+        });
         logger.debug(`[DB FETCH] CVR for ${req.brandKey} on range ${start} to ${end} | Result: ${JSON.stringify({ total_orders: result.total_orders, total_sessions: result.total_sessions, cvr: result.cvr })}`);
         return res.json({ metric: "CVR", range: { start: start || null, end: end || null }, total_orders: result.total_orders, total_sessions: result.total_sessions, cvr: result.cvr, cvr_percent: result.cvr_percent });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
@@ -832,7 +846,14 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         const align = (req.query.align || '').toString().toLowerCase();
         const compare = (req.query.compare || '').toString().toLowerCase();
-        const result = await calcCvrDelta({ start, end, align, compare, conn: req.brandDb.sequelize });
+        const result = await calcCvrDelta({
+          start, end, align, compare, conn: req.brandDb.sequelize, filters: {
+            utm_source: extractUtmParam(req.query.utm_source),
+            utm_medium: extractUtmParam(req.query.utm_medium),
+            utm_campaign: extractUtmParam(req.query.utm_campaign),
+            sales_channel: extractUtmParam(req.query.sales_channel),
+          }
+        });
         return res.json(result);
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
@@ -842,29 +863,22 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
-        const date = end || start || null;
         const align = (req.query.align || '').toString().toLowerCase();
-        if (align === 'hour') {
-          return res.json(await computeMetricDelta({
-            metricName: 'TOTAL_ORDERS_DELTA',
-            range: { start: start || date, end: end || date },
-            conn: req.brandDb.sequelize,
-            queryFn: async ({ rangeStart, rangeEnd, prevStart, prevEnd, cutoffTime, prevCutoffTime }) => {
-              const sqlRange = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-              const [currRows, prevRows] = await Promise.all([
-                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
-                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
-              ]);
-              return { currentVal: Number(currRows?.[0]?.cnt || 0), previousVal: Number(prevRows?.[0]?.cnt || 0) };
-            }
-          }));
-        }
+        const compare = (req.query.compare || '').toString().toLowerCase();
 
-        if (!date) return res.json({ metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
-        const delta = await deltaForSum('total_orders', date, req.brandDb.sequelize);
-        return res.json({ metric: 'TOTAL_ORDERS_DELTA', date, ...delta });
-      } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
+        const result = await calcTotalOrdersDelta({
+          start, end, align, compare, conn: req.brandDb.sequelize, filters: {
+            utm_source: extractUtmParam(req.query.utm_source),
+            utm_medium: extractUtmParam(req.query.utm_medium),
+            utm_campaign: extractUtmParam(req.query.utm_campaign),
+            sales_channel: extractUtmParam(req.query.sales_channel),
+          }
+        });
+        return res.json(result);
+      } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
+
+
 
     totalSalesDelta: async (req, res) => {
       try {
@@ -873,16 +887,31 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         const date = end || start || null;
         const align = (req.query.align || '').toString().toLowerCase();
+        // Total Sales Delta Handler
+        const filters = {
+          utm_source: extractUtmParam(req.query.utm_source),
+          utm_medium: extractUtmParam(req.query.utm_medium),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
+          sales_channel: extractUtmParam(req.query.sales_channel),
+        };
         if (align === 'hour') {
           return res.json(await computeMetricDelta({
             metricName: 'TOTAL_SALES_DELTA',
             range: { start: start || date, end: end || date },
             conn: req.brandDb.sequelize,
             queryFn: async ({ rangeStart, rangeEnd, prevStart, prevEnd, cutoffTime, prevCutoffTime }) => {
-              const sqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+              let sqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+              const curReplacements = [rangeStart, rangeEnd, cutoffTime];
+              if (filters) {
+                sqlRange = appendUtmWhere(sqlRange, curReplacements, filters);
+              }
+              const prevReplacements = [prevStart, prevEnd, prevCutoffTime];
+              if (filters) {
+                appendUtmWhere("", prevReplacements, filters);
+              }
               const [currRows, prevRows] = await Promise.all([
-                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
-                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
+                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: curReplacements }),
+                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: prevReplacements }),
               ]);
               return { currentVal: Number(currRows?.[0]?.total || 0), previousVal: Number(prevRows?.[0]?.total || 0) };
             }
@@ -1021,20 +1050,39 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         const date = end || start || null;
         const align = (req.query.align || '').toString().toLowerCase();
+        // AOV Delta logic
+        const filters = {
+          utm_source: extractUtmParam(req.query.utm_source),
+          utm_medium: extractUtmParam(req.query.utm_medium),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
+          sales_channel: extractUtmParam(req.query.sales_channel),
+        };
         if (align === 'hour') {
           return res.json(await computeMetricDelta({
             metricName: 'AOV_DELTA',
             range: { start: start || date, end: end || date },
             conn: req.brandDb.sequelize,
             queryFn: async ({ rangeStart, rangeEnd, prevStart, prevEnd, cutoffTime, prevCutoffTime }) => {
-              const salesSqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-              const ordersSqlRange = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+              let salesSqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+              let ordersSqlRange = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+
+              const curReplacements = [rangeStart, rangeEnd, cutoffTime];
+              const prevReplacements = [prevStart, prevEnd, prevCutoffTime];
+
+              if (filters) {
+                salesSqlRange = appendUtmWhere(salesSqlRange, curReplacements, filters);
+                ordersSqlRange = appendUtmWhere(ordersSqlRange, curReplacements, filters);
+
+                // For prev, we use a new call or just append dummy? 
+                // Using dummy empty append to push params to prevReplacements list
+                appendUtmWhere("", prevReplacements, filters);
+              }
 
               const [salesCurRows, salesPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
-                req.brandDb.sequelize.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
-                req.brandDb.sequelize.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
-                req.brandDb.sequelize.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
-                req.brandDb.sequelize.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
+                req.brandDb.sequelize.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: curReplacements }),
+                req.brandDb.sequelize.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: prevReplacements }),
+                req.brandDb.sequelize.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: curReplacements }),
+                req.brandDb.sequelize.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: prevReplacements }),
               ]);
 
               const curSales = Number(salesCurRows?.[0]?.total || 0);
@@ -1068,7 +1116,15 @@ function buildMetricsController() {
           }
         }
 
-        const total_sales = await computeTotalSales({ start, end, conn: req.brandDb.sequelize });
+
+        const total_sales = await computeTotalSales({
+          start, end, conn: req.brandDb.sequelize, filters: {
+            utm_source: extractUtmParam(req.query.utm_source),
+            utm_medium: extractUtmParam(req.query.utm_medium),
+            utm_campaign: extractUtmParam(req.query.utm_campaign),
+            sales_channel: extractUtmParam(req.query.sales_channel),
+          }
+        });
         if (start && end && start === end) {
           const cached = await fetchCachedMetrics(req.brandKey, start);
           if (cached) {
@@ -1095,7 +1151,14 @@ function buildMetricsController() {
           }
         }
 
-        const total_orders = await computeTotalOrders({ start, end, conn: req.brandDb.sequelize });
+        const total_orders = await computeTotalOrders({
+          start, end, conn: req.brandDb.sequelize, filters: {
+            utm_source: extractUtmParam(req.query.utm_source),
+            utm_medium: extractUtmParam(req.query.utm_medium),
+            utm_campaign: extractUtmParam(req.query.utm_campaign),
+            sales_channel: extractUtmParam(req.query.sales_channel),
+          }
+        });
         if (start && end && start === end) {
           const cached = await fetchCachedMetrics(req.brandKey, start);
           if (cached) {
@@ -1114,8 +1177,13 @@ function buildMetricsController() {
         if (!parsed.success) return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
         const { start, end } = parsed.data;
         const productIdRaw = (req.query.product_id || '').toString().trim();
+
+        const filters = {
+          sales_channel: extractUtmParam(req.query.sales_channel)
+        };
+
         if (!productIdRaw) {
-          const stats = await computeFunnelStats({ start, end, conn: req.brandDb.sequelize });
+          const stats = await computeFunnelStats({ start, end, conn: req.brandDb.sequelize, filters });
           return res.json({ metric: "FUNNEL_STATS", range: { start: start || null, end: end || null }, total_sessions: stats.total_sessions, total_atc_sessions: stats.total_atc_sessions, total_orders: stats.total_orders });
         }
 
@@ -1171,8 +1239,9 @@ function buildMetricsController() {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
+          sales_channel: extractUtmParam(req.query.sales_channel),
         };
-        const hasUtm = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign);
+        const hasUtm = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.sales_channel);
 
         if (productIdRaw || hasUtm) {
           if (!start && !end) {
@@ -1247,6 +1316,7 @@ function buildMetricsController() {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
+          sales_channel: extractUtmParam(req.query.sales_channel),
         };
 
         let whereSql = `WHERE created_at >= ? AND created_at < ?`;
@@ -1537,9 +1607,11 @@ function buildMetricsController() {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
           product_id: (req.query.product_id || '').trim() || null,
+          sales_channel: extractUtmParam(req.query.sales_channel),
         };
-        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel);
 
         let querySql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, hour, total_sales, number_of_orders,
         COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
@@ -1777,9 +1849,11 @@ function buildMetricsController() {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
           product_id: (req.query.product_id || '').trim() || null,
+          sales_channel: extractUtmParam(req.query.sales_channel),
         };
-        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel);
 
         let sql = `
           SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, 
@@ -1953,8 +2027,9 @@ function buildMetricsController() {
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
           product_id: (req.query.product_id || '').trim() || null,
+          sales_channel: extractUtmParam(req.query.sales_channel),
         };
-        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel);
 
         let sql = `
           SELECT 
@@ -2923,8 +2998,9 @@ function buildMetricsController() {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
+          sales_channel: extractUtmParam(req.query.sales_channel),
         };
-        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign);
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.sales_channel);
 
         const traceStart = req._reqStart || Date.now();
         const spans = [];
@@ -3021,34 +3097,66 @@ function buildMetricsController() {
             calcCvrDelta({ start, end, align: 'hour', conn, filters })
           ]);
 
-          const mkMetric = (res) => ({
-            value: res.current,
-            previous: res.previous,
-            diff: res.current - res.previous,
-            diff_pct: res.diff_pct,
-            direction: res.direction
-          });
+          let deltaOrdersRes, deltaSalesRes, deltaSessionsRes, deltaAtcRes, deltaAovRes, deltaCvrRes;
 
-          total_orders = mkMetric(ordersRes);
-          total_sales = mkMetric(salesRes);
-          total_sessions = mkMetric(sessionsRes);
-          total_atc_sessions = mkMetric(atcRes);
-          average_order_value = mkMetric(aovRes);
-          conversion_rate = { ...mkMetric(cvrRes), value: cvrRes.current?.cvr_percent || 0, previous: cvrRes.previous?.cvr_percent || 0, diff: (cvrRes.current?.cvr_percent || 0) - (cvrRes.previous?.cvr_percent || 0) }; // CVR returns complex object in current/previous sometimes
+          // If sales_channel is active, we also fetch "Global" (unfiltered by channel) deltas
+          if (filters.sales_channel) {
+            const { sales_channel, ...filtersWithoutChannel } = filters;
+            logger.debug(`[HYBRID DELTA] Fetching global deltas (ignoring sales_channel: ${filters.sales_channel})`);
 
-          // Fix CVR structure if calcCvrDelta returned simple numbers (it shouldn't for 'hour' align but strictly)
+            [deltaOrdersRes, deltaSalesRes, deltaSessionsRes, deltaAtcRes, deltaAovRes, deltaCvrRes] = await Promise.all([
+              calcTotalOrdersDelta({ start, end, align: 'hour', conn, filters: filtersWithoutChannel }),
+              calcTotalSalesDelta({ start, end, align: 'hour', conn, filters: filtersWithoutChannel }),
+              calcTotalSessionsDelta({ start, end, align: 'hour', conn, filters: filtersWithoutChannel }),
+              calcAtcSessionsDelta({ start, end, align: 'hour', conn, filters: filtersWithoutChannel }),
+              calcAovDelta({ start, end, align: 'hour', conn, filters: filtersWithoutChannel }),
+              calcCvrDelta({ start, end, align: 'hour', conn, filters: filtersWithoutChannel })
+            ]);
+          }
+
+          const mkMetric = (res, deltaRes) => {
+            // Use current/previous from PRIMARY (Filtered) result for VALUE display
+            // But if deltaRes exists, use ITS diff_pct and direction for the DELTA pill.
+            const sourceForDelta = deltaRes || res;
+
+            return {
+              value: res.current,
+              previous: res.previous,
+              diff: res.current - res.previous,
+              diff_pct: sourceForDelta.diff_pct,
+              direction: sourceForDelta.direction
+            };
+          };
+
+          total_orders = mkMetric(ordersRes, deltaOrdersRes);
+          total_sales = mkMetric(salesRes, deltaSalesRes);
+          total_sessions = mkMetric(sessionsRes, deltaSessionsRes);
+          total_atc_sessions = mkMetric(atcRes, deltaAtcRes);
+          average_order_value = mkMetric(aovRes, deltaAovRes);
+
+          // CVR is special snowflake
           if (typeof cvrRes.current === 'number') {
-            conversion_rate = mkMetric(cvrRes);
+            conversion_rate = mkMetric(cvrRes, deltaCvrRes);
           } else {
-            // For calcCvrDelta with align='hour', it returns objects with total_orders, etc.
-            // We need to extract the percentage
             const curPct = cvrRes.current.cvr_percent || 0;
             const prevPct = cvrRes.previous.cvr_percent || 0;
-            const d = computePercentDelta(curPct, prevPct);
+
+            // For delta source
+            const sourceForDelta = deltaCvrRes || cvrRes;
+            let d;
+            if (deltaCvrRes && typeof deltaCvrRes.current !== 'number') {
+              const dCur = deltaCvrRes.current.cvr_percent || 0;
+              const dPrev = deltaCvrRes.previous.cvr_percent || 0;
+              d = computePercentDelta(dCur, dPrev);
+            } else {
+              // Fallback or no delta override
+              d = computePercentDelta(curPct, prevPct);
+            }
+
             conversion_rate = {
               value: curPct,
               previous: prevPct,
-              diff: d.diff_pp, // Use pp for CVR? or pct? varying generic UI usually expects pct change of the value
+              diff: d.diff_pp,
               diff_pct: d.diff_pct,
               direction: d.direction
             };
@@ -3056,6 +3164,7 @@ function buildMetricsController() {
 
         } else {
           // Standard full-day calculation (existing logic)
+          // 1. Fetch filtered metrics (Primary)
           const [current, previous] = await Promise.all([
             (async () => {
               const s = Date.now();
@@ -3072,19 +3181,82 @@ function buildMetricsController() {
           ]);
           sources = { current: current?.source || 'db', previous: previous?.source || 'db' };
 
-          const calcDelta = (cur, prev) => {
-            const diff = cur - prev;
-            const diff_pct = prev > 0 ? (diff / prev) * 100 : (cur > 0 ? 100 : 0);
-            const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-            return { diff, diff_pct, direction };
+          // 2. If sales_channel active, fetch UNFILTERED metrics (Secondary) for deltas
+          let currentGlobal = current;
+          let previousGlobal = previous;
+
+          if (filters.sales_channel) {
+            const { sales_channel, ...filtersWithoutChannel } = filters;
+            // We can't easily reuse 'cached' here because it might be keyed differently or we skipped cache logic above.
+            // For simplicity/safety on this precise requirement, let's just fetch DB for global stats if needed, 
+            // OR assume cache is unfiltered? 
+            // Actually, the 'cached' variable above is fetched via `fetchCachedMetricsBatch`, which relies on `brandQuery` 
+            // to generate keys. If brandQuery doesn't include filtering params, `cached` IS the global data.
+
+            // Check lines 3019: const [cached, cachedPrev] = (isSingleDay && !hasFilters) ...
+            // If we HAVE filters (sales_channel), `cached` is likely null.
+            // So we must fetch global data from DB.
+            logger.debug(`[HYBRID DELTA] Fetching global full-day metrics for delta override`);
+
+            // Define helper to fetch without channel
+            const getGlobalMetrics = async (s, e) => {
+              if (!s || !e) return null;
+              const conn = req.brandDb ? req.brandDb.sequelize : null;
+              if (!conn) return null; // Should be connected by now
+              const [sales, orders, sessions, atc, cvrObj, aovObj] = await Promise.all([
+                computeTotalSales({ start: s, end: e, conn, filters: filtersWithoutChannel }),
+                computeTotalOrders({ start: s, end: e, conn, filters: filtersWithoutChannel }),
+                computeTotalSessions({ start: s, end: e, conn, filters: filtersWithoutChannel }),
+                computeAtcSessions({ start: s, end: e, conn, filters: filtersWithoutChannel }),
+                computeCVR({ start: s, end: e, conn, filters: filtersWithoutChannel }),
+                aovForRange({ start: s, end: e, conn, filters: filtersWithoutChannel })
+              ]);
+              const aovVal = typeof aovObj === 'object' && aovObj !== null ? Number(aovObj.aov || 0) : Number(aovObj || 0);
+              return {
+                total_orders: orders,
+                total_sales: sales,
+                total_sessions: sessions,
+                total_atc_sessions: atc,
+                average_order_value: aovVal,
+                conversion_rate_percent: cvrObj.cvr_percent,
+              };
+            };
+
+            const [globCur, globPrev] = await Promise.all([
+              getGlobalMetrics(start, end),
+              getGlobalMetrics(prevStart, prevEnd)
+            ]);
+
+            if (globCur && globPrev) {
+              currentGlobal = globCur;
+              previousGlobal = globPrev;
+            }
+          }
+
+          const calcHybrid = (key, primCur, primPrev, globCur, globPrev) => {
+            const valC = primCur?.[key] || 0;
+            const valP = primPrev?.[key] || 0;
+
+            // Delta from Global
+            const gC = globCur?.[key] || 0;
+            const gP = globPrev?.[key] || 0;
+
+            const diff = valC - valP; // Value diff (filtered) - debatably useful if % is global, but kept for consistency
+
+            // PCT from Global
+            const diffG = gC - gP;
+            const diff_pct = gP > 0 ? (diffG / gP) * 100 : (gC > 0 ? 100 : 0);
+            const direction = diffG > 0.0001 ? 'up' : diffG < -0.0001 ? 'down' : 'flat';
+
+            return { value: valC, previous: valP, diff, diff_pct, direction };
           };
 
-          total_orders = { value: current?.total_orders || 0, previous: previous?.total_orders || 0, ...calcDelta(current?.total_orders || 0, previous?.total_orders || 0) };
-          total_sales = { value: current?.total_sales || 0, previous: previous?.total_sales || 0, ...calcDelta(current?.total_sales || 0, previous?.total_sales || 0) };
-          average_order_value = { value: current?.average_order_value || 0, previous: previous?.average_order_value || 0, ...calcDelta(current?.average_order_value || 0, previous?.average_order_value || 0) };
-          conversion_rate = { value: current?.conversion_rate_percent || 0, previous: previous?.conversion_rate_percent || 0, ...calcDelta(current?.conversion_rate_percent || 0, previous?.conversion_rate_percent || 0) };
-          total_sessions = { value: current?.total_sessions || 0, previous: previous?.total_sessions || 0, ...calcDelta(current?.total_sessions || 0, previous?.total_sessions || 0) };
-          total_atc_sessions = { value: current?.total_atc_sessions || 0, previous: previous?.total_atc_sessions || 0, ...calcDelta(current?.total_atc_sessions || 0, previous?.total_atc_sessions || 0) };
+          total_orders = calcHybrid('total_orders', current, previous, currentGlobal, previousGlobal);
+          total_sales = calcHybrid('total_sales', current, previous, currentGlobal, previousGlobal);
+          average_order_value = calcHybrid('average_order_value', current, previous, currentGlobal, previousGlobal);
+          conversion_rate = calcHybrid('conversion_rate_percent', current, previous, currentGlobal, previousGlobal);
+          total_sessions = calcHybrid('total_sessions', current, previous, currentGlobal, previousGlobal);
+          total_atc_sessions = calcHybrid('total_atc_sessions', current, previous, currentGlobal, previousGlobal);
         }
 
         let filterOptions = null;
@@ -3131,10 +3303,17 @@ function buildMetricsController() {
               conn.query(qMed.sql, { type: QueryTypes.SELECT, replacements: qMed.replacements }),
               conn.query(qCamp.sql, { type: QueryTypes.SELECT, replacements: qCamp.replacements })
             ]);
+
+            // Fetch Sales Channel Options
+            const channelSql = `SELECT DISTINCT order_app_name FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND order_app_name IS NOT NULL AND order_app_name <> ''`;
+            const channelRows = await conn.query(channelSql, { type: QueryTypes.SELECT, replacements: [start, end] });
+            const salesChannelOptions = channelRows.map(r => r.order_app_name).sort();
+
             filterOptions = {
               utm_source: srcRows.map(r => r.utm_source).sort(),
               utm_medium: medRows.map(r => r.utm_medium).sort(),
               utm_campaign: campRows.map(r => r.utm_campaign).sort(),
+              sales_channel: salesChannelOptions,
             };
             mark('filter_options', s);
           }

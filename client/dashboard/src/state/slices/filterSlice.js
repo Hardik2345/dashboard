@@ -52,6 +52,7 @@ const filterSlice = createSlice({
     selectedMetric: DEFAULT_TREND_METRIC,
     productSelection: DEFAULT_PRODUCT_OPTION,
     utm: loadInitialUtm(),
+    salesChannel: '',
   },
   reducers: {
     setRange(state, action) {
@@ -76,8 +77,11 @@ const filterSlice = createSlice({
     setUtm(state, action) {
       state.utm = { ...state.utm, ...action.payload };
     },
+    setSalesChannel(state, action) {
+      state.salesChannel = action.payload || '';
+    },
   },
 });
 
-export const { setRange, setCompareMode, setSelectedMetric, setProductSelection, setUtm } = filterSlice.actions;
+export const { setRange, setCompareMode, setSelectedMetric, setProductSelection, setUtm, setSalesChannel } = filterSlice.actions;
 export default filterSlice.reducer;
