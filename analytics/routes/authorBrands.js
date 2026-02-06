@@ -25,8 +25,8 @@ function buildAuthorBrandsRouter() {
     if (!req.user?.isAuthor) return res.status(403).json({ error: 'Forbidden' });
     const body = req.body || {};
     const errors = [];
-    function reqStr(k){ if(!body[k]||typeof body[k]!== 'string'||!body[k].trim()) errors.push(k); }
-    ['key','dbHost','dbUser','dbPass','dbName'].forEach(reqStr);
+    function reqStr(k) { if (!body[k] || typeof body[k] !== 'string' || !body[k].trim()) errors.push(k); }
+    ['key', 'dbHost', 'dbUser', 'dbPass', 'dbName'].forEach(reqStr);
     if (body.key && !/^[A-Z0-9_]{2,20}$/i.test(body.key)) errors.push('key_format');
     const persist = !!body.persist;
     const dryRun = !!body.dryRun;
@@ -73,7 +73,7 @@ function buildAuthorBrandsRouter() {
         if (brandsVar && brandsVar.value) {
           try { arr = JSON.parse(brandsVar.value); } catch (_) { /* ignore parse error; treat as empty */ }
         }
-        if (arr.some(b => (b.key||'').toUpperCase() === upperKey)) {
+        if (arr.some(b => (b.key || '').toUpperCase() === upperKey)) {
           return { status: 'exists', deploy: null };
         }
         const newEntry = {
@@ -84,9 +84,9 @@ function buildAuthorBrandsRouter() {
           dbPass: brandCfg.dbPass,
           dbName: brandCfg.dbName,
         };
-        const updated = [...arr, newEntry].sort((a,b) => a.key.localeCompare(b.key));
+        const updated = [...arr, newEntry].sort((a, b) => a.key.localeCompare(b.key));
         if (dryRun) {
-          const hash = require('crypto').createHash('sha256').update(JSON.stringify(updated)).digest('hex').slice(0,12);
+          const hash = require('crypto').createHash('sha256').update(JSON.stringify(updated)).digest('hex').slice(0, 12);
           return { status: 'dry-run', hash };
         }
         try { await upsertBrandsConfig(process.env.SERVICE_ID, updated, existing); } catch (e) {

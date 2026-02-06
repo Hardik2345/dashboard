@@ -395,7 +395,7 @@ export default function MobileFilterDrawer({
                     {/* BRAND VIEW */}
                     {view === 'BRAND' && (
                         <List disablePadding>
-                            {(brands || []).map((b) => (
+                            {(brands || []).filter(b => b.key !== 'MILA').map((b) => (
                                 <ListItemButton
                                     key={b.key}
                                     onClick={() => {

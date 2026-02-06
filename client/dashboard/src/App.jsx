@@ -240,7 +240,7 @@ export default function App() {
         key: (b.key || '').toString().trim().toUpperCase(),
         host: b.host,
         db: b.db,
-      })) : [];
+      })).filter(b => b.key !== 'MILA') : []; // EXPLICIT REMOVAL
       setAuthorBrands(arr);
     }).finally(() => {
       if (!cancelled) {
