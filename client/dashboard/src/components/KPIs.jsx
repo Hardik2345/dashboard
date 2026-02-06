@@ -45,6 +45,7 @@ export default function KPIs({
   const utmSource = query?.utm_source;
   const utmMedium = query?.utm_medium;
   const utmCampaign = query?.utm_campaign;
+  const salesChannel = query?.sales_channel;
   const compare = query?.compare;
 
   const scopeLabel = useMemo(() => {
@@ -115,8 +116,8 @@ export default function KPIs({
         });
     } else {
       const base = brandKey
-        ? { start, end, brand_key: brandKey, align: "hour", utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, compare }
-        : { start, end, align: "hour", utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, compare };
+        ? { start, end, brand_key: brandKey, align: "hour", utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, compare }
+        : { start, end, align: "hour", utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, compare };
 
       // Fetch summary first for fast value rendering (cache-backed)
       getDashboardSummary(base)
@@ -202,7 +203,7 @@ export default function KPIs({
     return () => {
       cancelled = true;
     };
-  }, [start, end, brandKey, refreshKey, isProductScoped, scopedProductId, onLoaded, utmSource, utmMedium, utmCampaign, compare]);
+  }, [start, end, brandKey, refreshKey, isProductScoped, scopedProductId, onLoaded, utmSource, utmMedium, utmCampaign, salesChannel, compare]);
 
   const totalSessions = data.cvr?.total_sessions || data.funnel?.total_sessions || 0;
   const totalAtcSessions = data.funnel?.total_atc_sessions || 0;

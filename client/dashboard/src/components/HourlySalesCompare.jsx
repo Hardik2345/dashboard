@@ -305,6 +305,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   const utmSource = query?.utm_source;
   const utmMedium = query?.utm_medium;
   const utmCampaign = query?.utm_campaign;
+  const salesChannel = query?.sales_channel;
   const productId = query?.product_id;
   const compare = query?.compare;
   const theme = useTheme();
@@ -349,11 +350,12 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         utm_source: utmSource,
         utm_medium: utmMedium,
         utm_campaign: utmCampaign,
+        sales_channel: salesChannel,
         product_id: productId,
       };
 
       // optimization: use cached hourly summary if sales + hourly view + single day match + no custom comparison
-      if (viewMode === 'hourly' && (metric === 'sales' || metric === 'total_sales') && start === end && !utmParams.utm_source && !utmParams.utm_medium && !utmParams.utm_campaign && !utmParams.product_id && !compare) {
+      if (viewMode === 'hourly' && (metric === 'sales' || metric === 'total_sales') && start === end && !utmParams.utm_source && !utmParams.utm_medium && !utmParams.utm_campaign && !utmParams.product_id && !utmParams.sales_channel && !compare) {
         try {
           const res = await getHourlySalesSummary({ brand_key: brandKey });
           if (!cancelled && res.data && res.data.today && res.data.today.date === start) {
@@ -499,7 +501,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     loadData();
 
     return () => { cancelled = true; };
-  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, productId, compare]);
+  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, productId, compare]);
 
   const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
 

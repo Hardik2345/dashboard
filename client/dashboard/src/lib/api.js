@@ -34,6 +34,7 @@ function appendBrandKey(params, source) {
   if (source?.utm_medium) out.utm_medium = source.utm_medium;
   if (source?.utm_campaign) out.utm_campaign = source.utm_campaign;
   if (source?.product_id) out.product_id = source.product_id;
+  if (source?.sales_channel) out.sales_channel = source.sales_channel;
   if (source?.refreshKey) out.refreshKey = source.refreshKey;
   return out;
 }
