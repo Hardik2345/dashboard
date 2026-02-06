@@ -44,6 +44,9 @@ export default function MobileFilterDrawer({
     onProductChange,
     utm = {},
     onUtmChange,
+    salesChannel = '',
+    onSalesChannelChange,
+    utmOptions: propUtmOptions,
     dateRange,
     isDark = false,
 }) {
@@ -51,8 +54,9 @@ export default function MobileFilterDrawer({
     const [tempBrand, setTempBrand] = useState(brandKey);
     const [tempProduct, setTempProduct] = useState(productValue);
     const [tempUtm, setTempUtm] = useState(utm);
+    const [tempSalesChannel, setTempSalesChannel] = useState(salesChannel);
 
-    const [view, setView] = useState('ROOT'); // ROOT, BRAND, PRODUCT, UTM, UTM_SOURCE, UTM_MEDIUM, UTM_CAMPAIGN
+    const [view, setView] = useState('ROOT'); // ROOT, BRAND, PRODUCT, UTM, UTM_SOURCE, UTM_MEDIUM, UTM_CAMPAIGN, SALES_CHANNEL
     const [utmOptions, setUtmOptions] = useState(null);
     const [searchText, setSearchText] = useState('');
 
@@ -66,15 +70,21 @@ export default function MobileFilterDrawer({
             setTempBrand(brandKey);
             setTempProduct(productValue);
             setTempUtm(utm);
+            setTempSalesChannel(salesChannel);
             setView('ROOT');
         }
-    }, [open, brandKey, productValue, utm]);
+    }, [open, brandKey, productValue, utm, salesChannel]);
 
     // Fetch UTM options dynamically based on CURRENT applied filters (or temp? usually current context)
     // Actually, distinct values might depend on the *selected* brand in the drawer.
     // If I change brand in drawer, I expect UTM options to update for *that* brand.
     // So we should use tempBrand here.
     useEffect(() => {
+        if (propUtmOptions) {
+            setUtmOptions(propUtmOptions);
+            return;
+        }
+
         if (!open || !tempBrand) return;
 
         const [start, end] = dateRange || [];
@@ -86,18 +96,18 @@ export default function MobileFilterDrawer({
             start: s,
             end: e,
             include_utm_options: true,
-            utm_source: tempUtm?.source, // Use temp values to narrow down if needed, or just keep fetching all? 
-            // Usually options depend on current selection. Let's use temp.
+            utm_source: tempUtm?.source,
             utm_medium: tempUtm?.medium,
-            utm_campaign: tempUtm?.campaign
+            utm_campaign: tempUtm?.campaign,
+            sales_channel: tempSalesChannel
         }).then(res => {
             if (res.filter_options) setUtmOptions(res.filter_options);
         }).catch(err => console.error("Failed to load UTM options", err));
 
-    }, [open, tempBrand, dateRange, tempUtm, view]);
+    }, [open, tempBrand, dateRange, tempUtm, view, tempSalesChannel, propUtmOptions]);
 
     const handleBack = () => {
-        if (['BRAND', 'PRODUCT', 'UTM'].includes(view)) {
+        if (['BRAND', 'PRODUCT', 'UTM', 'SALES_CHANNEL'].includes(view)) {
             setView('ROOT');
         } else if (['UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN'].includes(view)) {
             setView('UTM');
@@ -115,6 +125,7 @@ export default function MobileFilterDrawer({
             case 'UTM_SOURCE': return 'Source';
             case 'UTM_MEDIUM': return 'Medium';
             case 'UTM_CAMPAIGN': return 'Campaign';
+            case 'SALES_CHANNEL': return 'Sales Channel';
             default: return 'Filters';
         }
     };
@@ -127,6 +138,7 @@ export default function MobileFilterDrawer({
     const handleClearAll = () => {
         if (onUtmChange) onUtmChange({ source: '', medium: '', campaign: '' });
         if (onProductChange) onProductChange({ id: '', label: 'All products', detail: 'Whole store' });
+        if (onSalesChannelChange) onSalesChannelChange('');
         onClose();
     };
 
@@ -134,6 +146,7 @@ export default function MobileFilterDrawer({
         if (onBrandChange && tempBrand !== brandKey) onBrandChange(tempBrand);
         if (onProductChange) onProductChange(tempProduct);
         if (onUtmChange) onUtmChange(tempUtm);
+        if (onSalesChannelChange) onSalesChannelChange(tempSalesChannel);
         onClose();
     };
 
@@ -155,7 +168,7 @@ export default function MobileFilterDrawer({
             }}
         >
             {/* Active Filters List (Scrollable) - Shows COMMITTED filters (props) */}
-            {((productValue?.id && productValue.id !== '') || utm?.source || utm?.medium || utm?.campaign) && (
+            {((productValue?.id && productValue.id !== '') || utm?.source || utm?.medium || utm?.campaign || salesChannel) && (
                 <Fade in={true} timeout={500}>
                     <Box
                         sx={{
@@ -217,6 +230,23 @@ export default function MobileFilterDrawer({
                                     </Grow>
                                 )
                             })}
+                            {/* Sales Channel Chip */}
+                            {salesChannel && (
+                                <Grow in={true}>
+                                    <div>
+                                        <GlassChip
+                                            label={`Channel: ${salesChannel}`}
+                                            onDelete={() => {
+                                                if (onSalesChannelChange) onSalesChannelChange('');
+                                                setTempSalesChannel('');
+                                            }}
+                                            size="small"
+                                            isDark={isDark}
+                                            sx={{ borderRadius: '9999px' }}
+                                        />
+                                    </div>
+                                </Grow>
+                            )}
                         </Box>
                     </Box>
                 </Fade>
@@ -298,11 +328,26 @@ export default function MobileFilterDrawer({
                             <ListItemButton
                                 onClick={() => setView('UTM')}
                                 sx={{ py: 2, justifyContent: 'space-between' }}
+                                divider
                             >
                                 <Box>
                                     <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>UTM Parameters</Typography>
                                     <Typography variant="body1" fontSize={14} fontWeight={500}>
                                         {activeUtmCount > 0 ? `${activeUtmCount} Active` : 'All'}
+                                    </Typography>
+                                </Box>
+                                <ChevronRightIcon color="action" />
+                            </ListItemButton>
+
+                            {/* Sales Channel Item */}
+                            <ListItemButton
+                                onClick={() => setView('SALES_CHANNEL')}
+                                sx={{ py: 2, justifyContent: 'space-between' }}
+                            >
+                                <Box>
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>Sales Channel</Typography>
+                                    <Typography variant="body1" fontSize={14} fontWeight={500}>
+                                        {tempSalesChannel || 'All'}
                                     </Typography>
                                 </Box>
                                 <ChevronRightIcon color="action" />
@@ -473,6 +518,37 @@ export default function MobileFilterDrawer({
                                     })}
                             </List>
                         </Box>
+                    )}
+
+                    {/* SALES CHANNEL VIEW */}
+                    {view === 'SALES_CHANNEL' && (
+                        <List disablePadding>
+                            <ListItemButton
+                                onClick={() => {
+                                    setTempSalesChannel('');
+                                    handleBack();
+                                }}
+                                selected={!tempSalesChannel}
+                                sx={{ py: 1.5 }}
+                            >
+                                <ListItemText primary="All" />
+                                {!tempSalesChannel && <CheckIcon fontSize="small" color="primary" />}
+                            </ListItemButton>
+                            {(utmOptions?.sales_channel || []).map((channel) => (
+                                <ListItemButton
+                                    key={channel}
+                                    onClick={() => {
+                                        setTempSalesChannel(channel);
+                                        handleBack();
+                                    }}
+                                    selected={tempSalesChannel === channel}
+                                    sx={{ py: 1.5 }}
+                                >
+                                    <ListItemText primary={channel} />
+                                    {tempSalesChannel === channel && <CheckIcon fontSize="small" color="primary" />}
+                                </ListItemButton>
+                            ))}
+                        </List>
                     )}
 
                 </Box>

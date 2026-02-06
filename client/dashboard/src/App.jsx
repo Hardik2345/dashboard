@@ -12,7 +12,7 @@ import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
 import { useAppDispatch, useAppSelector } from './state/hooks.js';
 import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
 import { setBrand } from './state/slices/brandSlice.js';
-import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setCompareMode, setSelectedMetric, setUtm } from './state/slices/filterSlice.js';
+import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setCompareMode, setSelectedMetric, setUtm, setSalesChannel } from './state/slices/filterSlice.js';
 import MobileTopBar from './components/MobileTopBar.jsx';
 import MobileFilterDrawer from './components/MobileFilterDrawer.jsx'; // New Import
 import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
@@ -75,7 +75,7 @@ export default function App() {
     ...state.auth,
     GlobalBrandKey: state.brand.brand
   }));
-  const { range, compareMode, selectedMetric, productSelection, utm } = useAppSelector((state) => state.filters);
+  const { range, compareMode, selectedMetric, productSelection, utm, salesChannel } = useAppSelector((state) => state.filters);
   const loggingIn = loginStatus === 'loading';
   const [start, end] = range;
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
@@ -137,6 +137,7 @@ export default function App() {
     if (utm?.source) base.utm_source = utm.source;
     if (utm?.medium) base.utm_medium = utm.medium;
     if (utm?.campaign) base.utm_campaign = utm.campaign;
+    if (salesChannel) base.sales_channel = salesChannel;
 
     if (isAuthor) {
       base.refreshKey = authorRefreshKey;
@@ -146,7 +147,7 @@ export default function App() {
     }
     if (compareMode) base.compare = compareMode;
     return base;
-  }, [start, end, compareMode, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id, utm]);
+  }, [start, end, compareMode, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id, utm, salesChannel]);
 
   const handleAuthorBrandChange = useCallback((nextKeyRaw) => {
     const normalized = (nextKeyRaw || '').toString().trim().toUpperCase();
@@ -338,6 +339,10 @@ export default function App() {
     } else {
       dispatch(setUtm(val));
     }
+  }, [dispatch]);
+
+  const handleSalesChannelChange = useCallback((val) => {
+    dispatch(setSalesChannel(val));
   }, [dispatch]);
 
   const handleSidebarOpen = useCallback(() => setSidebarOpen(true), []);
@@ -638,6 +643,8 @@ export default function App() {
                       productLoading={productOptionsLoading}
                       utm={utm}
                       onUtmChange={handleUtmChange}
+                      salesChannel={salesChannel}
+                      onSalesChannelChange={handleSalesChannelChange}
                       showUtmFilter={true}
                       utmOptions={utmOptions}
                     />
@@ -653,6 +660,9 @@ export default function App() {
                     onProductChange={handleProductChange}
                     utm={utm}
                     onUtmChange={handleUtmChange}
+                    salesChannel={salesChannel}
+                    onSalesChannelChange={handleSalesChannelChange}
+                    utmOptions={utmOptions}
                     dateRange={range}
                     isDark={darkMode === 'dark'}
                   />
@@ -822,6 +832,9 @@ export default function App() {
               productLoading={productOptionsLoading}
               utm={utm}
               onUtmChange={handleUtmChange}
+              salesChannel={salesChannel}
+              onSalesChannelChange={handleSalesChannelChange}
+              utmOptions={utmOptions}
             />
             <MobileFilterDrawer
               open={mobileFilterOpen}
@@ -834,6 +847,9 @@ export default function App() {
               onProductChange={handleProductChange}
               utm={utm}
               onUtmChange={handleUtmChange}
+              salesChannel={salesChannel}
+              onSalesChannelChange={handleSalesChannelChange}
+              utmOptions={utmOptions}
               dateRange={range}
               isDark={darkMode === 'dark'}
             />
