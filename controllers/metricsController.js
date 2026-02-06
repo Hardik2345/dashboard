@@ -791,7 +791,14 @@ function buildMetricsController() {
           }
         }
 
-        const result = await computeAOV({ start, end, conn: req.brandDb.sequelize });
+        const result = await computeAOV({
+          start, end, conn: req.brandDb.sequelize, filters: {
+            utm_source: extractUtmParam(req.query.utm_source),
+            utm_medium: extractUtmParam(req.query.utm_medium),
+            utm_campaign: extractUtmParam(req.query.utm_campaign),
+            sales_channel: extractUtmParam(req.query.sales_channel),
+          }
+        });
         logger.debug(`[DB FETCH] AOV for ${req.brandKey} on range ${start} to ${end} | Result: ${JSON.stringify({ total_sales: result.total_sales, total_orders: result.total_orders, aov: result.aov })}`);
         return res.json({ metric: "AOV", range: { start: start || null, end: end || null }, total_sales: result.total_sales, total_orders: result.total_orders, aov: result.aov });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
@@ -819,7 +826,14 @@ function buildMetricsController() {
           }
         }
 
-        const result = await computeCVR({ start, end, conn: req.brandDb.sequelize });
+        const result = await computeCVR({
+          start, end, conn: req.brandDb.sequelize, filters: {
+            utm_source: extractUtmParam(req.query.utm_source),
+            utm_medium: extractUtmParam(req.query.utm_medium),
+            utm_campaign: extractUtmParam(req.query.utm_campaign),
+            sales_channel: extractUtmParam(req.query.sales_channel),
+          }
+        });
         logger.debug(`[DB FETCH] CVR for ${req.brandKey} on range ${start} to ${end} | Result: ${JSON.stringify({ total_orders: result.total_orders, total_sessions: result.total_sessions, cvr: result.cvr })}`);
         return res.json({ metric: "CVR", range: { start: start || null, end: end || null }, total_orders: result.total_orders, total_sessions: result.total_sessions, cvr: result.cvr, cvr_percent: result.cvr_percent });
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
@@ -832,7 +846,14 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         const align = (req.query.align || '').toString().toLowerCase();
         const compare = (req.query.compare || '').toString().toLowerCase();
-        const result = await calcCvrDelta({ start, end, align, compare, conn: req.brandDb.sequelize });
+        const result = await calcCvrDelta({
+          start, end, align, compare, conn: req.brandDb.sequelize, filters: {
+            utm_source: extractUtmParam(req.query.utm_source),
+            utm_medium: extractUtmParam(req.query.utm_medium),
+            utm_campaign: extractUtmParam(req.query.utm_campaign),
+            sales_channel: extractUtmParam(req.query.sales_channel),
+          }
+        });
         return res.json(result);
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
@@ -842,29 +863,22 @@ function buildMetricsController() {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
-        const date = end || start || null;
         const align = (req.query.align || '').toString().toLowerCase();
-        if (align === 'hour') {
-          return res.json(await computeMetricDelta({
-            metricName: 'TOTAL_ORDERS_DELTA',
-            range: { start: start || date, end: end || date },
-            conn: req.brandDb.sequelize,
-            queryFn: async ({ rangeStart, rangeEnd, prevStart, prevEnd, cutoffTime, prevCutoffTime }) => {
-              const sqlRange = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-              const [currRows, prevRows] = await Promise.all([
-                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
-                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
-              ]);
-              return { currentVal: Number(currRows?.[0]?.cnt || 0), previousVal: Number(prevRows?.[0]?.cnt || 0) };
-            }
-          }));
-        }
+        const compare = (req.query.compare || '').toString().toLowerCase();
 
-        if (!date) return res.json({ metric: 'TOTAL_ORDERS_DELTA', date: null, current: null, previous: null, diff_pct: 0, direction: 'flat' });
-        const delta = await deltaForSum('total_orders', date, req.brandDb.sequelize);
-        return res.json({ metric: 'TOTAL_ORDERS_DELTA', date, ...delta });
-      } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
+        const result = await calcTotalOrdersDelta({
+          start, end, align, compare, conn: req.brandDb.sequelize, filters: {
+            utm_source: extractUtmParam(req.query.utm_source),
+            utm_medium: extractUtmParam(req.query.utm_medium),
+            utm_campaign: extractUtmParam(req.query.utm_campaign),
+            sales_channel: extractUtmParam(req.query.sales_channel),
+          }
+        });
+        return res.json(result);
+      } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
     },
+
+
 
     totalSalesDelta: async (req, res) => {
       try {
@@ -873,16 +887,31 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         const date = end || start || null;
         const align = (req.query.align || '').toString().toLowerCase();
+        // Total Sales Delta Handler
+        const filters = {
+          utm_source: extractUtmParam(req.query.utm_source),
+          utm_medium: extractUtmParam(req.query.utm_medium),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
+          sales_channel: extractUtmParam(req.query.sales_channel),
+        };
         if (align === 'hour') {
           return res.json(await computeMetricDelta({
             metricName: 'TOTAL_SALES_DELTA',
             range: { start: start || date, end: end || date },
             conn: req.brandDb.sequelize,
             queryFn: async ({ rangeStart, rangeEnd, prevStart, prevEnd, cutoffTime, prevCutoffTime }) => {
-              const sqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+              let sqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+              const curReplacements = [rangeStart, rangeEnd, cutoffTime];
+              if (filters) {
+                sqlRange = appendUtmWhere(sqlRange, curReplacements, filters);
+              }
+              const prevReplacements = [prevStart, prevEnd, prevCutoffTime];
+              if (filters) {
+                appendUtmWhere("", prevReplacements, filters);
+              }
               const [currRows, prevRows] = await Promise.all([
-                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
-                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
+                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: curReplacements }),
+                req.brandDb.sequelize.query(sqlRange, { type: QueryTypes.SELECT, replacements: prevReplacements }),
               ]);
               return { currentVal: Number(currRows?.[0]?.total || 0), previousVal: Number(prevRows?.[0]?.total || 0) };
             }
@@ -1023,20 +1052,39 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         const date = end || start || null;
         const align = (req.query.align || '').toString().toLowerCase();
+        // AOV Delta logic
+        const filters = {
+          utm_source: extractUtmParam(req.query.utm_source),
+          utm_medium: extractUtmParam(req.query.utm_medium),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
+          sales_channel: extractUtmParam(req.query.sales_channel),
+        };
         if (align === 'hour') {
           return res.json(await computeMetricDelta({
             metricName: 'AOV_DELTA',
             range: { start: start || date, end: end || date },
             conn: req.brandDb.sequelize,
             queryFn: async ({ rangeStart, rangeEnd, prevStart, prevEnd, cutoffTime, prevCutoffTime }) => {
-              const salesSqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
-              const ordersSqlRange = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+              let salesSqlRange = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+              let ordersSqlRange = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_dt >= ? AND created_dt <= ? AND created_time < ?`;
+
+              const curReplacements = [rangeStart, rangeEnd, cutoffTime];
+              const prevReplacements = [prevStart, prevEnd, prevCutoffTime];
+
+              if (filters) {
+                salesSqlRange = appendUtmWhere(salesSqlRange, curReplacements, filters);
+                ordersSqlRange = appendUtmWhere(ordersSqlRange, curReplacements, filters);
+
+                // For prev, we use a new call or just append dummy? 
+                // Using dummy empty append to push params to prevReplacements list
+                appendUtmWhere("", prevReplacements, filters);
+              }
 
               const [salesCurRows, salesPrevRows, ordersCurRows, ordersPrevRows] = await Promise.all([
-                req.brandDb.sequelize.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
-                req.brandDb.sequelize.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
-                req.brandDb.sequelize.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [rangeStart, rangeEnd, cutoffTime] }),
-                req.brandDb.sequelize.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: [prevStart, prevEnd, prevCutoffTime] }),
+                req.brandDb.sequelize.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: curReplacements }),
+                req.brandDb.sequelize.query(salesSqlRange, { type: QueryTypes.SELECT, replacements: prevReplacements }),
+                req.brandDb.sequelize.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: curReplacements }),
+                req.brandDb.sequelize.query(ordersSqlRange, { type: QueryTypes.SELECT, replacements: prevReplacements }),
               ]);
 
               const curSales = Number(salesCurRows?.[0]?.total || 0);
@@ -1070,7 +1118,15 @@ function buildMetricsController() {
           }
         }
 
-        const total_sales = await computeTotalSales({ start, end, conn: req.brandDb.sequelize });
+
+        const total_sales = await computeTotalSales({
+          start, end, conn: req.brandDb.sequelize, filters: {
+            utm_source: extractUtmParam(req.query.utm_source),
+            utm_medium: extractUtmParam(req.query.utm_medium),
+            utm_campaign: extractUtmParam(req.query.utm_campaign),
+            sales_channel: extractUtmParam(req.query.sales_channel),
+          }
+        });
         if (start && end && start === end) {
           const cached = await fetchCachedMetrics(req.brandKey, start);
           if (cached) {
@@ -1097,7 +1153,14 @@ function buildMetricsController() {
           }
         }
 
-        const total_orders = await computeTotalOrders({ start, end, conn: req.brandDb.sequelize });
+        const total_orders = await computeTotalOrders({
+          start, end, conn: req.brandDb.sequelize, filters: {
+            utm_source: extractUtmParam(req.query.utm_source),
+            utm_medium: extractUtmParam(req.query.utm_medium),
+            utm_campaign: extractUtmParam(req.query.utm_campaign),
+            sales_channel: extractUtmParam(req.query.sales_channel),
+          }
+        });
         if (start && end && start === end) {
           const cached = await fetchCachedMetrics(req.brandKey, start);
           if (cached) {
@@ -1116,8 +1179,13 @@ function buildMetricsController() {
         if (!parsed.success) return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
         const { start, end } = parsed.data;
         const productIdRaw = (req.query.product_id || '').toString().trim();
+
+        const filters = {
+          sales_channel: extractUtmParam(req.query.sales_channel)
+        };
+
         if (!productIdRaw) {
-          const stats = await computeFunnelStats({ start, end, conn: req.brandDb.sequelize });
+          const stats = await computeFunnelStats({ start, end, conn: req.brandDb.sequelize, filters });
           return res.json({ metric: "FUNNEL_STATS", range: { start: start || null, end: end || null }, total_sessions: stats.total_sessions, total_atc_sessions: stats.total_atc_sessions, total_orders: stats.total_orders });
         }
 
@@ -1173,8 +1241,9 @@ function buildMetricsController() {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
+          sales_channel: extractUtmParam(req.query.sales_channel),
         };
-        const hasUtm = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign);
+        const hasUtm = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.sales_channel);
 
         if (productIdRaw || hasUtm) {
           if (!start && !end) {
@@ -1249,6 +1318,7 @@ function buildMetricsController() {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
+          sales_channel: extractUtmParam(req.query.sales_channel),
         };
 
         let whereSql = `WHERE created_at >= ? AND created_at < ?`;
@@ -1539,9 +1609,11 @@ function buildMetricsController() {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
           product_id: (req.query.product_id || '').trim() || null,
+          sales_channel: extractUtmParam(req.query.sales_channel),
         };
-        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel);
 
         let querySql = `SELECT date, hour, total_sales, number_of_orders,
         COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
@@ -1782,9 +1854,11 @@ function buildMetricsController() {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
           product_id: (req.query.product_id || '').trim() || null,
+          sales_channel: extractUtmParam(req.query.sales_channel),
         };
-        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel);
 
         let sql = `
           SELECT date, 
@@ -1921,8 +1995,9 @@ function buildMetricsController() {
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
           product_id: (req.query.product_id || '').trim() || null,
+          sales_channel: extractUtmParam(req.query.sales_channel),
         };
-        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id);
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel);
 
         let sql = `
           SELECT 
@@ -2891,8 +2966,9 @@ function buildMetricsController() {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
+          sales_channel: extractUtmParam(req.query.sales_channel),
         };
-        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign);
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.sales_channel);
 
         const traceStart = req._reqStart || Date.now();
         const spans = [];
@@ -3030,10 +3106,17 @@ function buildMetricsController() {
               conn.query(qMed.sql, { type: QueryTypes.SELECT, replacements: qMed.replacements }),
               conn.query(qCamp.sql, { type: QueryTypes.SELECT, replacements: qCamp.replacements })
             ]);
+
+            // Fetch Sales Channel Options
+            const channelSql = `SELECT DISTINCT order_app_name FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND order_app_name IS NOT NULL AND order_app_name <> ''`;
+            const channelRows = await conn.query(channelSql, { type: QueryTypes.SELECT, replacements: [start, end] });
+            const salesChannelOptions = channelRows.map(r => r.order_app_name).sort();
+
             filterOptions = {
               utm_source: srcRows.map(r => r.utm_source).sort(),
               utm_medium: medRows.map(r => r.utm_medium).sort(),
               utm_campaign: campRows.map(r => r.utm_campaign).sort(),
+              sales_channel: salesChannelOptions,
             };
             mark('filter_options', s);
           }

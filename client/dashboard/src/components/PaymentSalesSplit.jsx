@@ -40,13 +40,14 @@ export default function PaymentSalesSplit({ query }) {
       utm_source: query.utm_source,
       utm_medium: query.utm_medium,
       utm_campaign: query.utm_campaign,
+      sales_channel: query.sales_channel,
       refreshKey,
     };
     getPaymentSalesSplit(params)
       .then(res => { if (!cancelled) { setData(res); setLoading(false); } })
       .catch(() => setLoading(false));
     return () => { cancelled = true; };
-  }, [query.start, query.end, brandKey, productId, refreshKey, query.utm_source, query.utm_medium, query.utm_campaign]);
+  }, [query.start, query.end, brandKey, productId, refreshKey, query.utm_source, query.utm_medium, query.utm_campaign, query.sales_channel]);
 
   const empty = data.total === 0;
 
