@@ -36,6 +36,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import { getLastUpdatedPTS, getDashboardSummary } from "../lib/api.js";
+import SearchableSelect from "./ui/SearchableSelect.jsx";
 
 dayjs.extend(relativeTime);
 dayjs.extend(utc);
@@ -386,75 +387,35 @@ export default function MobileTopBar({
                     </Button>
                   )}
                   {['source', 'medium', 'campaign'].map(field => (
-                    <FormControl key={field} size="small" sx={{ width: 140 }}>
-                      <InputLabel sx={{ fontSize: 12, textTransform: 'capitalize' }}>{field}</InputLabel>
-                      <Select
-                        label={field}
-                        multiple
-                        value={Array.isArray(utm?.[field]) ? utm?.[field] : (utm?.[field] ? [utm?.[field]] : [])}
-                        onChange={(e, child) => {
-                          const allOptions = utmOptions?.[`utm_${field}`] || [];
-                          const currentVal = Array.isArray(utm?.[field]) ? utm?.[field] : (utm?.[field] ? [utm?.[field]] : []);
-
-                          if (child.props.value === '__ALL__') {
-                            if (currentVal.length === allOptions.length) {
-                              onUtmChange && onUtmChange({ [field]: [] });
-                            } else {
-                              onUtmChange && onUtmChange({ [field]: allOptions });
-                            }
-                            return;
-                          }
-
-                          const val = e.target.value.filter(v => v !== '__ALL__');
-                          const newVal = typeof val === 'string' ? val.split(',') : val;
-                          onUtmChange && onUtmChange({ [field]: newVal });
-                        }}
-                        renderValue={(selected) => {
-                          if (selected.length === 0) return <em>All</em>;
-                          return selected.join(', ');
-                        }}
-                        sx={{
-                          fontSize: 12,
-                          height: 32,
-                          '& .MuiSelect-select': {
-                            py: 0.5,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
-                          }
-                        }}
-                        MenuProps={{
-                          PaperProps: {
-                            sx: {
-                              maxHeight: '40vh',
-                              width: 250,
-                            }
-                          },
-                          anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
-                          transformOrigin: { vertical: 'top', horizontal: 'left' }
-                        }}
-                      >
-                        <MenuItem value="__ALL__" sx={{ fontSize: 12, py: 0, fontWeight: 500 }}>
-                          <Checkbox
-                            checked={(utmOptions?.[`utm_${field}`] || []).length > 0 && (utm?.[field]?.length === (utmOptions?.[`utm_${field}`] || []).length)}
-                            indeterminate={(utm?.[field]?.length > 0) && (utm?.[field]?.length < (utmOptions?.[`utm_${field}`] || []).length)}
-                            size="small"
-                            sx={{ p: 0.5, mr: 1 }}
-                          />
-                          <ListItemText primary="All" primaryTypographyProps={{ fontSize: 12, fontWeight: 600 }} />
-                        </MenuItem>
-                        {(utmOptions?.[`utm_${field}`] || []).map(opt => (
-                          <MenuItem key={opt} value={opt} sx={{ fontSize: 12, py: 0 }}>
-                            <Checkbox
-                              checked={(Array.isArray(utm?.[field]) ? utm?.[field] : (utm?.[field] ? [utm?.[field]] : [])).indexOf(opt) > -1}
-                              size="small"
-                              sx={{ p: 0.5, mr: 1 }}
-                            />
-                            <ListItemText primary={opt} primaryTypographyProps={{ fontSize: 12 }} />
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
+                    <SearchableSelect
+                      key={field}
+                      label={field.charAt(0).toUpperCase() + field.slice(1)}
+                      multiple
+                      options={utmOptions?.[`utm_${field}`] || []}
+                      value={utm?.[field] || []}
+                      onChange={(newVal) => {
+                        onUtmChange && onUtmChange({ [field]: newVal });
+                      }}
+                      sx={{ width: 140 }}
+                      labelSx={{
+                        fontSize: 12,
+                        textTransform: 'capitalize',
+                        transform: 'translate(14px, 8px) scale(1)',
+                        '&.MuiInputLabel-shrink': {
+                          transform: 'translate(14px, -9px) scale(0.75)'
+                        }
+                      }}
+                      selectSx={{
+                        fontSize: 12,
+                        height: 32,
+                        '& .MuiSelect-select': {
+                          py: 0.5,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }
+                      }}
+                    />
                   ))}
                 </Box>
               </Collapse>
@@ -480,56 +441,43 @@ export default function MobileTopBar({
 
           {/* Desktop-only compact product filter */}
           {showProductFilter && (
-            <FormControl size="small" sx={{ width: { xs: '100%', sm: 200 }, display: { xs: 'none', sm: 'flex' } }}>
-              <InputLabel id="desktop-product-label" sx={{ fontSize: 12 }}>Product</InputLabel>
-              <Select
-                labelId="desktop-product-label"
+            <Box sx={{ position: 'relative', width: { xs: '100%', sm: 200 }, display: { xs: 'none', sm: 'flex' } }}>
+              <SearchableSelect
                 label="Product"
-                value={productValue?.id ?? ''}
-                onChange={(e) => {
-                  const selected = (productOptions || []).find((opt) => opt.id === e.target.value);
-                  if (onProductChange) onProductChange(selected || { id: '', label: 'All products', detail: 'Whole store' });
+                options={productOptions}
+                value={Array.isArray(productValue) ? (productValue[0]?.id || '') : (productValue?.id || '')}
+                onChange={(newId) => {
+                  const selected = productOptions.find(p => p.id === newId) || { id: newId, label: newId, detail: '' };
+                  if (onProductChange) onProductChange(selected);
                 }}
-                disabled={productLoading || !productOptions?.length}
-                sx={{
+                valueKey="id"
+                labelKey="label"
+                multiple={false}
+                sx={{ width: '100%' }}
+                labelSx={{
+                  fontSize: 12,
+                  transform: 'translate(14px, 8px) scale(1)',
+                  '&.MuiInputLabel-shrink': {
+                    transform: 'translate(14px, -9px) scale(0.75)'
+                  }
+                }}
+                selectSx={{
                   fontSize: 12,
                   height: 32,
-                  width: '100%',
-                  // Ensure the selected value area ellipses long labels instead of expanding the control
                   '& .MuiSelect-select': {
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
+                    maxHeight: 32,
+                    display: 'flex',
+                    alignItems: 'center'
                   }
                 }}
-                MenuProps={{
-                  PaperProps: {
-                    sx: {
-                      maxHeight: '60vh',
-                      width: 'var(--select-width)',
-                      whiteSpace: 'normal',
-                    }
-                  },
-                  anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
-                  transformOrigin: { vertical: 'top', horizontal: 'left' },
-                  onEntering: (node) => {
-                    const selectNode = node.parentElement?.querySelector('[role="combobox"]');
-                    if (selectNode) {
-                      node.style.width = `${selectNode.clientWidth}px`;
-                    }
-                  }
-                }}
-              >
-                {(productOptions || []).map((opt) => (
-                  <MenuItem key={opt.id || 'all'} value={opt.id || ''} sx={{ fontSize: 12, whiteSpace: 'normal', wordBreak: 'break-word', py: 0.5 }}>
-                    {opt.id ? opt.label : 'All products'}
-                  </MenuItem>
-                ))}
-              </Select>
+              />
               {productLoading && (
-                <CircularProgress size={14} sx={{ position: 'absolute', top: 9, right: 28 }} />
+                <CircularProgress size={14} sx={{ position: 'absolute', top: 9, right: 28, pointerEvents: 'none' }} />
               )}
-            </FormControl>
+            </Box>
           )}
 
 

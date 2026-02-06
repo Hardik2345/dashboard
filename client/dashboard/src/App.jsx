@@ -140,7 +140,9 @@ export default function App() {
 
     if (isAuthor) {
       base.refreshKey = authorRefreshKey;
-      if (productSelection?.id) base.product_id = productSelection.id;
+      if (productSelection?.id) {
+        base.product_id = productSelection.id;
+      }
     }
     if (compareMode) base.compare = compareMode;
     return base;
@@ -290,8 +292,15 @@ export default function App() {
         const nextOptions = [DEFAULT_PRODUCT_OPTION, ...mapped];
         setProductOptions(nextOptions);
 
-        const existing = nextOptions.find((opt) => opt.id === productSelection.id);
-        setProductSelection(existing || DEFAULT_PRODUCT_OPTION);
+        // map current selection IDs to new options
+        const currentIds = new Set(Array.isArray(productSelection) ? productSelection.map(p => p.id) : []);
+        const validSelection = nextOptions.filter(opt => currentIds.has(opt.id) && opt.id !== '');
+
+        if (validSelection.length > 0) {
+          setProductSelection(validSelection);
+        } else {
+          setProductSelection([DEFAULT_PRODUCT_OPTION]);
+        }
       })
       .finally(() => {
         if (!cancelled) setProductOptionsLoading(false);
@@ -300,7 +309,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [start, end, activeBrandKey, authorRefreshKey, productSelection.id, initialized, user, isAuthor]);
+  }, [start, end, activeBrandKey, authorRefreshKey, productSelection, initialized, user, isAuthor]);
 
   const handleSelectMetric = useCallback((metricKey) => {
     if (!metricKey) return;
@@ -313,15 +322,10 @@ export default function App() {
     dispatch(setCompareMode(mode));
   }, [dispatch]);
 
-  const handleProductChange = useCallback((option) => {
+  const handleProductChange = useCallback((value) => {
     // Reset UTMs when product changes
     dispatch(setUtm({ source: '', medium: '', campaign: '' }));
-
-    if (!option || typeof option !== 'object') {
-      dispatch(setProductSelection(DEFAULT_PRODUCT_OPTION));
-      return;
-    }
-    dispatch(setProductSelection(option));
+    dispatch(setProductSelection(value || DEFAULT_PRODUCT_OPTION));
   }, [dispatch]);
 
   const handleUtmChange = useCallback((val) => {
