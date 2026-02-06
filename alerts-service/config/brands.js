@@ -14,6 +14,7 @@ function loadBrands() {
         for (const item of arr) {
           if (!item || !item.key) continue;
           const key = String(item.key).trim().toUpperCase();
+          if (key === 'MILA') continue; // EXPLICIT REMOVAL
           const brandId = item.brandId != null ? Number(item.brandId) : DEFAULT_BRAND_IDS[key];
           map[key] = { key, brandId };
         }
@@ -25,6 +26,7 @@ function loadBrands() {
 
   const list = (process.env.BRAND_LIST || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
   for (const key of list) {
+    if (key === 'MILA') continue; // EXPLICIT REMOVAL
     const brandIdVar = process.env[`${key}_BRAND_ID`];
     const brandId = brandIdVar != null ? Number(brandIdVar) : DEFAULT_BRAND_IDS[key];
     map[key] = map[key] || { key, brandId };

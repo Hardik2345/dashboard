@@ -34,6 +34,7 @@ function loadBrands() {
         for (const item of arr) {
           if (!item || !item.key) continue;
           const upper = String(item.key).toUpperCase();
+          if (upper === 'MILA') continue; // EXPLICIT REMOVAL
           const fallbackId = DEFAULT_BRAND_IDS[upper];
           map[upper] = {
             key: upper,
@@ -56,6 +57,7 @@ function loadBrands() {
   const legacyList = (process.env.BRAND_LIST || '').split(',').map(s => s.trim()).filter(Boolean);
   for (const key of legacyList) {
     const upper = key.toUpperCase();
+    if (upper === 'MILA') continue; // EXPLICIT REMOVAL
     for (const suf of REQUIRED_SUFFIXES) {
       const varName = `${upper}_${suf}`;
       if (!process.env[varName]) {
@@ -119,7 +121,7 @@ try {
     const parsed = JSON.parse(process.env.BRAND_DOMAIN_MAP);
     if (Array.isArray(parsed)) externalDomainMap = parsed
       .map(e => ({ domain: normalizeDomain(e.domain), brandKey: String(e.brandKey || '').toUpperCase() }))
-      .filter(e => e.domain && e.brandKey);
+      .filter(e => e.domain && e.brandKey && e.brandKey !== 'MILA'); // EXPLICIT REMOVAL
   }
 } catch (e) {
   console.error('Failed to parse BRAND_DOMAIN_MAP JSON:', e.message);
