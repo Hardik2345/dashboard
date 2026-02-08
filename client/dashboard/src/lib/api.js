@@ -422,6 +422,20 @@ export async function getPaymentSalesSplit(args) {
   return { cod_sales, prepaid_sales, partial_sales, total, cod_percent, prepaid_percent, partial_percent, error: json?.__error };
 }
 
+export async function getTrafficSourceSplit(args) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const json = await getJSON('/metrics/traffic-source-split', params);
+  return {
+    meta: json?.meta || { sessions: 0, atc_sessions: 0 },
+    google: json?.google || { sessions: 0, atc_sessions: 0 },
+    direct: json?.direct || { sessions: 0, atc_sessions: 0 },
+    others: json?.others || { sessions: 0, atc_sessions: 0 },
+    total_sessions: Number(json?.total_sessions || 0),
+    total_atc_sessions: Number(json?.total_atc_sessions || 0),
+    error: json?.__error
+  };
+}
+
 export async function getHourlySalesSummary(args = {}) {
   const params = appendBrandKey({}, args);
   const json = await getJSON('/metrics/hourly-sales-summary', params);
