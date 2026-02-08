@@ -1102,6 +1102,84 @@ function buildMetricsController() {
       } catch (e) { console.error(e); return res.status(500).json({ error: 'Internal server error' }); }
     },
 
+    trafficSourceSplit: async (req, res) => {
+      try {
+        const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
+        if (!parsed.success) return res.status(400).json({ error: "Invalid date range" });
+        const { start, end } = parsed.data;
+        const conn = req.brandDb.sequelize;
+
+        console.log(`[TrafficSplit] Request for ${start} to ${end}`);
+
+        const sql = `
+          SELECT 
+            utm_source, 
+            SUM(utm_source_sessions) as sessions, 
+            SUM(utm_source_atc_sessions) as atc_sessions
+          FROM overall_utm_summary
+          WHERE date >= ? AND date <= ?
+          GROUP BY utm_source
+        `;
+
+        const rows = await conn.query(sql, {
+          type: QueryTypes.SELECT,
+          replacements: [start, end]
+        });
+        console.log(`[TrafficSplit] Rows found: ${rows.length}`, rows[0]);
+
+        // Normalize and aggregate
+        let meta = { sessions: 0, atc_sessions: 0 };
+        let google = { sessions: 0, atc_sessions: 0 };
+        let direct = { sessions: 0, atc_sessions: 0 };
+        let others = { sessions: 0, atc_sessions: 0 };
+
+        rows.forEach(r => {
+          const source = (r.utm_source || '').toLowerCase().trim();
+          const sess = Number(r.sessions || 0);
+          const atc = Number(r.atc_sessions || 0);
+
+          if (source === 'meta' || source.includes('facebook') || source.includes('instagram')) {
+            meta.sessions += sess;
+            meta.atc_sessions += atc;
+          } else if (source === 'google' || source.includes('google')) {
+            google.sessions += sess;
+            google.atc_sessions += atc;
+          } else if (source === 'direct' || source === '(direct)' || source === '(none)') {
+            direct.sessions += sess;
+            direct.atc_sessions += atc;
+          } else {
+            others.sessions += sess;
+            others.atc_sessions += atc;
+          }
+        });
+
+        const total_sessions = meta.sessions + google.sessions + direct.sessions + others.sessions;
+        const total_atc = meta.atc_sessions + google.atc_sessions + direct.atc_sessions + others.atc_sessions;
+
+        res.json({
+          meta,
+          google,
+          direct,
+          others,
+          total_sessions,
+          total_atc_sessions: total_atc
+        });
+
+      } catch (e) {
+        console.error('Traffic Source Split error', e);
+        // Fallback to empty if table doesn't exist or other error
+        res.json({
+          meta: { sessions: 0, atc_sessions: 0 },
+          google: { sessions: 0, atc_sessions: 0 },
+          direct: { sessions: 0, atc_sessions: 0 },
+          others: { sessions: 0, atc_sessions: 0 },
+          total_sessions: 0,
+          total_atc_sessions: 0,
+          error: true
+        });
+      }
+    },
+
     totalSales: async (req, res) => {
       try {
         const parsed = RangeSchema.safeParse({ start: req.query.start, end: req.query.end });
@@ -3343,7 +3421,7 @@ function buildMetricsController() {
         console.error('[dashboardSummary] Error:', e);
         return res.status(500).json({ error: 'Internal server error', details: e.message });
       }
-    },
+    }
   };
 }
 
