@@ -22,6 +22,7 @@ const KPIs = lazy(() => import('./components/KPIs.jsx'));
 const FunnelChart = lazy(() => import('./components/FunnelChart.jsx'));
 const OrderSplit = lazy(() => import('./components/OrderSplit.jsx'));
 const PaymentSalesSplit = lazy(() => import('./components/PaymentSalesSplit.jsx'));
+const TrafficSourceSplit = lazy(() => import('./components/TrafficSourceSplit.jsx'));
 const HourlySalesCompare = lazy(() => import('./components/HourlySalesCompare.jsx'));
 const WebVitals = lazy(() => import('./components/WebVitals.jsx'));
 const AuthorAdjustments = lazy(() => import('./components/AuthorAdjustments.jsx'));
@@ -699,6 +700,7 @@ export default function App() {
                           <FunnelChart funnelData={funnelData} />
                           <OrderSplit query={metricsQuery} />
                           <PaymentSalesSplit query={metricsQuery} />
+                          <TrafficSourceSplit query={metricsQuery} />
                         </Stack>
                       </Suspense>
                     ) : (
