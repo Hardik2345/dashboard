@@ -75,6 +75,7 @@ function buildMetricsRouter(sequelize) {
   router.get('/order-split', ...protectedBrand, controller.orderSplit);
   router.get('/payment-sales-split', ...protectedBrand, controller.paymentSalesSplit);
   router.get('/delta-summary', requireAuth, authorizeBrandContext, controller.deltaSummary);
+  router.get('/traffic-source-split', ...protectedBrand, controller.trafficSourceSplit);
   // OPTIMIZED: Use authorizeBrandContext (Lazy Connection) for summary
   router.get('/summary', requireAuth, authorizeBrandContext, controller.dashboardSummary);
   router.get('/top-pdps', authOrApiKey, ensureBrandDb, controller.topProductPages);
