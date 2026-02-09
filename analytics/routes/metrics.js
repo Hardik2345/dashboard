@@ -1,6 +1,6 @@
 const express = require('express');
 const { requireAuth, requireAuthor } = require('../middlewares/auth');
-const { brandContext } = require('../middlewares/brandContext');
+const { brandContext, authorizeBrandContext } = require('../middlewares/brandContext');
 const { createApiKeyAuthMiddleware } = require('../middlewares/apiKeyAuth');
 const { buildMetricsController } = require('../controllers/metricsController');
 

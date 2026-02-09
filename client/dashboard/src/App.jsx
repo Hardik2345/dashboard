@@ -768,47 +768,47 @@ export default function App() {
               </Box>
             </Box>
 
-              <Box
-                sx={{
-                  flex: 1,
-                  width: '100%',
-                  maxWidth: 1200,
-                  mx: 'auto',
-                  px: { xs: 1.5, sm: 2.5, md: 4 },
-                  py: { xs: 1, md: 2 },
-                }}
-              >
-                <Stack spacing={{ xs: 1, md: 2 }}>
-                  {authorTab === 'dashboard' && (
-                    hasAuthorBrand ? (
-                      <Suspense fallback={<SectionFallback count={5} />}>
-                        <Stack spacing={{ xs: 1, md: 1.5 }}>
-                          <KPIs
-                            query={metricsQuery}
-                            selectedMetric={selectedMetric}
-                            onSelectMetric={handleSelectMetric}
-                            onFunnelData={setFunnelData}
-                            productId={productSelection.id}
-                            productLabel={productSelection.label}
-                            utmOptions={utmOptions}
-                          />
-                          <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-                          <WebVitals query={metricsQuery} />
-                          <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-                          <FunnelChart funnelData={funnelData} />
-                          <OrderSplit query={metricsQuery} />
-                          <PaymentSalesSplit query={metricsQuery} />
-                          <TrafficSourceSplit query={metricsQuery} />
-                        </Stack>
-                      </Suspense>
-                    ) : (
-                      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                        <Typography variant="body2" color="text.secondary">
-                          Select a brand to load dashboard metrics.
-                        </Typography>
-                      </Paper>
-                    )
-                  )}
+            <Box
+              sx={{
+                flex: 1,
+                width: '100%',
+                maxWidth: 1200,
+                mx: 'auto',
+                px: { xs: 1.5, sm: 2.5, md: 4 },
+                py: { xs: 1, md: 2 },
+              }}
+            >
+              <Stack spacing={{ xs: 1, md: 2 }}>
+                {authorTab === 'dashboard' && (
+                  hasBrand ? (
+                    <Suspense fallback={<SectionFallback count={5} />}>
+                      <Stack spacing={{ xs: 1, md: 1.5 }}>
+                        <KPIs
+                          query={metricsQuery}
+                          selectedMetric={selectedMetric}
+                          onSelectMetric={handleSelectMetric}
+                          onFunnelData={setFunnelData}
+                          productId={productSelection.id}
+                          productLabel={productSelection.label}
+                          utmOptions={utmOptions}
+                        />
+                        <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+                        <WebVitals query={metricsQuery} />
+                        <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
+                        <FunnelChart funnelData={funnelData} />
+                        <OrderSplit query={metricsQuery} />
+                        <PaymentSalesSplit query={metricsQuery} />
+                        <TrafficSourceSplit query={metricsQuery} />
+                      </Stack>
+                    </Suspense>
+                  ) : (
+                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        Select a brand to load dashboard metrics.
+                      </Typography>
+                    </Paper>
+                  )
+                )}
 
                 {/* Author-only tabs */}
                 {isAuthor && authorTab === 'access' && (
