@@ -59,7 +59,7 @@ export default defineConfig({
 
       // 2️⃣ Auth
       '/api/auth/': {
-        target: 'http://localhost:8082',
+        target: 'https://api.trytechit.co/staging',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, ''),
@@ -67,7 +67,7 @@ export default defineConfig({
 
       // 3️⃣ Alerts
       '/api/alerts': {
-        target: 'http://localhost:8082',
+        target: 'https://api.trytechit.co/staging',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, ''),
@@ -75,7 +75,7 @@ export default defineConfig({
 
       // 4️⃣ Author (analytics sub-route)
       '/api/author': {
-        target: 'http://localhost:8082',
+        target: 'https://api.trytechit.co/staging',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, '/analytics'),
@@ -83,7 +83,7 @@ export default defineConfig({
 
       // 5️⃣ Catch-all analytics (MUST BE LAST)
       '/api': {
-        target: 'http://localhost:8082',
+        target: 'https://api.trytechit.co/staging',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, '/analytics'),
@@ -108,28 +108,28 @@ export default defineConfig({
 
       // Auth via gateway
       '/api/auth/': {
-        target: 'http://localhost:8082',
+        target: 'https://api.trytechit.co/staging',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
 
       // Alerts via gateway
       '/api/alerts': {
-        target: 'http://localhost:8082',
+        target: 'https://api.trytechit.co/staging',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
 
       // Author via analytics prefix
       '/api/author': {
-        target: 'http://localhost:8082',
+        target: 'https://api.trytechit.co/staging',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '/analytics'),
       },
 
       // Catch-all analytics
       '/api': {
-        target: 'http://localhost:8082',
+        target: 'https://api.trytechit.co/staging',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '/analytics'),
       },
