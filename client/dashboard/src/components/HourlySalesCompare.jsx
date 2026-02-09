@@ -406,10 +406,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         }
       }
 
-      const isLastWeekMode = compare === 'last_week';
 
-      // Special optimization logic for 'last_week' if available client-side (future)
-      // For now, rely on backend return or manual calculation for updated optimization blocks if we add them.
 
       if (cancelled) return;
 
@@ -515,9 +512,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   let compLabelText = 'Prev window';
   if (state.comparisonLabel) {
     compLabelText = state.comparisonLabel;
-  } else if (compare === 'last_week') {
-    compLabelText = 'Same day last week';
   }
+
 
   const comparisonLabel = `${config.label} (${compLabelText})`;
 
