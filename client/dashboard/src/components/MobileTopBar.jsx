@@ -119,6 +119,7 @@ export default function MobileTopBar({
   showUtmFilter = true,
   utmOptions = null, // Prop
   salesChannel = '',
+  showSalesChannel = true,
   onSalesChannelChange,
 }) {
   const theme = useTheme();
@@ -354,23 +355,25 @@ export default function MobileTopBar({
             <>
               <Collapse in={showUtmFilters} orientation="horizontal" unmountOnExit>
                 <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 1, alignItems: 'center' }}>
-                  <SearchableSelect
-                    label="Sales Channel"
-                    options={utmOptions?.sales_channel || []}
-                    value={salesChannel}
-                    onChange={onSalesChannelChange}
-                    sx={{ width: 140 }}
-                    labelSx={{
-                      fontSize: 12,
-                      transform: 'translate(14px, 8px) scale(1)',
-                      '&.MuiInputLabel-shrink': { transform: 'translate(14px, -9px) scale(0.75)' }
-                    }}
-                    selectSx={{
-                      fontSize: 12,
-                      height: 32,
-                      '& .MuiSelect-select': { py: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
-                    }}
-                  />
+                  {showSalesChannel && (
+                    <SearchableSelect
+                      label="Sales Channel"
+                      options={utmOptions?.sales_channel || []}
+                      value={salesChannel}
+                      onChange={onSalesChannelChange}
+                      sx={{ width: 140 }}
+                      labelSx={{
+                        fontSize: 12,
+                        transform: 'translate(14px, 8px) scale(1)',
+                        '&.MuiInputLabel-shrink': { transform: 'translate(14px, -9px) scale(0.75)' }
+                      }}
+                      selectSx={{
+                        fontSize: 12,
+                        height: 32,
+                        '& .MuiSelect-select': { py: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+                      }}
+                    />
+                  )}
                   {activeUtmCount > 0 && (
                     <Button
                       size="small"
