@@ -2385,7 +2385,6 @@ function buildMetricsController() {
               SUM(sessions_with_cart_additions) AS atc
             FROM mv_product_sessions_by_path_daily
             WHERE date >= ? AND date <= ?
-              AND product_id IS NOT NULL
             GROUP BY product_id, landing_page_path
           )
         `;
@@ -2722,7 +2721,6 @@ function buildMetricsController() {
               SUM(sessions_with_cart_additions) AS atc
             FROM mv_product_sessions_by_path_daily
             WHERE date >= ? AND date <= ?
-              AND product_id IS NOT NULL
             GROUP BY product_id, landing_page_path
           )
           SELECT
