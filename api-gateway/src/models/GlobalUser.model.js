@@ -6,11 +6,6 @@ const BrandMembershipSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  role: {
-    type: String,
-    enum: ['admin', 'viewer'],
-    required: true
-  },
   status: {
     type: String,
     enum: ['active', 'suspended'],
@@ -20,14 +15,14 @@ const BrandMembershipSchema = new mongoose.Schema({
   permissions: {
     type: [String],
     default: ["all"],
-    enum: ["all","product_filter", "web_vitals", "payment_split_order", "payment_split_sales"]
+    enum: ["all", "product_filter", "utm_filter", "web_vitals", "payment_split_order", "payment_split_sales"]
   }
 }, { _id: false });
 
 const GlobalUserSchema = new mongoose.Schema({
   _id: {
     type: String,
-    default: randomUUID
+    default: () => randomUUID()
   },
   email: {
     type: String,
@@ -45,7 +40,12 @@ const GlobalUserSchema = new mongoose.Schema({
   },
   primary_brand_id: {
     type: String,
-    default: null
+    required: true
+  },
+  role: {
+    type: String,
+    enum: ['author', 'viewer'],
+    default: 'viewer'
   },
   brand_memberships: {
     type: [BrandMembershipSchema],
@@ -60,5 +60,9 @@ const GlobalUserSchema = new mongoose.Schema({
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });
+
+GlobalUserSchema.index({ email: 1 }, { unique: true });
+GlobalUserSchema.index({ primary_brand_id: 1 });
+GlobalUserSchema.index({ role: 1 });
 
 module.exports = mongoose.model('GlobalUser', GlobalUserSchema);

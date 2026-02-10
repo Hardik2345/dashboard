@@ -1,6 +1,15 @@
 /node_modules
+*/node_modules
 /.env
+**/.env
 /infra-firehose
+api-gateway/.env
+tenant-router/.env
+client/.env
+client/dashboard/vite.config.js
+api-gateway/node_modules
+tenant-router/node_modules
+client/node_modules
 
 # Ignore specific scripts exports
 # sessions CSV export and export script in scripts/

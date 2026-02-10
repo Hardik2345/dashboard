@@ -355,11 +355,11 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       };
 
       // optimization: use cached hourly summary if sales + hourly view + single day match + no custom comparison
-      if (viewMode === 'hourly' && (metric === 'sales' || metric === 'total_sales') && start === end && !utmParams.utm_source && !utmParams.utm_medium && !utmParams.utm_campaign && !utmParams.product_id && !compare) {
+      if (viewMode === 'hourly' && (metric === 'sales' || metric === 'total_sales') && start === end && !utmParams.utm_source && !utmParams.utm_medium && !utmParams.utm_campaign && !utmParams.product_id && !utmParams.sales_channel && !compare) {
         try {
           const res = await getHourlySalesSummary({ brand_key: brandKey });
           if (!cancelled && res.data && res.data.today && res.data.today.date === start) {
-            const todayPoints = res.data.today.data.map(d => ({
+            let todayPoints = res.data.today.data.map(d => ({
               hour: d.hour,
               metrics: {
                 sales: d.total_sales,
@@ -406,10 +406,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         }
       }
 
-      const isLastWeekMode = compare === 'last_week';
 
-      // Special optimization logic for 'last_week' if available client-side (future)
-      // For now, rely on backend return or manual calculation for updated optimization blocks if we add them.
 
       if (cancelled) return;
 
@@ -515,9 +512,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   let compLabelText = 'Prev window';
   if (state.comparisonLabel) {
     compLabelText = state.comparisonLabel;
-  } else if (compare === 'last_week') {
-    compLabelText = 'Same day last week';
   }
+
 
   const comparisonLabel = `${config.label} (${compLabelText})`;
 

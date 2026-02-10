@@ -25,9 +25,7 @@ const PaymentSalesSplit = lazy(() => import('./components/PaymentSalesSplit.jsx'
 const TrafficSourceSplit = lazy(() => import('./components/TrafficSourceSplit.jsx'));
 const HourlySalesCompare = lazy(() => import('./components/HourlySalesCompare.jsx'));
 const WebVitals = lazy(() => import('./components/WebVitals.jsx'));
-const AuthorAdjustments = lazy(() => import('./components/AuthorAdjustments.jsx'));
 const AccessControlCard = lazy(() => import('./components/AccessControlCard.jsx'));
-const WhitelistTable = lazy(() => import('./components/WhitelistTable.jsx'));
 const ProductConversionTable = lazy(() => import('./components/ProductConversionTable.jsx'));
 const AuthorBrandForm = lazy(() => import('./components/AuthorBrandForm.jsx'));
 const AuthorBrandList = lazy(() => import('./components/AuthorBrandList.jsx'));
@@ -69,16 +67,20 @@ function loadInitialThemeMode() {
 
 export default function App() {
   const dispatch = useAppDispatch();
-  const {
-    user, initialized, loginStatus, loginError,
-    GlobalBrandKey: globalBrandKey,
-  } = useAppSelector((state) => ({
-    ...state.auth,
-    GlobalBrandKey: state.brand.brand
-  }));
+  const authState = useAppSelector((state) => state.auth);
+  const globalBrandKey = useAppSelector((state) => state.brand.brand);
+  const { user, initialized, loginStatus, loginError } = useAppSelector((state) => state.auth);
   const { range, compareMode, selectedMetric, productSelection, utm, salesChannel } = useAppSelector((state) => state.filters);
   const loggingIn = loginStatus === 'loading';
-  const [start, end] = range;
+  // range holds ISO strings; normalize to dayjs for components that expect it
+  const [start, end] = useMemo(
+    () => [
+      range?.[0] && dayjs(range[0]).isValid() ? dayjs(range[0]) : null,
+      range?.[1] && dayjs(range[1]).isValid() ? dayjs(range[1]) : null,
+    ],
+    [range]
+  );
+  const normalizedRange = useMemo(() => [start, end], [start, end]);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
 
   const isAuthor = !!user?.isAuthor;
@@ -93,11 +95,25 @@ export default function App() {
     () => (globalBrandKey || '').toString().trim().toUpperCase(),
     [globalBrandKey]
   );
+  const viewerBrands = useMemo(() => {
+    if (!user?.brand_memberships) return [];
+    const seen = new Set();
+    const list = [];
+    for (const m of user.brand_memberships) {
+      const key = (m.brand_id || '').toString().trim().toUpperCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        list.push(key);
+      }
+    }
+    return list;
+  }, [user]);
 
   // Initialize tab checking storage; guard against invalid reads
   const [authorTab, setAuthorTab] = useState(() => {
     try {
-      return localStorage.getItem('author_active_tab_v1') || 'dashboard';
+      const stored = localStorage.getItem('author_active_tab_v1') || 'dashboard';
+      return stored === 'adjustments' ? 'dashboard' : stored;
     } catch {
       return 'dashboard';
     }
@@ -129,7 +145,40 @@ export default function App() {
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
 
-  const activeBrandKey = isAuthor ? (authorBrandKey || '') : (user?.brandKey || '');
+  const activeBrandKey = isAuthor
+    ? (authorBrandKey || user?.primary_brand_id || '')
+    : (
+      (globalBrandKey || '').toString().trim().toUpperCase() ||
+      (user?.primary_brand_id || '').toString().trim().toUpperCase() ||
+      (user?.brandKey || '').toString().trim().toUpperCase() ||
+      viewerBrands[0] ||
+      ''
+    );
+
+  const viewerPermissions = useMemo(() => {
+    if (isAuthor) return ['all'];
+    const memberships = user?.brand_memberships || [];
+    const active = memberships.find((m) => (m.brand_id || '').toString().trim().toUpperCase() === (activeBrandKey || '').toString().trim().toUpperCase());
+    const source = active || memberships[0];
+    const perms = source?.permissions || [];
+    return perms.length ? perms : ['all'];
+  }, [isAuthor, user, activeBrandKey]);
+
+  const hasPermission = useCallback((perm) => {
+    if (isAuthor) return true;
+    if (viewerPermissions.includes('all')) return true;
+    return viewerPermissions.includes(perm);
+  }, [isAuthor, viewerPermissions]);
+
+  useEffect(() => {
+    if (!isAuthor && viewerBrands.length) {
+      const current = (globalBrandKey || '').toString().trim().toUpperCase();
+      const next = current || viewerBrands[0];
+      if (next && next !== current) {
+        dispatch(setBrand(next));
+      }
+    }
+  }, [isAuthor, viewerBrands, globalBrandKey, dispatch]);
 
   const metricsQuery = useMemo(() => {
     const base = { start: formatDate(start), end: formatDate(end) };
@@ -146,7 +195,6 @@ export default function App() {
         base.product_id = productSelection.id;
       }
     }
-    if (compareMode) base.compare = compareMode;
     return base;
   }, [start, end, compareMode, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id, utm, salesChannel]);
 
@@ -183,15 +231,16 @@ export default function App() {
     setBrandsLoaded(false); // Reset loaded state on new fetch start
     listAuthorBrands().then((json) => {
       if (cancelled) return;
-      if (json.__error) {
+      if (json.__error || json.error) {
         setAuthorBrands([]);
         return;
       }
-      const arr = Array.isArray(json.brands) ? json.brands.map((b) => ({
+      const payload = json.data ?? json;
+      const arr = Array.isArray(payload.brands) ? payload.brands.map((b) => ({
         key: (b.key || '').toString().trim().toUpperCase(),
         host: b.host,
         db: b.db,
-      })) : [];
+      })).filter(b => b.key !== 'MILA') : []; // EXPLICIT REMOVAL
       setAuthorBrands(arr);
     }).finally(() => {
       if (!cancelled) {
@@ -228,7 +277,16 @@ export default function App() {
     if (initialized && !isAuthor) {
       setAuthorTab('dashboard');
     }
-  }, [isAuthor, initialized]);
+    // Guard against legacy tab state that no longer exists
+    if (initialized && authorTab === 'adjustments') {
+      setAuthorTab('dashboard');
+      try {
+        localStorage.setItem('author_active_tab_v1', 'dashboard');
+      } catch {
+        // ignore storage issues
+      }
+    }
+  }, [isAuthor, initialized, authorTab]);
 
   useEffect(() => {
     // Only authors should see/use product filters; reset for everyone else.
@@ -318,10 +376,9 @@ export default function App() {
     dispatch(setSelectedMetric(TREND_METRICS.has(metricKey) ? metricKey : DEFAULT_TREND_METRIC));
   }, [dispatch]);
 
-  const handleRangeChange = useCallback((nextRange, mode = null) => {
+  const handleRangeChange = useCallback((nextRange) => {
     if (!Array.isArray(nextRange)) return;
     dispatch(setRange(nextRange));
-    dispatch(setCompareMode(mode));
   }, [dispatch]);
 
   const handleProductChange = useCallback((value) => {
@@ -426,7 +483,11 @@ export default function App() {
   useEffect(() => {
     if (start && end) {
       try {
-        localStorage.setItem('pts_date_range_v2', JSON.stringify({ start: start.toISOString(), end: end.toISOString(), savedAt: Date.now() }));
+        const sIso = dayjs(start).isValid() ? dayjs(start).toISOString() : null;
+        const eIso = dayjs(end).isValid() ? dayjs(end).toISOString() : null;
+        if (sIso && eIso) {
+          localStorage.setItem('pts_date_range_v2', JSON.stringify({ start: sIso, end: eIso, savedAt: Date.now() }));
+        }
       } catch {
         // Ignore storage write errors
       }
@@ -454,15 +515,25 @@ export default function App() {
       include_utm_options: true,
       utm_source: utm?.source, // Dependent filtering
       utm_medium: utm?.medium,
-      utm_campaign: utm?.campaign
+      utm_campaign: utm?.campaign,
+      sales_channel: salesChannel
     })
       .then(res => {
         if (res.filter_options) setUtmOptions(res.filter_options);
       });
-  }, [activeBrandKey, start, end, utm, isAuthor, authorTab]);
+  }, [activeBrandKey, start, end, utm, isAuthor, authorTab, salesChannel]);
 
   // Check auth on mount
   useEffect(() => {
+    // Check for access_token in URL (OAuth callback)
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('access_token');
+    if (token) {
+      window.localStorage.setItem('gateway_access_token', token);
+      // Clean URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     dispatch(fetchCurrentUser());
   }, [dispatch]);
 
@@ -546,8 +617,15 @@ export default function App() {
                   className="gsi-material-button"
                   onClick={() => {
                     const base = import.meta.env.VITE_API_BASE || '/api';
-                    const target = base.startsWith('http') ? base : `${window.location.origin}${base}`;
-                    window.location.href = `${target}/auth/google`;
+                    const target = base.startsWith('http')
+                      ? base
+                      : `${window.location.origin}${base}`;
+
+                    const redirect = import.meta.env.VITE_OAUTH_REDIRECT || window.location.origin;
+
+                    window.location.href =
+                      `${target.replace(/\/$/, '')}/auth/google/start?redirect=${encodeURIComponent(redirect)}`;
+                    console.log(window.location.href);
                   }}
                 >
                   <div className="gsi-material-button-state"></div>
@@ -573,14 +651,19 @@ export default function App() {
     );
   }
 
-  if (isAuthor) {
-    const hasAuthorBrand = Boolean((authorBrandKey || '').trim());
-    return (
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <AppProvider i18n={enTranslations} theme={{ colorScheme: darkMode === 'dark' ? 'dark' : 'light' }}>
-          <Box sx={{ display: 'flex', minHeight: '100svh', bgcolor: 'background.default' }}>
-            {/* Sidebar Navigation */}
+  // Unified layout for both author and viewer roles
+  const hasBrand = Boolean((activeBrandKey || '').trim());
+  const availableBrands = isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }));
+  const brandsForSelector = isAuthor ? authorBrands : viewerBrands;
+  const showMultipleBrands = isAuthor ? authorBrands.length > 0 : viewerBrands.length > 1;
+
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <AppProvider i18n={enTranslations} theme={{ colorScheme: darkMode === 'dark' ? 'dark' : 'light' }}>
+        <Box sx={{ display: 'flex', minHeight: '100svh', bgcolor: 'background.default' }}>
+          {/* Sidebar Navigation - only for authors */}
+          {isAuthor && (
             <Sidebar
               open={sidebarOpen}
               onClose={handleSidebarClose}
@@ -588,56 +671,70 @@ export default function App() {
               onTabChange={handleSidebarTabChange}
               darkMode={darkMode === 'dark'}
             />
+          )}
 
-            {/* Main content area */}
+          {/* Main content area */}
+          <Box
+            component="main"
+            sx={{
+              flexGrow: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: '100svh',
+              width: isAuthor ? { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` } : '100%',
+            }}
+          >
+            {/* Sticky Header */}
             <Box
-              component="main"
               sx={{
-                flexGrow: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: '100svh',
-                width: { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` },
+                position: { xs: 'sticky', md: 'static' },
+                top: 0,
+                zIndex: (theme) => theme.zIndex.appBar,
+                bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
+                borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
+                borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+                transition: 'border-color 0.2s ease',
               }}
             >
-              {/* Sticky Top Panel (mobile only) */}
-              <Box
-                sx={{
-                  position: { xs: 'sticky', md: 'static' },
-                  top: 0,
-                  zIndex: (theme) => theme.zIndex.appBar,
-                  bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
-                  // pb: 1, // Removed to eliminate extra black area
-                  // borderBottom handled in Header.jsx now
-                }}
-              >
-                <Header
-                  user={user}
-                  onLogout={handleLogout}
-                  onMenuClick={handleSidebarOpen}
-                  showMenuButton
-                  darkMode={darkMode === 'dark'}
-                  onToggleDarkMode={handleToggleDarkMode}
-                  onFilterClick={() => setMobileFilterOpen(true)}
-                  showFilterButton={true}
-                />
-              </Box>
+              <Header
+                user={user}
+                onLogout={handleLogout}
+                onMenuClick={isAuthor ? handleSidebarOpen : undefined}
+                showMenuButton={isAuthor}
+                darkMode={darkMode === 'dark'}
+                onToggleDarkMode={handleToggleDarkMode}
+                showFilterButton={true}
+                onFilterClick={() => setMobileFilterOpen(true)}
+              />
+            </Box>
+
+            {/* Non-Sticky Sub-Header (MobileTopBar etc) */}
+            <Box
+              sx={{
+                bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
+                pb: { xs: 0.5, md: 1 },
+              }}
+            >
               <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: { xs: 0.5, sm: 2 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
-                <Stack spacing={{ xs: 2, sm: 1 }}>
-                  <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-                    <AuthorBrandSelector
-                      brands={authorBrands}
-                      value={authorBrandKey}
-                      loading={authorBrandsLoading}
-                      onChange={handleAuthorBrandChange}
-                    />
-                  </Box>
-                  {authorTab === 'dashboard' && hasAuthorBrand && (
+                <Stack spacing={{ xs: 3, sm: 1 }}>
+                  {/* Brand Selector - unified for both roles */}
+                  {(isAuthor || showMultipleBrands) && (
+                    <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+                      <AuthorBrandSelector
+                        brands={isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }))}
+                        value={activeBrandKey}
+                        loading={isAuthor ? authorBrandsLoading : false}
+                        onChange={isAuthor ? handleAuthorBrandChange : (val) => dispatch(setBrand((val || '').toString().trim().toUpperCase()))}
+                      />
+                    </Box>
+                  )}
+                  {/* Date range and product filter - show on dashboard tab */}
+                  {authorTab === 'dashboard' && hasBrand && (
                     <MobileTopBar
-                      value={range}
-                      compareMode={compareMode}
+                      value={normalizedRange}
                       onChange={handleRangeChange}
-                      brandKey={authorBrandKey}
+                      brandKey={activeBrandKey}
+                      showProductFilter={hasPermission('product_filter')}
                       productOptions={productOptions}
                       productValue={productSelection}
                       onProductChange={handleProductChange}
@@ -669,215 +766,110 @@ export default function App() {
                   />
                 </Stack>
               </Box>
-
-              <Box
-                sx={{
-                  flex: 1,
-                  width: '100%',
-                  maxWidth: 1200,
-                  mx: 'auto',
-                  px: { xs: 1.5, sm: 2.5, md: 4 },
-                  py: { xs: 1, md: 2 },
-                }}
-              >
-                <Stack spacing={{ xs: 1, md: 2 }}>
-                  {authorTab === 'dashboard' && (
-                    hasAuthorBrand ? (
-                      <Suspense fallback={<SectionFallback count={5} />}>
-                        <Stack spacing={{ xs: 1, md: 1.5 }}>
-                          <KPIs
-                            query={metricsQuery}
-                            selectedMetric={selectedMetric}
-                            onSelectMetric={handleSelectMetric}
-                            onFunnelData={setFunnelData}
-                            productId={productSelection.id}
-                            productLabel={productSelection.label}
-                            utmOptions={utmOptions}
-                          />
-                          <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-                          <WebVitals query={metricsQuery} />
-                          <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-                          <FunnelChart funnelData={funnelData} />
-                          <OrderSplit query={metricsQuery} />
-                          <PaymentSalesSplit query={metricsQuery} />
-                          <TrafficSourceSplit query={metricsQuery} />
-                        </Stack>
-                      </Suspense>
-                    ) : (
-                      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                        <Typography variant="body2" color="text.secondary">
-                          Select a brand to load dashboard metrics.
-                        </Typography>
-                      </Paper>
-                    )
-                  )}
-
-                  {authorTab === 'access' && (
-                    <Suspense fallback={<SectionFallback count={2} />}>
-                      <Stack spacing={{ xs: 2, md: 3 }}>
-                        <AccessControlCard />
-                        <WhitelistTable />
-                      </Stack>
-                    </Suspense>
-                  )}
-
-                  {authorTab === 'adjustments' && (
-                    hasAuthorBrand ? (
-                      <Suspense fallback={<SectionFallback />}>
-                        <AuthorAdjustments
-                          brandKey={authorBrandKey}
-                          onBrandKeyChange={handleAuthorBrandChange}
-                          brands={authorBrands}
-                        />
-                      </Suspense>
-                    ) : (
-                      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                        <Typography variant="body2" color="text.secondary">
-                          Choose a brand to manage session adjustments.
-                        </Typography>
-                      </Paper>
-                    )
-                  )}
-
-                  {authorTab === 'product-conversion' && (
-                    hasAuthorBrand ? (
-                      <Suspense fallback={<SectionFallback />}>
-                        <ProductConversionTable
-                          brandKey={authorBrandKey}
-                          brands={authorBrands}
-                          onBrandChange={handleAuthorBrandChange}
-                          brandsLoading={authorBrandsLoading}
-                        />
-                      </Suspense>
-                    ) : (
-                      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                        <Typography variant="body2" color="text.secondary">
-                          Select a brand to load product conversion data.
-                        </Typography>
-                      </Paper>
-                    )
-                  )}
-
-                  {authorTab === 'brands' && (
-                    <Suspense fallback={<SectionFallback count={2} />}>
-                      <Stack spacing={{ xs: 2, md: 3 }}>
-                        <AuthorBrandForm />
-                        <AuthorBrandList />
-                      </Stack>
-                    </Suspense>
-                  )}
-
-                  {authorTab === 'alerts' && (
-                    authorBrands.length ? (
-                      <Suspense fallback={<SectionFallback />}>
-                        <AlertsAdmin
-                          brands={authorBrands}
-                          defaultBrandKey={authorBrandKey}
-                        />
-                      </Suspense>
-                    ) : (
-                      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                        <Typography variant="body2" color="text.secondary">
-                          Add at least one brand to start configuring alerts.
-                        </Typography>
-                      </Paper>
-                    )
-                  )}
-                </Stack>
-              </Box>
-              <Footer />
             </Box>
-          </Box>
-        </AppProvider>
-      </ThemeProvider>
-    );
-  }
 
-  return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <AppProvider i18n={enTranslations} theme={{ colorScheme: darkMode === 'dark' ? 'dark' : 'light' }}>
-        <Box sx={{ minHeight: '100svh', bgcolor: 'background.default' }}>
-          {/* Sticky Top Panel (mobile only) */}
-          <Box
-            sx={{
-              position: { xs: 'sticky', md: 'static' },
-              top: 0,
-              zIndex: (theme) => theme.zIndex.appBar,
-              bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
-              pb: 0,
-              borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
-              borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-              transition: 'border-color 0.2s ease',
-            }}
-          >
-            <Header
-              user={user}
-              onLogout={handleLogout}
-              darkMode={darkMode === 'dark'}
-              onToggleDarkMode={handleToggleDarkMode}
-              onFilterClick={() => setMobileFilterOpen(true)}
-              showFilterButton={!!(isAuthor || user?.isAdmin)}
-            />
+            <Box
+              sx={{
+                flex: 1,
+                width: '100%',
+                maxWidth: 1200,
+                mx: 'auto',
+                px: { xs: 1.5, sm: 2.5, md: 4 },
+                py: { xs: 1, md: 2 },
+              }}
+            >
+              <Stack spacing={{ xs: 1, md: 2 }}>
+                {authorTab === 'dashboard' && (
+                  hasBrand ? (
+                    <Suspense fallback={<SectionFallback count={5} />}>
+                      <Stack spacing={{ xs: 1, md: 1.5 }}>
+                        <KPIs
+                          query={metricsQuery}
+                          selectedMetric={selectedMetric}
+                          onSelectMetric={handleSelectMetric}
+                          onFunnelData={setFunnelData}
+                          productId={productSelection.id}
+                          productLabel={productSelection.label}
+                          utmOptions={utmOptions}
+                        />
+                        <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+                        <WebVitals query={metricsQuery} />
+                        <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
+                        <FunnelChart funnelData={funnelData} />
+                        <OrderSplit query={metricsQuery} />
+                        <PaymentSalesSplit query={metricsQuery} />
+                        <TrafficSourceSplit query={metricsQuery} />
+                      </Stack>
+                    </Suspense>
+                  ) : (
+                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        Select a brand to load dashboard metrics.
+                      </Typography>
+                    </Paper>
+                  )
+                )}
+
+                {/* Author-only tabs */}
+                {isAuthor && authorTab === 'access' && (
+                  <Suspense fallback={<SectionFallback count={2} />}>
+                    <Stack spacing={{ xs: 2, md: 3 }}>
+                      <AccessControlCard />
+                    </Stack>
+                  </Suspense>
+                )}
+
+                {isAuthor && authorTab === 'product-conversion' && (
+                  hasBrand ? (
+                    <Suspense fallback={<SectionFallback />}>
+                      <ProductConversionTable
+                        brandKey={activeBrandKey}
+                        brands={authorBrands}
+                        onBrandChange={handleAuthorBrandChange}
+                        brandsLoading={authorBrandsLoading}
+                      />
+                    </Suspense>
+                  ) : (
+                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        Select a brand to load product conversion data.
+                      </Typography>
+                    </Paper>
+                  )
+                )}
+
+                {isAuthor && authorTab === 'brands' && (
+                  <Suspense fallback={<SectionFallback count={2} />}>
+                    <Stack spacing={{ xs: 2, md: 3 }}>
+                      <AuthorBrandForm />
+                      <AuthorBrandList />
+                    </Stack>
+                  </Suspense>
+                )}
+
+                {authorTab === 'alerts' && (
+                  authorBrands.length ? (
+                    <Suspense fallback={<SectionFallback />}>
+                      <AlertsAdmin
+                        brands={authorBrands}
+                        defaultBrandKey={authorBrandKey}
+                      />
+                    </Suspense>
+                  ) : (
+                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        Add at least one brand to start configuring alerts.
+                      </Typography>
+                    </Paper>
+                  )
+                )}
+              </Stack>
+            </Box>
+            <Footer />
           </Box>
-          <Container maxWidth="sm" sx={{ pt: { xs: 1, sm: 2 }, mt: { xs: 1.5, sm: 0 }, position: 'relative', zIndex: 1 }}>
-            <MobileTopBar
-              value={range}
-              onChange={handleRangeChange}
-              brandKey={activeBrandKey}
-              compareMode={compareMode}
-              showProductFilter={!!(isAuthor || user?.isAdmin)}
-              showUtmFilter={!!(isAuthor || user?.isAdmin)}
-              productOptions={productOptions}
-              productValue={productSelection}
-              onProductChange={handleProductChange}
-              productLoading={productOptionsLoading}
-              utm={utm}
-              onUtmChange={handleUtmChange}
-              salesChannel={salesChannel}
-              onSalesChannelChange={handleSalesChannelChange}
-              utmOptions={utmOptions}
-            />
-            <MobileFilterDrawer
-              open={mobileFilterOpen}
-              onClose={() => setMobileFilterOpen(false)}
-              brandKey={activeBrandKey}
-              brands={isAuthor ? authorBrands : (activeBrandKey ? [{ key: activeBrandKey }] : [])}
-              onBrandChange={isAuthor ? handleAuthorBrandChange : undefined}
-              productOptions={productOptions}
-              productValue={productSelection}
-              onProductChange={handleProductChange}
-              utm={utm}
-              onUtmChange={handleUtmChange}
-              salesChannel={salesChannel}
-              onSalesChannelChange={handleSalesChannelChange}
-              utmOptions={utmOptions}
-              dateRange={range}
-              isDark={darkMode === 'dark'}
-            />
-          </Container>
-          <Container maxWidth="sm" sx={{ py: { xs: 0.75, sm: 1.5 } }}>
-            <Stack spacing={{ xs: 1, sm: 1.25 }}>
-              <Suspense fallback={<SectionFallback count={4} />}>
-                <KPIs
-                  query={metricsQuery}
-                  selectedMetric={selectedMetric}
-                  onSelectMetric={handleSelectMetric}
-                  onFunnelData={setFunnelData}
-                  productId={productSelection.id}
-                  productLabel={productSelection.label}
-                />
-                <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-                <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-                <FunnelChart funnelData={funnelData} />
-                <OrderSplit query={metricsQuery} />
-                <PaymentSalesSplit query={metricsQuery} />
-              </Suspense>
-            </Stack>
-          </Container>
-          <Footer />
         </Box>
       </AppProvider>
     </ThemeProvider>
   );
 }
+

@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import CloseIcon from '@mui/icons-material/Close';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import CheckIcon from '@mui/icons-material/Check';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import DeleteIcon from '@mui/icons-material/Delete'; // New Import
+import DeleteIcon from '@mui/icons-material/Delete';
 import {
     Drawer,
     Box,
@@ -25,13 +25,12 @@ import {
     Fade,
     Grow,
     Slide,
-    Checkbox // New Import
+    Checkbox,
+    CircularProgress
 } from '@mui/material';
-import { TransitionGroup } from 'react-transition-group'; // Check if this works, if not we rely on MUI inner
+import { TransitionGroup } from 'react-transition-group';
 import { GlassChip } from './ui/GlassChip';
-import { getDashboardSummary } from '../lib/api';
-
-
+import { getDashboardSummary, getProductTypes } from '../lib/api';
 
 export default function MobileFilterDrawer({
     open,
@@ -49,12 +48,24 @@ export default function MobileFilterDrawer({
     utmOptions: propUtmOptions,
     dateRange,
     isDark = false,
+    showBrandFilter = true,
+    showProductFilter = true,
+    showUtmFilter = true,
+
+    showProductTypeFilter = false,
+    productTypes = [],
+    onProductTypeChange,
 }) {
     // Local state for deferred application
     const [tempBrand, setTempBrand] = useState(brandKey);
     const [tempProduct, setTempProduct] = useState(productValue);
     const [tempUtm, setTempUtm] = useState(utm);
     const [tempSalesChannel, setTempSalesChannel] = useState(salesChannel);
+
+    // Product Type State
+    const [tempProductTypes, setTempProductTypes] = useState(productTypes || []);
+    const [availableProductTypes, setAvailableProductTypes] = useState([]);
+    const [typesLoading, setTypesLoading] = useState(false);
 
     const [view, setView] = useState('ROOT'); // ROOT, BRAND, PRODUCT, UTM, UTM_SOURCE, UTM_MEDIUM, UTM_CAMPAIGN, SALES_CHANNEL
     const [utmOptions, setUtmOptions] = useState(null);
@@ -71,14 +82,26 @@ export default function MobileFilterDrawer({
             setTempProduct(productValue);
             setTempUtm(utm);
             setTempSalesChannel(salesChannel);
+            setTempProductTypes(productTypes || []);
             setView('ROOT');
         }
-    }, [open, brandKey, productValue, utm, salesChannel]);
+    }, [open, brandKey, productValue, utm, salesChannel, productTypes]);
 
-    // Fetch UTM options dynamically based on CURRENT applied filters (or temp? usually current context)
-    // Actually, distinct values might depend on the *selected* brand in the drawer.
-    // If I change brand in drawer, I expect UTM options to update for *that* brand.
-    // So we should use tempBrand here.
+    // Fetch Product Types
+    useEffect(() => {
+        if (open && showProductTypeFilter && tempBrand) {
+            setTypesLoading(true);
+            getProductTypes({ brand_key: tempBrand })
+                .then(res => {
+                    const types = res.types || [];
+                    setAvailableProductTypes(types);
+                })
+                .catch(err => console.error("Failed to load product types", err))
+                .finally(() => setTypesLoading(false));
+        }
+    }, [open, showProductTypeFilter, tempBrand]);
+
+    // Fetch UTM options
     useEffect(() => {
         if (propUtmOptions) {
             setUtmOptions(propUtmOptions);
@@ -88,8 +111,8 @@ export default function MobileFilterDrawer({
         if (!open || !tempBrand) return;
 
         const [start, end] = dateRange || [];
-        const s = start?.format('YYYY-MM-DD');
-        const e = end?.format('YYYY-MM-DD');
+        const s = start?.format ? start.format('YYYY-MM-DD') : undefined;
+        const e = end?.format ? end.format('YYYY-MM-DD') : undefined;
 
         getDashboardSummary({
             brand_key: tempBrand,
@@ -121,6 +144,7 @@ export default function MobileFilterDrawer({
             case 'ROOT': return 'Filters';
             case 'BRAND': return 'Select Brand';
             case 'PRODUCT': return 'Select Product';
+            case 'PRODUCT_TYPE': return 'Product Type';
             case 'UTM': return 'UTM Parameters';
             case 'UTM_SOURCE': return 'Source';
             case 'UTM_MEDIUM': return 'Medium';
@@ -147,7 +171,34 @@ export default function MobileFilterDrawer({
         if (onProductChange) onProductChange(tempProduct);
         if (onUtmChange) onUtmChange(tempUtm);
         if (onSalesChannelChange) onSalesChannelChange(tempSalesChannel);
+        if (onProductTypeChange) onProductTypeChange(tempProductTypes);
         onClose();
+    };
+
+    // Product Type Logic
+    const isAllTypesSelected = useMemo(() => {
+        if (availableProductTypes.length === 0) return false;
+        return tempProductTypes.length === availableProductTypes.length;
+    }, [tempProductTypes, availableProductTypes]);
+
+    const isIndeterminateTypes = useMemo(() => {
+        return tempProductTypes.length > 0 && tempProductTypes.length < availableProductTypes.length;
+    }, [tempProductTypes, availableProductTypes]);
+
+    const handleToggleType = (type) => {
+        if (tempProductTypes.includes(type)) {
+            setTempProductTypes(prev => prev.filter(t => t !== type));
+        } else {
+            setTempProductTypes(prev => [...prev, type]);
+        }
+    };
+
+    const handleToggleAllTypes = () => {
+        if (isAllTypesSelected) {
+            setTempProductTypes([]);
+        } else {
+            setTempProductTypes([...availableProductTypes]);
+        }
     };
 
     return (
@@ -176,20 +227,11 @@ export default function MobileFilterDrawer({
                             overflowX: 'auto',
                             bgcolor: 'transparent',
                             py: 1,
-                            // Hide scrollbar
-                            scrollbarWidth: 'none',   // Firefox
-                            '&::-webkit-scrollbar': { display: 'none' } // Chrome/Safari
+                            scrollbarWidth: 'none',
+                            '&::-webkit-scrollbar': { display: 'none' }
                         }}
                     >
-                        <Box
-                            sx={{
-                                display: 'flex',
-                                gap: 1,
-                                px: 2,
-                                alignItems: 'center',
-                                minWidth: 'max-content'
-                            }}
-                        >
+                        <Box sx={{ display: 'flex', gap: 1, px: 2, alignItems: 'center', minWidth: 'max-content' }}>
                             {/* Product Chip */}
                             {(productValue?.id && productValue.id !== '') && (
                                 <Grow in={true}>
@@ -198,8 +240,24 @@ export default function MobileFilterDrawer({
                                             label={`Product: ${productValue.label}`}
                                             onDelete={() => {
                                                 if (onProductChange) onProductChange({ id: '', label: 'All products', detail: 'Whole store' });
-                                                // Sync temp as well to keep list in sync
                                                 setTempProduct({ id: '', label: 'All products', detail: 'Whole store' });
+                                            }}
+                                            size="small"
+                                            isDark={isDark}
+                                            sx={{ borderRadius: '9999px' }}
+                                        />
+                                    </div>
+                                </Grow>
+                            )}
+                            {/* Product Type Chip */}
+                            {productTypes && productTypes.length > 0 && (
+                                <Grow in={true}>
+                                    <div>
+                                        <GlassChip
+                                            label={`Types: ${productTypes.length} selected`}
+                                            onDelete={() => {
+                                                if (onProductTypeChange) onProductTypeChange([]);
+                                                setTempProductTypes([]);
                                             }}
                                             size="small"
                                             isDark={isDark}
@@ -251,6 +309,7 @@ export default function MobileFilterDrawer({
                     </Box>
                 </Fade>
             )}
+
             {/* Header */}
             <Box sx={{
                 p: 2,
@@ -297,32 +356,53 @@ export default function MobileFilterDrawer({
                     {view === 'ROOT' && (
                         <List disablePadding>
                             {/* Brand Item */}
-                            <ListItemButton
-                                onClick={() => setView('BRAND')}
-                                sx={{ py: 2, justifyContent: 'space-between' }}
-                                divider
-                            >
-                                <Box>
-                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>Brand</Typography>
-                                    <Typography variant="body1" fontSize={14} fontWeight={500}>{tempBrand || 'Select Brand'}</Typography>
-                                </Box>
-                                <ChevronRightIcon color="action" />
-                            </ListItemButton>
+                            {showBrandFilter && (
+                                <ListItemButton
+                                    onClick={() => setView('BRAND')}
+                                    sx={{ py: 2, justifyContent: 'space-between' }}
+                                    divider
+                                >
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>Brand</Typography>
+                                        <Typography variant="body1" fontSize={14} fontWeight={500}>{tempBrand || 'Select Brand'}</Typography>
+                                    </Box>
+                                    <ChevronRightIcon color="action" />
+                                </ListItemButton>
+                            )}
 
                             {/* Product Item */}
-                            <ListItemButton
-                                onClick={() => setView('PRODUCT')}
-                                sx={{ py: 2, justifyContent: 'space-between' }}
-                                divider
-                            >
-                                <Box>
-                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>Product</Typography>
-                                    <Typography variant="body1" fontSize={14} fontWeight={500}>
-                                        {tempProduct?.label || 'All products'}
-                                    </Typography>
-                                </Box>
-                                <ChevronRightIcon color="action" />
-                            </ListItemButton>
+                            {showProductFilter && (
+                                <ListItemButton
+                                    onClick={() => setView('PRODUCT')}
+                                    sx={{ py: 2, justifyContent: 'space-between' }}
+                                    divider
+                                >
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>Product</Typography>
+                                        <Typography variant="body1" fontSize={14} fontWeight={500}>
+                                            {tempProduct?.label || 'All products'}
+                                        </Typography>
+                                    </Box>
+                                    <ChevronRightIcon color="action" />
+                                </ListItemButton>
+                            )}
+
+                            {/* Product Type Item (New) */}
+                            {showProductTypeFilter && (
+                                <ListItemButton
+                                    onClick={() => setView('PRODUCT_TYPE')}
+                                    sx={{ py: 2, justifyContent: 'space-between' }}
+                                    divider
+                                >
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>Product Type</Typography>
+                                        <Typography variant="body1" fontSize={14} fontWeight={500}>
+                                            {tempProductTypes.length > 0 ? `${tempProductTypes.length} selected` : 'All types'}
+                                        </Typography>
+                                    </Box>
+                                    <ChevronRightIcon color="action" />
+                                </ListItemButton>
+                            )}
 
                             {/* UTM Item */}
                             <ListItemButton
@@ -358,7 +438,7 @@ export default function MobileFilterDrawer({
                     {/* BRAND VIEW */}
                     {view === 'BRAND' && (
                         <List disablePadding>
-                            {(brands || []).map((b) => (
+                            {(brands || []).filter(b => b.key !== 'MILA').map((b) => (
                                 <ListItemButton
                                     key={b.key}
                                     onClick={() => {
@@ -412,6 +492,57 @@ export default function MobileFilterDrawer({
                                     );
                                 })}
                             </List>
+                        </Box>
+                    )}
+
+                    {/* PRODUCT TYPE VIEW */}
+                    {view === 'PRODUCT_TYPE' && (
+                        <Box>
+                            {typesLoading ? (
+                                <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                                    <CircularProgress size={24} />
+                                </Box>
+                            ) : (
+                                <List disablePadding>
+                                    {/* Select All */}
+                                    <ListItemButton onClick={handleToggleAllTypes} sx={{ py: 1.5 }}>
+                                        <Checkbox
+                                            checked={isAllTypesSelected && availableProductTypes.length > 0}
+                                            indeterminate={isIndeterminateTypes}
+                                            size="small"
+                                            sx={{ p: 0.5, mr: 1 }}
+                                        />
+                                        <ListItemText
+                                            primary="Select All"
+                                            primaryTypographyProps={{ fontWeight: 600, fontSize: 14 }}
+                                        />
+                                    </ListItemButton>
+                                    <Box sx={{ height: 1, bgcolor: 'divider', my: 0.5 }} />
+
+                                    {/* Types List */}
+                                    {availableProductTypes.map((type) => {
+                                        const isSelected = tempProductTypes.includes(type);
+                                        return (
+                                            <ListItemButton key={type} onClick={() => handleToggleType(type)} sx={{ py: 0.5 }}>
+                                                <Checkbox
+                                                    checked={isSelected}
+                                                    size="small"
+                                                    sx={{ p: 0.5, mr: 1 }}
+                                                />
+                                                <ListItemText
+                                                    primary={type}
+                                                    primaryTypographyProps={{ fontSize: 14 }}
+                                                />
+                                            </ListItemButton>
+                                        );
+                                    })}
+                                    {availableProductTypes.length === 0 && (
+                                        <Box sx={{ p: 2, textAlign: 'center' }}>
+                                            <Typography variant="body2" color="text.secondary">No product types found.</Typography>
+                                        </Box>
+                                    )}
+                                </List>
+                            )}
                         </Box>
                     )}
 

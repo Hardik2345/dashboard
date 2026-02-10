@@ -1,11 +1,22 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 import { login, logout, me } from '../../lib/api.js';
 
+function normalizeUser(user) {
+  if (!user) return null;
+  const memberships = Array.isArray(user.brand_memberships) ? user.brand_memberships : [];
+  const hasAuthorRole = (user.role || '').toLowerCase() === 'author';
+  return {
+    ...user,
+    isAuthor: hasAuthorRole,
+    brandKey: user.primary_brand_id || memberships[0]?.brand_id || '',
+  };
+}
+
 export const fetchCurrentUser = createAsyncThunk('auth/fetchCurrentUser', async (_, { rejectWithValue }) => {
   const r = await me();
   if (!r.authenticated) return { user: null };
   if (!r.user) return rejectWithValue('Missing user payload');
-  return { user: r.user, expiresAt: r.expiresAt };
+  return { user: normalizeUser(r.user), expiresAt: r.expiresAt };
 });
 
 export const loginUser = createAsyncThunk('auth/loginUser', async ({ email, password }, { rejectWithValue }) => {
@@ -14,7 +25,7 @@ export const loginUser = createAsyncThunk('auth/loginUser', async ({ email, pass
     const msg = r.data?.error || 'Login failed';
     return rejectWithValue(msg);
   }
-  return { user: r.data?.user || null };
+  return { user: normalizeUser(r.data?.user || null) };
 });
 
 export const logoutUser = createAsyncThunk('auth/logoutUser', async () => {
