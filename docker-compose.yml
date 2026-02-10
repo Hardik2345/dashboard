@@ -26,7 +26,7 @@ services:
     networks:
       - saas-net
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:18080/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:18080/health || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
