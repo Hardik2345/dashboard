@@ -173,9 +173,10 @@ export default function App() {
   useEffect(() => {
     if (!isAuthor && viewerBrands.length) {
       const current = (globalBrandKey || '').toString().trim().toUpperCase();
-      const next = current || viewerBrands[0];
-      if (next && next !== current) {
-        dispatch(setBrand(next));
+      // If current brand is not in the allowed list, force switch to the first allowed brand
+      const isValid = viewerBrands.includes(current);
+      if (!isValid) {
+        dispatch(setBrand(viewerBrands[0]));
       }
     }
   }, [isAuthor, viewerBrands, globalBrandKey, dispatch]);
@@ -191,9 +192,10 @@ export default function App() {
 
     if (isAuthor) {
       base.refreshKey = authorRefreshKey;
-      if (productSelection?.id) {
-        base.product_id = productSelection.id;
-      }
+    }
+
+    if (productSelection?.id && (isAuthor || hasPermission('product_filter'))) {
+      base.product_id = productSelection.id;
     }
     return base;
   }, [start, end, compareMode, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id, utm, salesChannel]);
@@ -289,8 +291,8 @@ export default function App() {
   }, [isAuthor, initialized, authorTab]);
 
   useEffect(() => {
-    // Only authors should see/use product filters; reset for everyone else.
-    if (!isAuthor) {
+    // Only authors or users with product_filter permission should see/use product filters; reset for everyone else.
+    if (!isAuthor && !hasPermission('product_filter')) {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
       setProductSelection(DEFAULT_PRODUCT_OPTION);
       setProductOptionsLoading(false);
@@ -369,7 +371,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [start, end, activeBrandKey, authorRefreshKey, productSelection, initialized, user, isAuthor]);
+  }, [start, end, activeBrandKey, authorRefreshKey, productSelection, initialized, user, isAuthor, hasPermission]);
 
   const handleSelectMetric = useCallback((metricKey) => {
     if (!metricKey) return;
@@ -504,7 +506,8 @@ export default function App() {
 
   // Fetch UTM Options (Lifted from MobileTopBar)
   useEffect(() => {
-    if (!isAuthor || authorTab !== 'dashboard' || !activeBrandKey) return;
+    const canFetch = isAuthor ? authorTab === 'dashboard' : hasPermission('utm_filter');
+    if (!activeBrandKey || !canFetch) return;
     const s = formatDate(start);
     const e = formatDate(end);
 
@@ -743,11 +746,15 @@ export default function App() {
                       onUtmChange={handleUtmChange}
                       salesChannel={salesChannel}
                       onSalesChannelChange={handleSalesChannelChange}
-                      showUtmFilter={true}
+                      showUtmFilter={hasPermission('utm_filter')}
+                      showSalesChannel={hasPermission('sales_channel_filter')}
                       utmOptions={utmOptions}
                     />
                   )}
                   <MobileFilterDrawer
+                    showProductFilter={hasPermission('product_filter')}
+                    showUtmFilter={hasPermission('utm_filter')}
+                    showSalesChannel={hasPermission('sales_channel_filter')}
                     open={mobileFilterOpen}
                     onClose={() => setMobileFilterOpen(false)}
                     brandKey={authorBrandKey}
@@ -793,12 +800,12 @@ export default function App() {
                           utmOptions={utmOptions}
                         />
                         <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-                        <WebVitals query={metricsQuery} />
+                        {hasPermission('web_vitals') && <WebVitals query={metricsQuery} />}
                         <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
                         <FunnelChart funnelData={funnelData} />
-                        <OrderSplit query={metricsQuery} />
-                        <PaymentSalesSplit query={metricsQuery} />
-                        <TrafficSourceSplit query={metricsQuery} />
+                        {hasPermission('payment_split_order') && <OrderSplit query={metricsQuery} />}
+                        {hasPermission('payment_split_sales') && <PaymentSalesSplit query={metricsQuery} />}
+                        {hasPermission('traffic_split') && <TrafficSourceSplit query={metricsQuery} />}
                       </Stack>
                     </Suspense>
                   ) : (
