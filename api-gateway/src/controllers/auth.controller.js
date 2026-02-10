@@ -9,7 +9,7 @@ const AdminDomainRuleService = require('../services/adminDomainRule.service');
 const COOKIE_OPTIONS = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'Lax',
+    sameSite: 'None',
     path: '/', // ensure refresh cookie is sent on /api/auth/* via proxy
     maxAge: 7 * 24 * 60 * 60 * 1000
 };
