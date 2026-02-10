@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   api-gateway:
-    container_name: api-gateway
+    container_name: api-gateway-staging
     build:
       context: ./api-gateway
       dockerfile: Dockerfile
@@ -33,7 +33,7 @@ services:
       start_period: 10s
 
   auth-service:
-    container_name: auth-service
+    container_name: auth-service-staging
     build:
       context: ./api-gateway
       dockerfile: Dockerfile.auth
@@ -54,7 +54,7 @@ services:
       start_period: 10s
 
   tenant-router:
-    container_name: tenant-router
+    container_name: tenant-router-staging
     build:
       context: ./tenant-router
       dockerfile: Dockerfile
@@ -75,7 +75,7 @@ services:
       start_period: 10s
 
   alerts-service:
-    container_name: alerts-service
+    container_name: alerts-service-staging
     build:
       context: ./alerts-service
       dockerfile: Dockerfile
@@ -96,7 +96,7 @@ services:
       start_period: 10s
 
   analytics-service:
-    container_name: analytics-service
+    container_name: analytics-service-staging
     build:
       context: ./analytics
       dockerfile: Dockerfile
