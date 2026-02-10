@@ -19,7 +19,8 @@ export const fetchProductConversion = createAsyncThunk(
 
     let filters = params.filters || state.filters || [];
     const search = params.search !== undefined ? params.search : (state.search || '');
-    const productTypes = params.product_types || state.selectedProductTypes || []; // NEW
+    let productTypes = params.productTypes || state.productTypes || [];
+    if (!Array.isArray(productTypes)) productTypes = [];
 
     // Ensure it is always an array
     if (!Array.isArray(filters)) filters = [];
@@ -27,8 +28,8 @@ export const fetchProductConversion = createAsyncThunk(
     const apiParams = {
       start, end, page, pageSize, sortBy, sortDir, brand_key: params.brand_key,
       filters: JSON.stringify(filters),
-      product_types: productTypes, // NEW
       search,
+      productTypes,
     };
 
     if (compareMode && compareStart && compareEnd) {
@@ -55,7 +56,7 @@ export const fetchProductConversion = createAsyncThunk(
 
       filters,
       search,
-      selectedProductTypes: productTypes // NEW
+      productTypes
     };
   }
 );
@@ -71,7 +72,7 @@ const saveState = (state) => {
       compareEnd: state.compareEnd,
       pageSize: state.pageSize,
       filters: state.filters,
-      selectedProductTypes: state.selectedProductTypes, // NEW
+      productTypes: state.productTypes,
     };
     localStorage.setItem('productConversionState', JSON.stringify(toSave));
   } catch (e) {
@@ -108,8 +109,8 @@ const initialState = {
   compareEnd: saved.compareEnd || null,
 
   filters: Array.isArray(saved.filters) ? saved.filters : [],
+  productTypes: Array.isArray(saved.productTypes) ? saved.productTypes : [],
   search: '',
-  selectedProductTypes: Array.isArray(saved.selectedProductTypes) ? saved.selectedProductTypes : [], // NEW
 };
 
 const productConversionSlice = createSlice({
@@ -150,11 +151,6 @@ const productConversionSlice = createSlice({
       state.page = 1;
       saveState(state);
     },
-    setSelectedProductTypes(state, action) { // NEW
-      state.selectedProductTypes = action.payload || [];
-      state.page = 1;
-      saveState(state);
-    },
     setSearch(state, action) {
       state.search = action.payload || '';
       state.page = 1;
@@ -163,6 +159,11 @@ const productConversionSlice = createSlice({
     setFilter(state, action) {
       // If used, treat as setting a single filter (clearing others)
       state.filters = [action.payload];
+      state.page = 1;
+      saveState(state);
+    },
+    setProductTypes(state, action) {
+      state.productTypes = Array.isArray(action.payload) ? action.payload : [];
       state.page = 1;
       saveState(state);
     },
@@ -208,7 +209,7 @@ const productConversionSlice = createSlice({
         state.compareEnd = action.payload.compareEnd;
         state.filters = action.payload.filters || [];
         state.search = action.payload.search || '';
-        state.selectedProductTypes = action.payload.selectedProductTypes || []; // NEW
+        state.productTypes = action.payload.productTypes || [];
       })
       .addCase(fetchProductConversion.rejected, (state, action) => {
         state.status = 'failed';
@@ -217,7 +218,7 @@ const productConversionSlice = createSlice({
   },
 });
 
-export const { setDateRange, setCompareMode, setCompareDateRange, setPage, setPageSize, setSort, resetProductConversion, setFilter, addFilter, removeFilter, clearFilters, setSearch, setSelectedProductTypes } = productConversionSlice.actions;
+export const { setDateRange, setCompareMode, setCompareDateRange, setPage, setPageSize, setSort, resetProductConversion, setFilter, addFilter, removeFilter, clearFilters, setSearch, setProductTypes } = productConversionSlice.actions;
 export default productConversionSlice.reducer;
 
 

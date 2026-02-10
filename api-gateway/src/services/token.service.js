@@ -123,20 +123,14 @@ class TokenService {
             .filter(m => m.status === 'active')
             .map(m => m.brand_id);
 
-        const roles = {};
-        user.brand_memberships.forEach(m => {
-            if (m.status === 'active') {
-                roles[m.brand_id] = m.role;
-            }
-        });
-
         const primaryBrandId = brandId || user.primary_brand_id;
 
         const payload = {
             sub: user._id,
+            email: user.email,
             brand_ids: brandIds,
             primary_brand_id: primaryBrandId,
-            roles: roles,
+            role: user.role || 'viewer',
         };
 
         const keyConfig = KEY_REGISTRY.get(ACTIVE_KID);
