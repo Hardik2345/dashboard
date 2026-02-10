@@ -51,6 +51,7 @@ export default function MobileFilterDrawer({
     showBrandFilter = true,
     showProductFilter = true,
     showUtmFilter = true,
+    showSalesChannel = true,
 
     showProductTypeFilter = false,
     productTypes = [],
@@ -405,33 +406,37 @@ export default function MobileFilterDrawer({
                             )}
 
                             {/* UTM Item */}
-                            <ListItemButton
-                                onClick={() => setView('UTM')}
-                                sx={{ py: 2, justifyContent: 'space-between' }}
-                                divider
-                            >
-                                <Box>
-                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>UTM Parameters</Typography>
-                                    <Typography variant="body1" fontSize={14} fontWeight={500}>
-                                        {activeUtmCount > 0 ? `${activeUtmCount} Active` : 'All'}
-                                    </Typography>
-                                </Box>
-                                <ChevronRightIcon color="action" />
-                            </ListItemButton>
+                            {showUtmFilter && (
+                                <ListItemButton
+                                    onClick={() => setView('UTM')}
+                                    sx={{ py: 2, justifyContent: 'space-between' }}
+                                    divider
+                                >
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>UTM Parameters</Typography>
+                                        <Typography variant="body1" fontSize={14} fontWeight={500}>
+                                            {activeUtmCount > 0 ? `${activeUtmCount} Active` : 'All'}
+                                        </Typography>
+                                    </Box>
+                                    <ChevronRightIcon color="action" />
+                                </ListItemButton>
+                            )}
 
                             {/* Sales Channel Item */}
-                            <ListItemButton
-                                onClick={() => setView('SALES_CHANNEL')}
-                                sx={{ py: 2, justifyContent: 'space-between' }}
-                            >
-                                <Box>
-                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>Sales Channel</Typography>
-                                    <Typography variant="body1" fontSize={14} fontWeight={500}>
-                                        {tempSalesChannel || 'All'}
-                                    </Typography>
-                                </Box>
-                                <ChevronRightIcon color="action" />
-                            </ListItemButton>
+                            {showSalesChannel && (
+                                <ListItemButton
+                                    onClick={() => setView('SALES_CHANNEL')}
+                                    sx={{ py: 2, justifyContent: 'space-between' }}
+                                >
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>Sales Channel</Typography>
+                                        <Typography variant="body1" fontSize={14} fontWeight={500}>
+                                            {tempSalesChannel || 'All'}
+                                        </Typography>
+                                    </Box>
+                                    <ChevronRightIcon color="action" />
+                                </ListItemButton>
+                            )}
                         </List>
                     )}
 

@@ -36,7 +36,7 @@ import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import { adminListUsers, adminUpsertUser, adminDeleteUser, listAuthorBrands, listDomainRules, upsertDomainRule, deleteDomainRule } from '../lib/api';
 
-const PERMISSION_OPTIONS = ["all", "product_filter", "utm_filter", "web_vitals", "payment_split_order", "payment_split_sales"];
+const PERMISSION_OPTIONS = ["all", "product_filter", "utm_filter", "web_vitals", "payment_split_order", "payment_split_sales", "traffic_split", "sales_channel_filter"];
 
 const emptyForm = {
   email: '',
