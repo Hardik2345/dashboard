@@ -805,17 +805,7 @@ const MemoizedTable = memo(({
               if (compareMode && row.previous && col.id !== 'landing_page_path') {
                 const prev = Number(row.previous[col.id] || 0);
                 const curr = Number(raw || 0);
-
-                let valCurr = curr;
-                let valPrev = prev;
-
-                if (col.id !== 'cvr') {
-                  const daysCurr = dayjs(end).diff(dayjs(start), 'day') + 1;
-                  const daysPrev = dayjs(compareEnd).diff(dayjs(compareStart), 'day') + 1;
-                  valCurr = curr / Math.max(1, daysCurr);
-                  valPrev = prev / Math.max(1, daysPrev);
-                }
-                delta = <DeltaBadge current={valCurr} previous={valPrev} isPercent={col.id === 'cvr'} />;
+                delta = <DeltaBadge current={curr} previous={prev} isPercent={col.id === 'cvr'} />;
               }
               const prevRaw = (compareMode && row.previous) ? row.previous[col.id] : null;
               const prevDisplay = prevRaw !== null && prevRaw !== undefined ? (col.format ? col.format(prevRaw) : formatNumber(prevRaw)) : null;
