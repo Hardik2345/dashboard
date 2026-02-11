@@ -227,6 +227,11 @@ class AuthService {
 
         // 2. Edge Case: Token reused (Revoked token used)
         if (tokenDoc && tokenDoc.revoked) {
+            const logger = require('../utils/logger');
+            logger.warn('AuthService', 'Token reuse detected - Triggering chain revocation', {
+                tokenId: tokenDoc._id,
+                userId: tokenDoc.user_id
+            });
             await this.revokeChain(tokenDoc._id);
             throw new Error('Token reused - Security Alert');
         }
@@ -271,6 +276,13 @@ class AuthService {
 
         await newRefreshToken.save();
 
+        const logger = require('../utils/logger');
+        logger.info('AuthService', 'Token rotated successfully', {
+            oldTokenId: tokenDoc._id,
+            newTokenId: tokenId,
+            userId: user._id
+        });
+
         const accessToken = TokenService.generateAccessToken(user);
 
         return {
@@ -283,6 +295,11 @@ class AuthService {
         // Find the token that claims to be rotated from this ancestor
         const child = await RefreshToken.findOne({ rotated_from: ancestorId });
         if (child) {
+            const logger = require('../utils/logger');
+            logger.warn('AuthService', 'Revoking child token in chain', {
+                tokenId: child._id,
+                userId: child.user_id
+            });
             child.revoked = true;
             await child.save();
             // Recurse
