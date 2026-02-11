@@ -84,7 +84,6 @@ jobs:
           # Deploy preview/staging (no --prod)
           vercel --token "$VERCEL_TOKEN" --confirm --scope "$VERCEL_ORG_ID" --local-config ./vercel.json
 
-  backend:
     name: Deploy backend to Render (staging)
     needs: approval
     runs-on: ubuntu-latest
