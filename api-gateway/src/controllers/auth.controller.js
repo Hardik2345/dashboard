@@ -6,10 +6,18 @@ const crypto = require('crypto');
 const AdminUserService = require('../services/adminUser.service');
 const AdminDomainRuleService = require('../services/adminDomainRule.service');
 
+const RAW_COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'Lax').toString().trim().toLowerCase();
+const COOKIE_SAMESITE = RAW_COOKIE_SAMESITE === 'none'
+    ? 'None'
+    : RAW_COOKIE_SAMESITE === 'strict'
+        ? 'Strict'
+        : 'Lax';
+const COOKIE_SECURE = COOKIE_SAMESITE === 'None' ? true : process.env.NODE_ENV === 'production';
+
 const COOKIE_OPTIONS = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'Lax',
+    secure: COOKIE_SECURE,
+    sameSite: COOKIE_SAMESITE,
     path: '/', // ensure refresh cookie is sent on /api/auth/* via proxy
     maxAge: 7 * 24 * 60 * 60 * 1000
 };
