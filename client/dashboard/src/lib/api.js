@@ -68,19 +68,24 @@ function authHeaders() {
 
 async function refreshAccessToken() {
   try {
+    const refreshToken = window.localStorage.getItem('gateway_refresh_token');
     const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
+      body: JSON.stringify({ refresh_token: refreshToken }), // Send in body as fallback
     });
-    const json = await res.json().catch(() => ({}));
+    const json = await res.json();
     if (!res.ok || !json.access_token) {
-      // window.localStorage.removeItem('gateway_access_token');
       return false;
     }
     window.localStorage.setItem('gateway_access_token', json.access_token);
+    if (json.refresh_token) {
+      window.localStorage.setItem('gateway_refresh_token', json.refresh_token);
+    }
     return true;
-  } catch {
-    // window.localStorage.removeItem('gateway_access_token');
+  } catch (err) {
+    console.error('Failed to refresh token', err);
     return false;
   }
 }
@@ -192,6 +197,9 @@ export async function login(email, password) {
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.access_token) return { error: true, status: res.status, data: json };
     window.localStorage.setItem('gateway_access_token', json.access_token);
+    if (json.refresh_token) {
+      window.localStorage.setItem('gateway_refresh_token', json.refresh_token);
+    }
     return { error: false, data: json };
   } catch {
     return { error: true };
@@ -201,6 +209,7 @@ export async function login(email, password) {
 export async function logout() {
   try {
     window.localStorage.removeItem('gateway_access_token');
+    window.localStorage.removeItem('gateway_refresh_token');
     await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: authHeaders(), credentials: 'include' });
   } catch {
     // ignore logout errors
