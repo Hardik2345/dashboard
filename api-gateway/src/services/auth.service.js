@@ -228,12 +228,40 @@ class AuthService {
         // 2. Edge Case: Token reused (Revoked token used)
         if (tokenDoc && tokenDoc.revoked) {
             const logger = require('../utils/logger');
-            logger.warn('AuthService', 'Token reuse detected - Triggering chain revocation', {
-                tokenId: tokenDoc._id,
-                userId: tokenDoc.user_id
-            });
-            await this.revokeChain(tokenDoc._id);
-            throw new Error('Token reused - Security Alert');
+
+            // --- GRACE PERIOD LOGIC ---
+            const REFRESH_GRACE_PERIOD_MS = 30 * 1000; // 30 seconds
+            const now = new Date();
+            const revokedAt = tokenDoc.revoked_at || new Date(0);
+
+            if (now - revokedAt < REFRESH_GRACE_PERIOD_MS) {
+                logger.info('AuthService', 'Token rotation grace period hit - Returning existing child tokens', {
+                    tokenId: tokenDoc._id,
+                    userId: tokenDoc.user_id
+                });
+
+                // Find the token that was rotated from this one
+                const childTokenDoc = await RefreshToken.findOne({ rotated_from: tokenDoc._id });
+                if (childTokenDoc) {
+                    // We can't easily get the RAW token of the child since it's hashed in DB,
+                    // BUT in a concurrent race, both tabs usually have the SAME old token.
+                    // If we allow the refresh to proceed and issue NEW tokens again, 
+                    // we just need to make sure we don't trigger the "token reuse" alert.
+                    // Instead of failing, we'll allow this specific "old" token to rotate ONE more time
+                    // IF it hasn't been too long.
+                    logger.info('AuthService', 'Allowing grace period rotation', { tokenId: tokenDoc._id });
+                } else {
+                    // If no child found (rare race), let it proceed to rotation below
+                }
+            } else {
+                logger.warn('AuthService', 'Token reuse detected - Triggering chain revocation', {
+                    tokenId: tokenDoc._id,
+                    userId: tokenDoc.user_id,
+                    revokedAt: tokenDoc.revoked_at
+                });
+                await this.revokeChain(tokenDoc._id);
+                throw new Error('Token reused - Security Alert');
+            }
         }
 
         // 3. Validation
@@ -265,6 +293,7 @@ class AuthService {
         // 5. Rotate
         // Revoke old
         tokenDoc.revoked = true;
+        tokenDoc.revoked_at = new Date(); // SET REVOKED AT
         await tokenDoc.save();
 
         // Issue new

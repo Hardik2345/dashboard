@@ -8,9 +8,9 @@ const AdminDomainRuleService = require('../services/adminDomainRule.service');
 
 const COOKIE_OPTIONS = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'Lax',
-    path: '/', // ensure refresh cookie is sent on /api/auth/* via proxy
+    secure: true, // MUST be true for SameSite: 'None'
+    sameSite: 'None', // Required for Shopify iframe
+    path: '/',
     maxAge: 7 * 24 * 60 * 60 * 1000
 };
 
