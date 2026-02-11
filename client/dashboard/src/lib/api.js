@@ -74,13 +74,13 @@ async function refreshAccessToken() {
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.access_token) {
-      window.localStorage.removeItem('gateway_access_token');
+      // window.localStorage.removeItem('gateway_access_token');
       return false;
     }
     window.localStorage.setItem('gateway_access_token', json.access_token);
     return true;
   } catch {
-    window.localStorage.removeItem('gateway_access_token');
+    // window.localStorage.removeItem('gateway_access_token');
     return false;
   }
 }
