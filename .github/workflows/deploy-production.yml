@@ -65,39 +65,3 @@ jobs:
         run: |
           npx --yes vercel@25.1.0 pull --yes --environment=production --token "$VERCEL_TOKEN"
           npx --yes vercel@25.1.0 deploy --prod --confirm --token "$VERCEL_TOKEN"
-
-  backend:
-    name: Deploy backend to Render (production)
-    needs: approval
-    runs-on: ubuntu-latest
-    environment:
-      name: production
-    env:
-      NODE_VERSION: '20'
-      RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
-
-      - name: Install backend dependencies
-        run: npm ci
-
-      - name: Run backend smoke tests before production deployment
-        run: npm run test:unit
-
-      - name: Trigger Render production deploy hook
-        if: env.RENDER_DEPLOY_HOOK != ''
-        run: |
-          curl -f -X POST "$RENDER_DEPLOY_HOOK"
-
-      - name: Skip when production deploy hook is missing
-        if: env.RENDER_DEPLOY_HOOK == ''
-        run: |
-          echo "RENDER_DEPLOY_HOOK secret is not configured; backend production deploy skipped."
