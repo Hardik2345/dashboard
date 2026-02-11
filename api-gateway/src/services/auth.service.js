@@ -238,9 +238,16 @@ class AuthService {
 
         // 3. Validation
         if (!tokenDoc) {
+            const logger = require('../utils/logger');
+            logger.warn('AuthService', 'Refresh failed - Token not found in DB', { inputHash });
             throw new Error('Invalid token');
         }
         if (new Date() > tokenDoc.expires_at) {
+            const logger = require('../utils/logger');
+            logger.warn('AuthService', 'Refresh failed - Token expired', {
+                tokenId: tokenDoc._id,
+                expiresAt: tokenDoc.expires_at
+            });
             throw new Error('Token expired');
         }
 
@@ -311,13 +318,23 @@ class AuthService {
         const inputHash = require('crypto').createHash('sha256').update(rawRefreshToken).digest('hex');
         const tokenDoc = await RefreshToken.findOne({ token_hash: inputHash });
         if (tokenDoc) {
+            const logger = require('../utils/logger');
+            logger.info('AuthService', 'Explicit logout - Revoking token', {
+                tokenId: tokenDoc._id,
+                userId: tokenDoc.user_id
+            });
             tokenDoc.revoked = true;
             await tokenDoc.save();
         }
     }
 
     static async revokeAllRefreshTokensForUser(userId) {
-        await RefreshToken.updateMany({ user_id: userId }, { revoked: true });
+        const logger = require('../utils/logger');
+        const result = await RefreshToken.updateMany({ user_id: userId }, { revoked: true });
+        logger.warn('AuthService', 'Revoked all tokens for user', {
+            userId,
+            modifiedCount: result.modifiedCount
+        });
     }
 }
 

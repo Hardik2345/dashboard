@@ -75,7 +75,13 @@ exports.refresh = async (req, res) => {
     try {
         logger.info('AuthController', 'Refresh request received', { ip: req.ip });
         const refreshToken = req.cookies.refresh_token;
-        if (!refreshToken) return res.status(401).json({ error: 'Refresh token required' });
+        if (!refreshToken) {
+            logger.warn('AuthController', 'Refresh failed - No refresh_token cookie found', {
+                cookies: Object.keys(req.cookies || {}),
+                ip: req.ip
+            });
+            return res.status(401).json({ error: 'Refresh token required' });
+        }
 
         const result = await AuthService.refresh(refreshToken);
 
