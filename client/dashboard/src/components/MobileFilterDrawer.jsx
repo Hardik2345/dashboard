@@ -86,7 +86,7 @@ export default function MobileFilterDrawer({
             setTempProductTypes(productTypes || []);
             setView('ROOT');
         }
-    }, [open, brandKey, productValue, utm, salesChannel, productTypes]);
+    }, [open, brandKey, productValue, utm, salesChannel]); // Removed productTypes to prevent reset loop
 
     // Fetch Product Types
     useEffect(() => {

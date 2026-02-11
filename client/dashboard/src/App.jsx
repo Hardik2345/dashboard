@@ -161,7 +161,7 @@ export default function App() {
     const active = memberships.find((m) => (m.brand_id || '').toString().trim().toUpperCase() === (activeBrandKey || '').toString().trim().toUpperCase());
     const source = active || memberships[0];
     const perms = source?.permissions || [];
-    return perms.length ? perms : ['all'];
+    return perms.length ? perms : []; // Default to NO permissions if empty
   }, [isAuthor, user, activeBrandKey]);
 
   const hasPermission = useCallback((perm) => {
@@ -272,6 +272,25 @@ export default function App() {
       handleAuthorBrandChange(authorBrands[0].key);
     }
   }, [isAuthor, authorBrands, authorBrandKey, handleAuthorBrandChange, brandsLoaded]);
+
+  // Viewer Brand Enforcement (Primary > Persisted)
+  const [viewerBrandEnforced, setViewerBrandEnforced] = useState(false);
+  useEffect(() => {
+    if (isAuthor || !user || viewerBrandEnforced) return;
+
+    // Logic: If user has a primary brand, and they have access to it, 
+    // we should prioritize it on first load over the persisted 'globalBrandKey' 
+    // IF the user is a viewer.
+    const primary = (user.primary_brand_id || '').toString().trim().toUpperCase();
+    const current = (globalBrandKey || '').toString().trim().toUpperCase();
+
+    if (primary && viewerBrands.includes(primary)) {
+      if (current !== primary) {
+        handleAuthorBrandChange(primary);
+      }
+    }
+    setViewerBrandEnforced(true);
+  }, [isAuthor, user, viewerBrands, globalBrandKey, viewerBrandEnforced, handleAuthorBrandChange]);
 
   // Persist tab state only for authors
   useEffect(() => {
@@ -706,7 +725,7 @@ export default function App() {
                 showMenuButton={isAuthor}
                 darkMode={darkMode === 'dark'}
                 onToggleDarkMode={handleToggleDarkMode}
-                showFilterButton={true}
+                showFilterButton={isAuthor || hasPermission('product_filter') || hasPermission('utm_filter') || hasPermission('sales_channel_filter') || showMultipleBrands}
                 onFilterClick={() => setMobileFilterOpen(true)}
               />
             </Box>
@@ -752,13 +771,14 @@ export default function App() {
                     />
                   )}
                   <MobileFilterDrawer
+                    showBrandFilter={showMultipleBrands}
                     showProductFilter={hasPermission('product_filter')}
                     showUtmFilter={hasPermission('utm_filter')}
                     showSalesChannel={hasPermission('sales_channel_filter')}
                     open={mobileFilterOpen}
                     onClose={() => setMobileFilterOpen(false)}
                     brandKey={authorBrandKey}
-                    brands={authorBrands}
+                    brands={isAuthor ? authorBrands : viewerBrands.map(b => ({ key: b }))}
                     onBrandChange={handleAuthorBrandChange}
                     productOptions={productOptions}
                     productValue={productSelection}
