@@ -58,7 +58,6 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # running in working-directory: client/dashboard
           if [ -f package-lock.json ]; then
             echo "Found package-lock.json — running npm ci"
             npm ci
@@ -76,47 +75,8 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_STAGING_PROJECT_ID != '' && secrets.VERCEL_STAGING_PROJECT_ID || secrets.VERCEL_PROJECT_ID }}
         run: |
-          # run ci again if lockfile exists to ensure reproducible deploy
           if [ -f package-lock.json ]; then
             npm ci
           fi
           npm i -g vercel@latest
-          # Deploy preview/staging (no --prod)
           vercel --token "$VERCEL_TOKEN" --confirm --scope "$VERCEL_ORG_ID" --local-config ./vercel.json
-
-    name: Deploy backend to Render (staging)
-    needs: approval
-    runs-on: ubuntu-latest
-    env:
-      NODE_VERSION: '20'
-      RENDER_STAGING_DEPLOY_HOOK: ${{ secrets.RENDER_STAGING_DEPLOY_HOOK }}
-    environment:
-      name: staging
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
-
-      - name: Install backend dependencies
-        run: npm ci
-
-      - name: Run smoke unit tests before staging deployment
-        run: npm run test:unit
-
-      - name: Trigger Render staging deploy hook
-        if: env.RENDER_STAGING_DEPLOY_HOOK != ''
-        run: |
-          curl -f -X POST "$RENDER_STAGING_DEPLOY_HOOK"
-
-      - name: Warn when staging deploy hook is missing
-        if: env.RENDER_STAGING_DEPLOY_HOOK == ''
-        run: |
-          echo "RENDER_STAGING_DEPLOY_HOOK secret is not configured; backend staging deploy skipped." && exit 1
