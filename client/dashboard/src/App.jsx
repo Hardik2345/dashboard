@@ -550,8 +550,12 @@ export default function App() {
     // Check for access_token in URL (OAuth callback)
     const params = new URLSearchParams(window.location.search);
     const token = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
     if (token) {
       window.localStorage.setItem('gateway_access_token', token);
+      if (refreshToken) {
+        window.localStorage.setItem('gateway_refresh_token', refreshToken);
+      }
       // Clean URL
       window.history.replaceState({}, document.title, window.location.pathname);
     }

@@ -25,6 +25,7 @@ exports.login = async (req, res) => {
         logger.info('AuthController', 'Login response sent', { email });
         res.json({
             access_token: result.accessToken,
+            refresh_token: result.refreshToken,
             user: result.user
         });
     } catch (err) {
@@ -54,6 +55,7 @@ exports.signup = async (req, res) => {
         logger.info('AuthController', 'Signup success', { email, brand: primary_brand_id });
         res.status(201).json({
             access_token: result.accessToken,
+            refresh_token: result.refreshToken,
             user: {
                 id: result.user._id,
                 email: result.user.email,
@@ -74,10 +76,13 @@ exports.signup = async (req, res) => {
 exports.refresh = async (req, res) => {
     try {
         logger.info('AuthController', 'Refresh request received', { ip: req.ip });
-        const refreshToken = req.cookies.refresh_token;
+        const refreshToken = req.cookies.refresh_token || req.body.refresh_token || req.headers['x-refresh-token'];
+
         if (!refreshToken) {
-            logger.warn('AuthController', 'Refresh failed - No refresh_token cookie found', {
+            logger.warn('AuthController', 'Refresh failed - No refresh_token found in cookies, body, or headers', {
                 cookies: Object.keys(req.cookies || {}),
+                body: !!req.body.refresh_token,
+                headers: !!req.headers['x-refresh-token'],
                 ip: req.ip
             });
             return res.status(401).json({ error: 'Refresh token required' });
@@ -87,7 +92,10 @@ exports.refresh = async (req, res) => {
 
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
         logger.info('AuthController', 'Refresh success');
-        res.json({ access_token: result.accessToken });
+        res.json({
+            access_token: result.accessToken,
+            refresh_token: result.refreshToken
+        });
     } catch (err) {
         logger.error('AuthController', 'Refresh error', { error: err.message });
         // "Revoked token -> 401", "Expired token -> 401", "User suspended -> 403"
@@ -102,7 +110,7 @@ exports.refresh = async (req, res) => {
 exports.logout = async (req, res) => {
     try {
         logger.info('AuthController', 'Logout request received');
-        const refreshToken = req.cookies.refresh_token;
+        const refreshToken = req.cookies.refresh_token || req.body.refresh_token || req.headers['x-refresh-token'];
         if (refreshToken) {
             await AuthService.logout(refreshToken);
         }
@@ -384,6 +392,7 @@ exports.googleCallback = async (req, res) => {
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
         const payload = {
             access_token: result.accessToken,
+            refresh_token: result.refreshToken,
             user: {
                 id: result.user._id,
                 email: result.user.email,
@@ -396,6 +405,7 @@ exports.googleCallback = async (req, res) => {
         if (redirect) {
             const redirectUrl = new URL(redirect);
             redirectUrl.searchParams.set('access_token', payload.access_token);
+            redirectUrl.searchParams.set('refresh_token', payload.refresh_token);
             redirectUrl.searchParams.set('email', payload.user.email);
             return res.redirect(redirectUrl.toString());
         }
