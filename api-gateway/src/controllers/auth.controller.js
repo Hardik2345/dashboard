@@ -14,6 +14,7 @@ const COOKIE_SAMESITE = RAW_COOKIE_SAMESITE === 'none'
         : 'Lax';
 const COOKIE_SECURE = COOKIE_SAMESITE === 'None' ? true : process.env.NODE_ENV === 'production';
 
+//fixed cookie options for refresh token cookie (httpOnly, secure in prod, sameSite based on env var, 7 day expiry)
 const COOKIE_OPTIONS = {
     httpOnly: true,
     secure: COOKIE_SECURE,
