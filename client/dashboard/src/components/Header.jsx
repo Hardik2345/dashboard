@@ -3,6 +3,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu';
 import FilterListIcon from '@mui/icons-material/FilterList'; // New Import
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
+import SparklesIcon from '@mui/icons-material/AutoAwesome';
 import SkyToggle from './ui/SkyToggle';
 
 export default function Header({
@@ -13,7 +14,9 @@ export default function Header({
   darkMode = false,
   onToggleDarkMode,
   onFilterClick, // New Prop
-  showFilterButton = false // New Prop to control visibility
+  showFilterButton = false, // New Prop to control visibility
+  onToggleDemo,
+  showDemo
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -129,6 +132,41 @@ export default function Header({
                 <TuneRoundedIcon fontSize="small" />
               </IconButton>
             )}
+
+            {/* Demo Toggle (New Integration Check) */}
+            <Tooltip title={showDemo ? "Hide New Integration Demo" : "Show New Integration Demo"} arrow>
+              <Button
+                variant={showDemo ? "contained" : "outlined"}
+                size="small"
+                onClick={onToggleDemo}
+                startIcon={<SparklesIcon sx={{ fontSize: '1rem' }} />}
+                sx={{
+                  mr: 2,
+                  display: { xs: 'none', lg: 'flex' },
+                  borderRadius: '20px',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  ...(showDemo
+                    ? {
+                      bgcolor: '#6366f1',
+                      color: 'white',
+                      '&:hover': { bgcolor: '#4f46e5', transform: 'scale(1.05)' }
+                    }
+                    : {
+                      borderColor: darkMode ? 'rgba(99, 102, 241, 0.5)' : '#6366f1',
+                      color: darkMode ? '#818cf8' : '#6366f1',
+                      '&:hover': {
+                        borderColor: '#4f46e5',
+                        bgcolor: 'rgba(99, 102, 241, 0.1)',
+                        transform: 'scale(1.05)'
+                      }
+                    })
+                }}
+              >
+                {showDemo ? "Hide Demo" : "✨ Demo"}
+              </Button>
+            </Tooltip>
 
             {/* Dark Mode Toggle (Mobile: Second, Desktop: First) */}
             <Tooltip title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'} arrow>
