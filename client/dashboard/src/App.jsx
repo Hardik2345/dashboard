@@ -30,8 +30,6 @@ const ProductConversionTable = lazy(() => import('./components/ProductConversion
 const AuthorBrandForm = lazy(() => import('./components/AuthorBrandForm.jsx'));
 const AuthorBrandList = lazy(() => import('./components/AuthorBrandList.jsx'));
 const AlertsAdmin = lazy(() => import('./components/AlertsAdmin.jsx'));
-import { ModernDashboardDemo } from './components/ModernDashboardDemo.jsx';
-
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -130,8 +128,6 @@ export default function App() {
   const [productOptionsLoading, setProductOptionsLoading] = useState(false);
   const [funnelData, setFunnelData] = useState({ stats: null, deltas: null, loading: true });
   const [utmOptions, setUtmOptions] = useState(null);
-  const [showDemo, setShowDemo] = useState(false);
-
 
   // Keep a data attribute on the body so global CSS (e.g., Polaris overrides) can react to theme changes.
   useEffect(() => {
@@ -451,10 +447,6 @@ export default function App() {
     });
   }, []);
 
-  const handleToggleDemo = useCallback(() => {
-    setShowDemo((prev) => !prev);
-  }, []);
-
   const theme = useMemo(() => createTheme({
     palette: {
       mode: darkMode,
@@ -739,13 +731,8 @@ export default function App() {
                 onToggleDarkMode={handleToggleDarkMode}
                 showFilterButton={isAuthor || hasPermission('product_filter') || hasPermission('utm_filter') || hasPermission('sales_channel_filter') || showMultipleBrands}
                 onFilterClick={() => setMobileFilterOpen(true)}
-                onToggleDemo={handleToggleDemo}
-                showDemo={showDemo}
               />
             </Box>
-
-            {showDemo && <ModernDashboardDemo onClose={handleToggleDemo} />}
-
 
             {/* Non-Sticky Sub-Header (MobileTopBar etc) */}
             <Box
