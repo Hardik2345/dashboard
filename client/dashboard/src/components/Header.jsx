@@ -136,40 +136,6 @@ export default function Header({
                 <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
               </Box>
             </Tooltip>
-
-            {/* Logout (Mobile: Third, Desktop: Second) */}
-            <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={onLogout}
-                sx={{
-                  color: darkMode ? '#f0f0f0' : 'inherit',
-                  borderColor: darkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.23)',
-                  '&:hover': {
-                    borderColor: darkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)',
-                    bgcolor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
-                  },
-                }}
-              >
-                Logout
-              </Button>
-            </Box>
-
-            <Box sx={{ display: { xs: 'flex', sm: 'none' } }}>
-              <IconButton
-                size="small"
-                aria-label="logout"
-                onClick={onLogout}
-                sx={{
-                  ml: 0.5,
-                  color: darkMode ? '#f0f0f0' : 'inherit',
-                }}
-              >
-                <LogoutIcon fontSize="small" />
-              </IconButton>
-            </Box>
-
           </Box>
         )}
       </Toolbar>
