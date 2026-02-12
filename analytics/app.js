@@ -28,6 +28,7 @@ const { createAccessControlService } = require('./services/accessControlService'
 const { createSessionActivityService } = require('./services/sessionActivityService');
 
 const app = express();
+app.set('trust proxy', 1);
 let sequelizeInstance = null;
 
 /**
