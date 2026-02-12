@@ -15,6 +15,9 @@ const CORS_ORIGINS = (process.env.CORS_ORIGINS || '')
     .map(o => o.trim())
     .filter(Boolean);
 
+console.log('[api-gateway] CORS_ORIGINS configured:', CORS_ORIGINS);
+console.log('[api-gateway] COOKIE_SAMESITE configured:', process.env.COOKIE_SAMESITE);
+
 if (CORS_ORIGINS.length > 0) {
     app.use((req, res, next) => {
         const origin = req.headers.origin;

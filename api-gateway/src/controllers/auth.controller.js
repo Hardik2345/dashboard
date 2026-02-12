@@ -31,6 +31,12 @@ exports.login = async (req, res) => {
 
         const result = await AuthService.login(req.body.email, req.body.password, req.headers['user-agent']);
 
+        logger.info('AuthController', 'Login success, setting cookie', {
+            origin: req.headers.origin,
+            cookieOptions: COOKIE_OPTIONS,
+            hasRefreshToken: !!result.refreshToken
+        });
+
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
         logger.info('AuthController', 'Login response sent', { email });
         res.json({
