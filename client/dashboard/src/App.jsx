@@ -132,6 +132,11 @@ export default function App() {
   // Keep a data attribute on the body so global CSS (e.g., Polaris overrides) can react to theme changes.
   useEffect(() => {
     document.body.dataset.theme = darkMode;
+    if (darkMode === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
   }, [darkMode]);
 
   // Track scroll position for sticky panel border
@@ -696,6 +701,8 @@ export default function App() {
               activeTab={authorTab}
               onTabChange={handleSidebarTabChange}
               darkMode={darkMode === 'dark'}
+              user={user}
+              onLogout={handleLogout}
             />
           )}
 
@@ -708,6 +715,7 @@ export default function App() {
               flexDirection: 'column',
               minHeight: '100svh',
               width: isAuthor ? { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` } : '100%',
+              ml: isAuthor ? { xs: 0, md: `${DRAWER_WIDTH}px` } : 0,
             }}
           >
             {/* Sticky Header */}
