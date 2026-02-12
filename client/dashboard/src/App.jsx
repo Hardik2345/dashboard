@@ -1,11 +1,27 @@
 import { useMemo, useState, useEffect, useCallback, Suspense, lazy } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import dayjs from 'dayjs';
 import { AppProvider } from '@shopify/polaris';
 import enTranslations from '@shopify/polaris/locales/en.json';
 import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, Skeleton, useTheme, useMediaQuery } from '@mui/material';
 import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
-import MobileNav from './components/MobileNav.jsx';
+import { AnimeNavBar } from './components/ui/AnimeNavBar.jsx';
+import {
+  LayoutGrid,
+  Table2,
+  Bell,
+  ShieldCheck,
+  Store
+} from 'lucide-react';
+
+const MOBILE_NAV_ITEMS = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
+  { id: 'product-conversion', label: 'Conversion', icon: Table2 },
+  { id: 'alerts', label: 'Alerts', icon: Bell },
+  { id: 'access', label: 'Access', icon: ShieldCheck },
+  { id: 'brands', label: 'Setup', icon: Store },
+];
 import { listAuthorBrands, getTopProducts, getDashboardSummary } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
 import Unauthorized from './components/Unauthorized.jsx';
@@ -131,6 +147,37 @@ export default function App() {
   const [productOptionsLoading, setProductOptionsLoading] = useState(false);
   const [funnelData, setFunnelData] = useState({ stats: null, deltas: null, loading: true });
   const [utmOptions, setUtmOptions] = useState(null);
+
+  // Track navigation direction for transitions
+  const [direction, setDirection] = useState(0);
+
+  // Animation variants for page content
+  const pageVariants = {
+    initial: (dir) => {
+      const isMobileNow = window.innerWidth <= 900;
+      const offset = dir > 0 ? (isMobileNow ? '100%' : 40) : dir < 0 ? (isMobileNow ? '-100%' : -40) : 0;
+      return isMobileNow
+        ? { x: offset, opacity: 0 }
+        : { y: offset, opacity: 0 };
+    },
+    animate: {
+      x: 0,
+      y: 0,
+      opacity: 1,
+      transition: {
+        type: 'spring',
+        stiffness: 260,
+        damping: 28,
+      },
+    },
+    exit: (dir) => {
+      const isMobileNow = window.innerWidth <= 900;
+      const offset = dir > 0 ? (isMobileNow ? '-100%' : -40) : dir < 0 ? (isMobileNow ? '100%' : 40) : 0;
+      return isMobileNow
+        ? { x: offset, opacity: 0 }
+        : { y: offset, opacity: 0 };
+    },
+  };
 
   // Keep a data attribute on the body so global CSS (e.g., Polaris overrides) can react to theme changes.
   useEffect(() => {
@@ -435,7 +482,18 @@ export default function App() {
   const handleSidebarOpen = useCallback(() => setSidebarOpen(true), []);
   const handleSidebarClose = useCallback(() => setSidebarOpen(false), []);
   const handleSidebarTabChange = useCallback((tabId) => {
-    setAuthorTab(tabId);
+    setAuthorTab((prev) => {
+      const oldIndex = MOBILE_NAV_ITEMS.findIndex(item => item.id === prev);
+      const newIndex = MOBILE_NAV_ITEMS.findIndex(item => item.id === tabId);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        setDirection(newIndex > oldIndex ? 1 : -1);
+      } else {
+        setDirection(0);
+      }
+      return tabId;
+    });
+
     try {
       localStorage.setItem('author_active_tab_v1', tabId);
     } catch {
@@ -819,103 +877,117 @@ export default function App() {
                 px: { xs: 1.5, sm: 2.5, md: 4 },
                 py: { xs: 1, md: 2 },
                 pb: { xs: 14, md: 2 }, // Extra space for mobile bottom nav
+                overflow: 'hidden',
+                position: 'relative'
               }}
             >
-              <Stack spacing={{ xs: 1, md: 2 }}>
-                {authorTab === 'dashboard' && (
-                  hasBrand ? (
-                    <Suspense fallback={<SectionFallback count={5} />}>
-                      <Stack spacing={{ xs: 1, md: 1.5 }}>
-                        <KPIs
-                          query={metricsQuery}
-                          selectedMetric={selectedMetric}
-                          onSelectMetric={handleSelectMetric}
-                          onFunnelData={setFunnelData}
-                          productId={productSelection.id}
-                          productLabel={productSelection.label}
-                          utmOptions={utmOptions}
-                        />
-                        <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-                        {hasPermission('web_vitals') && <WebVitals query={metricsQuery} />}
-                        <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-                        <FunnelChart funnelData={funnelData} />
-                        {hasPermission('payment_split_order') && <OrderSplit query={metricsQuery} />}
-                        {hasPermission('payment_split_sales') && <PaymentSalesSplit query={metricsQuery} />}
-                        {hasPermission('traffic_split') && <TrafficSourceSplit query={metricsQuery} />}
-                      </Stack>
-                    </Suspense>
-                  ) : (
-                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Select a brand to load dashboard metrics.
-                      </Typography>
-                    </Paper>
-                  )
-                )}
+              <Stack spacing={{ xs: 1, md: 2 }} sx={{ position: 'relative' }}>
+                <AnimatePresence mode="wait" custom={direction} initial={false}>
+                  <motion.div
+                    key={authorTab}
+                    custom={direction}
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    style={{ width: '100%' }}
+                  >
+                    {authorTab === 'dashboard' && (
+                      hasBrand ? (
+                        <Suspense fallback={<SectionFallback count={5} />}>
+                          <Stack spacing={{ xs: 1, md: 1.5 }}>
+                            <KPIs
+                              query={metricsQuery}
+                              selectedMetric={selectedMetric}
+                              onSelectMetric={handleSelectMetric}
+                              onFunnelData={setFunnelData}
+                              productId={productSelection.id}
+                              productLabel={productSelection.label}
+                              utmOptions={utmOptions}
+                            />
+                            <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+                            {hasPermission('web_vitals') && <WebVitals query={metricsQuery} />}
+                            <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
+                            <FunnelChart funnelData={funnelData} />
+                            {hasPermission('payment_split_order') && <OrderSplit query={metricsQuery} />}
+                            {hasPermission('payment_split_sales') && <PaymentSalesSplit query={metricsQuery} />}
+                            {hasPermission('traffic_split') && <TrafficSourceSplit query={metricsQuery} />}
+                          </Stack>
+                        </Suspense>
+                      ) : (
+                        <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to load dashboard metrics.
+                          </Typography>
+                        </Paper>
+                      )
+                    )}
 
-                {/* Author-only tabs */}
-                {isAuthor && authorTab === 'access' && (
-                  <Suspense fallback={<SectionFallback count={2} />}>
-                    <Stack spacing={{ xs: 2, md: 3 }}>
-                      <AccessControlCard />
-                    </Stack>
-                  </Suspense>
-                )}
+                    {/* Author-only tabs */}
+                    {isAuthor && authorTab === 'access' && (
+                      <Suspense fallback={<SectionFallback count={2} />}>
+                        <Stack spacing={{ xs: 2, md: 3 }}>
+                          <AccessControlCard />
+                        </Stack>
+                      </Suspense>
+                    )}
 
-                {isAuthor && authorTab === 'product-conversion' && (
-                  hasBrand ? (
-                    <Suspense fallback={<SectionFallback />}>
-                      <ProductConversionTable
-                        brandKey={activeBrandKey}
-                        brands={authorBrands}
-                        onBrandChange={handleAuthorBrandChange}
-                        brandsLoading={authorBrandsLoading}
-                      />
-                    </Suspense>
-                  ) : (
-                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Select a brand to load product conversion data.
-                      </Typography>
-                    </Paper>
-                  )
-                )}
+                    {isAuthor && authorTab === 'product-conversion' && (
+                      hasBrand ? (
+                        <Suspense fallback={<SectionFallback />}>
+                          <ProductConversionTable
+                            brandKey={activeBrandKey}
+                            brands={authorBrands}
+                            onBrandChange={handleAuthorBrandChange}
+                            brandsLoading={authorBrandsLoading}
+                          />
+                        </Suspense>
+                      ) : (
+                        <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to load product conversion data.
+                          </Typography>
+                        </Paper>
+                      )
+                    )}
 
-                {isAuthor && authorTab === 'brands' && (
-                  <Suspense fallback={<SectionFallback count={2} />}>
-                    <Stack spacing={{ xs: 2, md: 3 }}>
-                      <AuthorBrandForm />
-                      <AuthorBrandList />
-                    </Stack>
-                  </Suspense>
-                )}
+                    {isAuthor && authorTab === 'brands' && (
+                      <Suspense fallback={<SectionFallback count={2} />}>
+                        <Stack spacing={{ xs: 2, md: 3 }}>
+                          <AuthorBrandForm />
+                          <AuthorBrandList />
+                        </Stack>
+                      </Suspense>
+                    )}
 
-                {authorTab === 'alerts' && (
-                  authorBrands.length ? (
-                    <Suspense fallback={<SectionFallback />}>
-                      <AlertsAdmin
-                        brands={authorBrands}
-                        defaultBrandKey={authorBrandKey}
-                      />
-                    </Suspense>
-                  ) : (
-                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Add at least one brand to start configuring alerts.
-                      </Typography>
-                    </Paper>
-                  )
-                )}
+                    {authorTab === 'alerts' && (
+                      authorBrands.length ? (
+                        <Suspense fallback={<SectionFallback />}>
+                          <AlertsAdmin
+                            brands={authorBrands}
+                            defaultBrandKey={authorBrandKey}
+                          />
+                        </Suspense>
+                      ) : (
+                        <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                          <Typography variant="body2" color="text.secondary">
+                            Add at least one brand to start configuring alerts.
+                          </Typography>
+                        </Paper>
+                      )
+                    )}
+                  </motion.div>
+                </AnimatePresence>
               </Stack>
             </Box>
             <Footer />
           </Box>
         </Box>
         {isMobile && (
-          <MobileNav
+          <AnimeNavBar
+            items={MOBILE_NAV_ITEMS}
             activeTab={authorTab}
             onTabChange={handleSidebarTabChange}
-            darkMode={darkMode === 'dark'}
           />
         )}
       </AppProvider>

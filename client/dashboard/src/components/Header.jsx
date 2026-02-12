@@ -1,9 +1,11 @@
-import { AppBar, Toolbar, Box, Button, IconButton, useTheme, useMediaQuery, Tooltip } from '@mui/material';
-import LogoutIcon from '@mui/icons-material/Logout';
-import MenuIcon from '@mui/icons-material/Menu';
-import FilterListIcon from '@mui/icons-material/FilterList'; // New Import
-import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
-import SkyToggle from './ui/SkyToggle';
+import { AppBar, Toolbar, Box, Button, IconButton, useTheme, useMediaQuery, Tooltip, Typography } from '@mui/material';
+import {
+  Bell,
+  Sun,
+  Moon,
+  LayoutGrid,
+  SlidersHorizontal
+} from 'lucide-react';
 
 export default function Header({
   user,
@@ -12,11 +14,14 @@ export default function Header({
   showMenuButton = false,
   darkMode = false,
   onToggleDarkMode,
-  onFilterClick, // New Prop
-  showFilterButton = false // New Prop to control visibility
+  onFilterClick,
+  showFilterButton = false
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+  // Extract first name for the greeting
+  const firstName = user?.name ? user.name.split(' ')[0] : (user?.email?.split('@')[0] || 'User');
 
   return (
     <AppBar
@@ -24,111 +29,121 @@ export default function Header({
       color="transparent"
       elevation={0}
       sx={{
-        borderColor: 'grey.100',
         bgcolor: 'transparent',
-        borderBottom: { xs: '1px solid', md: 'none' }, // Mobile only bottom border
-        borderBottomColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+        borderBottom: isMobile ? '1px solid' : 'none',
+        borderBottomColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+        px: { xs: 1, md: 4 },
+        py: { xs: 0, md: 1 }
       }}
     >
-      <Toolbar sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: { xs: 48, md: 64 }, py: 0 }}>
+      <Toolbar sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: { xs: 48, md: 72 }, p: 0 }}>
 
-        {/* Left: Hamburger menu + Mobile Brand Logo */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-
-          {/* Mobile Brand Logo */}
-          <Box
-            component="img"
-            src="/brand-logo-dark.png"
-            alt="Brand"
-            loading="eager"
-            decoding="async"
-            sx={{
-              display: { xs: 'block', md: 'none' }, // Mobile only
-              height: { xs: 50, sm: 40 },
-              width: 'auto',
-              ml: 0,
-              mt: 0.3,
-              ...(darkMode
-                ? {
-                  filter: 'invert(1) hue-rotate(180deg) brightness(1.2)',
-                }
-                : {
-                  filter: 'none',
-                }),
-            }}
-          />
+        {/* Left: Greeting (Desktop) or Logo (Mobile) */}
+        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+          {isMobile ? (
+            <Box
+              component="img"
+              src="/brand-logo-dark.png"
+              alt="Brand"
+              sx={{
+                height: 40,
+                width: 'auto',
+                filter: darkMode ? 'invert(1) hue-rotate(180deg) brightness(1.2)' : 'none'
+              }}
+            />
+          ) : (
+            <>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: darkMode ? '#fff' : '#111', display: 'flex', alignItems: 'center', gap: 1 }}>
+                Welcome, {firstName} <span style={{ fontSize: '1.2rem' }}>👋</span>
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                Your store at a glance
+              </Typography>
+            </>
+          )}
         </Box>
 
-        {/* Center: Desktop Brand image (Absolute Center) - RESTORED */}
-        <Box
-          sx={{
-            position: 'absolute',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            pointerEvents: 'none',
-            borderRadius: 1,
-            p: 0.5,
-            bgcolor: darkMode ? '#121212' : 'transparent',
-            top: -10,
-            display: { xs: 'none', md: 'block' } // Hide on mobile
-          }}
-        >
-          <Box
-            component="img"
-            src="/brand-logo-dark.png"
-            alt="Brand"
-            loading="eager"
-            decoding="async"
-            sx={{
-              display: 'block',
-              height: { xs: 72, sm: 80, md: 96 },
-              width: 'auto',
-              ...(darkMode
-                ? {
-                  filter: 'invert(1) hue-rotate(180deg) brightness(1.2)',
-                }
-                : {
-                  filter: 'none',
-                }),
-            }}
-          />
-        </Box>
+        {/* Right: Actions */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 1.5 } }}>
 
-        {/* Right: User info and actions */}
-        {user && (
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0 }}>
+          {/* Mobile Filter Button */}
+          {showFilterButton && isMobile && (
+            <IconButton
+              onClick={onFilterClick}
+              size="small"
+              sx={{
+                color: darkMode ? '#f0f0f0' : 'inherit',
+                bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                border: '1px solid',
+                borderColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                borderRadius: '8px',
+                p: 0.8
+              }}
+            >
+              <SlidersHorizontal size={18} />
+            </IconButton>
+          )}
 
-
-            {/* Filter Button (Mobile: First) */}
-            {showFilterButton && isMobile && (
+          {/* Desktop Actions */}
+          {!isMobile && (
+            <>
+              {/* Notifications */}
               <IconButton
-                onClick={onFilterClick}
                 size="small"
                 sx={{
-                  color: darkMode ? '#f0f0f0' : 'inherit',
-                  bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                  border: '1px solid',
-                  borderColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                  borderRadius: '8px',
-                  mr: 1,
-                  p: 0.5,
-                  '&:hover': {
-                    bgcolor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                  },
+                  bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                  borderRadius: '10px',
+                  p: 1.2,
+                  color: darkMode ? 'zinc.400' : 'zinc.500',
+                  '&:hover': { bgcolor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }
                 }}
               >
-                <TuneRoundedIcon fontSize="small" />
+                <Bell size={20} />
               </IconButton>
-            )}
 
-            {/* Dark Mode Toggle (Mobile: Second, Desktop: First) */}
-            <Tooltip title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'} arrow>
-              <Box sx={{ mr: { xs: 0.1, sm: 1 } }}>
-                <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
-              </Box>
-            </Tooltip>
-          </Box>
-        )}
+              {/* Theme Toggle */}
+              <IconButton
+                onClick={onToggleDarkMode}
+                size="small"
+                sx={{
+                  bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : '#FFF3E0',
+                  borderRadius: '10px',
+                  p: 1.2,
+                  color: darkMode ? '#fff' : '#FF9800',
+                  '&:hover': { bgcolor: darkMode ? 'rgba(255,255,255,0.1)' : '#FFE0B2' }
+                }}
+              >
+                {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+              </IconButton>
+
+              {/* Customize Widget Button */}
+              <Button
+                variant="contained"
+                startIcon={<LayoutGrid size={18} />}
+                sx={{
+                  bgcolor: '#37B29B',
+                  color: '#fff',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  borderRadius: '10px',
+                  px: 2,
+                  py: 1,
+                  '&:hover': { bgcolor: '#2D9381' },
+                  boxShadow: 'none'
+                }}
+              >
+                Customize Widget
+              </Button>
+            </>
+          )}
+
+          {/* Mobile Theme Toggle (Fallthrough) */}
+          {isMobile && (
+            <IconButton onClick={onToggleDarkMode} size="small" sx={{ color: darkMode ? '#fff' : 'inherit' }}>
+              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </IconButton>
+          )}
+        </Box>
       </Toolbar>
     </AppBar>
   );
