@@ -2,9 +2,10 @@ import { useMemo, useState, useEffect, useCallback, Suspense, lazy } from 'react
 import dayjs from 'dayjs';
 import { AppProvider } from '@shopify/polaris';
 import enTranslations from '@shopify/polaris/locales/en.json';
-import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, Skeleton } from '@mui/material';
+import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, Skeleton, useTheme, useMediaQuery } from '@mui/material';
 import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
+import MobileNav from './components/MobileNav.jsx';
 import { listAuthorBrands, getTopProducts, getDashboardSummary } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
 import Unauthorized from './components/Unauthorized.jsx';
@@ -118,6 +119,8 @@ export default function App() {
       return 'dashboard';
     }
   });
+
+  const isMobile = useMediaQuery('(max-width:900px)'); // Responsive breakpoint for mobile
 
   const [authorRefreshKey, setAuthorRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -815,6 +818,7 @@ export default function App() {
                 mx: 'auto',
                 px: { xs: 1.5, sm: 2.5, md: 4 },
                 py: { xs: 1, md: 2 },
+                pb: { xs: 14, md: 2 }, // Extra space for mobile bottom nav
               }}
             >
               <Stack spacing={{ xs: 1, md: 2 }}>
@@ -907,6 +911,13 @@ export default function App() {
             <Footer />
           </Box>
         </Box>
+        {isMobile && (
+          <MobileNav
+            activeTab={authorTab}
+            onTabChange={handleSidebarTabChange}
+            darkMode={darkMode === 'dark'}
+          />
+        )}
       </AppProvider>
     </ThemeProvider>
   );

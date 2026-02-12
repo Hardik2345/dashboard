@@ -34,15 +34,6 @@ export default function Header({
 
         {/* Left: Hamburger menu + Mobile Brand Logo */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {showMenuButton && isMobile && (
-            <IconButton
-              onClick={onMenuClick}
-              size="small"
-              aria-label="Open navigation menu"
-            >
-              <MenuIcon />
-            </IconButton>
-          )}
 
           {/* Mobile Brand Logo */}
           <Box
