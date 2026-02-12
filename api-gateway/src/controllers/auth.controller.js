@@ -106,6 +106,11 @@ exports.refresh = async (req, res) => {
 
         const result = await AuthService.refresh(refreshToken);
 
+        logger.info('AuthController', 'Refresh success, setting cookie', {
+            origin: req.headers.origin,
+            cookieOptions: COOKIE_OPTIONS
+        });
+
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
         logger.info('AuthController', 'Refresh success');
         res.json({
@@ -130,6 +135,8 @@ exports.logout = async (req, res) => {
         if (refreshToken) {
             await AuthService.logout(refreshToken);
         }
+
+        logger.info('AuthController', 'Logout clearing cookie', { cookieOptions: { ...COOKIE_OPTIONS, maxAge: 0 } });
         res.clearCookie('refresh_token', { ...COOKIE_OPTIONS, maxAge: 0 });
         logger.info('AuthController', 'Logout success');
         res.status(200).json({ message: 'Logged out' });
@@ -404,6 +411,12 @@ exports.googleCallback = async (req, res) => {
                 throw err;
             }
         }
+
+        logger.info('AuthController', 'Google login success, setting cookie', {
+            origin: req.headers.origin,
+            cookieOptions: COOKIE_OPTIONS,
+            hasRefreshToken: !!result.refreshToken
+        });
 
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
         const payload = {
