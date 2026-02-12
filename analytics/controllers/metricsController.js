@@ -3028,14 +3028,104 @@ function buildMetricsController() {
         }
 
         if (!usedCache) {
-          [orders, sales, sessions, atc, aov, cvr] = await Promise.all([
-            calcTotalOrdersDelta({ start, end, align, compare, conn, filters }),
-            calcTotalSalesDelta({ start, end, align, compare, conn, filters }),
-            calcTotalSessionsDelta({ start, end, align, compare, conn, filters }),
-            calcAtcSessionsDelta({ start, end, align, compare, conn, filters }),
-            calcAovDelta({ start, end, align, compare, conn, filters }),
-            calcCvrDelta({ start, end, align, compare, conn, filters })
-          ]);
+          if (hasFilters && !align && !compare) {
+            const buildRangeAgg = async (s, e) => {
+              let ordersWhere = 'created_date >= ? AND created_date <= ?';
+              const ordersReplacements = [s, e];
+              ordersWhere = appendUtmWhere(ordersWhere, ordersReplacements, filters);
+
+              let sessionsWhere = 'date >= ? AND date <= ?';
+              const sessionsReplacements = [s, e];
+              sessionsWhere = appendUtmWhere(sessionsWhere, sessionsReplacements, filters);
+              sessionsWhere += " AND landing_page_type = 'Product'";
+
+              const sql = `
+                SELECT
+                  orders.total_sales,
+                  orders.total_orders,
+                  sessions.total_sessions,
+                  sessions.total_atc_sessions
+                FROM (
+                  SELECT
+                    COALESCE(SUM(total_price),0) AS total_sales,
+                    COUNT(DISTINCT order_name) AS total_orders
+                  FROM shopify_orders
+                  WHERE ${ordersWhere}
+                ) orders,
+                (
+                  SELECT
+                    COALESCE(SUM(sessions),0) AS total_sessions,
+                    COALESCE(SUM(sessions_with_cart_additions),0) AS total_atc_sessions
+                  FROM product_sessions_snapshot
+                  WHERE ${sessionsWhere}
+                ) sessions
+              `;
+
+              const rows = await conn.query(sql, {
+                type: QueryTypes.SELECT,
+                replacements: [...ordersReplacements, ...sessionsReplacements],
+              });
+              const row = rows?.[0] || {};
+              const total_sales = Number(row.total_sales || 0);
+              const total_orders = Number(row.total_orders || 0);
+              const total_sessions = Number(row.total_sessions || 0);
+              const total_atc_sessions = Number(row.total_atc_sessions || 0);
+              const average_order_value = total_orders > 0 ? total_sales / total_orders : 0;
+              const conversion_rate = total_sessions > 0 ? total_orders / total_sessions : 0;
+              const conversion_rate_percent = conversion_rate * 100;
+              return {
+                total_sales,
+                total_orders,
+                total_sessions,
+                total_atc_sessions,
+                average_order_value,
+                conversion_rate_percent
+              };
+            };
+
+            const prevWin = previousWindow(start, end);
+            const [cur, prev] = await Promise.all([
+              buildRangeAgg(start, end),
+              prevWin ? buildRangeAgg(prevWin.prevStart, prevWin.prevEnd) : Promise.resolve(null)
+            ]);
+
+            const mkMetric = (key, metricName) => {
+              const c = cur?.[key] || 0;
+              const p = prev?.[key] || 0;
+              const diff = c - p;
+              const diff_pct = p > 0 ? (diff / p) * 100 : (c > 0 ? 100 : 0);
+              const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+              return { metric: metricName, range: { start, end }, current: c, previous: p, diff_pct, direction, source: 'db' };
+            };
+
+            orders = mkMetric('total_orders', 'TOTAL_ORDERS_DELTA');
+            sales = mkMetric('total_sales', 'TOTAL_SALES_DELTA');
+            sessions = mkMetric('total_sessions', 'TOTAL_SESSIONS_DELTA');
+            atc = mkMetric('total_atc_sessions', 'TOTAL_ATC_SESSIONS_DELTA');
+            aov = mkMetric('average_order_value', 'AOV_DELTA');
+
+            const cvrCur = cur?.conversion_rate_percent || 0;
+            const cvrPrev = prev?.conversion_rate_percent || 0;
+            const cvrDelta = computePercentDelta(cvrCur, cvrPrev);
+            cvr = {
+              metric: 'CVR_DELTA',
+              range: { start, end },
+              current: { cvr_percent: cvrCur },
+              previous: { cvr_percent: cvrPrev },
+              diff_pp: cvrDelta.diff_pp,
+              diff_pct: cvrDelta.diff_pct,
+              direction: cvrDelta.direction
+            };
+          } else {
+            [orders, sales, sessions, atc, aov, cvr] = await Promise.all([
+              calcTotalOrdersDelta({ start, end, align, compare, conn, filters }),
+              calcTotalSalesDelta({ start, end, align, compare, conn, filters }),
+              calcTotalSessionsDelta({ start, end, align, compare, conn, filters }),
+              calcAtcSessionsDelta({ start, end, align, compare, conn, filters }),
+              calcAovDelta({ start, end, align, compare, conn, filters }),
+              calcCvrDelta({ start, end, align, compare, conn, filters })
+            ]);
+          }
         }
 
         const prevWin = previousWindow(start, end);
@@ -3123,6 +3213,65 @@ function buildMetricsController() {
           }
           const conn = req.brandDb ? req.brandDb.sequelize : null;
           if (!conn) throw new Error("Database connection missing (tenant router required)");
+
+          if (hasFilters) {
+            let ordersWhere = 'created_date >= ? AND created_date <= ?';
+            const ordersReplacements = [s, e];
+            ordersWhere = appendUtmWhere(ordersWhere, ordersReplacements, filters);
+
+            const { sales_channel, ...snapshotFilters } = filters || {};
+            let sessionsWhere = 'date >= ? AND date <= ?';
+            const sessionsReplacements = [s, e];
+            sessionsWhere = appendUtmWhere(sessionsWhere, sessionsReplacements, snapshotFilters);
+            sessionsWhere += " AND landing_page_type = 'Product'";
+
+            const sql = `
+              SELECT
+                orders.total_sales,
+                orders.total_orders,
+                sessions.total_sessions,
+                sessions.total_atc_sessions
+              FROM (
+                SELECT
+                  COALESCE(SUM(total_price),0) AS total_sales,
+                  COUNT(DISTINCT order_name) AS total_orders
+                FROM shopify_orders
+                WHERE ${ordersWhere}
+              ) orders,
+              (
+                SELECT
+                  COALESCE(SUM(sessions),0) AS total_sessions,
+                  COALESCE(SUM(sessions_with_cart_additions),0) AS total_atc_sessions
+                FROM product_sessions_snapshot
+                WHERE ${sessionsWhere}
+              ) sessions
+            `;
+
+            const rows = await conn.query(sql, {
+              type: QueryTypes.SELECT,
+              replacements: [...ordersReplacements, ...sessionsReplacements],
+            });
+
+            const row = rows?.[0] || {};
+            const total_sales = Number(row.total_sales || 0);
+            const total_orders = Number(row.total_orders || 0);
+            const total_sessions = Number(row.total_sessions || 0);
+            const total_atc_sessions = Number(row.total_atc_sessions || 0);
+            const average_order_value = total_orders > 0 ? total_sales / total_orders : 0;
+            const conversion_rate = total_sessions > 0 ? total_orders / total_sessions : 0;
+            const conversion_rate_percent = conversion_rate * 100;
+
+            return {
+              total_orders,
+              total_sales,
+              total_sessions,
+              total_atc_sessions,
+              average_order_value,
+              conversion_rate,
+              conversion_rate_percent,
+              source: 'db'
+            };
+          }
 
           const [sales, orders, sessions, atc, cvrObj, aovObj] = await Promise.all([
             computeTotalSales({ start: s, end: e, conn, filters }),
