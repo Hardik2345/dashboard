@@ -3353,93 +3353,42 @@ function buildMetricsController() {
             const baseWhere = 'created_date >= ? AND created_date <= ?';
             const baseReplacements = [start, end];
 
-            const buildOptionWhere = (field, otherFilters) => {
-              let w = baseWhere + ` AND ${field} IS NOT NULL AND ${field} <> ""`;
-              let r = [...baseReplacements];
-              const f = { ...otherFilters };
-              if (field === 'utm_source') delete f.utm_source;
-              if (field === 'utm_medium') delete f.utm_medium;
-              if (field === 'utm_campaign') delete f.utm_campaign;
-              w = appendUtmWhere(w, r, f);
-              return { where: w, replacements: r };
-            };
-
-            // Hierarchy: Source -> Medium -> Campaign
-            // Source options: Always show full list for the date range (allows switching source)
-            const srcW = buildOptionWhere('utm_source', {});
-            // Medium options: Filter by Source only
-            const medW = buildOptionWhere('utm_medium', { utm_source: filters.utm_source });
-            // Campaign options: Filter by Source, Medium, Sales Channel (if provided)
-            const campFilters = {
-              utm_source: filters.utm_source,
-              utm_medium: filters.utm_medium,
-              sales_channel: filters.sales_channel,
-            };
-            const campW = buildOptionWhere('utm_campaign', campFilters);
-
-            const channelWhere = `${baseWhere} AND order_app_name IS NOT NULL AND order_app_name <> ''`;
-            const channelReplacements = [...baseReplacements];
-
             const optionSql = `
-              WITH
-              src AS (
-                SELECT DISTINCT utm_source AS value
-                FROM shopify_orders
-                WHERE ${srcW.where}
-                LIMIT 1000
-              ),
-              med AS (
-                SELECT DISTINCT utm_medium AS value
-                FROM shopify_orders
-                WHERE ${medW.where}
-                LIMIT 1000
-              ),
-              camp AS (
-                SELECT DISTINCT utm_campaign AS value
-                FROM shopify_orders
-                WHERE ${campW.where}
-                LIMIT 1000
-              ),
-              chan AS (
-                SELECT DISTINCT order_app_name AS value
-                FROM shopify_orders
-                WHERE ${channelWhere}
-                LIMIT 1000
-              )
-              SELECT 'utm_source' AS kind, value FROM src
-              UNION ALL
-              SELECT 'utm_medium' AS kind, value FROM med
-              UNION ALL
-              SELECT 'utm_campaign' AS kind, value FROM camp
-              UNION ALL
-              SELECT 'sales_channel' AS kind, value FROM chan
+              SELECT
+                GROUP_CONCAT(DISTINCT CASE
+                  WHEN utm_source IS NOT NULL AND utm_source <> '' THEN utm_source
+                  ELSE NULL END) AS utm_source,
+                GROUP_CONCAT(DISTINCT CASE
+                  WHEN utm_medium IS NOT NULL AND utm_medium <> ''
+                    AND (${filters.utm_source ? 'utm_source = ?' : '1=1'})
+                  THEN utm_medium ELSE NULL END) AS utm_medium,
+                GROUP_CONCAT(DISTINCT CASE
+                  WHEN utm_campaign IS NOT NULL AND utm_campaign <> ''
+                    AND (${filters.utm_source ? 'utm_source = ?' : '1=1'})
+                    AND (${filters.utm_medium ? 'utm_medium = ?' : '1=1'})
+                    AND (${filters.sales_channel ? 'order_app_name = ?' : '1=1'})
+                  THEN utm_campaign ELSE NULL END) AS utm_campaign,
+                GROUP_CONCAT(DISTINCT CASE
+                  WHEN order_app_name IS NOT NULL AND order_app_name <> '' THEN order_app_name
+                  ELSE NULL END) AS sales_channel
+              FROM shopify_orders
+              WHERE ${baseWhere}
             `;
 
-            const optionReplacements = [
-              ...srcW.replacements,
-              ...medW.replacements,
-              ...campW.replacements,
-              ...channelReplacements
-            ];
+            const optionReplacements = [...baseReplacements];
+            if (filters.utm_source) optionReplacements.push(filters.utm_source);
+            if (filters.utm_source) optionReplacements.push(filters.utm_source);
+            if (filters.utm_medium) optionReplacements.push(filters.utm_medium);
+            if (filters.sales_channel) optionReplacements.push(filters.sales_channel);
 
-            const optionRows = await conn.query(optionSql, { type: QueryTypes.SELECT, replacements: optionReplacements });
-            const utmSource = [];
-            const utmMedium = [];
-            const utmCampaign = [];
-            const salesChannelOptions = [];
-            for (const row of optionRows) {
-              if (!row.value) continue;
-              if (row.kind === 'utm_source') utmSource.push(row.value);
-              else if (row.kind === 'utm_medium') utmMedium.push(row.value);
-              else if (row.kind === 'utm_campaign') utmCampaign.push(row.value);
-              else if (row.kind === 'sales_channel') salesChannelOptions.push(row.value);
-            }
+            const [row] = await conn.query(optionSql, { type: QueryTypes.SELECT, replacements: optionReplacements });
+            const splitList = (value) => (value ? value.split(',').map(v => v.trim()).filter(Boolean) : []);
 
             filterOptions = {
-              utm_source: utmSource.sort(),
-              utm_medium: utmMedium.sort(),
-              utm_campaign: utmCampaign.sort(),
-              sales_channel: salesChannelOptions.sort(),
+              utm_source: splitList(row?.utm_source).sort(),
+              utm_medium: splitList(row?.utm_medium).sort(),
+              utm_campaign: splitList(row?.utm_campaign).sort(),
+              sales_channel: splitList(row?.sales_channel).sort(),
             };
             mark('filter_options', s);
           }
