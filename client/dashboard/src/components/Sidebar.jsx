@@ -25,6 +25,22 @@ import {
 
 const DRAWER_WIDTH = 260;
 
+const AVATAR_COLORS = [
+  '#F44336', '#E91E63', '#9C27B0', '#673AB7', '#3F51B5',
+  '#2196F3', '#03A9F4', '#00BCD4', '#009688', '#4CAF50',
+  '#8BC34A', '#CDDC39', '#FFEB3B', '#FFC107', '#FF9800', '#FF5722'
+];
+
+const getInitials = (name, email) => {
+  const str = name || email || 'U';
+  return str.charAt(0).toUpperCase();
+};
+
+const getAvatarColor = (initial) => {
+  const code = initial.charCodeAt(0);
+  return AVATAR_COLORS[code % AVATAR_COLORS.length];
+};
+
 const NAV_ITEMS = [
   {
     group: 'main',
@@ -54,6 +70,8 @@ export default function Sidebar({
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const initials = getInitials(user?.name, user?.email);
+  const avatarColor = getAvatarColor(initials);
 
   const NavContent = () => (
     <div className={cn(
@@ -115,10 +133,14 @@ export default function Sidebar({
               width: 40,
               height: 40,
               borderRadius: '10px',
-              bgcolor: darkMode ? '#27272a' : '#f4f4f5',
-              color: darkMode ? '#a1a1aa' : '#71717a'
+              bgcolor: avatarColor,
+              color: '#fff',
+              fontSize: '1rem',
+              fontWeight: 'bold'
             }}
-          />
+          >
+            {!user?.avatar_url && !user?.picture && initials}
+          </Avatar>
           <div className="flex flex-col items-start text-left min-w-0">
             <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate w-full uppercase">
               {user?.name || user?.email?.split('@')[0] || 'User'}
