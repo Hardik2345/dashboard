@@ -3353,43 +3353,93 @@ function buildMetricsController() {
             const baseWhere = 'created_date >= ? AND created_date <= ?';
             const baseReplacements = [start, end];
 
-            const buildOptionQuery = (field, otherFilters) => {
+            const buildOptionWhere = (field, otherFilters) => {
               let w = baseWhere + ` AND ${field} IS NOT NULL AND ${field} <> ""`;
               let r = [...baseReplacements];
-              // Filter out the current field
               const f = { ...otherFilters };
               if (field === 'utm_source') delete f.utm_source;
               if (field === 'utm_medium') delete f.utm_medium;
               if (field === 'utm_campaign') delete f.utm_campaign;
-
               w = appendUtmWhere(w, r, f);
-              return { sql: `SELECT DISTINCT ${field} FROM shopify_orders WHERE ${w} LIMIT 1000`, replacements: r };
+              return { where: w, replacements: r };
             };
 
             // Hierarchy: Source -> Medium -> Campaign
             // Source options: Always show full list for the date range (allows switching source)
-            const qSrc = buildOptionQuery('utm_source', {});
+            const srcW = buildOptionWhere('utm_source', {});
             // Medium options: Filter by Source only
-            const qMed = buildOptionQuery('utm_medium', { utm_source: filters.utm_source });
-            // Campaign options: Filter by Source and Medium
-            const qCamp = buildOptionQuery('utm_campaign', filters);
+            const medW = buildOptionWhere('utm_medium', { utm_source: filters.utm_source });
+            // Campaign options: Filter by Source, Medium, Sales Channel (if provided)
+            const campFilters = {
+              utm_source: filters.utm_source,
+              utm_medium: filters.utm_medium,
+              sales_channel: filters.sales_channel,
+            };
+            const campW = buildOptionWhere('utm_campaign', campFilters);
 
-            const [srcRows, medRows, campRows] = await Promise.all([
-              conn.query(qSrc.sql, { type: QueryTypes.SELECT, replacements: qSrc.replacements }),
-              conn.query(qMed.sql, { type: QueryTypes.SELECT, replacements: qMed.replacements }),
-              conn.query(qCamp.sql, { type: QueryTypes.SELECT, replacements: qCamp.replacements })
-            ]);
+            const channelWhere = `${baseWhere} AND order_app_name IS NOT NULL AND order_app_name <> ''`;
+            const channelReplacements = [...baseReplacements];
 
-            // Fetch Sales Channel Options
-            const channelSql = `SELECT DISTINCT order_app_name FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND order_app_name IS NOT NULL AND order_app_name <> ''`;
-            const channelRows = await conn.query(channelSql, { type: QueryTypes.SELECT, replacements: [start, end] });
-            const salesChannelOptions = channelRows.map(r => r.order_app_name).sort();
+            const optionSql = `
+              WITH
+              src AS (
+                SELECT DISTINCT utm_source AS value
+                FROM shopify_orders
+                WHERE ${srcW.where}
+                LIMIT 1000
+              ),
+              med AS (
+                SELECT DISTINCT utm_medium AS value
+                FROM shopify_orders
+                WHERE ${medW.where}
+                LIMIT 1000
+              ),
+              camp AS (
+                SELECT DISTINCT utm_campaign AS value
+                FROM shopify_orders
+                WHERE ${campW.where}
+                LIMIT 1000
+              ),
+              chan AS (
+                SELECT DISTINCT order_app_name AS value
+                FROM shopify_orders
+                WHERE ${channelWhere}
+                LIMIT 1000
+              )
+              SELECT 'utm_source' AS kind, value FROM src
+              UNION ALL
+              SELECT 'utm_medium' AS kind, value FROM med
+              UNION ALL
+              SELECT 'utm_campaign' AS kind, value FROM camp
+              UNION ALL
+              SELECT 'sales_channel' AS kind, value FROM chan
+            `;
+
+            const optionReplacements = [
+              ...srcW.replacements,
+              ...medW.replacements,
+              ...campW.replacements,
+              ...channelReplacements
+            ];
+
+            const optionRows = await conn.query(optionSql, { type: QueryTypes.SELECT, replacements: optionReplacements });
+            const utmSource = [];
+            const utmMedium = [];
+            const utmCampaign = [];
+            const salesChannelOptions = [];
+            for (const row of optionRows) {
+              if (!row.value) continue;
+              if (row.kind === 'utm_source') utmSource.push(row.value);
+              else if (row.kind === 'utm_medium') utmMedium.push(row.value);
+              else if (row.kind === 'utm_campaign') utmCampaign.push(row.value);
+              else if (row.kind === 'sales_channel') salesChannelOptions.push(row.value);
+            }
 
             filterOptions = {
-              utm_source: srcRows.map(r => r.utm_source).sort(),
-              utm_medium: medRows.map(r => r.utm_medium).sort(),
-              utm_campaign: campRows.map(r => r.utm_campaign).sort(),
-              sales_channel: salesChannelOptions,
+              utm_source: utmSource.sort(),
+              utm_medium: utmMedium.sort(),
+              utm_campaign: utmCampaign.sort(),
+              sales_channel: salesChannelOptions.sort(),
             };
             mark('filter_options', s);
           }
