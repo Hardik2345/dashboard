@@ -10,7 +10,7 @@ GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/deploy_key -o IdentitiesOnly=yes' git 
 GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/deploy_key -o IdentitiesOnly=yes' git reset --hard origin/main
 
 echo "Stopping containers..."
-docker compose -p "dashboard-prod" down
+docker compose -p "dashboard-prod" down --remove-orphans
 
 echo "Rebuilding containers..."
 docker compose -p "dashboard-prod" build --no-cache
