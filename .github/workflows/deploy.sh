@@ -1,14 +1,13 @@
 #!/bin/bash
-
-set -e  # stop on error
+set -e
 
 echo "---- DEPLOY STARTED ----"
 
 cd /home/ubuntu/datum-deploy/dashboard
 
 echo "Pulling latest main branch..."
-git fetch origin
-git reset --hard origin/main
+GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/deploy_key -o IdentitiesOnly=yes' git fetch origin
+GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/deploy_key -o IdentitiesOnly=yes' git reset --hard origin/main
 
 echo "Stopping containers..."
 docker compose -p "dashboard-prod" down
