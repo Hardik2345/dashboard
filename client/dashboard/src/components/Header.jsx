@@ -4,7 +4,8 @@ import {
   Sun,
   Moon,
   LayoutGrid,
-  SlidersHorizontal
+  SlidersHorizontal,
+  LogOut
 } from 'lucide-react';
 
 export default function Header({
@@ -15,7 +16,8 @@ export default function Header({
   darkMode = false,
   onToggleDarkMode,
   onFilterClick,
-  showFilterButton = false
+  showFilterButton = false,
+  isAdmin = false
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -87,19 +89,21 @@ export default function Header({
           {/* Desktop Actions */}
           {!isMobile && (
             <>
-              {/* Notifications */}
-              <IconButton
-                size="small"
-                sx={{
-                  bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                  borderRadius: '10px',
-                  p: 1.2,
-                  color: darkMode ? 'zinc.400' : 'zinc.500',
-                  '&:hover': { bgcolor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }
-                }}
-              >
-                <Bell size={20} />
-              </IconButton>
+              {/* Notifications - Only for admins */}
+              {isAdmin && (
+                <IconButton
+                  size="small"
+                  sx={{
+                    bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                    borderRadius: '10px',
+                    p: 1.2,
+                    color: darkMode ? 'zinc.400' : 'zinc.500',
+                    '&:hover': { bgcolor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }
+                  }}
+                >
+                  <Bell size={20} />
+                </IconButton>
+              )}
 
               {/* Theme Toggle */}
               <IconButton
@@ -116,32 +120,60 @@ export default function Header({
                 {darkMode ? <Sun size={20} /> : <Moon size={20} />}
               </IconButton>
 
-              {/* Customize Widget Button */}
-              <Button
-                variant="contained"
-                startIcon={<LayoutGrid size={18} />}
-                sx={{
-                  bgcolor: '#37B29B',
-                  color: '#fff',
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  borderRadius: '10px',
-                  px: 2,
-                  py: 1,
-                  '&:hover': { bgcolor: '#2D9381' },
-                  boxShadow: 'none'
-                }}
-              >
-                Customize Widget
-              </Button>
+              {/* Logout - Only for non-admins (admins have it in sidebar) */}
+              {!isAdmin && (
+                <Tooltip title="Logout">
+                  <IconButton
+                    onClick={onLogout}
+                    size="small"
+                    sx={{
+                      bgcolor: darkMode ? 'rgba(211, 47, 47, 0.1)' : 'rgba(211, 47, 47, 0.05)',
+                      borderRadius: '10px',
+                      p: 1.2,
+                      color: '#d32f2f', // Red color
+                      '&:hover': { bgcolor: darkMode ? 'rgba(211, 47, 47, 0.2)' : 'rgba(211, 47, 47, 0.1)' }
+                    }}
+                  >
+                    <LogOut size={20} />
+                  </IconButton>
+                </Tooltip>
+              )}
+
+              {/* Customize Widget Button - Only for admins */}
+              {isAdmin && (
+                <Button
+                  variant="contained"
+                  startIcon={<LayoutGrid size={18} />}
+                  sx={{
+                    bgcolor: '#37B29B',
+                    color: '#fff',
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    borderRadius: '10px',
+                    px: 2,
+                    py: 1,
+                    '&:hover': { bgcolor: '#2D9381' },
+                    boxShadow: 'none'
+                  }}
+                >
+                  Customize Widget
+                </Button>
+              )}
             </>
           )}
 
-          {/* Mobile Theme Toggle (Fallthrough) */}
+          {/* Mobile Theme & Logout (Fallthrough) */}
           {isMobile && (
-            <IconButton onClick={onToggleDarkMode} size="small" sx={{ color: darkMode ? '#fff' : 'inherit' }}>
-              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-            </IconButton>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <IconButton onClick={onToggleDarkMode} size="small" sx={{ color: darkMode ? '#fff' : 'inherit' }}>
+                {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+              </IconButton>
+              {!isAdmin && (
+                <IconButton onClick={onLogout} size="small" sx={{ color: '#d32f2f' }}>
+                  <LogOut size={20} />
+                </IconButton>
+              )}
+            </Box>
           )}
         </Box>
       </Toolbar>
