@@ -535,15 +535,12 @@ export default function App() {
       start: s,
       end: e,
       include_utm_options: true,
-      utm_source: utm?.source, // Dependent filtering
-      utm_medium: utm?.medium,
-      utm_campaign: utm?.campaign,
-      sales_channel: salesChannel
+      // Do not pass current UTM filters so options don't collapse after selecting one.
     })
       .then(res => {
         if (res.filter_options) setUtmOptions(res.filter_options);
       });
-  }, [activeBrandKey, start, end, utm, isAuthor, authorTab, salesChannel]);
+  }, [activeBrandKey, start, end, isAuthor, authorTab]);
 
   // Check auth on mount
   useEffect(() => {
@@ -903,4 +900,3 @@ export default function App() {
     </ThemeProvider>
   );
 }
-
