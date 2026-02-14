@@ -3545,15 +3545,34 @@ function buildMetricsController() {
               WHERE created_date >= ? AND created_date <= ?
             `;
 
-            const [row] = await conn.query(optionSql, { type: QueryTypes.SELECT, replacements: [start, end] });
-            const splitList = (value) => (value ? value.split(',').map(v => v.trim()).filter(Boolean) : []);
+            const optionReplacements = [start, end];
+            let debugSql = null;
+            try {
+              debugSql = { sql: optionSql.trim(), replacements: optionReplacements };
+              const [row] = await conn.query(optionSql, { type: QueryTypes.SELECT, replacements: optionReplacements });
+              const splitList = (value) => (value ? value.split(',').map(v => v.trim()).filter(Boolean) : []);
 
-            filterOptions = {
-              utm_source: splitList(row?.utm_source).sort(),
-              utm_medium: splitList(row?.utm_medium).sort(),
-              utm_campaign: splitList(row?.utm_campaign).sort(),
-              sales_channel: splitList(row?.sales_channel).sort(),
-            };
+              filterOptions = {
+                utm_source: splitList(row?.utm_source).sort(),
+                utm_medium: splitList(row?.utm_medium).sort(),
+                utm_campaign: splitList(row?.utm_campaign).sort(),
+                sales_channel: splitList(row?.sales_channel).sort(),
+              };
+            } catch (filterErr) {
+              // Return debug info for the failing query
+              return res.status(500).json({
+                error: 'Filter options query failed',
+                details: filterErr.message,
+                _debug: {
+                  sql: optionSql.trim(),
+                  replacements: optionReplacements,
+                  filters,
+                  utmSourceCond,
+                  utmMediumCond,
+                  salesChannelCond,
+                }
+              });
+            }
             mark('filter_options', s);
           }
         }
@@ -3580,7 +3599,11 @@ function buildMetricsController() {
         return res.json(response);
       } catch (e) {
         console.error('[dashboardSummary] Error:', e);
-        return res.status(500).json({ error: 'Internal server error', details: e.message });
+        return res.status(500).json({
+          error: 'Internal server error',
+          details: e.message,
+          _debug_stack: e.stack?.split('\n').slice(0, 5),
+        });
       }
     }
   };
