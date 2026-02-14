@@ -116,7 +116,13 @@ async function getJSON(path, params) {
   const url = `${API_BASE}${path}${qs(params || {})}`;
   try {
     const res = await fetchWithAuth(url);
-    if (!res.ok) throw new Error(`${res.status}`);
+    if (!res.ok) {
+      // Parse error response body so debug info is available to callers
+      let errorBody = {};
+      try { errorBody = await res.json(); } catch {}
+      console.error('API error', path, res.status, errorBody);
+      return { __error: true, __status: res.status, ...errorBody };
+    }
     return await res.json();
   } catch (e) {
     console.error('API error', path, e);
@@ -300,7 +306,11 @@ export async function getDashboardSummary(args) {
     range: json?.range || { start: params.start || null, end: params.end || null },
     prev_range: json?.prev_range || null,
     filter_options: json?.filter_options || null,
-    error: json?.__error
+    error: json?.__error,
+    _v: json?._v || null,
+    _code_version: json?._code_version || null,
+    _debug: json?._debug || null,
+    _debug_stack: json?._debug_stack || null,
   };
 }
 
