@@ -796,6 +796,7 @@ export default function App() {
                 onLogout={handleLogout}
                 onMenuClick={isAuthor ? handleSidebarOpen : undefined}
                 showMenuButton={isAuthor}
+                isAdmin={isAuthor}
                 darkMode={darkMode === 'dark'}
                 onToggleDarkMode={handleToggleDarkMode}
                 showFilterButton={isAuthor || hasPermission('product_filter') || hasPermission('utm_filter') || hasPermission('sales_channel_filter') || showMultipleBrands}
@@ -988,6 +989,7 @@ export default function App() {
             items={MOBILE_NAV_ITEMS}
             activeTab={authorTab}
             onTabChange={handleSidebarTabChange}
+            isDark={darkMode === 'dark'}
           />
         )}
       </AppProvider>

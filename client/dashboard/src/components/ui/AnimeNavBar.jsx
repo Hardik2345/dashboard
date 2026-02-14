@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
 
-export function AnimeNavBar({ items, className, activeTab, onTabChange }) {
+export function AnimeNavBar({ items, className, activeTab, onTabChange, isDark = true }) {
     const [mounted, setMounted] = useState(false)
     const [hoveredTab, setHoveredTab] = useState(null)
     const [isMobile, setIsMobile] = useState(false)
@@ -29,7 +29,12 @@ export function AnimeNavBar({ items, className, activeTab, onTabChange }) {
         <div className={cn("fixed bottom-6 left-0 right-0 z-[9999] px-4", className)}>
             <div className="flex justify-center">
                 <motion.div
-                    className="flex items-center gap-1 bg-black/80 border border-white/10 backdrop-blur-xl py-2 px-2 rounded-full shadow-2xl relative"
+                    className={cn(
+                        "flex items-center gap-2 py-2 px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative border backdrop-blur-[40px] transition-all duration-500",
+                        isDark
+                            ? "bg-black/90 border-white/20"
+                            : "bg-white/95 border-black/10"
+                    )}
                     initial={false}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{
@@ -50,9 +55,11 @@ export function AnimeNavBar({ items, className, activeTab, onTabChange }) {
                                 onMouseEnter={() => setHoveredTab(item.id)}
                                 onMouseLeave={() => setHoveredTab(null)}
                                 className={cn(
-                                    "relative cursor-pointer text-xs font-bold px-4 py-3 rounded-full transition-all duration-300 flex items-center gap-2",
-                                    "text-white/60 hover:text-white",
-                                    isActive && "text-white"
+                                    "relative cursor-pointer text-sm font-bold px-6 py-4 rounded-full transition-all duration-300 flex items-center gap-3",
+                                    isDark
+                                        ? "text-white/50 hover:text-white"
+                                        : "text-black/40 hover:text-black",
+                                    isActive && (isDark ? "text-white" : "text-black")
                                 )}
                             >
                                 {isActive && (
@@ -71,11 +78,20 @@ export function AnimeNavBar({ items, className, activeTab, onTabChange }) {
                                             animate={{ opacity: 1 }}
                                             transition={{ duration: 0.3 }}
                                         >
-                                            <div className="absolute inset-0 bg-primary/30 rounded-full blur-md" />
-                                            <div className="absolute inset-[-4px] bg-primary/20 rounded-full blur-xl" />
+                                            <div className={cn(
+                                                "absolute inset-0 rounded-full blur-md opacity-60",
+                                                isDark ? "bg-primary/40" : "bg-primary/20"
+                                            )} />
+                                            <div className={cn(
+                                                "absolute inset-[-4px] rounded-full blur-xl opacity-40",
+                                                isDark ? "bg-primary/30" : "bg-primary/10"
+                                            )} />
 
                                             <div
-                                                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent"
+                                                className={cn(
+                                                    "absolute inset-0 bg-gradient-to-r from-transparent to-transparent",
+                                                    isDark ? "via-white/10" : "via-black/5"
+                                                )}
                                                 style={{
                                                     animation: "shine 2s ease-in-out"
                                                 }}
@@ -85,7 +101,7 @@ export function AnimeNavBar({ items, className, activeTab, onTabChange }) {
                                 )}
 
                                 <div className="relative z-10 flex items-center justify-center">
-                                    <Icon size={18} strokeWidth={2.5} className={cn("transition-transform duration-300", isActive && "scale-110")} />
+                                    <Icon size={22} strokeWidth={2.5} className={cn("transition-transform duration-300", isActive && "scale-110")} />
                                 </div>
 
                                 <motion.span
@@ -103,7 +119,10 @@ export function AnimeNavBar({ items, className, activeTab, onTabChange }) {
                                             initial={{ opacity: 0, scale: 0.8 }}
                                             animate={{ opacity: 1, scale: 1 }}
                                             exit={{ opacity: 0, scale: 0.8 }}
-                                            className="absolute inset-0 bg-white/10 rounded-full -z-10"
+                                            className={cn(
+                                                "absolute inset-0 rounded-full -z-10",
+                                                isDark ? "bg-white/10" : "bg-black/5"
+                                            )}
                                         />
                                     )}
                                 </AnimatePresence>
