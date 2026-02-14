@@ -3350,46 +3350,44 @@ function buildMetricsController() {
             const s = Date.now();
             const conn = req.brandDb.sequelize;
 
-            const baseWhere = 'created_date >= ? AND created_date <= ?';
-            const baseReplacements = [start, end];
+            // Single CTE query to fetch all UTM options independently (no cross-filtering)
+            const utmOptionsSql = `
+              WITH base AS (
+                SELECT utm_source, utm_medium, utm_campaign, order_app_name
+                FROM shopify_orders
+                WHERE created_date >= ? AND created_date <= ?
+              )
+              SELECT 'utm_source' AS field, utm_source AS val FROM base
+                WHERE utm_source IS NOT NULL AND utm_source <> '' GROUP BY utm_source
+              UNION ALL
+              SELECT 'utm_medium' AS field, utm_medium AS val FROM base
+                WHERE utm_medium IS NOT NULL AND utm_medium <> '' GROUP BY utm_medium
+              UNION ALL
+              SELECT 'utm_campaign' AS field, utm_campaign AS val FROM base
+                WHERE utm_campaign IS NOT NULL AND utm_campaign <> '' GROUP BY utm_campaign
+              UNION ALL
+              SELECT 'sales_channel' AS field, order_app_name AS val FROM base
+                WHERE order_app_name IS NOT NULL AND order_app_name <> '' GROUP BY order_app_name
+              ORDER BY field, val
+              LIMIT 4000
+            `;
 
-            const buildOptionQuery = (field, otherFilters) => {
-              let w = baseWhere + ` AND ${field} IS NOT NULL AND ${field} <> ""`;
-              let r = [...baseReplacements];
-              // Filter out the current field
-              const f = { ...otherFilters };
-              if (field === 'utm_source') delete f.utm_source;
-              if (field === 'utm_medium') delete f.utm_medium;
-              if (field === 'utm_campaign') delete f.utm_campaign;
+            const optionRows = await conn.query(utmOptionsSql, {
+              type: QueryTypes.SELECT,
+              replacements: [start, end]
+            });
 
-              w = appendUtmWhere(w, r, f);
-              return { sql: `SELECT DISTINCT ${field} FROM shopify_orders WHERE ${w} LIMIT 1000`, replacements: r };
-            };
-
-            // Hierarchy: Source -> Medium -> Campaign
-            // Source options: Always show full list for the date range (allows switching source)
-            const qSrc = buildOptionQuery('utm_source', {});
-            // Medium options: Filter by Source only
-            const qMed = buildOptionQuery('utm_medium', { utm_source: filters.utm_source });
-            // Campaign options: Filter by Source and Medium
-            const qCamp = buildOptionQuery('utm_campaign', filters);
-
-            const [srcRows, medRows, campRows] = await Promise.all([
-              conn.query(qSrc.sql, { type: QueryTypes.SELECT, replacements: qSrc.replacements }),
-              conn.query(qMed.sql, { type: QueryTypes.SELECT, replacements: qMed.replacements }),
-              conn.query(qCamp.sql, { type: QueryTypes.SELECT, replacements: qCamp.replacements })
-            ]);
-
-            // Fetch Sales Channel Options
-            const channelSql = `SELECT DISTINCT order_app_name FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND order_app_name IS NOT NULL AND order_app_name <> ''`;
-            const channelRows = await conn.query(channelSql, { type: QueryTypes.SELECT, replacements: [start, end] });
-            const salesChannelOptions = channelRows.map(r => r.order_app_name).sort();
+            // Partition results by field
+            const opts = { utm_source: [], utm_medium: [], utm_campaign: [], sales_channel: [] };
+            for (const row of optionRows) {
+              if (opts[row.field]) opts[row.field].push(row.val);
+            }
 
             filterOptions = {
-              utm_source: srcRows.map(r => r.utm_source).sort(),
-              utm_medium: medRows.map(r => r.utm_medium).sort(),
-              utm_campaign: campRows.map(r => r.utm_campaign).sort(),
-              sales_channel: salesChannelOptions,
+              utm_source: opts.utm_source.sort(),
+              utm_medium: opts.utm_medium.sort(),
+              utm_campaign: opts.utm_campaign.sort(),
+              sales_channel: opts.sales_channel.sort(),
             };
             mark('filter_options', s);
           }
