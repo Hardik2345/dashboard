@@ -3028,104 +3028,14 @@ function buildMetricsController() {
         }
 
         if (!usedCache) {
-          if (hasFilters && !align && !compare) {
-            const buildRangeAgg = async (s, e) => {
-              let ordersWhere = 'created_date >= ? AND created_date <= ?';
-              const ordersReplacements = [s, e];
-              ordersWhere = appendUtmWhere(ordersWhere, ordersReplacements, filters);
-
-              let sessionsWhere = 'date >= ? AND date <= ?';
-              const sessionsReplacements = [s, e];
-              sessionsWhere = appendUtmWhere(sessionsWhere, sessionsReplacements, filters);
-              sessionsWhere += " AND landing_page_type = 'Product'";
-
-              const sql = `
-                SELECT
-                  orders.total_sales,
-                  orders.total_orders,
-                  sessions.total_sessions,
-                  sessions.total_atc_sessions
-                FROM (
-                  SELECT
-                    COALESCE(SUM(total_price),0) AS total_sales,
-                    COUNT(DISTINCT order_name) AS total_orders
-                  FROM shopify_orders
-                  WHERE ${ordersWhere}
-                ) orders,
-                (
-                  SELECT
-                    COALESCE(SUM(sessions),0) AS total_sessions,
-                    COALESCE(SUM(sessions_with_cart_additions),0) AS total_atc_sessions
-                  FROM product_sessions_snapshot
-                  WHERE ${sessionsWhere}
-                ) sessions
-              `;
-
-              const rows = await conn.query(sql, {
-                type: QueryTypes.SELECT,
-                replacements: [...ordersReplacements, ...sessionsReplacements],
-              });
-              const row = rows?.[0] || {};
-              const total_sales = Number(row.total_sales || 0);
-              const total_orders = Number(row.total_orders || 0);
-              const total_sessions = Number(row.total_sessions || 0);
-              const total_atc_sessions = Number(row.total_atc_sessions || 0);
-              const average_order_value = total_orders > 0 ? total_sales / total_orders : 0;
-              const conversion_rate = total_sessions > 0 ? total_orders / total_sessions : 0;
-              const conversion_rate_percent = conversion_rate * 100;
-              return {
-                total_sales,
-                total_orders,
-                total_sessions,
-                total_atc_sessions,
-                average_order_value,
-                conversion_rate_percent
-              };
-            };
-
-            const prevWin = previousWindow(start, end);
-            const [cur, prev] = await Promise.all([
-              buildRangeAgg(start, end),
-              prevWin ? buildRangeAgg(prevWin.prevStart, prevWin.prevEnd) : Promise.resolve(null)
-            ]);
-
-            const mkMetric = (key, metricName) => {
-              const c = cur?.[key] || 0;
-              const p = prev?.[key] || 0;
-              const diff = c - p;
-              const diff_pct = p > 0 ? (diff / p) * 100 : (c > 0 ? 100 : 0);
-              const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
-              return { metric: metricName, range: { start, end }, current: c, previous: p, diff_pct, direction, source: 'db' };
-            };
-
-            orders = mkMetric('total_orders', 'TOTAL_ORDERS_DELTA');
-            sales = mkMetric('total_sales', 'TOTAL_SALES_DELTA');
-            sessions = mkMetric('total_sessions', 'TOTAL_SESSIONS_DELTA');
-            atc = mkMetric('total_atc_sessions', 'TOTAL_ATC_SESSIONS_DELTA');
-            aov = mkMetric('average_order_value', 'AOV_DELTA');
-
-            const cvrCur = cur?.conversion_rate_percent || 0;
-            const cvrPrev = prev?.conversion_rate_percent || 0;
-            const cvrDelta = computePercentDelta(cvrCur, cvrPrev);
-            cvr = {
-              metric: 'CVR_DELTA',
-              range: { start, end },
-              current: { cvr_percent: cvrCur },
-              previous: { cvr_percent: cvrPrev },
-              diff_pp: cvrDelta.diff_pp,
-              diff_pct: cvrDelta.diff_pct,
-              direction: cvrDelta.direction
-            };
-          } else {
-            [orders, sales, sessions, atc, aov, cvr] = await Promise.all([
-              calcTotalOrdersDelta({ start, end, align, compare, conn, filters }),
-              calcTotalSalesDelta({ start, end, align, compare, conn, filters }),
-              calcTotalSessionsDelta({ start, end, align, compare, conn, filters }),
-              calcAtcSessionsDelta({ start, end, align, compare, conn, filters }),
-              calcAovDelta({ start, end, align, compare, conn, filters }),
-              calcCvrDelta({ start, end, align, compare, conn, filters })
-            ]);
-          }
+          [orders, sales, sessions, atc, aov, cvr] = await Promise.all([
+            calcTotalOrdersDelta({ start, end, align, compare, conn, filters }),
+            calcTotalSalesDelta({ start, end, align, compare, conn, filters }),
+            calcTotalSessionsDelta({ start, end, align, compare, conn, filters }),
+            calcAtcSessionsDelta({ start, end, align, compare, conn, filters }),
+            calcAovDelta({ start, end, align, compare, conn, filters }),
+            calcCvrDelta({ start, end, align, compare, conn, filters })
+          ]);
         }
 
         const prevWin = previousWindow(start, end);
@@ -3213,65 +3123,6 @@ function buildMetricsController() {
           }
           const conn = req.brandDb ? req.brandDb.sequelize : null;
           if (!conn) throw new Error("Database connection missing (tenant router required)");
-
-          if (hasFilters) {
-            let ordersWhere = 'created_date >= ? AND created_date <= ?';
-            const ordersReplacements = [s, e];
-            ordersWhere = appendUtmWhere(ordersWhere, ordersReplacements, filters);
-
-            const { sales_channel, ...snapshotFilters } = filters || {};
-            let sessionsWhere = 'date >= ? AND date <= ?';
-            const sessionsReplacements = [s, e];
-            sessionsWhere = appendUtmWhere(sessionsWhere, sessionsReplacements, snapshotFilters);
-            sessionsWhere += " AND landing_page_type = 'Product'";
-
-            const sql = `
-              SELECT
-                orders.total_sales,
-                orders.total_orders,
-                sessions.total_sessions,
-                sessions.total_atc_sessions
-              FROM (
-                SELECT
-                  COALESCE(SUM(total_price),0) AS total_sales,
-                  COUNT(DISTINCT order_name) AS total_orders
-                FROM shopify_orders
-                WHERE ${ordersWhere}
-              ) orders,
-              (
-                SELECT
-                  COALESCE(SUM(sessions),0) AS total_sessions,
-                  COALESCE(SUM(sessions_with_cart_additions),0) AS total_atc_sessions
-                FROM product_sessions_snapshot
-                WHERE ${sessionsWhere}
-              ) sessions
-            `;
-
-            const rows = await conn.query(sql, {
-              type: QueryTypes.SELECT,
-              replacements: [...ordersReplacements, ...sessionsReplacements],
-            });
-
-            const row = rows?.[0] || {};
-            const total_sales = Number(row.total_sales || 0);
-            const total_orders = Number(row.total_orders || 0);
-            const total_sessions = Number(row.total_sessions || 0);
-            const total_atc_sessions = Number(row.total_atc_sessions || 0);
-            const average_order_value = total_orders > 0 ? total_sales / total_orders : 0;
-            const conversion_rate = total_sessions > 0 ? total_orders / total_sessions : 0;
-            const conversion_rate_percent = conversion_rate * 100;
-
-            return {
-              total_orders,
-              total_sales,
-              total_sessions,
-              total_atc_sessions,
-              average_order_value,
-              conversion_rate,
-              conversion_rate_percent,
-              source: 'db'
-            };
-          }
 
           const [sales, orders, sessions, atc, cvrObj, aovObj] = await Promise.all([
             computeTotalSales({ start: s, end: e, conn, filters }),
@@ -3499,89 +3350,52 @@ function buildMetricsController() {
             const s = Date.now();
             const conn = req.brandDb.sequelize;
 
-            // NUCLEAR FIX v3: Inline-escape ALL values including dates.
-            // Zero ? placeholders in the final SQL so mysql2.format() has
-            // nothing to misalign regardless of the tenant connection layer.
-            const mysql2Escape = require('mysql2').escape;
+            const baseWhere = 'created_date >= ? AND created_date <= ?';
+            const baseReplacements = [start, end];
 
-            const buildInlineCondition = (col, val) => {
-              if (!val) return '1=1';
-              const vals = Array.isArray(val)
-                ? val
-                : (typeof val === 'string' && val.includes(',') ? val.split(',') : [val]);
-              const cleaned = vals.map(v => v.trim()).filter(Boolean);
-              if (cleaned.length === 0) return '1=1';
-              if (cleaned.length === 1) {
-                return `${col} = ${mysql2Escape(cleaned[0])}`;
-              }
-              return `${col} IN (${cleaned.map(v => mysql2Escape(v)).join(', ')})`;
+            const buildOptionQuery = (field, otherFilters) => {
+              let w = baseWhere + ` AND ${field} IS NOT NULL AND ${field} <> ""`;
+              let r = [...baseReplacements];
+              // Filter out the current field
+              const f = { ...otherFilters };
+              if (field === 'utm_source') delete f.utm_source;
+              if (field === 'utm_medium') delete f.utm_medium;
+              if (field === 'utm_campaign') delete f.utm_campaign;
+
+              w = appendUtmWhere(w, r, f);
+              return { sql: `SELECT DISTINCT ${field} FROM shopify_orders WHERE ${w} LIMIT 1000`, replacements: r };
             };
 
-            const utmSourceCond = buildInlineCondition('utm_source', filters.utm_source);
-            const utmSourceCond2 = buildInlineCondition('utm_source', filters.utm_source);
-            const utmMediumCond = buildInlineCondition('utm_medium', filters.utm_medium);
-            const salesChannelCond = buildInlineCondition('order_app_name', filters.sales_channel);
+            // Hierarchy: Source -> Medium -> Campaign
+            // Source options: Always show full list for the date range (allows switching source)
+            const qSrc = buildOptionQuery('utm_source', {});
+            // Medium options: Filter by Source only
+            const qMed = buildOptionQuery('utm_medium', { utm_source: filters.utm_source });
+            // Campaign options: Filter by Source and Medium
+            const qCamp = buildOptionQuery('utm_campaign', filters);
 
-            // Inline-escape dates too — zero ? in the entire SQL
-            const escapedStart = mysql2Escape(start);
-            const escapedEnd = mysql2Escape(end);
+            const [srcRows, medRows, campRows] = await Promise.all([
+              conn.query(qSrc.sql, { type: QueryTypes.SELECT, replacements: qSrc.replacements }),
+              conn.query(qMed.sql, { type: QueryTypes.SELECT, replacements: qMed.replacements }),
+              conn.query(qCamp.sql, { type: QueryTypes.SELECT, replacements: qCamp.replacements })
+            ]);
 
-            const optionSql = `
-              SELECT
-                GROUP_CONCAT(DISTINCT CASE
-                  WHEN utm_source IS NOT NULL AND utm_source <> '' THEN utm_source
-                  ELSE NULL END) AS utm_source,
-                GROUP_CONCAT(DISTINCT CASE
-                  WHEN utm_medium IS NOT NULL AND utm_medium <> ''
-                    AND (${utmSourceCond})
-                  THEN utm_medium ELSE NULL END) AS utm_medium,
-                GROUP_CONCAT(DISTINCT CASE
-                  WHEN utm_campaign IS NOT NULL AND utm_campaign <> ''
-                    AND (${utmSourceCond2})
-                    AND (${utmMediumCond})
-                    AND (${salesChannelCond})
-                  THEN utm_campaign ELSE NULL END) AS utm_campaign,
-                GROUP_CONCAT(DISTINCT CASE
-                  WHEN order_app_name IS NOT NULL AND order_app_name <> '' THEN order_app_name
-                  ELSE NULL END) AS sales_channel
-              FROM shopify_orders
-              WHERE created_date >= ${escapedStart} AND created_date <= ${escapedEnd}
-            `;
+            // Fetch Sales Channel Options
+            const channelSql = `SELECT DISTINCT order_app_name FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND order_app_name IS NOT NULL AND order_app_name <> ''`;
+            const channelRows = await conn.query(channelSql, { type: QueryTypes.SELECT, replacements: [start, end] });
+            const salesChannelOptions = channelRows.map(r => r.order_app_name).sort();
 
-            try {
-              // No replacements needed — everything is inline-escaped
-              const [row] = await conn.query(optionSql, { type: QueryTypes.SELECT });
-              const splitList = (value) => (value ? value.split(',').map(v => v.trim()).filter(Boolean) : []);
-
-              filterOptions = {
-                utm_source: splitList(row?.utm_source).sort(),
-                utm_medium: splitList(row?.utm_medium).sort(),
-                utm_campaign: splitList(row?.utm_campaign).sort(),
-                sales_channel: splitList(row?.sales_channel).sort(),
-              };
-            } catch (filterErr) {
-              // Return debug info for the failing query
-              return res.status(500).json({
-                error: 'Filter options query failed',
-                details: filterErr.message,
-                _code_version: 'v3-nuclear-inline',
-                _debug: {
-                  sql: optionSql.trim(),
-                  filters,
-                  utmSourceCond,
-                  utmMediumCond,
-                  salesChannelCond,
-                  escapedStart,
-                  escapedEnd,
-                }
-              });
-            }
+            filterOptions = {
+              utm_source: srcRows.map(r => r.utm_source).sort(),
+              utm_medium: medRows.map(r => r.utm_medium).sort(),
+              utm_campaign: campRows.map(r => r.utm_campaign).sort(),
+              sales_channel: salesChannelOptions,
+            };
             mark('filter_options', s);
           }
         }
 
         const response = {
-          _v: 'v3',
           filter_options: filterOptions,
           range: { start, end },
           prev_range: prevStart && prevEnd ? { start: prevStart, end: prevEnd } : null,
@@ -3603,12 +3417,7 @@ function buildMetricsController() {
         return res.json(response);
       } catch (e) {
         console.error('[dashboardSummary] Error:', e);
-        return res.status(500).json({
-          error: 'Internal server error',
-          details: e.message,
-          _code_version: 'v3-nuclear-inline',
-          _debug_stack: e.stack?.split('\n').slice(0, 5),
-        });
+        return res.status(500).json({ error: 'Internal server error', details: e.message });
       }
     }
   };

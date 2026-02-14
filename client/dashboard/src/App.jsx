@@ -541,7 +541,6 @@ export default function App() {
       sales_channel: salesChannel
     })
       .then(res => {
-        console.log('[DashboardSummary]', { _v: res._v, _code_version: res._code_version, _debug: res._debug, _debug_stack: res._debug_stack, error: res.error });
         if (res.filter_options) setUtmOptions(res.filter_options);
       });
   }, [activeBrandKey, start, end, utm, isAuthor, authorTab, salesChannel]);
