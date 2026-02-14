@@ -3499,10 +3499,9 @@ function buildMetricsController() {
             const s = Date.now();
             const conn = req.brandDb.sequelize;
 
-            // Inline-escape filter values to avoid positional ? misalignment.
-            // The tenant-router connection uses mysql2.format() which does
-            // string-level ? substitution — mixing ? inside CASE/WHEN with
-            // the WHERE clause causes filter values to replace date params.
+            // NUCLEAR FIX v3: Inline-escape ALL values including dates.
+            // Zero ? placeholders in the final SQL so mysql2.format() has
+            // nothing to misalign regardless of the tenant connection layer.
             const mysql2Escape = require('mysql2').escape;
 
             const buildInlineCondition = (col, val) => {
@@ -3523,6 +3522,10 @@ function buildMetricsController() {
             const utmMediumCond = buildInlineCondition('utm_medium', filters.utm_medium);
             const salesChannelCond = buildInlineCondition('order_app_name', filters.sales_channel);
 
+            // Inline-escape dates too — zero ? in the entire SQL
+            const escapedStart = mysql2Escape(start);
+            const escapedEnd = mysql2Escape(end);
+
             const optionSql = `
               SELECT
                 GROUP_CONCAT(DISTINCT CASE
@@ -3542,14 +3545,12 @@ function buildMetricsController() {
                   WHEN order_app_name IS NOT NULL AND order_app_name <> '' THEN order_app_name
                   ELSE NULL END) AS sales_channel
               FROM shopify_orders
-              WHERE created_date >= ? AND created_date <= ?
+              WHERE created_date >= ${escapedStart} AND created_date <= ${escapedEnd}
             `;
 
-            const optionReplacements = [start, end];
-            let debugSql = null;
             try {
-              debugSql = { sql: optionSql.trim(), replacements: optionReplacements };
-              const [row] = await conn.query(optionSql, { type: QueryTypes.SELECT, replacements: optionReplacements });
+              // No replacements needed — everything is inline-escaped
+              const [row] = await conn.query(optionSql, { type: QueryTypes.SELECT });
               const splitList = (value) => (value ? value.split(',').map(v => v.trim()).filter(Boolean) : []);
 
               filterOptions = {
@@ -3563,13 +3564,15 @@ function buildMetricsController() {
               return res.status(500).json({
                 error: 'Filter options query failed',
                 details: filterErr.message,
+                _code_version: 'v3-nuclear-inline',
                 _debug: {
                   sql: optionSql.trim(),
-                  replacements: optionReplacements,
                   filters,
                   utmSourceCond,
                   utmMediumCond,
                   salesChannelCond,
+                  escapedStart,
+                  escapedEnd,
                 }
               });
             }
@@ -3578,6 +3581,7 @@ function buildMetricsController() {
         }
 
         const response = {
+          _v: 'v3',
           filter_options: filterOptions,
           range: { start, end },
           prev_range: prevStart && prevEnd ? { start: prevStart, end: prevEnd } : null,
@@ -3602,6 +3606,7 @@ function buildMetricsController() {
         return res.status(500).json({
           error: 'Internal server error',
           details: e.message,
+          _code_version: 'v3-nuclear-inline',
           _debug_stack: e.stack?.split('\n').slice(0, 5),
         });
       }
