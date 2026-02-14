@@ -3499,28 +3499,24 @@ function buildMetricsController() {
             const s = Date.now();
             const conn = req.brandDb.sequelize;
 
-            const baseWhere = 'created_date >= ? AND created_date <= ?';
-            const baseReplacements = [start, end];
+            const baseWhere = 'created_date >= :start AND created_date <= :end';
+            const optionReplacements = { start, end };
 
-            const buildFilterCondition = (col, val, replacements) => {
+            const buildFilterCondition = (col, val, key, replacements) => {
               if (!val) return '1=1';
               const vals = Array.isArray(val)
                 ? val
                 : (typeof val === 'string' && val.includes(',') ? val.split(',') : [val]);
-              if (vals.length === 0) return '1=1';
-              if (vals.length === 1) {
-                replacements.push(vals[0].trim());
-                return `${col} = ?`;
-              }
-              replacements.push(...vals.map(v => v.trim()));
-              return `${col} IN (${vals.map(() => '?').join(', ')})`;
+              const cleaned = vals.map(v => v.trim()).filter(Boolean);
+              if (cleaned.length === 0) return '1=1';
+              replacements[key] = cleaned;
+              return `${col} IN (:${key})`;
             };
 
-            const optionReplacements = [...baseReplacements];
-            const utmSourceCond = buildFilterCondition('utm_source', filters.utm_source, optionReplacements);
-            const utmSourceCond2 = buildFilterCondition('utm_source', filters.utm_source, optionReplacements);
-            const utmMediumCond = buildFilterCondition('utm_medium', filters.utm_medium, optionReplacements);
-            const salesChannelCond = buildFilterCondition('order_app_name', filters.sales_channel, optionReplacements);
+            const utmSourceCond = buildFilterCondition('utm_source', filters.utm_source, 'utm_source', optionReplacements);
+            const utmSourceCond2 = buildFilterCondition('utm_source', filters.utm_source, 'utm_source_2', optionReplacements);
+            const utmMediumCond = buildFilterCondition('utm_medium', filters.utm_medium, 'utm_medium', optionReplacements);
+            const salesChannelCond = buildFilterCondition('order_app_name', filters.sales_channel, 'sales_channel', optionReplacements);
 
             const optionSql = `
               SELECT
