@@ -120,12 +120,15 @@ export default function MobileFilterDrawer({
             start: s,
             end: e,
             include_utm_options: true,
-            // Do not pass current UTM filters so options don't collapse after selecting one.
+            utm_source: tempUtm?.source,
+            utm_medium: tempUtm?.medium,
+            utm_campaign: tempUtm?.campaign,
+            sales_channel: tempSalesChannel
         }).then(res => {
             if (res.filter_options) setUtmOptions(res.filter_options);
         }).catch(err => console.error("Failed to load UTM options", err));
 
-    }, [open, tempBrand, dateRange, view, propUtmOptions]);
+    }, [open, tempBrand, dateRange, tempUtm, view, tempSalesChannel, propUtmOptions]);
 
     const handleBack = () => {
         if (['BRAND', 'PRODUCT', 'UTM', 'SALES_CHANNEL'].includes(view)) {

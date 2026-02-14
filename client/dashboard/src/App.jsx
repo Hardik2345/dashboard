@@ -535,12 +535,15 @@ export default function App() {
       start: s,
       end: e,
       include_utm_options: true,
-      // Do not pass current UTM filters so options don't collapse after selecting one.
+      utm_source: utm?.source, // Dependent filtering
+      utm_medium: utm?.medium,
+      utm_campaign: utm?.campaign,
+      sales_channel: salesChannel
     })
       .then(res => {
         if (res.filter_options) setUtmOptions(res.filter_options);
       });
-  }, [activeBrandKey, start, end, isAuthor, authorTab]);
+  }, [activeBrandKey, start, end, utm, isAuthor, authorTab, salesChannel]);
 
   // Check auth on mount
   useEffect(() => {
