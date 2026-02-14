@@ -3499,9 +3499,13 @@ function buildMetricsController() {
             const s = Date.now();
             const conn = req.brandDb.sequelize;
 
-            const baseWhere = 'created_date >= ? AND created_date <= ?';
+            // Inline-escape filter values to avoid positional ? misalignment.
+            // The tenant-router connection uses mysql2.format() which does
+            // string-level ? substitution — mixing ? inside CASE/WHEN with
+            // the WHERE clause causes filter values to replace date params.
+            const mysql2Escape = require('mysql2').escape;
 
-            const buildFilterCondition = (col, val, replacements) => {
+            const buildInlineCondition = (col, val) => {
               if (!val) return '1=1';
               const vals = Array.isArray(val)
                 ? val
@@ -3509,19 +3513,15 @@ function buildMetricsController() {
               const cleaned = vals.map(v => v.trim()).filter(Boolean);
               if (cleaned.length === 0) return '1=1';
               if (cleaned.length === 1) {
-                replacements.push(cleaned[0]);
-                return `${col} = ?`;
+                return `${col} = ${mysql2Escape(cleaned[0])}`;
               }
-              replacements.push(...cleaned);
-              return `${col} IN (${cleaned.map(() => '?').join(', ')})`;
+              return `${col} IN (${cleaned.map(v => mysql2Escape(v)).join(', ')})`;
             };
 
-            const optionReplacements = [];
-            const utmSourceCond = buildFilterCondition('utm_source', filters.utm_source, optionReplacements);
-            const utmSourceCond2 = buildFilterCondition('utm_source', filters.utm_source, optionReplacements);
-            const utmMediumCond = buildFilterCondition('utm_medium', filters.utm_medium, optionReplacements);
-            const salesChannelCond = buildFilterCondition('order_app_name', filters.sales_channel, optionReplacements);
-            optionReplacements.push(start, end);
+            const utmSourceCond = buildInlineCondition('utm_source', filters.utm_source);
+            const utmSourceCond2 = buildInlineCondition('utm_source', filters.utm_source);
+            const utmMediumCond = buildInlineCondition('utm_medium', filters.utm_medium);
+            const salesChannelCond = buildInlineCondition('order_app_name', filters.sales_channel);
 
             const optionSql = `
               SELECT
@@ -3542,10 +3542,10 @@ function buildMetricsController() {
                   WHEN order_app_name IS NOT NULL AND order_app_name <> '' THEN order_app_name
                   ELSE NULL END) AS sales_channel
               FROM shopify_orders
-              WHERE ${baseWhere}
+              WHERE created_date >= ? AND created_date <= ?
             `;
 
-            const [row] = await conn.query(optionSql, { type: QueryTypes.SELECT, replacements: optionReplacements });
+            const [row] = await conn.query(optionSql, { type: QueryTypes.SELECT, replacements: [start, end] });
             const splitList = (value) => (value ? value.split(',').map(v => v.trim()).filter(Boolean) : []);
 
             filterOptions = {
