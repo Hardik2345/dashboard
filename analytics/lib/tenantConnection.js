@@ -59,9 +59,13 @@ async function runQuery(pool, route, sql, options = {}) {
     if (route.dbName) {
       await conn.query('USE ??', [route.dbName]);
     }
-    const finalSql = options.replacements ? formatSql(sql, options.replacements) : sql;
-    const [rows] = await conn.query(finalSql);
-    if (options.type === QueryTypes.SELECT) return rows;
+    // Use server-side prepared statements (execute) for parameterized queries
+    // instead of client-side mysql2.format() which mishandles ? inside complex SQL.
+    if (options.replacements && options.replacements.length > 0) {
+      const [rows] = await conn.execute(sql, options.replacements);
+      return rows;
+    }
+    const [rows] = await conn.query(sql);
     return rows;
   } finally {
     conn.release();
