@@ -3502,6 +3502,26 @@ function buildMetricsController() {
             const baseWhere = 'created_date >= ? AND created_date <= ?';
             const baseReplacements = [start, end];
 
+            const buildFilterCondition = (col, val, replacements) => {
+              if (!val) return '1=1';
+              const vals = Array.isArray(val)
+                ? val
+                : (typeof val === 'string' && val.includes(',') ? val.split(',') : [val]);
+              if (vals.length === 0) return '1=1';
+              if (vals.length === 1) {
+                replacements.push(vals[0].trim());
+                return `${col} = ?`;
+              }
+              replacements.push(...vals.map(v => v.trim()));
+              return `${col} IN (${vals.map(() => '?').join(', ')})`;
+            };
+
+            const optionReplacements = [...baseReplacements];
+            const utmSourceCond = buildFilterCondition('utm_source', filters.utm_source, optionReplacements);
+            const utmSourceCond2 = buildFilterCondition('utm_source', filters.utm_source, optionReplacements);
+            const utmMediumCond = buildFilterCondition('utm_medium', filters.utm_medium, optionReplacements);
+            const salesChannelCond = buildFilterCondition('order_app_name', filters.sales_channel, optionReplacements);
+
             const optionSql = `
               SELECT
                 GROUP_CONCAT(DISTINCT CASE
@@ -3509,13 +3529,13 @@ function buildMetricsController() {
                   ELSE NULL END) AS utm_source,
                 GROUP_CONCAT(DISTINCT CASE
                   WHEN utm_medium IS NOT NULL AND utm_medium <> ''
-                    AND (${filters.utm_source ? 'utm_source = ?' : '1=1'})
+                    AND (${utmSourceCond})
                   THEN utm_medium ELSE NULL END) AS utm_medium,
                 GROUP_CONCAT(DISTINCT CASE
                   WHEN utm_campaign IS NOT NULL AND utm_campaign <> ''
-                    AND (${filters.utm_source ? 'utm_source = ?' : '1=1'})
-                    AND (${filters.utm_medium ? 'utm_medium = ?' : '1=1'})
-                    AND (${filters.sales_channel ? 'order_app_name = ?' : '1=1'})
+                    AND (${utmSourceCond2})
+                    AND (${utmMediumCond})
+                    AND (${salesChannelCond})
                   THEN utm_campaign ELSE NULL END) AS utm_campaign,
                 GROUP_CONCAT(DISTINCT CASE
                   WHEN order_app_name IS NOT NULL AND order_app_name <> '' THEN order_app_name
@@ -3523,12 +3543,6 @@ function buildMetricsController() {
               FROM shopify_orders
               WHERE ${baseWhere}
             `;
-
-            const optionReplacements = [...baseReplacements];
-            if (filters.utm_source) optionReplacements.push(filters.utm_source);
-            if (filters.utm_source) optionReplacements.push(filters.utm_source);
-            if (filters.utm_medium) optionReplacements.push(filters.utm_medium);
-            if (filters.sales_channel) optionReplacements.push(filters.sales_channel);
 
             const [row] = await conn.query(optionSql, { type: QueryTypes.SELECT, replacements: optionReplacements });
             const splitList = (value) => (value ? value.split(',').map(v => v.trim()).filter(Boolean) : []);
