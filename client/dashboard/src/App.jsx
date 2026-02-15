@@ -4,6 +4,7 @@ import dayjs from 'dayjs';
 import { AppProvider } from '@shopify/polaris';
 import enTranslations from '@shopify/polaris/locales/en.json';
 import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, Skeleton, useTheme, useMediaQuery } from '@mui/material';
+import Grid from '@mui/material/Grid2';
 import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import { AnimeNavBar } from './components/ui/AnimeNavBar.jsx';
@@ -896,24 +897,32 @@ export default function App() {
                     {authorTab === 'dashboard' && (
                       hasBrand ? (
                         <Suspense fallback={<SectionFallback count={5} />}>
-                          <Stack spacing={{ xs: 1, md: 1.5 }}>
-                            <KPIs
-                              query={metricsQuery}
-                              selectedMetric={selectedMetric}
-                              onSelectMetric={handleSelectMetric}
-                              onFunnelData={setFunnelData}
-                              productId={productSelection.id}
-                              productLabel={productSelection.label}
-                              utmOptions={utmOptions}
-                            />
-                            <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-                            {hasPermission('web_vitals') && <WebVitals query={metricsQuery} />}
-                            <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-                            <FunnelChart funnelData={funnelData} />
-                            {hasPermission('payment_split_order') && <OrderSplit query={metricsQuery} />}
-                            {hasPermission('payment_split_sales') && <PaymentSalesSplit query={metricsQuery} />}
-                            {hasPermission('traffic_split') && <TrafficSourceSplit query={metricsQuery} />}
-                          </Stack>
+                          <Grid container spacing={2}>
+                            <Grid size={{ xs: 12, md: hasPermission('web_vitals') ? 9 : 12 }}>
+                              <Stack spacing={{ xs: 1, md: 1.5 }}>
+                                <KPIs
+                                  query={metricsQuery}
+                                  selectedMetric={selectedMetric}
+                                  onSelectMetric={handleSelectMetric}
+                                  onFunnelData={setFunnelData}
+                                  productId={productSelection.id}
+                                  productLabel={productSelection.label}
+                                  utmOptions={utmOptions}
+                                />
+                                <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+                                <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
+                                <FunnelChart funnelData={funnelData} />
+                                {hasPermission('payment_split_order') && <OrderSplit query={metricsQuery} />}
+                                {hasPermission('payment_split_sales') && <PaymentSalesSplit query={metricsQuery} />}
+                                {hasPermission('traffic_split') && <TrafficSourceSplit query={metricsQuery} />}
+                              </Stack>
+                            </Grid>
+                            {hasPermission('web_vitals') && (
+                              <Grid size={{ xs: 12, md: 3 }}>
+                                <WebVitals query={metricsQuery} />
+                              </Grid>
+                            )}
+                          </Grid>
                         </Suspense>
                       ) : (
                         <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
