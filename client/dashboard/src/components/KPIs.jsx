@@ -6,6 +6,7 @@ import {
   getDashboardSummary,
   getProductKpis,
 } from "../lib/api.js";
+import useWebVitals from "../hooks/useWebVitals.js";
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfMoney = new Intl.NumberFormat("en-IN", {
@@ -16,12 +17,13 @@ const nfMoney = new Intl.NumberFormat("en-IN", {
 const nfMoney2 = new Intl.NumberFormat("en-IN", {
   style: "currency",
   currency: "INR",
-  maximumFractionDigits: 2,
+  maximumFractionDigits: 0, // Changed to 0 decimals per design image
 });
 const nfPct = new Intl.NumberFormat(undefined, {
   style: "percent",
   maximumFractionDigits: 2,
 });
+const nfFloat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 
 export default function KPIs({
   query,
@@ -47,6 +49,9 @@ export default function KPIs({
   const utmCampaign = query?.utm_campaign;
   const salesChannel = query?.sales_channel;
   const compare = query?.compare;
+
+  // Web Vitals Hook
+  const webVitalsData = useWebVitals(query, 'Performance');
 
   const scopeLabel = useMemo(() => {
     if (!isProductScoped) return "All products";
@@ -261,15 +266,6 @@ export default function KPIs({
               label={f.label}
               size="small"
               variant="outlined"
-              onDelete={() => {
-                // Determine which option to remove
-                // This logic is simplified; ideally we need a handler passed from parent to clear specific UTMs
-                // But for now, just rendering them. If deletion is needed, we need a prop.
-                // The original code didn't have onDelete wired up in the snippet I saw, or did it?
-                // Step 77 snippet didn't show onDelete.
-                // Ah, the original code had activeFilters mapping to Chips but didn't show onDelete in the snippet I removed (Step 80).
-                // Wait, it just showed Chip with label, no onDelete.
-              }}
               sx={{
                 fontSize: 11,
                 height: 24,
@@ -292,8 +288,8 @@ export default function KPIs({
           )}
         </Box>
       </Stack>
-      <Grid container spacing={1.5} columns={{ xs: 2, sm: 6 }}>
-        <Grid size={{ xs: 1, sm: 2 }}>
+      <Grid container spacing={2} columns={{ xs: 2, sm: 4, md: 4 }}>
+        <Grid size={{ xs: 1, sm: 2, md: 1 }}>
           <KPIStat
             label="Total Orders"
             value={data.orders?.value ?? 0}
@@ -314,9 +310,9 @@ export default function KPIs({
             selected={selectedMetric === "orders"}
           />
         </Grid>
-        <Grid size={{ xs: 1, sm: 2 }}>
+        <Grid size={{ xs: 1, sm: 2, md: 1 }}>
           <KPIStat
-            label="Total Sales"
+            label="Total Revenue"
             value={data.sales?.value ?? 0}
             loading={loading}
             deltaLoading={deltaLoading}
@@ -335,9 +331,9 @@ export default function KPIs({
             selected={selectedMetric === "sales"}
           />
         </Grid>
-        <Grid size={{ xs: 1, sm: 2 }}>
+        <Grid size={{ xs: 1, sm: 2, md: 1 }}>
           <KPIStat
-            label="Avg Order Value"
+            label="Average order value"
             value={data.aov?.aov ?? 0}
             loading={loading}
             deltaLoading={deltaLoading}
@@ -354,7 +350,7 @@ export default function KPIs({
             selected={selectedMetric === "aov"}
           />
         </Grid>
-        <Grid size={{ xs: 1, sm: 2 }}>
+        <Grid size={{ xs: 1, sm: 2, md: 1 }}>
           <KPIStat
             label="Conversion Rate"
             value={data.cvr?.cvr ?? 0}
@@ -370,7 +366,7 @@ export default function KPIs({
             selected={selectedMetric === "cvr"}
           />
         </Grid>
-        <Grid size={{ xs: 1, sm: 2 }}>
+        <Grid size={{ xs: 1, sm: 2, md: 1 }}>
           <KPIStat
             label="Total Sessions"
             value={totalSessions}
@@ -391,7 +387,7 @@ export default function KPIs({
             selected={selectedMetric === "sessions"}
           />
         </Grid>
-        <Grid size={{ xs: 1, sm: 2 }}>
+        <Grid size={{ xs: 1, sm: 2, md: 1 }}>
           <KPIStat
             label="ATC Sessions"
             value={totalAtcSessions}
@@ -408,6 +404,26 @@ export default function KPIs({
             }
             onSelect={onSelectMetric ? () => onSelectMetric("atc") : undefined}
             selected={selectedMetric === "atc"}
+          />
+        </Grid>
+        <Grid size={{ xs: 1, sm: 2, md: 2 }}>
+          {/* New Web Performance Card */}
+          <KPIStat
+            label="Web Performance(Avg)"
+            value={webVitalsData.performanceAvg ?? 0}
+            loading={webVitalsData.loading}
+            deltaLoading={webVitalsData.loading}
+            formatter={(v) => nfFloat.format(v)}
+            delta={
+              webVitalsData.performanceChange !== null
+                ? {
+                  value: webVitalsData.performanceChange,
+                  // Higher performance score is better -> 'up' is green
+                  direction: webVitalsData.performanceChange > 0 ? 'up' : 'down'
+                }
+                : undefined
+            }
+            selected={false} // Not clickable for filtering
           />
         </Grid>
       </Grid>

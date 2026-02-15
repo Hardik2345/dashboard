@@ -58,17 +58,18 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
               ) : delta && typeof delta.value === 'number' ? (
                 <>
                   {delta.direction === 'up' ? (
-                    <ArrowDropUpIcon fontSize="small" sx={{ color: 'success.main' }} />
+                    <ArrowDropUpIcon fontSize="small" sx={{ color: '#10b981' }} />
                   ) : delta.direction === 'down' ? (
-                    <ArrowDropDownIcon fontSize="small" sx={{ color: 'error.main' }} />
+                    <ArrowDropDownIcon fontSize="small" sx={{ color: '#ef4444' }} />
                   ) : (
                     <Box sx={{ width: 0, height: 0 }} />
                   )}
                   <Typography
-                    variant="body2"
+                    variant="caption"
                     sx={{
-                      color: delta.direction === 'up' ? 'success.main' : delta.direction === 'down' ? 'error.main' : 'text.secondary',
-                      fontWeight: 700,
+                      color: delta.direction === 'up' ? '#10b981' : delta.direction === 'down' ? '#ef4444' : 'text.secondary',
+                      fontWeight: 600,
+                      ml: -0.5
                     }}
                   >
                     {Math.abs(delta.value).toFixed(1)}%
