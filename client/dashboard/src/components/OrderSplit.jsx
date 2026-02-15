@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Card, CardContent, Typography, Skeleton, Stack, Chip, useTheme } from '@mui/material';
+import { Card, CardContent, Typography, Skeleton, Stack, useTheme } from '@mui/material';
+import { GlassChip } from './ui/GlassChip.jsx';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -133,7 +134,7 @@ export default function OrderSplit({ query }) {
   };
 
   return (
-    <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+    <Card elevation={0} sx={{ backgroundColor: 'transparent', backgroundImage: 'none' }}>
       <CardContent sx={{ minHeight: 180 }}>
         <Typography variant="subtitle2" color="text.primary" sx={{ mb: 1 }}>
           Payment split (By Order Count)
@@ -145,9 +146,9 @@ export default function OrderSplit({ query }) {
         ) : (
           <>
             <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap', rowGap: 0.5, columnGap: 0.5 }}>
-              <Chip size="small" label={`COD ${nfPct1.format(data.cod_percent)}% (${nfInt.format(data.cod_orders)})`} sx={{ bgcolor: isDark ? 'rgba(245, 158, 11, 0.2)' : '#fff7ed', color: isDark ? '#fbbf24' : '#92400e' }} />
-              <Chip size="small" label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfInt.format(data.prepaid_orders)})`} sx={{ bgcolor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#d1fae5', color: isDark ? '#34d399' : '#065f46' }} />
-              <Chip size="small" label={`Partially paid ${nfPct1.format(data.partially_paid_percent)}% (${nfInt.format(data.partially_paid_orders)})`} sx={{ bgcolor: isDark ? 'rgba(167, 243, 208, 0.2)' : '#ecfdf5', color: isDark ? '#a7f3d0' : '#047857' }} />
+              <GlassChip size="small" label={`COD ${nfPct1.format(data.cod_percent)}% (${nfInt.format(data.cod_orders)})`} color="warning" isDark={isDark} />
+              <GlassChip size="small" label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfInt.format(data.prepaid_orders)})`} color="success" isDark={isDark} />
+              <GlassChip size="small" label={`Partially paid ${nfPct1.format(data.partially_paid_percent)}% (${nfInt.format(data.partially_paid_orders)})`} color="primary" isDark={isDark} />
             </Stack>
             <div style={{ position: 'relative', height: 120 }}>
               <Bar data={chartData} options={options} />

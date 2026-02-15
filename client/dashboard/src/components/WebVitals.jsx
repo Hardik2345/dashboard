@@ -19,14 +19,25 @@ const StatBox = ({ children }) => {
   return (
     <Box
       sx={{
-        border: "1px solid",
-        borderColor: isDark ? 'grey.700' : '#e0e0e0',
-        borderRadius: "8px",
-        padding: "14px 16px",
-        height: "100%",
+        borderRadius: "16px",
+        padding: "15px 15px",
         display: "flex",
         flexDirection: "column",
-        bgcolor: isDark ? 'grey.900' : '#fff',
+        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.7)',
+        backgroundImage: 'none',
+        backdropFilter: 'blur(12px)',
+        border: '1px solid',
+        borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.05)',
+        boxShadow: isDark
+          ? '0 20px 40px rgba(0, 0, 0, 0.6), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.15)'
+          : '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.5)',
+        transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+        '&:hover': {
+          transform: 'translateY(-4px)',
+          boxShadow: isDark
+            ? '0 30px 60px rgba(0, 0, 0, 0.8), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.25)'
+            : '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.08)',
+        },
       }}
     >
       {children}
@@ -45,7 +56,7 @@ const WebVitals = ({ query }) => {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          mb: 2,
+          mb: 1.5,
         }}
       >
         <Typography
@@ -60,7 +71,7 @@ const WebVitals = ({ query }) => {
             value={metric}
             onChange={(e) => setMetric(e.target.value)}
             sx={{
-              height: 28,
+              height: 30,
               fontSize: "12px",
               color: "text.primary",
               '& .MuiSelect-icon': {
@@ -101,8 +112,8 @@ const WebVitals = ({ query }) => {
             } catch { }
 
             return (
-              <Box key={idx} sx={{ mb: 1.5 }}>
-                <Box sx={{ display: "flex", alignItems: "center", mb: 0.5 }}>
+              <Box key={idx} sx={{ mb: 1 }}>
+                <Box sx={{ display: "flex", alignItems: "center", mb: 1.5 }}>
                   <Typography variant="body2" fontWeight={600} color="text.primary" sx={{ mr: 0.5 }}>
                     {idx + 1}.
                   </Typography>
@@ -113,7 +124,7 @@ const WebVitals = ({ query }) => {
                     color="text.primary"
                     underline="hover"
                     variant="body2"
-                    sx={{ fontWeight: 600, wordBreak: "break-all", lineHeight: 1.2 }}
+                    sx={{ fontWeight: 600, wordBreak: "break-all", lineHeight: 1 }}
                   >
                     {displayUrl}
                   </Link>
@@ -133,7 +144,7 @@ const WebVitals = ({ query }) => {
                   )}
                 </Typography>
 
-                {idx !== topPages.length - 1 && <Divider sx={{ mt: 1.5 }} />}
+                {idx !== topPages.length - 1 && <Divider sx={{ mt: 1 }} />}
               </Box>
             );
           })

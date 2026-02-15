@@ -514,6 +514,19 @@ export default function App() {
     });
   }, []);
 
+  const glassStyles = useMemo(() => ({
+    backdropFilter: 'blur(12px)',
+    backgroundColor: darkMode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.7)',
+    border: '1px solid',
+    borderColor: darkMode === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.05)',
+  }), [darkMode]);
+
+  const depthShadows = useMemo(() => ({
+    boxShadow: darkMode === 'dark'
+      ? '0 20px 40px rgba(0, 0, 0, 0.6), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.15)'
+      : '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.5)',
+  }), [darkMode]);
+
   const theme = useMemo(() => createTheme({
     palette: {
       mode: darkMode,
@@ -524,7 +537,7 @@ export default function App() {
         }
         : {
           primary: { main: '#5ba3e0' },
-          background: { default: '#121212', paper: '#1e1e1e' },
+          background: { default: '#000000', paper: '#1a1a1a' },
           text: {
             primary: '#f0f0f0',
             secondary: '#c0c0c0',
@@ -538,19 +551,29 @@ export default function App() {
       MuiCard: {
         styleOverrides: {
           root: {
-            ...(darkMode === 'dark' && {
-              backgroundColor: '#1e1e1e',
-              borderColor: '#333',
-            }),
+            borderRadius: 16,
+            transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+            ...glassStyles,
+            ...depthShadows,
+            backgroundImage: 'none',
+            '&:hover': {
+              transform: 'translateY(-4px)',
+              boxShadow: darkMode === 'dark'
+                ? '0 30px 60px rgba(0, 0, 0, 0.8), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.25)'
+                : '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.08)',
+            },
           },
         },
       },
       MuiPaper: {
         styleOverrides: {
           root: {
-            ...(darkMode === 'dark' && {
-              backgroundImage: 'none',
-            }),
+            backgroundImage: 'none',
+            ...(darkMode === 'dark' ? {
+              backgroundColor: 'rgba(65, 65, 65, 0.15)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+            } : {}),
           },
         },
       },
@@ -786,7 +809,7 @@ export default function App() {
                 position: { xs: 'sticky', md: 'static' },
                 top: 0,
                 zIndex: (theme) => theme.zIndex.appBar,
-                bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
+                bgcolor: darkMode === 'dark' ? '#000000' : '#FDFDFD',
                 borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
                 borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
                 transition: 'border-color 0.2s ease',
@@ -800,6 +823,7 @@ export default function App() {
                 isAdmin={isAuthor}
                 darkMode={darkMode === 'dark'}
                 onToggleDarkMode={handleToggleDarkMode}
+                brandKey={activeBrandKey}
                 showFilterButton={isAuthor || hasPermission('product_filter') || hasPermission('utm_filter') || hasPermission('sales_channel_filter') || showMultipleBrands}
                 onFilterClick={() => setMobileFilterOpen(true)}
               />
@@ -808,15 +832,24 @@ export default function App() {
             {/* Non-Sticky Sub-Header (MobileTopBar etc) */}
             <Box
               sx={{
-                bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
-                pb: { xs: 0.5, md: 1 },
+                bgcolor: darkMode === 'dark' ? '#000000' : '#FDFDFD',
+                pb: 0,
               }}
             >
-              <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: { xs: 0.5, sm: 2 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
-                <Stack spacing={{ xs: 3, sm: 1 }}>
-                  {/* Brand Selector - unified for both roles */}
-                  {(isAuthor || showMultipleBrands) && (
-                    <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+              <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: 0, maxWidth: 1200, mx: 'auto', width: '100%', display: 'flex', justifyContent: 'space-between' }}>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: { xs: 'column', md: 'row' },
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    gap: 1,
+                  }}
+                >
+                  {/* Brand Selector - unified for both roles - hidden on mobile (in filter drawer) */}
+                  {(isAuthor || showMultipleBrands) && !isMobile && (
+                    <Box sx={{ mb: { xs: 1, md: 0 } }}>
                       <AuthorBrandSelector
                         brands={isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }))}
                         value={activeBrandKey}
@@ -845,28 +878,28 @@ export default function App() {
                       utmOptions={utmOptions}
                     />
                   )}
-                  <MobileFilterDrawer
-                    showBrandFilter={showMultipleBrands}
-                    showProductFilter={hasPermission('product_filter')}
-                    showUtmFilter={hasPermission('utm_filter')}
-                    showSalesChannel={hasPermission('sales_channel_filter')}
-                    open={mobileFilterOpen}
-                    onClose={() => setMobileFilterOpen(false)}
-                    brandKey={authorBrandKey}
-                    brands={isAuthor ? authorBrands : viewerBrands.map(b => ({ key: b }))}
-                    onBrandChange={handleAuthorBrandChange}
-                    productOptions={productOptions}
-                    productValue={productSelection}
-                    onProductChange={handleProductChange}
-                    utm={utm}
-                    onUtmChange={handleUtmChange}
-                    salesChannel={salesChannel}
-                    onSalesChannelChange={handleSalesChannelChange}
-                    utmOptions={utmOptions}
-                    dateRange={range}
-                    isDark={darkMode === 'dark'}
-                  />
-                </Stack>
+                </Box>
+                <MobileFilterDrawer
+                  showBrandFilter={showMultipleBrands}
+                  showProductFilter={hasPermission('product_filter')}
+                  showUtmFilter={hasPermission('utm_filter')}
+                  showSalesChannel={hasPermission('sales_channel_filter')}
+                  open={mobileFilterOpen}
+                  onClose={() => setMobileFilterOpen(false)}
+                  brandKey={authorBrandKey}
+                  brands={isAuthor ? authorBrands : viewerBrands.map(b => ({ key: b }))}
+                  onBrandChange={handleAuthorBrandChange}
+                  productOptions={productOptions}
+                  productValue={productSelection}
+                  onProductChange={handleProductChange}
+                  utm={utm}
+                  onUtmChange={handleUtmChange}
+                  salesChannel={salesChannel}
+                  onSalesChannelChange={handleSalesChannelChange}
+                  utmOptions={utmOptions}
+                  dateRange={range}
+                  isDark={darkMode === 'dark'}
+                />
               </Box>
             </Box>
 
@@ -897,32 +930,51 @@ export default function App() {
                     {authorTab === 'dashboard' && (
                       hasBrand ? (
                         <Suspense fallback={<SectionFallback count={5} />}>
-                          <Grid container spacing={2}>
-                            <Grid size={{ xs: 12, md: hasPermission('web_vitals') ? 9 : 12 }}>
-                              <Stack spacing={{ xs: 1, md: 1.5 }}>
-                                <KPIs
-                                  query={metricsQuery}
-                                  selectedMetric={selectedMetric}
-                                  onSelectMetric={handleSelectMetric}
-                                  onFunnelData={setFunnelData}
-                                  productId={productSelection.id}
-                                  productLabel={productSelection.label}
-                                  utmOptions={utmOptions}
-                                />
-                                <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-                                <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-                                <FunnelChart funnelData={funnelData} />
-                                {hasPermission('payment_split_order') && <OrderSplit query={metricsQuery} />}
-                                {hasPermission('payment_split_sales') && <PaymentSalesSplit query={metricsQuery} />}
-                                {hasPermission('traffic_split') && <TrafficSourceSplit query={metricsQuery} />}
-                              </Stack>
-                            </Grid>
-                            {hasPermission('web_vitals') && (
-                              <Grid size={{ xs: 12, md: 3 }}>
-                                <WebVitals query={metricsQuery} />
+                          <Stack spacing={{ xs: 1, md: 1 }}>
+                            {/* Row 1 KPIs - Full Width */}
+                            <KPIs
+                              query={metricsQuery}
+                              selectedMetric={selectedMetric}
+                              onSelectMetric={handleSelectMetric}
+                              onFunnelData={setFunnelData}
+                              productId={productSelection.id}
+                              productLabel={productSelection.label}
+                              utmOptions={utmOptions}
+                              showRow={1}
+                            />
+
+                            <Grid container spacing={2}>
+                              {/* Left Column: Row 2 KPIs + Trend Graph */}
+                              <Grid size={{ xs: 12, md: hasPermission('web_vitals') ? 9 : 12 }}>
+                                <Stack spacing={{ xs: 1, md: 1 }}>
+                                  <KPIs
+                                    query={metricsQuery}
+                                    selectedMetric={selectedMetric}
+                                    onSelectMetric={handleSelectMetric}
+                                    onFunnelData={setFunnelData}
+                                    productId={productSelection.id}
+                                    productLabel={productSelection.label}
+                                    utmOptions={utmOptions}
+                                    showRow={2}
+                                  />
+                                  <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+                                </Stack>
                               </Grid>
-                            )}
-                          </Grid>
+
+                              {/* Right Column: Web Vitals Sidebar */}
+                              {hasPermission('web_vitals') && (
+                                <Grid size={{ xs: 12, md: 3 }}>
+                                  <WebVitals query={metricsQuery} />
+                                </Grid>
+                              )}
+                            </Grid>
+
+                            <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
+                            <FunnelChart funnelData={funnelData} />
+                            {hasPermission('payment_split_order') && <OrderSplit query={metricsQuery} />}
+                            {hasPermission('payment_split_sales') && <PaymentSalesSplit query={metricsQuery} />}
+                            {hasPermission('traffic_split') && <TrafficSourceSplit query={metricsQuery} />}
+                          </Stack>
                         </Suspense>
                       ) : (
                         <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
@@ -1002,7 +1054,7 @@ export default function App() {
           />
         )}
       </AppProvider>
-    </ThemeProvider>
+    </ThemeProvider >
   );
 }
 

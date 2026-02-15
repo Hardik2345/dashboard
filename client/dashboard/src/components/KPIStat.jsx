@@ -2,7 +2,7 @@ import { Card, CardContent, Typography, Skeleton, Box } from '@mui/material';
 import ArrowDropUpIcon from '@mui/icons-material/ArrowDropUp';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 
-export default function KPIStat({ label, value, hint, loading, deltaLoading, formatter, delta, onSelect, selected }) {
+export default function KPIStat({ label, value, hint, loading, deltaLoading, formatter, delta, onSelect, selected, centerOnMobile = false }) {
   const clickable = typeof onSelect === 'function';
 
   const handleKeyDown = (event) => {
@@ -22,19 +22,18 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
       tabIndex={clickable ? 0 : undefined}
       aria-pressed={clickable ? Boolean(selected) : undefined}
       sx={{
-        border: '1px solid',
-        borderColor: selected ? 'primary.main' : 'divider',
-        height: '100%',
-        cursor: clickable ? 'pointer' : 'default',
-        backgroundColor: selected ? 'action.hover' : 'background.paper',
-        transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
-        boxShadow: selected ? '0 0 0 1px rgba(11,107,203,0.25)' : 'none',
-        outline: 'none',
-        '&:hover': clickable ? { borderColor: 'primary.main', boxShadow: '0 0 0 1px rgba(11,107,203,0.2)' } : undefined,
-        '&:focus-visible': clickable ? { borderColor: 'primary.main', boxShadow: '0 0 0 2px rgba(11,107,203,0.35)' } : undefined,
+        '&:focus-visible': clickable ? { borderColor: 'primary.main' } : undefined,
       }}
     >
-      <CardContent sx={{ py: 1.25, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
+      <CardContent sx={{
+        py: 1.25,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        minHeight: 110,
+        alignItems: centerOnMobile ? { xs: 'center', md: 'flex-start' } : 'flex-start',
+        textAlign: centerOnMobile ? { xs: 'center', md: 'left' } : 'left'
+      }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 0.25, whiteSpace: 'nowrap' }}>
           {label}
         </Typography>
@@ -42,7 +41,12 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
           <Skeleton variant="text" width={120} height={32} />
         ) : (
           <>
-            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+            <Box sx={{
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 1,
+              justifyContent: centerOnMobile ? { xs: 'center', md: 'flex-start' } : 'flex-start'
+            }}>
               <Typography variant="h5" sx={{ fontWeight: 700 }}>
                 {formatter ? formatter(value) : value}
               </Typography>
@@ -52,7 +56,14 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
                 </Typography>
               )}
             </Box>
-            <Box sx={{ mt: 0.5, height: 20, display: 'flex', alignItems: 'center', gap: 0.25 }}>
+            <Box sx={{
+              mt: 0.5,
+              height: 20,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.25,
+              justifyContent: centerOnMobile ? { xs: 'center', md: 'flex-start' } : 'flex-start'
+            }}>
               {deltaLoading ? (
                 <Skeleton variant="text" width={60} height={20} />
               ) : delta && typeof delta.value === 'number' ? (
@@ -86,6 +97,6 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
           </>
         )}
       </CardContent>
-    </Card>
+    </Card >
   );
 }

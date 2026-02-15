@@ -32,8 +32,8 @@ export function AnimeNavBar({ items, className, activeTab, onTabChange, isDark =
                     className={cn(
                         "flex items-center gap-2 py-2 px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative border backdrop-blur-[40px] transition-all duration-500",
                         isDark
-                            ? "bg-black/90 border-white/20"
-                            : "bg-white/95 border-black/10"
+                            ? "bg-[#1a1a1a]/75 border-white/10"
+                            : "bg-[#f5f5f5]/75 border-black/5"
                     )}
                     initial={false}
                     animate={{ y: 0, opacity: 1 }}

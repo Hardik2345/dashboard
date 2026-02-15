@@ -128,67 +128,12 @@ export default function MobileTopBar({
   const [popoverActive, setPopoverActive] = useState(false);
   const [month, setMonth] = useState((end || start || dayjs()).month());
   const [year, setYear] = useState((end || start || dayjs()).year());
-  const [last, setLast] = useState({ loading: true, ts: null, tz: null });
   const [showUtmFilters, setShowUtmFilters] = useState(false);
 
 
 
 
 
-  useEffect(() => {
-    let cancelled = false;
-    const normalizedKey = (brandKey || "").toString().trim().toUpperCase();
-    setLast({ loading: true, ts: null, tz: null });
-    getLastUpdatedPTS(normalizedKey ? { brandKey: normalizedKey } : undefined)
-      .then((r) => {
-        if (cancelled) return;
-        let parsed = null;
-        const sources = [];
-        if (r.iso) sources.push(r.iso);
-        if (r.raw) sources.push(r.raw);
-        for (const src of sources) {
-          if (parsed) break;
-          const cleaned =
-            typeof src === "string" ? src.replace(/ IST$/, "").trim() : src;
-          if (!cleaned) continue;
-          if (typeof cleaned === "string") {
-            const formats = [
-              "YYYY-MM-DDTHH:mm:ss.SSSZ",
-              "YYYY-MM-DDTHH:mm:ssZ",
-              "YYYY-MM-DD hh:mm:ss A",
-              "YYYY-MM-DD HH:mm:ss",
-              "YYYY-MM-DD hh:mm A",
-            ];
-            for (const f of formats) {
-              const d = dayjs(cleaned, f, true);
-              if (d.isValid()) {
-                parsed = d;
-                break;
-              }
-            }
-            if (!parsed) {
-              const auto = dayjs(cleaned);
-              if (auto.isValid()) parsed = auto;
-            }
-          } else if (cleaned instanceof Date) {
-            const auto = dayjs(cleaned);
-            if (auto.isValid()) parsed = auto;
-          }
-        }
-        setLast((prev) => ({
-          loading: false,
-          ts: parsed || prev.ts,
-          tz: r.timezone || prev.tz || null,
-        }));
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setLast((prev) => ({ loading: false, ts: prev.ts, tz: prev.tz }));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [brandKey]);
 
   useEffect(() => {
     const focus = end || start;
@@ -281,76 +226,24 @@ export default function MobileTopBar({
   const activeUtmCount = [utm?.source, utm?.medium, utm?.campaign].filter(Boolean).length;
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.25 }}>
       {/* Mobile: Product filter on its own row (authors only) */}
       {/* Mobile: Product filter removed (moved to global drawer) */}
 
 
 
       {/* Main row: Updated chip | (desktop: product filter) | Date picker */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'space-between', md: 'space-between' }, width: '100%', gap: 0.5 }}>
         {/* Left: Updated chip and Date Label */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {last.loading ? (
-              <Card
-                elevation={0}
-                sx={{
-                  px: 0.75,
-                  height: 32,
-                  display: "flex",
-                  alignItems: "center",
-                  bgcolor: "background.paper",
-                  fontSize: 13,
-                }}
-              >
-                Updating…
-              </Card>
-            ) : last.ts ? (
-              <Tooltip
-                title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${last.tz ? ` ${last.tz}` : ""
-                  }`}
-                arrow
-              >
-                <Card
-                  elevation={0}
-                  sx={{
-                    border: "1px solid",
-                    borderColor: "divider",
-                    px: 0.75,
-                    height: 32,
-                    display: "flex",
-                    alignItems: "center",
-                    fontSize: 11.1,
-                  }}
-                >
-                  Updated {last.ts.fromNow()}
-                </Card>
-              </Tooltip>
-            ) : (
-              <Card
-                elevation={0}
-                sx={{
-                  border: "1px solid",
-                  borderColor: "divider",
-                  px: 0.75,
-                  height: 32,
-                  display: "flex",
-                  alignItems: "center",
-                  fontSize: 13,
-                }}
-              >
-                Updated: unavailable
-              </Card>
-            )}
-          </Box>
-          <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'block', md: 'none' }, ml: 0.5 }}>
+        {/* Left: Updated chip and Date Label */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0, width: { xs: 'auto', md: '0px' }, visibility: { xs: 'visible', md: 'hidden' }, overflow: 'hidden' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'block', md: 'none' }, ml: 0.5, lineHeight: 1.2 }}>
             Brand: <b>{brandKey}</b>
           </Typography>
         </Box>
 
         {/* Right: Product filter (desktop only) + Date picker */}
-        <Box sx={{ display: 'flex', alignItems: 'flex-end', flexDirection: 'column', gap: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: { xs: 'flex-end', md: 'center' }, flexDirection: { xs: 'column', md: 'row' }, gap: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
 
 
@@ -359,6 +252,22 @@ export default function MobileTopBar({
               <>
                 <Collapse in={showUtmFilters} orientation="horizontal" unmountOnExit>
                   <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 1, alignItems: 'center' }}>
+                    {activeUtmCount > 0 && (
+                      <Button
+                        size="small"
+                        onClick={() => onUtmChange && onUtmChange({ source: '', medium: '', campaign: '' })}
+                        sx={{
+                          fontSize: 12,
+                          textTransform: 'none',
+                          minWidth: 'auto',
+                          whiteSpace: 'nowrap',
+                          color: 'text.secondary',
+                          '&:hover': { color: 'error.main', bgcolor: 'transparent' }
+                        }}
+                      >
+                        Clear all
+                      </Button>
+                    )}
                     {showSalesChannel && (
                       <SearchableSelect
                         label="Sales Channel"
@@ -377,22 +286,6 @@ export default function MobileTopBar({
                           '& .MuiSelect-select': { py: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
                         }}
                       />
-                    )}
-                    {activeUtmCount > 0 && (
-                      <Button
-                        size="small"
-                        onClick={() => onUtmChange && onUtmChange({ source: '', medium: '', campaign: '' })}
-                        sx={{
-                          fontSize: 12,
-                          textTransform: 'none',
-                          minWidth: 'auto',
-                          whiteSpace: 'nowrap',
-                          color: 'text.secondary',
-                          '&:hover': { color: 'error.main', bgcolor: 'transparent' }
-                        }}
-                      >
-                        Clear all
-                      </Button>
                     )}
                     {['source', 'medium', 'campaign'].map(field => (
                       <SearchableSelect
@@ -494,7 +387,7 @@ export default function MobileTopBar({
 
 
             {/* Date Label (Visible next to icon) */}
-            <Typography variant="subtitle2" sx={{ fontSize: 13, fontWeight: 600, mr: 1, display: 'block', color: 'text.secondary' }}>
+            <Typography variant="subtitle2" sx={{ fontSize: 13, fontWeight: 600, mr: 1, display: 'block', color: 'text.secondary', whiteSpace: 'nowrap' }}>
               {dateLabel}
             </Typography>
 

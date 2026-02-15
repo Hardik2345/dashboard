@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import Grid from "@mui/material/Grid2";
-import { Stack, Typography, Chip, Box } from "@mui/material";
+import { Stack, Typography, Box, useTheme } from "@mui/material";
+import { GlassChip } from "./ui/GlassChip.jsx";
 import KPIStat from "./KPIStat.jsx";
 import {
   getDashboardSummary,
@@ -34,7 +35,10 @@ export default function KPIs({
   productId,
   productLabel,
   utmOptions, // Prop from App
+  showRow = null, // null for both, 1 for row 1, 2 for row 2
 }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const [loading, setLoading] = useState(true);
   const [deltaLoading, setDeltaLoading] = useState(true);
   const [data, setData] = useState({});
@@ -249,183 +253,187 @@ export default function KPIs({
   return (
     <>
       {/* Desktop-only Active Filters & Scope Label */}
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{ mb: 1.5, display: { xs: 'none', md: 'flex' } }}
-      >
-        <Typography variant="subtitle2" color="text.secondary">
-          Scope: {scopeLabel}
-        </Typography>
+      {(showRow === null || showRow === 1) && (
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          sx={{ mb: 1.5, display: { xs: 'none', md: 'flex' } }}
+        >
+          <Typography variant="subtitle2" color="text.secondary">
+            Scope: {scopeLabel}
+          </Typography>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {activeFilters.map(f => (
-            <Chip
-              key={f.key}
-              label={f.label}
-              size="small"
-              variant="outlined"
-              sx={{
-                fontSize: 11,
-                height: 24,
-                maxWidth: 200,
-                color: 'text.secondary',
-                borderColor: 'divider',
-                '& .MuiChip-label': {
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  display: 'block',
-                  whiteSpace: 'nowrap'
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {activeFilters.map(f => (
+              <GlassChip
+                key={f.key}
+                label={f.label}
+                size="small"
+                isDark={isDark}
+                sx={{
+                  maxWidth: 200,
+                }}
+              />
+            ))}
+            {isProductScoped && (
+              <Typography variant="caption" color="text.secondary">
+                Using product-level KPIs
+              </Typography>
+            )}
+          </Box>
+        </Stack>
+      )}
+      <Grid container spacing={2} columns={12}>
+        {/* Row 1: Total Orders, Revenue, AOV, CVR (4 items) */}
+        {(showRow === null || showRow === 1) && (
+          <>
+            <Grid size={{ xs: 6, sm: 6, md: 3 }}>
+              <KPIStat
+                label="Total Orders"
+                value={data.orders?.value ?? 0}
+                loading={loading}
+                deltaLoading={deltaLoading}
+                formatter={(v) => nfInt.format(v)}
+                delta={
+                  data.ordersDelta
+                    ? {
+                      value: data.ordersDelta.diff_pct,
+                      direction: data.ordersDelta.direction,
+                    }
+                    : undefined
                 }
-              }}
-            />
-          ))}
-          {isProductScoped && (
-            <Typography variant="caption" color="text.secondary">
-              Using product-level KPIs
-            </Typography>
-          )}
-        </Box>
-      </Stack>
-      <Grid container spacing={2} columns={{ xs: 2, sm: 4, md: 4 }}>
-        <Grid size={{ xs: 1, sm: 2, md: 1 }}>
-          <KPIStat
-            label="Total Orders"
-            value={data.orders?.value ?? 0}
-            loading={loading}
-            deltaLoading={deltaLoading}
-            formatter={(v) => nfInt.format(v)}
-            delta={
-              data.ordersDelta
-                ? {
-                  value: data.ordersDelta.diff_pct,
-                  direction: data.ordersDelta.direction,
+                onSelect={
+                  onSelectMetric ? () => onSelectMetric("orders") : undefined
                 }
-                : undefined
-            }
-            onSelect={
-              onSelectMetric ? () => onSelectMetric("orders") : undefined
-            }
-            selected={selectedMetric === "orders"}
-          />
-        </Grid>
-        <Grid size={{ xs: 1, sm: 2, md: 1 }}>
-          <KPIStat
-            label="Total Revenue"
-            value={data.sales?.value ?? 0}
-            loading={loading}
-            deltaLoading={deltaLoading}
-            formatter={(v) => nfMoney.format(v)}
-            delta={
-              data.salesDelta
-                ? {
-                  value: data.salesDelta.diff_pct,
-                  direction: data.salesDelta.direction,
+                selected={selectedMetric === "orders"}
+              />
+            </Grid>
+            <Grid size={{ xs: 6, sm: 6, md: 3 }}>
+              <KPIStat
+                label="Total Revenue"
+                value={data.sales?.value ?? 0}
+                loading={loading}
+                deltaLoading={deltaLoading}
+                formatter={(v) => nfMoney.format(v)}
+                delta={
+                  data.salesDelta
+                    ? {
+                      value: data.salesDelta.diff_pct,
+                      direction: data.salesDelta.direction,
+                    }
+                    : undefined
                 }
-                : undefined
-            }
-            onSelect={
-              onSelectMetric ? () => onSelectMetric("sales") : undefined
-            }
-            selected={selectedMetric === "sales"}
-          />
-        </Grid>
-        <Grid size={{ xs: 1, sm: 2, md: 1 }}>
-          <KPIStat
-            label="Average order value"
-            value={data.aov?.aov ?? 0}
-            loading={loading}
-            deltaLoading={deltaLoading}
-            formatter={(v) => nfMoney2.format(v)}
-            delta={
-              data.aovDelta
-                ? {
-                  value: data.aovDelta.diff_pct,
-                  direction: data.aovDelta.direction,
+                onSelect={
+                  onSelectMetric ? () => onSelectMetric("sales") : undefined
                 }
-                : undefined
-            }
-            onSelect={onSelectMetric ? () => onSelectMetric("aov") : undefined}
-            selected={selectedMetric === "aov"}
-          />
-        </Grid>
-        <Grid size={{ xs: 1, sm: 2, md: 1 }}>
-          <KPIStat
-            label="Conversion Rate"
-            value={data.cvr?.cvr ?? 0}
-            loading={loading}
-            deltaLoading={deltaLoading}
-            formatter={(v) => nfPct.format(v)}
-            delta={
-              typeof cvrDeltaValue === "number" && data.cvrDelta
-                ? { value: cvrDeltaValue, direction: data.cvrDelta.direction }
-                : undefined
-            }
-            onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
-            selected={selectedMetric === "cvr"}
-          />
-        </Grid>
-        <Grid size={{ xs: 1, sm: 2, md: 1 }}>
-          <KPIStat
-            label="Total Sessions"
-            value={totalSessions}
-            loading={loading}
-            deltaLoading={deltaLoading}
-            formatter={(v) => nfInt.format(v)}
-            delta={
-              data.sessDelta
-                ? {
-                  value: data.sessDelta.diff_pct,
-                  direction: data.sessDelta.direction,
+                selected={selectedMetric === "sales"}
+              />
+            </Grid>
+            <Grid size={{ xs: 6, sm: 6, md: 3 }}>
+              <KPIStat
+                label="Average order value"
+                value={data.aov?.aov ?? 0}
+                loading={loading}
+                deltaLoading={deltaLoading}
+                formatter={(v) => nfMoney2.format(v)}
+                delta={
+                  data.aovDelta
+                    ? {
+                      value: data.aovDelta.diff_pct,
+                      direction: data.aovDelta.direction,
+                    }
+                    : undefined
                 }
-                : undefined
-            }
-            onSelect={
-              onSelectMetric ? () => onSelectMetric("sessions") : undefined
-            }
-            selected={selectedMetric === "sessions"}
-          />
-        </Grid>
-        <Grid size={{ xs: 1, sm: 2, md: 1 }}>
-          <KPIStat
-            label="ATC Sessions"
-            value={totalAtcSessions}
-            loading={loading}
-            deltaLoading={deltaLoading}
-            formatter={(v) => nfInt.format(v)}
-            delta={
-              data.atcDelta
-                ? {
-                  value: data.atcDelta.diff_pct,
-                  direction: data.atcDelta.direction,
+                onSelect={onSelectMetric ? () => onSelectMetric("aov") : undefined}
+                selected={selectedMetric === "aov"}
+              />
+            </Grid>
+            <Grid size={{ xs: 6, sm: 6, md: 3 }}>
+              <KPIStat
+                label="Conversion Rate"
+                value={data.cvr?.cvr ?? 0}
+                loading={loading}
+                deltaLoading={deltaLoading}
+                formatter={(v) => nfPct.format(v)}
+                delta={
+                  typeof cvrDeltaValue === "number" && data.cvrDelta
+                    ? { value: cvrDeltaValue, direction: data.cvrDelta.direction }
+                    : undefined
                 }
-                : undefined
-            }
-            onSelect={onSelectMetric ? () => onSelectMetric("atc") : undefined}
-            selected={selectedMetric === "atc"}
-          />
-        </Grid>
-        <Grid size={{ xs: 1, sm: 2, md: 2 }}>
-          {/* New Web Performance Card */}
-          <KPIStat
-            label="Web Performance(Avg)"
-            value={webVitalsData.performanceAvg ?? 0}
-            loading={webVitalsData.loading}
-            deltaLoading={webVitalsData.loading}
-            formatter={(v) => nfFloat.format(v)}
-            delta={
-              webVitalsData.performanceChange !== null
-                ? {
-                  value: webVitalsData.performanceChange,
-                  // Higher performance score is better -> 'up' is green
-                  direction: webVitalsData.performanceChange > 0 ? 'up' : 'down'
+                onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
+                selected={selectedMetric === "cvr"}
+              />
+            </Grid>
+          </>
+        )}
+
+        {/* Row 2: Sessions, ATC, Web Perf (3 items) */}
+        {(showRow === null || showRow === 2) && (
+          <>
+            <Grid size={{ xs: 6, sm: 4, md: 4 }}>
+              <KPIStat
+                label="Total Sessions"
+                value={totalSessions}
+                loading={loading}
+                deltaLoading={deltaLoading}
+                formatter={(v) => nfInt.format(v)}
+                delta={
+                  data.sessDelta
+                    ? {
+                      value: data.sessDelta.diff_pct,
+                      direction: data.sessDelta.direction,
+                    }
+                    : undefined
                 }
-                : undefined
-            }
-            selected={false} // Not clickable for filtering
-          />
-        </Grid>
+                onSelect={
+                  onSelectMetric ? () => onSelectMetric("sessions") : undefined
+                }
+                selected={selectedMetric === "sessions"}
+              />
+            </Grid>
+            <Grid size={{ xs: 6, sm: 4, md: 4 }}>
+              <KPIStat
+                label="ATC Sessions"
+                value={totalAtcSessions}
+                loading={loading}
+                deltaLoading={deltaLoading}
+                formatter={(v) => nfInt.format(v)}
+                delta={
+                  data.atcDelta
+                    ? {
+                      value: data.atcDelta.diff_pct,
+                      direction: data.atcDelta.direction,
+                    }
+                    : undefined
+                }
+                onSelect={onSelectMetric ? () => onSelectMetric("atc") : undefined}
+                selected={selectedMetric === "atc"}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4, md: 4 }}>
+              {/* New Web Performance Card */}
+              <KPIStat
+                label="Web Performance(Avg)"
+                value={webVitalsData.performanceAvg ?? 0}
+                loading={webVitalsData.loading}
+                deltaLoading={webVitalsData.loading}
+                formatter={(v) => nfFloat.format(v)}
+                delta={
+                  webVitalsData.performanceChange !== null
+                    ? {
+                      value: webVitalsData.performanceChange,
+                      // Higher performance score is better -> 'up' is green
+                      direction: webVitalsData.performanceChange > 0 ? 'up' : 'down'
+                    }
+                    : undefined
+                }
+                selected={false} // Not clickable for filtering
+                centerOnMobile={true}
+              />
+            </Grid>
+          </>
+        )}
       </Grid>
     </>
   );

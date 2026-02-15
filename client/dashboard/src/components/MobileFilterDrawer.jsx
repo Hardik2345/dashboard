@@ -207,15 +207,21 @@ export default function MobileFilterDrawer({
             anchor="bottom"
             open={open}
             onClose={onClose}
+            sx={{ zIndex: 11000 }}
             PaperProps={{
                 sx: {
-                    borderTopLeftRadius: 16,
-                    borderTopRightRadius: 16,
-                    height: '60vh',
-                    maxHeight: '85vh',
-                    bgcolor: 'transparent',
+                    borderTopLeftRadius: 24,
+                    borderTopRightRadius: 24,
+                    height: 'auto',
+                    maxHeight: '90vh',
+                    bgcolor: isDark ? 'rgba(26, 26, 26, 0.7)' : 'rgba(252, 252, 252, 0.7)',
+                    backdropFilter: 'blur(25px)',
+                    backgroundImage: 'none',
                     display: 'flex',
-                    flexDirection: 'column'
+                    flexDirection: 'column',
+                    border: '1px solid',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.1)',
+                    boxShadow: '0 -10px 40px rgba(0,0,0,0.3)',
                 }
             }}
         >
@@ -319,7 +325,7 @@ export default function MobileFilterDrawer({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                bgcolor: isDark ? '#1a1a1a' : '#ffffff',
+                bgcolor: 'transparent',
                 position: 'sticky',
                 top: 0,
                 zIndex: 10
@@ -340,7 +346,7 @@ export default function MobileFilterDrawer({
             </Box>
 
             {/* Content */}
-            <Box sx={{ p: 0, overflowY: 'auto', flex: 1, bgcolor: isDark ? '#1a1a1a' : '#ffffff', position: 'relative' }}>
+            <Box sx={{ p: 0, overflowY: 'auto', flex: 1, bgcolor: 'transparent', position: 'relative' }}>
 
                 {/* ANIMATED VIEWS */}
                 <Box key={view} sx={{ animation: 'fadeIn 0.3s ease-in-out' }}>
@@ -691,7 +697,7 @@ export default function MobileFilterDrawer({
             </Box>
 
             {/* Footer */}
-            <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 2, bgcolor: isDark ? '#1a1a1a' : '#ffffff' }}>
+            <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 2, bgcolor: isDark ? 'rgba(26,26,26,0.5)' : 'rgba(255,255,255,0.5)' }}>
                 <Button
                     fullWidth
                     variant="outlined"

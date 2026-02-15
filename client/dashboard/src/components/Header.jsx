@@ -1,4 +1,10 @@
-import { AppBar, Toolbar, Box, Button, IconButton, useTheme, useMediaQuery, Tooltip, Typography } from '@mui/material';
+import { AppBar, Toolbar, Box, Button, IconButton, useTheme, useMediaQuery, Tooltip, Typography, Card } from '@mui/material';
+import { useEffect, useState } from 'react';
+import dayjs from 'dayjs';
+import relativeTime from "dayjs/plugin/relativeTime";
+import bridge from "dayjs/plugin/utc"; // Using a different name to avoid collision if needed, but 'utc' is standard
+import customParseFormat from "dayjs/plugin/customParseFormat";
+import { getLastUpdatedPTS } from "../lib/api.js";
 import {
   Bell,
   Sun,
@@ -7,6 +13,7 @@ import {
   SlidersHorizontal,
   LogOut
 } from 'lucide-react';
+import SkyToggle from './ui/SkyToggle.jsx';
 
 export default function Header({
   user,
@@ -17,10 +24,72 @@ export default function Header({
   onToggleDarkMode,
   onFilterClick,
   showFilterButton = false,
-  isAdmin = false
+  isAdmin = false,
+  brandKey = ''
 }) {
+  dayjs.extend(relativeTime);
+  dayjs.extend(customParseFormat);
+
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+  const [last, setLast] = useState({ loading: true, ts: null, tz: null });
+
+  useEffect(() => {
+    let cancelled = false;
+    const normalizedKey = (brandKey || "").toString().trim().toUpperCase();
+    setLast({ loading: true, ts: null, tz: null });
+    getLastUpdatedPTS(normalizedKey ? { brandKey: normalizedKey } : undefined)
+      .then((r) => {
+        if (cancelled) return;
+        let parsed = null;
+        const sources = [];
+        if (r.iso) sources.push(r.iso);
+        if (r.raw) sources.push(r.raw);
+        for (const src of sources) {
+          if (parsed) break;
+          const cleaned =
+            typeof src === "string" ? src.replace(/ IST$/, "").trim() : src;
+          if (!cleaned) continue;
+          if (typeof cleaned === "string") {
+            const formats = [
+              "YYYY-MM-DDTHH:mm:ss.SSSZ",
+              "YYYY-MM-DDTHH:mm:ssZ",
+              "YYYY-MM-DD hh:mm:ss A",
+              "YYYY-MM-DD HH:mm:ss",
+              "YYYY-MM-DD hh:mm A",
+            ];
+            for (const f of formats) {
+              const d = dayjs(cleaned, f, true);
+              if (d.isValid()) {
+                parsed = d;
+                break;
+              }
+            }
+            if (!parsed) {
+              const auto = dayjs(cleaned);
+              if (auto.isValid()) parsed = auto;
+            }
+          } else if (cleaned instanceof Date) {
+            const auto = dayjs(cleaned);
+            if (auto.isValid()) parsed = auto;
+          }
+        }
+        setLast((prev) => ({
+          loading: false,
+          ts: parsed || prev.ts,
+          tz: r.timezone || prev.tz || null,
+        }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLast((prev) => ({ loading: false, ts: prev.ts, tz: prev.tz }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [brandKey]);
 
   // Extract first name for the greeting
   const firstName = user?.name ? user.name.split(' ')[0] : (user?.email?.split('@')[0] || 'User');
@@ -38,7 +107,7 @@ export default function Header({
         py: { xs: 0, md: 1 }
       }}
     >
-      <Toolbar sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: { xs: 48, md: 72 }, p: 0 }}>
+      <Toolbar sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: { xs: 56, md: 72 }, p: 0 }}>
 
         {/* Left: Greeting (Desktop) or Logo (Mobile) */}
         <Box sx={{ display: 'flex', flexDirection: 'column' }}>
@@ -48,15 +117,81 @@ export default function Header({
               src="/brand-logo-dark.png"
               alt="Brand"
               sx={{
-                height: 40,
+                height: 50,
                 width: 'auto',
                 filter: darkMode ? 'invert(1) hue-rotate(180deg) brightness(1.2)' : 'none'
               }}
             />
           ) : (
             <>
-              <Typography variant="h5" sx={{ fontWeight: 700, color: darkMode ? '#fff' : '#111', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: darkMode ? '#fff' : '#111', display: 'flex', alignItems: 'center', gap: 2 }}>
                 Welcome, {firstName} <span style={{ fontSize: '1.2rem' }}>👋</span>
+
+                {!isMobile && (
+                  <>
+                    {last.loading ? (
+                      <Card
+                        elevation={0}
+                        sx={{
+                          px: 1.5,
+                          height: 28,
+                          display: "flex",
+                          alignItems: "center",
+                          bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                          fontSize: 11,
+                          color: 'text.secondary',
+                          borderRadius: '6px',
+                          border: '1px solid',
+                          borderColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'
+                        }}
+                      >
+                        Updating…
+                      </Card>
+                    ) : last.ts ? (
+                      <Tooltip
+                        title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${last.tz ? ` ${last.tz}` : ""}`}
+                        arrow
+                      >
+                        <Card
+                          elevation={0}
+                          sx={{
+                            px: 1.5,
+                            height: 28,
+                            display: "flex",
+                            alignItems: "center",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: 'text.secondary',
+                            bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                            borderRadius: '6px',
+                            border: '1px solid',
+                            borderColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'
+                          }}
+                        >
+                          Updated {last.ts.fromNow()}
+                        </Card>
+                      </Tooltip>
+                    ) : (
+                      <Card
+                        elevation={0}
+                        sx={{
+                          px: 1.5,
+                          height: 28,
+                          display: "flex",
+                          alignItems: "center",
+                          fontSize: 11,
+                          color: 'text.secondary',
+                          bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                          borderRadius: '6px',
+                          border: '1px solid',
+                          borderColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'
+                        }}
+                      >
+                        Updated: unavailable
+                      </Card>
+                    )}
+                  </>
+                )}
               </Typography>
               <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
                 Your store at a glance
@@ -106,19 +241,7 @@ export default function Header({
               )}
 
               {/* Theme Toggle */}
-              <IconButton
-                onClick={onToggleDarkMode}
-                size="small"
-                sx={{
-                  bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : '#FFF3E0',
-                  borderRadius: '10px',
-                  p: 1.2,
-                  color: darkMode ? '#fff' : '#FF9800',
-                  '&:hover': { bgcolor: darkMode ? 'rgba(255,255,255,0.1)' : '#FFE0B2' }
-                }}
-              >
-                {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-              </IconButton>
+              <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
 
               {/* Logout - Only for non-admins (admins have it in sidebar) */}
               {!isAdmin && (
@@ -164,10 +287,8 @@ export default function Header({
 
           {/* Mobile Theme & Logout (Fallthrough) */}
           {isMobile && (
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <IconButton onClick={onToggleDarkMode} size="small" sx={{ color: darkMode ? '#fff' : 'inherit' }}>
-                {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-              </IconButton>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
               {!isAdmin && (
                 <IconButton onClick={onLogout} size="small" sx={{ color: '#d32f2f' }}>
                   <LogOut size={20} />
