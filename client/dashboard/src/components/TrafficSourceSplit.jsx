@@ -205,7 +205,7 @@ export default function TrafficSourceSplit({ query }) {
     };
 
     return (
-        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', height: '100%' }}>
+        <Card elevation={0} sx={{ height: '100%', backgroundColor: 'transparent', backgroundImage: 'none' }}>
             <CardContent sx={{ p: 2.5 }}> {/* Reduced main padding */}
                 <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
                     <Stack spacing={0.25}>

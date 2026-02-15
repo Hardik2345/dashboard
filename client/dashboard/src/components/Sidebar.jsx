@@ -78,16 +78,18 @@ export default function Sidebar({
       "flex flex-col h-full bg-white dark:bg-zinc-950",
       !isMobile && "border-r border-zinc-200 dark:border-zinc-800"
     )}>
-      {/* Header / Logo */}
-      <div className="px-6 py-8 flex items-center justify-between">
+      <div className="px-6 py-6 flex items-center justify-between">
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-[#009688] rounded-md flex items-center justify-center text-white">
-              <LayoutGrid size={20} />
-            </div>
-            <span className="text-2xl font-bold tracking-tight text-[#009688]">Datum</span>
+            <img
+              src="/brand-logo-dark.png"
+              alt="Datum"
+              className={cn(
+                "h-20 w-30",
+                darkMode && "invert hue-rotate-180 brightness-1.2"
+              )}
+            />
           </div>
-          <span className="text-[10px] font-bold tracking-widest text-[#111111] dark:text-zinc-400 mt-1 uppercase">Your Data. Decoded</span>
         </div>
       </div>
 

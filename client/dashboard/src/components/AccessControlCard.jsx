@@ -29,7 +29,9 @@ import {
   Tooltip,
   Box,
   CircularProgress,
+  useTheme,
 } from '@mui/material';
+import { GlassChip } from './ui/GlassChip.jsx';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
@@ -48,6 +50,8 @@ const emptyForm = {
 };
 
 export default function AccessControlCard() {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -257,11 +261,11 @@ export default function AccessControlCard() {
         sx={{ maxWidth: 260, rowGap: 0.25, columnGap: 0.5 }}
       >
         {head.map((item) => (
-          <Chip key={item} size="small" label={item} />
+          <GlassChip key={item} size="small" label={item} isDark={isDark} />
         ))}
         {tail.length > 0 && (
           <Tooltip title={tail.join(', ')}>
-            <Chip size="small" label={`+${tail.length}`} sx={{ mt: 0.25 }} />
+            <GlassChip size="small" label={`+${tail.length}`} sx={{ mt: 0.25 }} isDark={isDark} />
           </Tooltip>
         )}
       </Stack>
@@ -276,7 +280,7 @@ export default function AccessControlCard() {
   };
 
   return (
-    <Card variant="outlined">
+    <Card sx={{ backgroundColor: 'transparent', backgroundImage: 'none' }}>
       <CardHeader
         title="Access Control"
         subheader="Manage who can sign in (author/viewer) and their brand access"
@@ -330,12 +334,12 @@ export default function AccessControlCard() {
                       </Tooltip>
                     </TableCell>
                     <TableCell sx={cellSx}>
-                      <Chip
-                        size="small"
-                        icon={u.role === 'author' ? <ShieldOutlinedIcon fontSize="small" /> : <PersonOutlineIcon fontSize="small" />}
+                      <GlassChip
                         label={u.role}
+                        size="small"
                         color={u.role === 'author' ? 'primary' : 'default'}
-                        variant={u.role === 'author' ? 'filled' : 'outlined'}
+                        sx={{ fontWeight: 'bold' }}
+                        isDark={isDark}
                       />
                     </TableCell>
                     <TableCell sx={cellSx}>{u.primary_brand_id || '-'}</TableCell>
@@ -353,11 +357,11 @@ export default function AccessControlCard() {
                       {renderChips(u.role === 'author' ? ['all'] : (u.brand_memberships?.[0]?.permissions || []), 2)}
                     </TableCell>
                     <TableCell sx={cellSx}>
-                      <Chip
+                      <GlassChip
                         size="small"
                         label={u.status}
                         color={u.status === 'active' ? 'success' : 'error'}
-                        variant="outlined"
+                        isDark={isDark}
                       />
                     </TableCell>
                     <TableCell>
