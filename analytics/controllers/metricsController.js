@@ -1114,18 +1114,18 @@ function buildMetricsController() {
         const sql = `
           SELECT 
             utm_source, 
-            SUM(utm_source_sessions) as sessions, 
-            SUM(utm_source_atc_sessions) as atc_sessions
+            utm_source_sessions as sessions, 
+            utm_source_atc_sessions as atc_sessions,
+            utm_names
           FROM overall_utm_summary
           WHERE date >= ? AND date <= ?
-          GROUP BY utm_source
         `;
 
         const rows = await conn.query(sql, {
           type: QueryTypes.SELECT,
           replacements: [start, end]
         });
-        console.log(`[TrafficSplit] Rows found: ${rows.length}`, rows[0]);
+        console.log(`[TrafficSplit] Rows found: ${rows.length}`);
 
         // Normalize and aggregate
         let meta = { sessions: 0, atc_sessions: 0 };
@@ -1133,14 +1133,22 @@ function buildMetricsController() {
         let direct = { sessions: 0, atc_sessions: 0 };
         let others = { sessions: 0, atc_sessions: 0 };
 
+        // Detailed breakdown for Others
+        const othersMap = new Map(); // name -> { sessions, atc }
+        const metaMap = new Map();
+
         rows.forEach(r => {
           const source = (r.utm_source || '').toLowerCase().trim();
           const sess = Number(r.sessions || 0);
           const atc = Number(r.atc_sessions || 0);
 
+          let isOthers = false;
+          let isMeta = false;
+
           if (source === 'meta' || source.includes('facebook') || source.includes('instagram')) {
             meta.sessions += sess;
             meta.atc_sessions += atc;
+            isMeta = true;
           } else if (source === 'google' || source.includes('google')) {
             google.sessions += sess;
             google.atc_sessions += atc;
@@ -1150,8 +1158,44 @@ function buildMetricsController() {
           } else {
             others.sessions += sess;
             others.atc_sessions += atc;
+            isOthers = true;
+          }
+
+          if ((isOthers || isMeta) && r.utm_names) {
+            try {
+              const details = typeof r.utm_names === 'string' ? JSON.parse(r.utm_names) : r.utm_names;
+              if (Array.isArray(details)) {
+                details.forEach(d => {
+                  const name = (d.utm_name || 'Unknown').trim();
+                  const dSess = Number(d.sessions || 0);
+                  const dAtc = Number(d.atc_sessions || 0);
+
+                  const targetMap = isOthers ? othersMap : metaMap;
+
+                  if (!targetMap.has(name)) {
+                    targetMap.set(name, { sessions: 0, atc: 0 });
+                  }
+                  const entry = targetMap.get(name);
+                  entry.sessions += dSess;
+                  entry.atc += dAtc;
+                });
+              }
+            } catch (err) {
+              // ignore parse error
+            }
           }
         });
+
+        // Convert Map to sorted array
+        const othersBreakdown = Array.from(othersMap.entries())
+          .map(([name, stats]) => ({ name, sessions: stats.sessions, atc_sessions: stats.atc }))
+          .sort((a, b) => b.sessions - a.sessions)
+          .slice(0, 15); // Top 15
+
+        const metaBreakdown = Array.from(metaMap.entries())
+          .map(([name, stats]) => ({ name, sessions: stats.sessions, atc_sessions: stats.atc }))
+          .sort((a, b) => b.sessions - a.sessions)
+          .slice(0, 15); // Top 15
 
         const total_sessions = meta.sessions + google.sessions + direct.sessions + others.sessions;
         const total_atc = meta.atc_sessions + google.atc_sessions + direct.atc_sessions + others.atc_sessions;
@@ -1161,6 +1205,8 @@ function buildMetricsController() {
           google,
           direct,
           others,
+          others_breakdown: othersBreakdown,
+          meta_breakdown: metaBreakdown,
           total_sessions,
           total_atc_sessions: total_atc
         });
@@ -3350,96 +3396,80 @@ function buildMetricsController() {
             const s = Date.now();
             const conn = req.brandDb.sequelize;
 
-            const baseWhere = 'created_date >= ? AND created_date <= ?';
-            const baseReplacements = [start, end];
+            // Dynamic query to support dependent dropdowns source->medium and source->campaign
+            let replacements = [start, end];
 
-            const buildOptionWhere = (field, otherFilters) => {
-              let w = baseWhere + ` AND ${field} IS NOT NULL AND ${field} <> ""`;
-              let r = [...baseReplacements];
-              const f = { ...otherFilters };
-              if (field === 'utm_source') delete f.utm_source;
-              if (field === 'utm_medium') delete f.utm_medium;
-              if (field === 'utm_campaign') delete f.utm_campaign;
-              w = appendUtmWhere(w, r, f);
-              return { where: w, replacements: r };
+            // Helper to get Source filter clause
+            const getSourceFilter = () => {
+              if (filters.utm_source) {
+                const vals = Array.isArray(filters.utm_source) ? filters.utm_source : [filters.utm_source];
+                if (vals.length > 0) {
+                  const placeholders = vals.map(() => '?').join(', ');
+                  replacements.push(...vals);
+                  return `AND utm_source IN (${placeholders})`;
+                }
+              }
+              return '';
             };
 
-            // Hierarchy: Source -> Medium -> Campaign
-            // Source options: Always show full list for the date range (allows switching source)
-            const srcW = buildOptionWhere('utm_source', {});
-            // Medium options: Filter by Source only
-            const medW = buildOptionWhere('utm_medium', { utm_source: filters.utm_source });
-            // Campaign options: Filter by Source, Medium, Sales Channel (if provided)
-            const campFilters = {
-              utm_source: filters.utm_source,
-              utm_medium: filters.utm_medium,
-              sales_channel: filters.sales_channel,
-            };
-            const campW = buildOptionWhere('utm_campaign', campFilters);
-
-            const channelWhere = `${baseWhere} AND order_app_name IS NOT NULL AND order_app_name <> ''`;
-            const channelReplacements = [...baseReplacements];
-
-            const optionSql = `
-              WITH
-              src AS (
-                SELECT DISTINCT utm_source AS value
+            // 1. Base Logic
+            let sql = `
+              WITH base AS (
+                SELECT utm_source, utm_medium, utm_campaign, order_app_name
                 FROM shopify_orders
-                WHERE ${srcW.where}
-                LIMIT 1000
-              ),
-              med AS (
-                SELECT DISTINCT utm_medium AS value
-                FROM shopify_orders
-                WHERE ${medW.where}
-                LIMIT 1000
-              ),
-              camp AS (
-                SELECT DISTINCT utm_campaign AS value
-                FROM shopify_orders
-                WHERE ${campW.where}
-                LIMIT 1000
-              ),
-              chan AS (
-                SELECT DISTINCT order_app_name AS value
-                FROM shopify_orders
-                WHERE ${channelWhere}
-                LIMIT 1000
+                WHERE created_date >= ? AND created_date <= ?
               )
-              SELECT 'utm_source' AS kind, value FROM src
+              SELECT 'utm_source' AS field, utm_source AS val FROM base
+                WHERE utm_source IS NOT NULL AND utm_source <> '' GROUP BY utm_source
               UNION ALL
-              SELECT 'utm_medium' AS kind, value FROM med
-              UNION ALL
-              SELECT 'utm_campaign' AS kind, value FROM camp
-              UNION ALL
-              SELECT 'sales_channel' AS kind, value FROM chan
             `;
 
-            const optionReplacements = [
-              ...srcW.replacements,
-              ...medW.replacements,
-              ...campW.replacements,
-              ...channelReplacements
-            ];
+            // 2. Medium: Filter by Source
+            const sourceFilterClause = getSourceFilter();
+            sql += `
+              SELECT 'utm_medium' AS field, utm_medium AS val FROM base
+                WHERE utm_medium IS NOT NULL AND utm_medium <> '' ${sourceFilterClause} GROUP BY utm_medium
+              UNION ALL
+            `;
 
-            const optionRows = await conn.query(optionSql, { type: QueryTypes.SELECT, replacements: optionReplacements });
-            const utmSource = [];
-            const utmMedium = [];
-            const utmCampaign = [];
-            const salesChannelOptions = [];
+            // 3. Campaign: Filter by Source
+            // Rerun the logic to push params again (since placeholders must match order)
+            let campaignSourceFilter = '';
+            if (filters.utm_source) {
+              const vals = Array.isArray(filters.utm_source) ? filters.utm_source : [filters.utm_source];
+              if (vals.length > 0) {
+                const placeholders = vals.map(() => '?').join(', ');
+                replacements.push(...vals);
+                campaignSourceFilter = `AND utm_source IN (${placeholders})`;
+              }
+            }
+
+            sql += `
+              SELECT 'utm_campaign' AS field, utm_campaign AS val FROM base
+                WHERE utm_campaign IS NOT NULL AND utm_campaign <> '' ${campaignSourceFilter} GROUP BY utm_campaign
+              UNION ALL
+              SELECT 'sales_channel' AS field, order_app_name AS val FROM base
+                WHERE order_app_name IS NOT NULL AND order_app_name <> '' GROUP BY order_app_name
+              ORDER BY field, val
+              LIMIT 4000
+            `;
+
+            const optionRows = await conn.query(sql, {
+              type: QueryTypes.SELECT,
+              replacements: replacements
+            });
+
+            // Partition results by field
+            const opts = { utm_source: [], utm_medium: [], utm_campaign: [], sales_channel: [] };
             for (const row of optionRows) {
-              if (!row.value) continue;
-              if (row.kind === 'utm_source') utmSource.push(row.value);
-              else if (row.kind === 'utm_medium') utmMedium.push(row.value);
-              else if (row.kind === 'utm_campaign') utmCampaign.push(row.value);
-              else if (row.kind === 'sales_channel') salesChannelOptions.push(row.value);
+              if (opts[row.field]) opts[row.field].push(row.val);
             }
 
             filterOptions = {
-              utm_source: utmSource.sort(),
-              utm_medium: utmMedium.sort(),
-              utm_campaign: utmCampaign.sort(),
-              sales_channel: salesChannelOptions.sort(),
+              utm_source: opts.utm_source.sort(),
+              utm_medium: opts.utm_medium.sort(),
+              utm_campaign: opts.utm_campaign.sort(),
+              sales_channel: opts.sales_channel.sort(),
             };
             mark('filter_options', s);
           }

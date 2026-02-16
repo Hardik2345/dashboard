@@ -1,13 +1,13 @@
 version: "3.9"
-
+#fixed
 services:
   api-gateway:
-    container_name: api-gateway-staging
+    container_name: api-gateway-main
     build:
       context: ./api-gateway
       dockerfile: Dockerfile
     ports:
-      - "8082:18080"
+      - "8081:18080"
     env_file:
       - .env
       - ./api-gateway/.env
@@ -33,7 +33,7 @@ services:
       start_period: 10s
 
   auth-service:
-    container_name: auth-service-staging
+    container_name: auth-service-main
     build:
       context: ./api-gateway
       dockerfile: Dockerfile.auth
@@ -54,7 +54,7 @@ services:
       start_period: 10s
 
   tenant-router:
-    container_name: tenant-router-staging
+    container_name: tenant-router-main
     build:
       context: ./tenant-router
       dockerfile: Dockerfile
@@ -75,7 +75,7 @@ services:
       start_period: 10s
 
   alerts-service:
-    container_name: alerts-service-staging
+    container_name: alerts-service-main
     build:
       context: ./alerts-service
       dockerfile: Dockerfile
@@ -96,7 +96,7 @@ services:
       start_period: 10s
 
   analytics-service:
-    container_name: analytics-service-staging
+    container_name: analytics-service-main
     build:
       context: ./analytics
       dockerfile: Dockerfile

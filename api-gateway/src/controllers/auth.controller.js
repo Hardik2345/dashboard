@@ -6,13 +6,12 @@ const crypto = require('crypto');
 const AdminUserService = require('../services/adminUser.service');
 const AdminDomainRuleService = require('../services/adminDomainRule.service');
 
-const RAW_COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'Lax').toString().trim().toLowerCase();
-const COOKIE_SAMESITE = RAW_COOKIE_SAMESITE === 'none'
-    ? 'None'
-    : RAW_COOKIE_SAMESITE === 'strict'
-        ? 'Strict'
-        : 'Lax';
-const COOKIE_SECURE = COOKIE_SAMESITE === 'None' ? true : process.env.NODE_ENV === 'production';
+const RAW_COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'lax').toString().trim().toLowerCase();
+const COOKIE_SAMESITE = (RAW_COOKIE_SAMESITE === 'none' || RAW_COOKIE_SAMESITE === 'lax' || RAW_COOKIE_SAMESITE === 'strict')
+    ? RAW_COOKIE_SAMESITE
+    : 'lax';
+
+const COOKIE_SECURE = COOKIE_SAMESITE === 'none' ? true : process.env.NODE_ENV === 'production';
 
 //fixed cookie options for refresh token cookie (httpOnly, secure in prod, sameSite based on env var, 7 day expiry)
 const COOKIE_OPTIONS = {
@@ -23,12 +22,20 @@ const COOKIE_OPTIONS = {
     maxAge: 7 * 24 * 60 * 60 * 1000
 };
 
+logger.info('AuthController', 'Cookie config initialized', { samesite: COOKIE_SAMESITE, secure: COOKIE_SECURE });
+
 exports.login = async (req, res) => {
     try {
         const { email } = req.body;
         logger.info('AuthController', 'Login request received', { email, ip: req.ip });
 
         const result = await AuthService.login(req.body.email, req.body.password, req.headers['user-agent']);
+
+        logger.info('AuthController', 'Login success, setting cookie', {
+            origin: req.headers.origin,
+            cookieOptions: COOKIE_OPTIONS,
+            hasRefreshToken: !!result.refreshToken
+        });
 
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
         logger.info('AuthController', 'Login response sent', { email });
@@ -99,6 +106,11 @@ exports.refresh = async (req, res) => {
 
         const result = await AuthService.refresh(refreshToken);
 
+        logger.info('AuthController', 'Refresh success, setting cookie', {
+            origin: req.headers.origin,
+            cookieOptions: COOKIE_OPTIONS
+        });
+
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
         logger.info('AuthController', 'Refresh success');
         res.json({
@@ -123,6 +135,8 @@ exports.logout = async (req, res) => {
         if (refreshToken) {
             await AuthService.logout(refreshToken);
         }
+
+        logger.info('AuthController', 'Logout clearing cookie', { cookieOptions: { ...COOKIE_OPTIONS, maxAge: 0 } });
         res.clearCookie('refresh_token', { ...COOKIE_OPTIONS, maxAge: 0 });
         logger.info('AuthController', 'Logout success');
         res.status(200).json({ message: 'Logged out' });
@@ -397,6 +411,12 @@ exports.googleCallback = async (req, res) => {
                 throw err;
             }
         }
+
+        logger.info('AuthController', 'Google login success, setting cookie', {
+            origin: req.headers.origin,
+            cookieOptions: COOKIE_OPTIONS,
+            hasRefreshToken: !!result.refreshToken
+        });
 
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
         const payload = {
