@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Card, CardContent, Typography, Skeleton, Stack, useTheme, Select, MenuItem, FormControl, Box, Grid } from '@mui/material';
+import { ArrowDropUp, ArrowDropDown } from '@mui/icons-material';
 import { Doughnut } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -7,6 +8,7 @@ import {
     Tooltip as ChartTooltip,
 } from 'chart.js';
 import { getTrafficSourceSplit } from '../lib/api.js';
+import dayjs from 'dayjs';
 
 ChartJS.register(ArcElement, ChartTooltip);
 
@@ -83,12 +85,32 @@ export default function TrafficSourceSplit({ query }) {
     const directVal = validData ? getMetricValue(data.direct) : 0;
     const othersVal = validData ? getMetricValue(data.others) : 0;
 
-    // Debug data
+    // Derived comparison range
+    const comparisonRange = useMemo(() => {
+        if (data?.prev_range) return data.prev_range;
+        if (!query?.start || !query?.end) return null;
+        try {
+            const s = dayjs(query.start);
+            const e = dayjs(query.end);
+            const diffDays = e.diff(s, 'day') + 1;
+            const pEnd = s.subtract(1, 'day');
+            const pStart = pEnd.subtract(diffDays - 1, 'day');
+            return {
+                start: pStart.format('YYYY-MM-DD'),
+                end: pEnd.format('YYYY-MM-DD')
+            };
+        } catch (err) {
+            console.error("Error deriving comparison range:", err);
+            return null;
+        }
+    }, [data?.prev_range, query?.start, query?.end]);
+
     useEffect(() => {
         if (data) {
             console.log("TrafficSplit Data:", data);
+            if (comparisonRange) console.log("Comparison Range:", comparisonRange);
         }
-    }, [data]);
+    }, [data, comparisonRange]);
 
     const total = metaVal + googleVal + directVal + othersVal;
     const empty = total === 0;
@@ -243,10 +265,14 @@ export default function TrafficSourceSplit({ query }) {
         return nfCompact.format(Math.round(count));
     };
 
-    const DetailItem = ({ label, value, color }) => {
+    const DetailItem = ({ label, value, color, delta }) => {
         // We calculate pct based on current valid total, not animated total to avoid jumpiness
         const pct = getPercent(value);
         const animatedValue = useCountUp(value);
+
+        const deltaColor = delta > 0 ? '#00C853' : delta < 0 ? '#FF1744' : 'text.secondary';
+        const deltaIcon = delta > 0 ? '+' : '';
+        const formattedDelta = delta !== undefined && delta !== null ? `${deltaIcon}${Math.round(delta)}%` : '-';
 
         return (
             <Box
@@ -282,8 +308,22 @@ export default function TrafficSourceSplit({ query }) {
                             </Typography>
                         </Stack>
                     </Stack>
-                    <Box sx={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: `${color}15` }}>
-                        <Typography variant="caption" fontWeight={700} sx={{ color: color }}>{Math.round(pct)}%</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <Box sx={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: `${color}15` }}>
+                            <Typography variant="caption" fontWeight={700} sx={{ color: color }}>{Math.round(pct)}%</Typography>
+                        </Box>
+                        {delta !== undefined && (
+                            <Stack direction="row" alignItems="center" spacing={0}>
+                                {delta > 0 ? (
+                                    <ArrowDropUp sx={{ color: deltaColor, fontSize: '1.2rem', ml: -0.5 }} />
+                                ) : delta < 0 ? (
+                                    <ArrowDropDown sx={{ color: deltaColor, fontSize: '1.2rem', ml: -0.5 }} />
+                                ) : null}
+                                <Typography variant="caption" fontWeight={700} sx={{ color: deltaColor, fontSize: '0.8rem' }}>
+                                    {Math.abs(Math.round(delta))}%
+                                </Typography>
+                            </Stack>
+                        )}
                     </Box>
                 </Stack>
             </Box>
@@ -295,7 +335,24 @@ export default function TrafficSourceSplit({ query }) {
             <CardContent sx={{ p: 2.5 }}> {/* Reduced main padding */}
                 <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
                     <Stack spacing={0.25}>
-                        <Typography variant="h6" fontWeight={700} sx={{ fontSize: '1.1rem' }}>Traffic Split</Typography>
+                        <Stack direction="row" alignItems="center" spacing={1}>
+                            <Typography variant="h6" fontWeight={700} sx={{ fontSize: '1.1rem' }}>Traffic Split</Typography>
+                            {comparisonRange && query?.start && query?.end && (
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', px: 1, py: 0.2, borderRadius: 1 }}>
+                                    {(() => {
+                                        const fmt = (s, e) => {
+                                            const start = dayjs(s);
+                                            const end = dayjs(e);
+                                            if (start.isSame(end, 'day')) {
+                                                return start.format('MMM D');
+                                            }
+                                            return `${start.format('MMM D')} - ${end.format('MMM D')}`;
+                                        };
+                                        return `${fmt(query.start, query.end)} vs ${fmt(comparisonRange.start, comparisonRange.end)}`;
+                                    })()}
+                                </Typography>
+                            )}
+                        </Stack>
                         <Typography variant="caption" color="text.secondary">By Source Group</Typography>
                     </Stack>
 
@@ -374,16 +431,16 @@ export default function TrafficSourceSplit({ query }) {
                         <Grid item xs={12} md={7}>
                             <Grid container spacing={1.5}> {/* Reduced inner spacing */}
                                 <Grid item xs={6}>
-                                    <DetailItem label="Meta" value={metaVal} color={colors.meta} />
+                                    <DetailItem label="Meta" value={metaVal} color={colors.meta} delta={validData ? data.meta?.delta : undefined} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Google" value={googleVal} color={colors.google} />
+                                    <DetailItem label="Google" value={googleVal} color={colors.google} delta={validData ? data.google?.delta : undefined} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Direct" value={directVal} color={colors.direct} />
+                                    <DetailItem label="Direct" value={directVal} color={colors.direct} delta={validData ? data.direct?.delta : undefined} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Others" value={othersVal} color={colors.others} />
+                                    <DetailItem label="Others" value={othersVal} color={colors.others} delta={validData ? data.others?.delta : undefined} />
                                 </Grid>
                             </Grid>
                         </Grid>

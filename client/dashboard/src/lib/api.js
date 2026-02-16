@@ -443,6 +443,7 @@ export async function getTrafficSourceSplit(args) {
     others_breakdown: json?.others_breakdown || [],
     total_sessions: Number(json?.total_sessions || 0),
     total_atc_sessions: Number(json?.total_atc_sessions || 0),
+    prev_range: json?.prev_range || null,
     error: json?.__error
   };
 }
