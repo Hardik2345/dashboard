@@ -271,8 +271,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
     <Card elevation={0} sx={{
       borderRadius: 4,
       height: '310px',
-      backgroundColor: 'transparent',
-      backgroundImage: 'none',
+      height: '310px',
     }}>
       {/* Increased borderRadius to 3 (12px) or more to match image design */}
       <CardContent sx={{ minHeight: 260, display: 'flex', flexDirection: 'column', p: 3 }}>

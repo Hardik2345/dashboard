@@ -280,7 +280,7 @@ export default function AccessControlCard() {
   };
 
   return (
-    <Card sx={{ backgroundColor: 'transparent', backgroundImage: 'none' }}>
+    <Card>
       <CardHeader
         title="Access Control"
         subheader="Manage who can sign in (author/viewer) and their brand access"

@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Typography, IconButton } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 
-export const GlassChip = ({ label, onDelete, onClick, size = 'medium', isDark = false, color = 'primary', sx = {} }) => {
+export const GlassChip = ({ label, onDelete, onClick, size = 'medium', isDark = false, color = 'primary', active = false, sx = {} }) => {
     // Animation definition
     const spinKeyframes = `
     @keyframes spin {
@@ -44,19 +44,21 @@ export const GlassChip = ({ label, onDelete, onClick, size = 'medium', isDark = 
                 {spinKeyframes}
             </style>
 
-            {/* Moving Gradient Border Layer */}
-            <Box
-                sx={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    width: '400%',
-                    height: '400%',
-                    background: `conic-gradient(from 0deg, transparent 0deg, transparent 300deg, ${styles.border} 360deg)`,
-                    animation: 'spin 4s linear infinite',
-                    zIndex: 0
-                }}
-            />
+            {/* Moving Gradient Border Layer - Only if active */}
+            {active && (
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        width: '400%',
+                        height: '400%',
+                        background: `conic-gradient(from 0deg, transparent 0deg, transparent 300deg, ${styles.border} 360deg)`,
+                        animation: 'spin 4s linear infinite',
+                        zIndex: 0
+                    }}
+                />
+            )}
 
             {/* Inner Content Layer (Glass) */}
             <Box

@@ -291,59 +291,6 @@ export default function MobileTopBar({
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
         {/* Left: Updated chip and Date Label */}
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {last.loading ? (
-              <Card
-                elevation={0}
-                sx={{
-                  px: 0.75,
-                  height: 32,
-                  display: "flex",
-                  alignItems: "center",
-                  bgcolor: "background.paper",
-                  fontSize: 13,
-                }}
-              >
-                Updating…
-              </Card>
-            ) : last.ts ? (
-              <Tooltip
-                title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${last.tz ? ` ${last.tz}` : ""
-                  }`}
-                arrow
-              >
-                <Card
-                  elevation={0}
-                  sx={{
-                    border: "1px solid",
-                    borderColor: "divider",
-                    px: 0.75,
-                    height: 32,
-                    display: "flex",
-                    alignItems: "center",
-                    fontSize: 11.1,
-                  }}
-                >
-                  Updated {last.ts.fromNow()}
-                </Card>
-              </Tooltip>
-            ) : (
-              <Card
-                elevation={0}
-                sx={{
-                  border: "1px solid",
-                  borderColor: "divider",
-                  px: 0.75,
-                  height: 32,
-                  display: "flex",
-                  alignItems: "center",
-                  fontSize: 13,
-                }}
-              >
-                Updated: unavailable
-              </Card>
-            )}
-          </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'block', md: 'none' }, ml: 0.5 }}>
             Brand: <b>{brandKey}</b>
           </Typography>

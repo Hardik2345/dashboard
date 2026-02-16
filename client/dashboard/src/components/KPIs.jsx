@@ -271,6 +271,7 @@ export default function KPIs({
                 label={f.label}
                 size="small"
                 isDark={isDark}
+                active={true}
                 sx={{
                   maxWidth: 200,
                 }}
