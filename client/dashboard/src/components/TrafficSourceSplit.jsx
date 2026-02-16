@@ -105,13 +105,6 @@ export default function TrafficSourceSplit({ query }) {
         }
     }, [data?.prev_range, query?.start, query?.end]);
 
-    useEffect(() => {
-        if (data) {
-            console.log("TrafficSplit Data:", data);
-            if (comparisonRange) console.log("Comparison Range:", comparisonRange);
-        }
-    }, [data, comparisonRange]);
-
     const total = metaVal + googleVal + directVal + othersVal;
     const empty = total === 0;
 
@@ -296,30 +289,30 @@ export default function TrafficSourceSplit({ query }) {
                     }}
                 />
 
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Stack spacing={0.25}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ flexWrap: 'wrap' }}>
+                    <Stack spacing={0.25} sx={{ minWidth: 'fit-content' }}>
                         <Typography variant="body2" color="text.secondary" fontWeight={500} sx={{ fontSize: '0.8rem' }}>{label}</Typography>
-                        <Stack direction="row" alignItems="baseline" spacing={0.5}>
-                            <Typography variant="subtitle1" fontWeight={700} sx={{ fontSize: '1rem' }}>
+                        <Stack direction="row" alignItems="baseline" spacing={0.5} sx={{ flexWrap: 'wrap' }}>
+                            <Typography variant="subtitle1" fontWeight={700} sx={{ fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
                                 {nfCompact.format(Math.round(animatedValue))}
                             </Typography>
-                            <Typography variant="caption" color="text.secondary">
+                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                                 ({nfPct1.format(pct)}%)
                             </Typography>
                         </Stack>
                     </Stack>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <Box sx={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: `${color}15` }}>
-                            <Typography variant="caption" fontWeight={700} sx={{ color: color }}>{Math.round(pct)}%</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.8, flexShrink: 0, flexWrap: 'nowrap' }}>
+                        <Box sx={{ width: 34, height: 24, borderRadius: '30%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: isDark ? 'rgba(102, 119, 121, 0.44)' : 'rgba(102, 119, 121, 0.06)', flexShrink: 0 }}>
+                            <Typography variant="caption" fontWeight={700} sx={{ color: 'text.secondary', fontSize: '0.7rem' }}>{Math.round(pct)}%</Typography>
                         </Box>
                         {delta !== undefined && (
-                            <Stack direction="row" alignItems="center" spacing={0}>
+                            <Stack direction="row" alignItems="center" spacing={0} sx={{ bgcolor: delta > 0 ? '#00c85315' : delta < 0 ? '#ff174415' : 'transparent', px: 0.5, py: 0.2, borderRadius: 1 }}>
                                 {delta > 0 ? (
-                                    <ArrowDropUp sx={{ color: deltaColor, fontSize: '1.2rem', ml: -0.5 }} />
+                                    <ArrowDropUp sx={{ color: deltaColor, fontSize: '1.1rem', ml: -0.5 }} />
                                 ) : delta < 0 ? (
-                                    <ArrowDropDown sx={{ color: deltaColor, fontSize: '1.2rem', ml: -0.5 }} />
+                                    <ArrowDropDown sx={{ color: deltaColor, fontSize: '1.1rem', ml: -0.5 }} />
                                 ) : null}
-                                <Typography variant="caption" fontWeight={700} sx={{ color: deltaColor, fontSize: '0.8rem' }}>
+                                <Typography variant="caption" fontWeight={700} sx={{ color: deltaColor, fontSize: '0.75rem' }}>
                                     {Math.abs(Math.round(delta))}%
                                 </Typography>
                             </Stack>
@@ -333,52 +326,52 @@ export default function TrafficSourceSplit({ query }) {
     return (
         <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', height: '100%' }}>
             <CardContent sx={{ p: 2.5 }}> {/* Reduced main padding */}
-                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
-                    <Stack spacing={0.25}>
-                        <Stack direction="row" alignItems="center" spacing={1}>
-                            <Typography variant="h6" fontWeight={700} sx={{ fontSize: '1.1rem' }}>Traffic Split</Typography>
-                            {comparisonRange && query?.start && query?.end && (
-                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', px: 1, py: 0.2, borderRadius: 1 }}>
-                                    {(() => {
-                                        const fmt = (s, e) => {
-                                            const start = dayjs(s);
-                                            const end = dayjs(e);
-                                            if (start.isSame(end, 'day')) {
-                                                return start.format('MMM D');
-                                            }
-                                            return `${start.format('MMM D')} - ${end.format('MMM D')}`;
-                                        };
-                                        return `${fmt(query.start, query.end)} vs ${fmt(comparisonRange.start, comparisonRange.end)}`;
-                                    })()}
-                                </Typography>
-                            )}
-                        </Stack>
-                        <Typography variant="caption" color="text.secondary">By Source Group</Typography>
-                    </Stack>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 3 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 1 }}>
+                        <Box sx={{ flex: '1 1 auto', minWidth: '150px' }}>
+                            <Typography variant="h6" fontWeight={700} sx={{ fontSize: '1.1rem', lineHeight: 1.2 }}>Traffic Split</Typography>
+                            <Typography variant="caption" color="text.secondary" fontWeight={500} sx={{ display: 'block', mt: 0.25 }}>By Source Group</Typography>
+                        </Box>
 
-                    <FormControl size="small">
-                        <Select
-                            value={metric}
-                            onChange={(e) => setMetric(e.target.value)}
-                            disableUnderline
-                            variant="standard"
-                            sx={{
-                                fontSize: '0.8125rem',
-                                fontWeight: 600,
-                                bgcolor: theme.palette.action.selected,
-                                px: 2,
-                                py: 0.5,
-                                borderRadius: 8,
-                                '& .MuiSelect-select': { py: 0, pr: '24px !important' },
-                                '&:hover': { bgcolor: theme.palette.action.hover },
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            <MenuItem value="sessions">Sessions</MenuItem>
-                            <MenuItem value="atc_sessions">ATC Sessions</MenuItem>
-                        </Select>
-                    </FormControl>
-                </Stack>
+                        <FormControl size="small" sx={{ minWidth: 100 }}>
+                            <Select
+                                value={metric}
+                                onChange={(e) => setMetric(e.target.value)}
+                                sx={{
+                                    height: 32,
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    borderRadius: 1.5,
+                                    bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                                    '.MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                    '&:hover .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                }}
+                            >
+                                <MenuItem value="sessions" sx={{ fontSize: '0.75rem' }}>Sessions</MenuItem>
+                                <MenuItem value="atc_sessions" sx={{ fontSize: '0.75rem' }}>ATC Sessions</MenuItem>
+                            </Select>
+                        </FormControl>
+                    </Box>
+
+                    {comparisonRange && query?.start && query?.end && (
+                        <Box>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', px: 1, py: 0.4, borderRadius: 1.5, display: 'inline-block', fontSize: '0.7rem' }}>
+                                {(() => {
+                                    const fmt = (s, e) => {
+                                        const start = dayjs(s);
+                                        const end = dayjs(e);
+                                        if (start.isSame(end, 'day')) {
+                                            return start.format('MMM D');
+                                        }
+                                        return `${start.format('MMM D')} - ${end.format('MMM D')}`;
+                                    };
+                                    return `${fmt(query.start, query.end)} vs ${fmt(comparisonRange.start, comparisonRange.end)}`;
+                                })()}
+                            </Typography>
+                        </Box>
+                    )}
+                </Box>
 
                 {loading ? (
                     <Skeleton variant="rounded" width="100%" height={240} />
