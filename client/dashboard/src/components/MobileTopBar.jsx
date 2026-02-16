@@ -359,6 +359,22 @@ export default function MobileTopBar({
               <>
                 <Collapse in={showUtmFilters} orientation="horizontal" unmountOnExit>
                   <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 1, alignItems: 'center' }}>
+                    {activeUtmCount > 0 && (
+                      <Button
+                        size="small"
+                        onClick={() => onUtmChange && onUtmChange({ source: '', medium: '', campaign: '' })}
+                        sx={{
+                          fontSize: 12,
+                          textTransform: 'none',
+                          minWidth: 'auto',
+                          whiteSpace: 'nowrap',
+                          color: 'text.secondary',
+                          '&:hover': { color: 'error.main', bgcolor: 'transparent' }
+                        }}
+                      >
+                        Clear all
+                      </Button>
+                    )}
                     {showSalesChannel && (
                       <SearchableSelect
                         label="Sales Channel"
@@ -377,22 +393,6 @@ export default function MobileTopBar({
                           '& .MuiSelect-select': { py: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
                         }}
                       />
-                    )}
-                    {activeUtmCount > 0 && (
-                      <Button
-                        size="small"
-                        onClick={() => onUtmChange && onUtmChange({ source: '', medium: '', campaign: '' })}
-                        sx={{
-                          fontSize: 12,
-                          textTransform: 'none',
-                          minWidth: 'auto',
-                          whiteSpace: 'nowrap',
-                          color: 'text.secondary',
-                          '&:hover': { color: 'error.main', bgcolor: 'transparent' }
-                        }}
-                      >
-                        Clear all
-                      </Button>
                     )}
                     {['source', 'medium', 'campaign'].map(field => (
                       <SearchableSelect

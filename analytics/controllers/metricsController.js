@@ -1114,18 +1114,18 @@ function buildMetricsController() {
         const sql = `
           SELECT 
             utm_source, 
-            SUM(utm_source_sessions) as sessions, 
-            SUM(utm_source_atc_sessions) as atc_sessions
+            utm_source_sessions as sessions, 
+            utm_source_atc_sessions as atc_sessions,
+            utm_names
           FROM overall_utm_summary
           WHERE date >= ? AND date <= ?
-          GROUP BY utm_source
         `;
 
         const rows = await conn.query(sql, {
           type: QueryTypes.SELECT,
           replacements: [start, end]
         });
-        console.log(`[TrafficSplit] Rows found: ${rows.length}`, rows[0]);
+        console.log(`[TrafficSplit] Rows found: ${rows.length}`);
 
         // Normalize and aggregate
         let meta = { sessions: 0, atc_sessions: 0 };
@@ -1133,14 +1133,22 @@ function buildMetricsController() {
         let direct = { sessions: 0, atc_sessions: 0 };
         let others = { sessions: 0, atc_sessions: 0 };
 
+        // Detailed breakdown for Others
+        const othersMap = new Map(); // name -> { sessions, atc }
+        const metaMap = new Map();
+
         rows.forEach(r => {
           const source = (r.utm_source || '').toLowerCase().trim();
           const sess = Number(r.sessions || 0);
           const atc = Number(r.atc_sessions || 0);
 
+          let isOthers = false;
+          let isMeta = false;
+
           if (source === 'meta' || source.includes('facebook') || source.includes('instagram')) {
             meta.sessions += sess;
             meta.atc_sessions += atc;
+            isMeta = true;
           } else if (source === 'google' || source.includes('google')) {
             google.sessions += sess;
             google.atc_sessions += atc;
@@ -1150,8 +1158,44 @@ function buildMetricsController() {
           } else {
             others.sessions += sess;
             others.atc_sessions += atc;
+            isOthers = true;
+          }
+
+          if ((isOthers || isMeta) && r.utm_names) {
+            try {
+              const details = typeof r.utm_names === 'string' ? JSON.parse(r.utm_names) : r.utm_names;
+              if (Array.isArray(details)) {
+                details.forEach(d => {
+                  const name = (d.utm_name || 'Unknown').trim();
+                  const dSess = Number(d.sessions || 0);
+                  const dAtc = Number(d.atc_sessions || 0);
+
+                  const targetMap = isOthers ? othersMap : metaMap;
+
+                  if (!targetMap.has(name)) {
+                    targetMap.set(name, { sessions: 0, atc: 0 });
+                  }
+                  const entry = targetMap.get(name);
+                  entry.sessions += dSess;
+                  entry.atc += dAtc;
+                });
+              }
+            } catch (err) {
+              // ignore parse error
+            }
           }
         });
+
+        // Convert Map to sorted array
+        const othersBreakdown = Array.from(othersMap.entries())
+          .map(([name, stats]) => ({ name, sessions: stats.sessions, atc_sessions: stats.atc }))
+          .sort((a, b) => b.sessions - a.sessions)
+          .slice(0, 15); // Top 15
+
+        const metaBreakdown = Array.from(metaMap.entries())
+          .map(([name, stats]) => ({ name, sessions: stats.sessions, atc_sessions: stats.atc }))
+          .sort((a, b) => b.sessions - a.sessions)
+          .slice(0, 15); // Top 15
 
         const total_sessions = meta.sessions + google.sessions + direct.sessions + others.sessions;
         const total_atc = meta.atc_sessions + google.atc_sessions + direct.atc_sessions + others.atc_sessions;
@@ -1161,6 +1205,8 @@ function buildMetricsController() {
           google,
           direct,
           others,
+          others_breakdown: othersBreakdown,
+          meta_breakdown: metaBreakdown,
           total_sessions,
           total_atc_sessions: total_atc
         });
@@ -3350,8 +3396,24 @@ function buildMetricsController() {
             const s = Date.now();
             const conn = req.brandDb.sequelize;
 
-            // Single CTE query to fetch all UTM options independently (no cross-filtering)
-            const utmOptionsSql = `
+            // Dynamic query to support dependent dropdowns source->medium and source->campaign
+            let replacements = [start, end];
+
+            // Helper to get Source filter clause
+            const getSourceFilter = () => {
+              if (filters.utm_source) {
+                const vals = Array.isArray(filters.utm_source) ? filters.utm_source : [filters.utm_source];
+                if (vals.length > 0) {
+                  const placeholders = vals.map(() => '?').join(', ');
+                  replacements.push(...vals);
+                  return `AND utm_source IN (${placeholders})`;
+                }
+              }
+              return '';
+            };
+
+            // 1. Base Logic
+            let sql = `
               WITH base AS (
                 SELECT utm_source, utm_medium, utm_campaign, order_app_name
                 FROM shopify_orders
@@ -3360,11 +3422,31 @@ function buildMetricsController() {
               SELECT 'utm_source' AS field, utm_source AS val FROM base
                 WHERE utm_source IS NOT NULL AND utm_source <> '' GROUP BY utm_source
               UNION ALL
+            `;
+
+            // 2. Medium: Filter by Source
+            const sourceFilterClause = getSourceFilter();
+            sql += `
               SELECT 'utm_medium' AS field, utm_medium AS val FROM base
-                WHERE utm_medium IS NOT NULL AND utm_medium <> '' GROUP BY utm_medium
+                WHERE utm_medium IS NOT NULL AND utm_medium <> '' ${sourceFilterClause} GROUP BY utm_medium
               UNION ALL
+            `;
+
+            // 3. Campaign: Filter by Source
+            // Rerun the logic to push params again (since placeholders must match order)
+            let campaignSourceFilter = '';
+            if (filters.utm_source) {
+              const vals = Array.isArray(filters.utm_source) ? filters.utm_source : [filters.utm_source];
+              if (vals.length > 0) {
+                const placeholders = vals.map(() => '?').join(', ');
+                replacements.push(...vals);
+                campaignSourceFilter = `AND utm_source IN (${placeholders})`;
+              }
+            }
+
+            sql += `
               SELECT 'utm_campaign' AS field, utm_campaign AS val FROM base
-                WHERE utm_campaign IS NOT NULL AND utm_campaign <> '' GROUP BY utm_campaign
+                WHERE utm_campaign IS NOT NULL AND utm_campaign <> '' ${campaignSourceFilter} GROUP BY utm_campaign
               UNION ALL
               SELECT 'sales_channel' AS field, order_app_name AS val FROM base
                 WHERE order_app_name IS NOT NULL AND order_app_name <> '' GROUP BY order_app_name
@@ -3372,9 +3454,9 @@ function buildMetricsController() {
               LIMIT 4000
             `;
 
-            const optionRows = await conn.query(utmOptionsSql, {
+            const optionRows = await conn.query(sql, {
               type: QueryTypes.SELECT,
-              replacements: [start, end]
+              replacements: replacements
             });
 
             // Partition results by field
