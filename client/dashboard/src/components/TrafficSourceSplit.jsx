@@ -83,6 +83,13 @@ export default function TrafficSourceSplit({ query }) {
     const directVal = validData ? getMetricValue(data.direct) : 0;
     const othersVal = validData ? getMetricValue(data.others) : 0;
 
+    // Debug data
+    useEffect(() => {
+        if (data) {
+            console.log("TrafficSplit Data:", data);
+        }
+    }, [data]);
+
     const total = metaVal + googleVal + directVal + othersVal;
     const empty = total === 0;
 
@@ -107,29 +114,108 @@ export default function TrafficSourceSplit({ query }) {
         ],
     }), [metaVal, googleVal, directVal, othersVal]);
 
+    const tooltipRef = useRef(null);
+    const tooltipHoverRef = useRef(false);
+
     const options = useMemo(() => ({
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
             legend: { display: false },
             tooltip: {
-                backgroundColor: theme.palette.background.paper,
-                titleColor: theme.palette.text.primary,
-                bodyColor: theme.palette.text.primary,
-                borderColor: theme.palette.divider,
-                borderWidth: 1,
-                padding: 10,
-                titleFont: { size: 12, weight: 'bold' },
-                bodyFont: { size: 12 },
-                callbacks: {
-                    label: (ctx) => {
-                        const label = ctx.label;
-                        const raw = ctx.parsed;
-                        const pct = ctx.chart._metasets[ctx.datasetIndex].total > 0
-                            ? (raw / ctx.chart._metasets[ctx.datasetIndex].total) * 100
-                            : 0;
-                        return `${label}: ${nfCompact.format(raw)} (${nfPct1.format(pct)}%)`;
+                enabled: false,
+                external: (context) => {
+                    const { chart, tooltip } = context;
+                    const tooltipEl = tooltipRef.current;
+
+                    if (!tooltipEl) return;
+
+                    if (tooltip.opacity === 0) {
+                        // Only hide if not hovering the tooltip itself
+                        if (!tooltipHoverRef.current) {
+                            tooltipEl.style.opacity = 0;
+                        }
+                        return;
                     }
+
+                    // Set Content
+                    if (tooltip.body) {
+                        const dataPoint = tooltip.dataPoints[0];
+                        const datasetIndex = dataPoint.datasetIndex;
+                        const index = dataPoint.dataIndex;
+                        const label = chart.data.labels[index];
+
+                        let contentHtml = '';
+
+                        // Header
+                        contentHtml += `<div style="font-weight: 700; font-size: 13px; margin-bottom: 6px; color: ${isDark ? '#fff' : '#000'}">${label}</div>`;
+
+                        // Main Value
+                        const raw = dataPoint.raw;
+                        const totalVal = chart._metasets[datasetIndex].total;
+                        const pct = totalVal > 0 ? (raw / totalVal) * 100 : 0;
+                        contentHtml += `<div style="font-size: 12px; margin-bottom: 8px;">${nfCompact.format(raw)} (${nfPct1.format(pct)}%)</div>`;
+
+                        // Breakdown logic (Others or Meta)
+                        const isOthers = label === 'Others' && data?.others_breakdown?.length > 0;
+                        const isMeta = label === 'Meta' && data?.meta_breakdown?.length > 0;
+
+                        if (isOthers || isMeta) {
+                            const breakdown = isOthers ? data.others_breakdown : data.meta_breakdown;
+
+                            contentHtml += `<div style="border-top: 1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}; margin: 4px 0; padding-top: 4px;"></div>`;
+                            contentHtml += `<div style="font-weight: 600; font-size: 11px; margin-bottom: 4px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.5px;">Top Sources</div>`;
+
+                            // Scrollable container
+                            contentHtml += `<div style="max-height: 120px; overflow-y: auto; padding-right: 4px; scrollbar-width: thin; scrollbar-color: ${isDark ? 'rgba(255,255,255,0.2) transparent' : 'rgba(0,0,0,0.2) transparent'};">`;
+
+                            breakdown.forEach(d => {
+                                contentHtml += `
+                                    <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 3px; align-items: center;">
+                                        <span style="opacity: 0.9;">${d.name}</span>
+                                        <span style="opacity: 0.7; font-family: monospace;">${nfCompact.format(d.sessions)}</span>
+                                    </div>
+                                `;
+                            });
+
+                            contentHtml += `</div>`;
+                        }
+
+                        tooltipEl.innerHTML = contentHtml;
+                    }
+
+                    const { offsetLeft: positionX, offsetTop: positionY } = chart.canvas;
+
+                    // Display, position, and set styles for font
+                    tooltipEl.style.opacity = 1;
+
+                    const tooltipRect = tooltipEl.getBoundingClientRect();
+
+                    // Center horizontal
+                    let left = positionX + tooltip.caretX;
+
+                    // Vertical Positioning: Pivot based on chart center
+                    const yOffset = 10;
+                    const centerY = chart.height / 2;
+                    let top;
+
+                    if (tooltip.caretY > centerY) {
+                        // Keep tooltip TOP if cursor is in BOTTOM half
+                        top = positionY + tooltip.caretY - tooltipRect.height - yOffset;
+                    } else {
+                        // Keep tooltip BOTTOM if cursor is in TOP half
+                        top = positionY + tooltip.caretY + yOffset;
+                    }
+
+                    // Horizontal Clamping
+                    if (left + (tooltipRect.width / 2) > chart.width) {
+                        left = positionX + chart.width - (tooltipRect.width / 2);
+                    } else if (left - (tooltipRect.width / 2) < 0) {
+                        left = positionX + (tooltipRect.width / 2);
+                    }
+
+                    tooltipEl.style.left = left + 'px';
+                    tooltipEl.style.top = top + 'px';
                 }
             }
         },
@@ -147,7 +233,7 @@ export default function TrafficSourceSplit({ query }) {
                 }
             }
         }
-    }), [theme]);
+    }), [theme, data]);
 
     const getPercent = (val) => total > 0 ? (val / total) * 100 : 0;
 
@@ -248,6 +334,31 @@ export default function TrafficSourceSplit({ query }) {
                         <Grid item xs={12} md={5}>
                             <Box sx={{ position: 'relative', height: 180, width: '100%', display: 'flex', justifyContent: 'center' }}> {/* Reduced height */}
                                 <Doughnut data={chartData} options={options} />
+                                <div
+                                    ref={tooltipRef}
+                                    onMouseEnter={() => { tooltipHoverRef.current = true; }}
+                                    onMouseLeave={() => {
+                                        tooltipHoverRef.current = false;
+                                        if (tooltipRef.current) tooltipRef.current.style.opacity = 0;
+                                    }}
+                                    style={{
+                                        opacity: 0,
+                                        position: 'absolute',
+                                        background: isDark ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                                        color: isDark ? '#fff' : '#000',
+                                        borderRadius: '8px',
+                                        pointerEvents: 'auto',
+                                        transform: 'translate(-50%, 0)',
+                                        transition: 'all .1s ease',
+                                        padding: '12px',
+                                        boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+                                        fontSize: '12px',
+                                        zIndex: 10,
+                                        border: `1px solid ${theme.palette.divider}`,
+                                        minWidth: '180px',
+                                        backdropFilter: 'blur(4px)',
+                                    }}
+                                />
                                 <Box sx={{
                                     position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
                                     textAlign: 'center', pointerEvents: 'none',
