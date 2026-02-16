@@ -134,7 +134,7 @@ export default function OrderSplit({ query }) {
   };
 
   return (
-    <Card elevation={0} sx={{ backgroundColor: 'transparent', backgroundImage: 'none' }}>
+    <Card elevation={0}>
       <CardContent sx={{ minHeight: 180 }}>
         <Typography variant="subtitle2" color="text.primary" sx={{ mb: 1 }}>
           Payment split (By Order Count)

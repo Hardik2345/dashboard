@@ -132,7 +132,7 @@ export default function FunnelChart({ funnelData }) {
   };
 
   return (
-    <Card elevation={0} sx={{ backgroundColor: 'transparent', backgroundImage: 'none' }}>
+    <Card elevation={0}>
       <CardContent sx={{ height: 320, pt: 1 }}>
         <Typography variant="subtitle2" color="text.primary" sx={{ mb: 0.5 }}>
           Session drop-offs

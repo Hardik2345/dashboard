@@ -32,8 +32,9 @@ import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlic
 import { setBrand } from './state/slices/brandSlice.js';
 import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setCompareMode, setSelectedMetric, setUtm, setSalesChannel } from './state/slices/filterSlice.js';
 import MobileTopBar from './components/MobileTopBar.jsx';
-import MobileFilterDrawer from './components/MobileFilterDrawer.jsx'; // New Import
-import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
+const MobileFilterDrawer = lazy(() => import('./components/MobileFilterDrawer.jsx'));
+const UnifiedFilterBar = lazy(() => import('./components/UnifiedFilterBar.jsx'));
+const AuthorBrandSelector = lazy(() => import('./components/AuthorBrandSelector.jsx'));
 import Footer from './components/Footer.jsx';
 
 const KPIs = lazy(() => import('./components/KPIs.jsx'));
@@ -842,14 +843,44 @@ export default function App() {
                     display: 'flex',
                     flexDirection: { xs: 'column', md: 'row' },
                     alignItems: 'center',
-                    justifyContent: 'space-between',
+                    justifyContent: { xs: 'space-between', md: 'flex-end' },
                     width: '100%',
                     gap: 1,
                   }}
                 >
-                  {/* Brand Selector - unified for both roles - hidden on mobile (in filter drawer) */}
-                  {(isAuthor || showMultipleBrands) && !isMobile && (
+                  {/* Unified Filter Bar - Desktop Only (Dashboard Tab) */}
+                  {!isMobile && authorTab === 'dashboard' && hasBrand && (
                     <Box sx={{ mb: { xs: 1, md: 0 } }}>
+                      <UnifiedFilterBar
+                        range={normalizedRange}
+                        onRangeChange={handleRangeChange}
+                        brandKey={activeBrandKey}
+                        brands={brandsForSelector}
+                        onBrandChange={isAuthor ? handleAuthorBrandChange : (val) => dispatch(setBrand((val || '').toString().trim().toUpperCase()))}
+                        isAuthor={isAuthor}
+                        // Filter Props
+                        productOptions={productOptions}
+                        productValue={productSelection}
+                        onProductChange={handleProductChange}
+                        productLoading={productOptionsLoading}
+                        utm={utm}
+                        onUtmChange={handleUtmChange}
+                        salesChannel={salesChannel}
+                        onSalesChannelChange={handleSalesChannelChange}
+                        allowedFilters={{
+                          product: hasPermission('product_filter'),
+                          utm: hasPermission('utm_filter'),
+                          salesChannel: hasPermission('sales_channel_filter')
+                        }}
+                        utmOptions={utmOptions}
+                        onDownload={() => console.log('Download triggered')}
+                      />
+                    </Box>
+                  )}
+
+                  {/* Fallback Brand Selector - Desktop Only (Non-Dashboard Tabs) */}
+                  {!isMobile && authorTab !== 'dashboard' && (isAuthor || showMultipleBrands) && (
+                    <Box sx={{ mb: 1 }}>
                       <AuthorBrandSelector
                         brands={isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }))}
                         value={activeBrandKey}
@@ -858,8 +889,9 @@ export default function App() {
                       />
                     </Box>
                   )}
-                  {/* Date range and product filter - show on dashboard tab */}
-                  {authorTab === 'dashboard' && hasBrand && (
+
+                  {/* Mobile Components (Keep existing MobileTopBar for mobile view) */}
+                  {isMobile && authorTab === 'dashboard' && hasBrand && (
                     <MobileTopBar
                       value={normalizedRange}
                       onChange={handleRangeChange}
