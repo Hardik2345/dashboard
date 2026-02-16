@@ -72,7 +72,9 @@ export default function TrafficSourceSplit({ query }) {
         setLoading(true);
 
         getTrafficSourceSplit(query)
-            .then(res => { if (!cancelled) { setData(res); setLoading(false); } })
+            .then(res => {
+                if (!cancelled) { setData(res); setLoading(false); }
+            })
             .catch(() => setLoading(false));
         return () => { cancelled = true; };
     }, [query]);
@@ -84,6 +86,15 @@ export default function TrafficSourceSplit({ query }) {
     const googleVal = validData ? getMetricValue(data.google) : 0;
     const directVal = validData ? getMetricValue(data.direct) : 0;
     const othersVal = validData ? getMetricValue(data.others) : 0;
+
+    const getDelta = (sourceObj) => {
+        if (!sourceObj || !validData) return undefined;
+        const d = metric === 'sessions' ? sourceObj.delta : sourceObj.atc_delta;
+        // If atc_delta is missing but we are in atc_sessions mode, it might be 0 or backend not updated
+        if (d === undefined || d === null) return 0;
+        return d;
+    };
+
 
     // Derived comparison range
     const comparisonRange = useMemo(() => {
@@ -424,16 +435,16 @@ export default function TrafficSourceSplit({ query }) {
                         <Grid item xs={12} md={7}>
                             <Grid container spacing={1.5}> {/* Reduced inner spacing */}
                                 <Grid item xs={6}>
-                                    <DetailItem label="Meta" value={metaVal} color={colors.meta} delta={validData ? data.meta?.delta : undefined} />
+                                    <DetailItem label="Meta" value={metaVal} color={colors.meta} delta={getDelta(data.meta)} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Google" value={googleVal} color={colors.google} delta={validData ? data.google?.delta : undefined} />
+                                    <DetailItem label="Google" value={googleVal} color={colors.google} delta={getDelta(data.google)} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Direct" value={directVal} color={colors.direct} delta={validData ? data.direct?.delta : undefined} />
+                                    <DetailItem label="Direct" value={directVal} color={colors.direct} delta={getDelta(data.direct)} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Others" value={othersVal} color={colors.others} delta={validData ? data.others?.delta : undefined} />
+                                    <DetailItem label="Others" value={othersVal} color={colors.others} delta={getDelta(data.others)} />
                                 </Grid>
                             </Grid>
                         </Grid>

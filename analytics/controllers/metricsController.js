@@ -1235,9 +1235,11 @@ function buildMetricsController() {
           return ((curr - prev) / prev) * 100;
         };
 
+        console.log(`[TrafficSplit] Meta ATCs (Curr/Prev): ${current.meta.atc_sessions} / ${previous.meta.atc_sessions}`);
         const addDelta = (cat) => ({
           ...current[cat],
-          delta: calcDelta(current[cat].sessions, previous[cat].sessions)
+          delta: calcDelta(current[cat].sessions, previous[cat].sessions),
+          atc_delta: calcDelta(current[cat].atc_sessions, previous[cat].atc_sessions)
         });
 
         const meta = addDelta('meta');
