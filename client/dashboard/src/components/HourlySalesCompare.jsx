@@ -142,7 +142,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   const [chartData, setChartData] = useState([]);
   const [viewMode, setViewMode] = useState('hourly');
   const [rangeLabels, setRangeLabels] = useState({ current: '', previous: '' });
-  const [visibleLines, setVisibleLines] = useState(['primary', 'comparison']);
+  const [visibleLines, setVisibleLines] = useState(['primary']);
 
   const start = query?.start;
   const end = query?.end;
@@ -270,19 +270,19 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
 
   return (
     <Card elevation={0} sx={{
-      borderRadius: 4,
-      height: '310px',
-      height: '310px',
+      borderRadius: isMobile ? 2 : 3,
+      height: isMobile ? 'auto' : '310px',
+      minHeight: isMobile ? '340px' : '310px'
     }}>
       {/* Increased borderRadius to 3 (12px) or more to match image design */}
-      <CardContent sx={{ minHeight: 260, display: 'flex', flexDirection: 'column', p: 3 }}>
+      <CardContent sx={{ minHeight: 260, display: 'flex', flexDirection: 'column', px: 2, py: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
           <Stack spacing={1}>
             <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
               {viewMode === 'daily' ? 'Day-wise trend' : viewMode === 'monthly' ? 'Month-wise trend' : 'Hour-wise trend'} · {config.label}
             </Typography>
 
-            <Stack direction="row" spacing={3} alignItems="center">
+            <Stack direction="row" spacing={isMobile ? 1.5 : 3} alignItems="center" sx={{ flexWrap: 'wrap', gap: isMobile ? 1 : 0 }}>
               {/* Actual Design Legend (Checkbox style) */}
               <Stack
                 direction="row"
@@ -325,8 +325,8 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                       height: 14,
                       borderRadius: '3px',
                       border: '1px solid',
-                      borderColor: PREV_COLOR,
-                      bgcolor: visibleLines.includes('comparison') ? PREV_COLOR : 'transparent',
+                      borderColor: MAIN_COLOR,
+                      bgcolor: visibleLines.includes('comparison') ? MAIN_COLOR : 'transparent',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center'
@@ -374,7 +374,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           <Box sx={{ width: '100%', height: 200 }}>
             <ResponsiveContainer width="100%" height="100%">
               {viewMode === 'hourly' ? (
-                <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
+                <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 15, bottom: 5 }}>
                   <defs>
                     <linearGradient id="gradient-main" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={MAIN_COLOR} stopOpacity={0.1} />
@@ -394,10 +394,10 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   <YAxis
                     tickLine={false}
                     axisLine={false}
-                    tickMargin={12}
+                    tickMargin={8}
                     tickFormatter={config.formatter}
                     tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
-                    width={80}
+                    width={60}
                   />
                   <Tooltip
                     cursor={{ stroke: theme.palette.divider, strokeWidth: 1, strokeDasharray: '4 4' }}
@@ -408,7 +408,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     hide={!visibleLines.includes('comparison')}
                     dataKey="comparisonValue"
                     name={rangeLabels.previous || 'Previous'}
-                    stroke={PREV_COLOR}
+                    stroke={MAIN_COLOR}
                     strokeDasharray="4 4"
                     strokeWidth={2}
                     fill="transparent"
@@ -429,7 +429,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   />
                 </AreaChart>
               ) : (
-                <BarChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 5 }} barGap={0}>
+                <BarChart data={chartData} margin={{ top: 10, right: 20, left: 15, bottom: 5 }} barGap={0}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.5)} />
                   <XAxis
                     dataKey="label"
@@ -443,10 +443,10 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   <YAxis
                     tickLine={false}
                     axisLine={false}
-                    tickMargin={12}
+                    tickMargin={8}
                     tickFormatter={config.formatter}
                     tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
-                    width={80}
+                    width={60}
                   />
                   <Tooltip
                     cursor={{ fill: alpha(theme.palette.divider, 0.2) }}
@@ -456,7 +456,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     hide={!visibleLines.includes('comparison')}
                     dataKey="comparisonValue"
                     name={rangeLabels.previous || 'Previous'}
-                    fill={PREV_COLOR}
+                    fill={alpha(MAIN_COLOR, 0.4)}
                     radius={[4, 4, 0, 0]}
                     maxBarSize={40}
                   />

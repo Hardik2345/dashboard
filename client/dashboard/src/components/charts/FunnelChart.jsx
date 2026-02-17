@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AreaChart, Area, ResponsiveContainer, LabelList, YAxis, Tooltip } from 'recharts';
+import { AreaChart, Area, ResponsiveContainer, LabelList, YAxis, XAxis, Tooltip } from 'recharts';
 import { Card, CardContent, useTheme } from '@mui/material';
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -15,37 +15,43 @@ export default function FunnelChart({
     const [hoveredIndex, setHoveredIndex] = useState(null);
 
     // Process data to calculate scaling and centering
-    const chartData = useMemo(() => {
+    const funnelPoints = useMemo(() => {
         if (!data || data.length === 0) return [];
 
+        const count = data.length;
         const maxValue = Math.max(...data.map(d => d.value)) || 1;
-        const maxSqrtValue = Math.sqrt(maxValue); // Use SQRT for visual scaling
-
-        // Text is approx 24px tall.
+        const maxSqrtValue = Math.sqrt(maxValue);
         const minHeightPx = 24;
         const minPct = (minHeightPx / height) * 100;
 
-        return data.map((item, index) => {
-            // Calculate VISUAL percentage using square root to compress the range
-            // This makes smaller values appear larger relative to the max
-            const rawPct = (Math.sqrt(item.value) / maxSqrtValue) * 100;
+        const points = [];
 
-            // Enforce minimum thickness so label fits inside
+        // Add padding at start
+        points.push({ val: data[0].value, x: 0, isPadding: true });
+
+        // Add real step centers
+        data.forEach((item, i) => {
+            points.push({ ...item, val: item.value, x: i + 0.5, isPadding: false });
+        });
+
+        // Add padding at end
+        points.push({ val: data[count - 1].value, x: count, isPadding: true });
+
+        return points.map((p, index) => {
+            const rawPct = (Math.sqrt(p.val) / maxSqrtValue) * 100;
             const conversionPct = Math.max(rawPct, minPct);
-
-            // Calculation for centering
             const spacer = (100 - conversionPct) / 2;
 
-            // Calculate percentage label relative to the FIRST item (100% base)
             const firstValue = data[0]?.value || 1;
-            const pctLabel = index === 0 ? '100%' : `${Math.round((item.value / firstValue) * 100)}%`;
+            const pctLabel = p.isPadding ? '' : (p.label === data[0].label ? '100%' : `${Math.round((p.val / firstValue) * 100)}%`);
 
             return {
-                ...item,
+                ...p,
                 conversionPct,
                 spacer,
                 displayValue: pctLabel,
-                rawValue: item.value,
+                rawValue: p.val,
+                xOffset: p.x
             };
         });
     }, [data, height]);
@@ -117,7 +123,7 @@ export default function FunnelChart({
 
                     <ResponsiveContainer width="100%" height="100%">
                         <AreaChart
-                            data={chartData}
+                            data={funnelPoints}
                             layout="horizontal"
                             margin={{ top: 20, right: 0, left: 0, bottom: 20 }}
                             stackOffset="none"
@@ -146,6 +152,7 @@ export default function FunnelChart({
                                 </linearGradient>
                             </defs>
 
+                            <XAxis type="number" dataKey="xOffset" domain={[0, data.length]} hide />
                             <YAxis type="number" domain={[0, 100]} hide />
 
                             {/* Required for hover state calculation in Recharts */}
@@ -169,29 +176,18 @@ export default function FunnelChart({
                                 stroke="none"
                                 fill="url(#funnelGradient)"
                                 filter="url(#funnelCombinedShadow)"
-                                isAnimationActive={true}
-                                animationDuration={1000}
+                                isAnimationActive={false}
                                 activeDot={false}
                             >
                                 <LabelList
                                     dataKey="displayValue"
                                     position="center"
                                     content={({ x, width, value, index }) => {
-                                        if (!value) return null;
+                                        if (!value || funnelPoints[index]?.isPadding) return null;
                                         const centerY = (height) / 2;
 
-                                        let textAnchor = "middle";
-                                        let xPos = x + width / 2;
-
-                                        if (index === 0) {
-                                            textAnchor = "start";
-                                            xPos = x + 10;
-                                        } else if (index === data.length - 1) {
-                                            textAnchor = "end";
-                                            xPos = x + width - 10;
-                                        }
-
-                                        const isHovered = index === hoveredIndex;
+                                        const textAnchor = "middle";
+                                        const xPos = x + width / 2;
 
                                         return (
                                             <text
@@ -203,10 +199,7 @@ export default function FunnelChart({
                                                 className="text-sm font-bold drop-shadow-md pointer-events-none"
                                                 style={{
                                                     textShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                                                    transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                                                    transform: isHovered ? 'translateY(-6px) scale(1.15)' : 'translateY(0) scale(1)', // The "Uplift" Animation
-                                                    transformOrigin: `${xPos}px ${centerY}px`, // Ensure scale bubbles from center
-                                                    opacity: isHovered ? 1 : 0.9 // Subtle focus
+                                                    opacity: 1
                                                 }}
                                             >
                                                 {value}

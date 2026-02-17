@@ -1,8 +1,10 @@
 import { Card, CardContent, Typography, Skeleton, Box } from '@mui/material';
+import { useTheme, alpha } from '@mui/material/styles';
 import ArrowDropUpIcon from '@mui/icons-material/ArrowDropUp';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 
 export default function KPIStat({ label, value, hint, loading, deltaLoading, formatter, delta, onSelect, selected, centerOnMobile = false }) {
+  const theme = useTheme();
   const clickable = typeof onSelect === 'function';
 
   const handleKeyDown = (event) => {
@@ -22,6 +24,22 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
       tabIndex={clickable ? 0 : undefined}
       aria-pressed={clickable ? Boolean(selected) : undefined}
       sx={{
+        transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+        cursor: clickable ? 'pointer' : 'default',
+        position: 'relative',
+        border: '1px solid',
+        borderColor: selected ? '#10b981' : 'divider',
+        bgcolor: 'background.paper',
+        boxShadow: selected
+          ? `0 0 0 1px #10b981, 0 10px 20px ${alpha('#10b981', 0.2)}, 0 6px 6px ${alpha('#10b981', 0.1)}`
+          : '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)',
+        '&:hover': clickable ? {
+          borderColor: selected ? '#10b981' : 'divider',
+          boxShadow: selected
+            ? `0 0 0 1.5px #10b981, 0 14px 28px ${alpha('#10b981', 0.25)}, 0 10px 10px ${alpha('#10b981', 0.15)}`
+            : '0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23)',
+          transform: 'translateY(-4px)'
+        } : {},
         '&:focus-visible': clickable ? { borderColor: 'primary.main' } : undefined,
       }}
     >
