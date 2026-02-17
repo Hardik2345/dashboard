@@ -2024,7 +2024,6 @@ function buildMetricsController() {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
-          utm_campaign: extractUtmParam(req.query.utm_campaign),
           product_id: (req.query.product_id || '').trim() || null,
           sales_channel: extractUtmParam(req.query.sales_channel),
         };
@@ -2064,6 +2063,25 @@ function buildMetricsController() {
         }
 
         const rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: replacements });
+
+        // Fetch product sessions separately if product_id is filtered
+        let productSessionsMap = new Map();
+        if (filters.product_id) {
+          const sessSql = `
+            SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date,
+              SUM(sessions) AS sessions,
+              SUM(sessions_with_cart_additions) AS atc
+            FROM mv_product_sessions_by_path_daily
+            WHERE product_id = ? AND date >= ? AND date <= ?
+            GROUP BY date
+          `;
+          const sessRows = await req.brandDb.sequelize.query(sessSql, {
+            type: QueryTypes.SELECT,
+            replacements: [filters.product_id, start, end]
+          });
+          productSessionsMap = new Map(sessRows.map(r => [String(r.date), r]));
+        }
+
         const debugInfo = { brand: req.brandKey, rows: rows.slice(0, 5), overallRows: [] };
 
         const map = new Map(rows.map(r => {
@@ -2087,13 +2105,23 @@ function buildMetricsController() {
         const points = dayList.map(d => {
           const metrics = map.get(d) || { sales: 0, orders: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, atc: 0 };
           const over = overallMap.get(d);
+          const pSess = productSessionsMap.get(d);
 
           // Priority Logic for Sessions:
-          // 1. adjusted_total_sessions (overall_summary)
-          // 2. total_sessions (overall_summary)
-          // 3. metrics.sessions (hour_wise_sales)
+          // 1. Product specific sessions (if valid)
+          // 2. adjusted_total_sessions (overall_summary)
+          // 3. total_sessions (overall_summary)
+          // 4. metrics.sessions (hour_wise_sales)
+
           let bestSession = metrics.sessions;
-          if (over) {
+          let bestAtc = metrics.atc;
+
+          if (filters.product_id && pSess) {
+            bestSession = Number(pSess.sessions || 0);
+            bestAtc = Number(pSess.atc || 0);
+            metrics.adjusted_sessions = bestSession; // Assume same for product level view
+            metrics.raw_sessions = bestSession;
+          } else if (over) {
             if (over.adjusted_total_sessions != null) {
               bestSession = over.adjusted_total_sessions;
             } else if (over.total_sessions != null) {
@@ -2102,7 +2130,7 @@ function buildMetricsController() {
           }
 
           const cvrRatio = bestSession > 0 ? metrics.orders / bestSession : 0;
-          return { date: d, metrics: { sales: metrics.sales, orders: metrics.orders, sessions: bestSession, adjusted_sessions: metrics.adjusted_sessions, raw_sessions: metrics.raw_sessions, atc: metrics.atc, cvr_ratio: cvrRatio, cvr_percent: cvrRatio * 100 } };
+          return { date: d, metrics: { sales: metrics.sales, orders: metrics.orders, sessions: bestSession, adjusted_sessions: metrics.adjusted_sessions, raw_sessions: metrics.raw_sessions, atc: bestAtc, cvr_ratio: cvrRatio, cvr_percent: cvrRatio * 100 } };
         });
 
         let comparison = null;
@@ -2142,6 +2170,24 @@ function buildMetricsController() {
           }
 
           const rowsPrev = await req.brandDb.sequelize.query(compSql, { type: QueryTypes.SELECT, replacements: compReplacements });
+
+          let prevProductSessionsMap = new Map();
+          if (filters.product_id) {
+            const sessPrevSql = `
+              SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date,
+                SUM(sessions) AS sessions,
+                SUM(sessions_with_cart_additions) AS atc
+              FROM mv_product_sessions_by_path_daily
+              WHERE product_id = ? AND date >= ? AND date <= ?
+              GROUP BY date
+            `;
+            const sessPrevRows = await req.brandDb.sequelize.query(sessPrevSql, {
+              type: QueryTypes.SELECT,
+              replacements: [filters.product_id, prevWin.prevStart, prevWin.prevEnd]
+            });
+            prevProductSessionsMap = new Map(sessPrevRows.map(r => [String(r.date), r]));
+          }
+
           const mapPrev = new Map(rowsPrev.map(r => {
             const d = String(r.date);
             return [d, { sales: Number(r.sales || 0), orders: Number(r.orders || 0), sessions: Number(r.sessions || 0), adjusted_sessions: Number(r.adjusted_sessions || 0), raw_sessions: Number(r.raw_sessions || 0), atc: Number(r.atc || 0) }];
@@ -2164,10 +2210,18 @@ function buildMetricsController() {
             const d = formatIsoDate(new Date(ts));
             const metrics = mapPrev.get(d) || { sales: 0, orders: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, atc: 0 };
             const over = overallMapPrev.get(d);
+            const pSess = prevProductSessionsMap.get(d);
 
             // Comparison Priority Logic
             let bestSession = metrics.sessions;
-            if (over) {
+            let bestAtc = metrics.atc;
+
+            if (filters.product_id && pSess) {
+              bestSession = Number(pSess.sessions || 0);
+              bestAtc = Number(pSess.atc || 0);
+              metrics.adjusted_sessions = bestSession;
+              metrics.raw_sessions = bestSession;
+            } else if (over) {
               if (over.adjusted_total_sessions != null) {
                 bestSession = over.adjusted_total_sessions;
               } else if (over.total_sessions != null) {
@@ -2176,7 +2230,7 @@ function buildMetricsController() {
             }
 
             const cvrRatio = bestSession > 0 ? metrics.orders / bestSession : 0;
-            prevPoints.push({ date: d, metrics: { sales: metrics.sales, orders: metrics.orders, sessions: bestSession, adjusted_sessions: metrics.adjusted_sessions, raw_sessions: metrics.raw_sessions, atc: metrics.atc, cvr_ratio: cvrRatio, cvr_percent: cvrRatio * 100 } });
+            prevPoints.push({ date: d, metrics: { sales: metrics.sales, orders: metrics.orders, sessions: bestSession, adjusted_sessions: metrics.adjusted_sessions, raw_sessions: metrics.raw_sessions, atc: bestAtc, cvr_ratio: cvrRatio, cvr_percent: cvrRatio * 100 } });
           }
           comparison = { range: { start: prevWin.prevStart, end: prevWin.prevEnd }, points: prevPoints };
         }
