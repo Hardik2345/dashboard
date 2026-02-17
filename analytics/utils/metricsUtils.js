@@ -175,6 +175,8 @@ function appendUtmWhere(sql, params, filters) {
   append('utm_source', filters.utm_source);
   append('utm_medium', filters.utm_medium);
   append('utm_campaign', filters.utm_campaign);
+  append('utm_term', filters.utm_term);
+  append('utm_content', filters.utm_content);
   append('order_app_name', filters.sales_channel);
   return sql;
 }
@@ -201,7 +203,14 @@ async function computeSessionsFromSnapshot({ start, end, conn, filters, column }
 
 function hasUtmFilters(filters) {
   if (!filters) return false;
-  return !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.sales_channel);
+  return !!(
+    filters.utm_source ||
+    filters.utm_medium ||
+    filters.utm_campaign ||
+    filters.utm_term ||
+    filters.utm_content ||
+    filters.sales_channel
+  );
 }
 
 function buildShopifyOrdersWhere(start, end, filters) {
@@ -241,6 +250,8 @@ function buildShopifyOrdersWhere(start, end, filters) {
     add('utm_source', filters.utm_source);
     add('utm_medium', filters.utm_medium);
     add('utm_campaign', filters.utm_campaign);
+    add('utm_term', filters.utm_term);
+    add('utm_content', filters.utm_content);
     add('order_app_name', filters.sales_channel);
   }
 

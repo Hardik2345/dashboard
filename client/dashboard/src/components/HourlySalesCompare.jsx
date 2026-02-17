@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, MenuItem, InputLabel, Stack } from '@mui/material';
+import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, MenuItem, InputLabel, Stack, useMediaQuery } from '@mui/material';
 import { useTheme, alpha } from '@mui/material/styles';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -155,6 +155,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   const productId = query?.product_id;
   const compare = query?.compare;
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const daysInRange = useMemo(() => {
     if (!start || !end) return 0;
@@ -306,7 +307,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   {visibleLines.includes('primary') && <Box sx={{ width: 6, height: 6, bgcolor: 'white', borderRadius: '1px' }} />}
                 </Box>
                 <Typography variant="caption" sx={{ fontWeight: 600, color: visibleLines.includes('primary') ? 'text.primary' : 'text.secondary' }}>
-                  {config.label} ({rangeLabels.current})
+                  {rangeLabels.current}
                 </Typography>
               </Stack>
 
@@ -334,7 +335,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     {visibleLines.includes('comparison') && <Box sx={{ width: 6, height: 6, bgcolor: 'white', borderRadius: '1px' }} />}
                   </Box>
                   <Typography variant="caption" sx={{ fontWeight: 600, color: visibleLines.includes('comparison') ? 'text.secondary' : alpha(theme.palette.text.secondary, 0.5) }}>
-                    {config.label} ({rangeLabels.previous})
+                    {rangeLabels.previous}
                   </Typography>
                 </Stack>
               )}
@@ -373,7 +374,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
           <Box sx={{ width: '100%', height: 200 }}>
             <ResponsiveContainer width="100%" height="100%">
               {viewMode === 'hourly' ? (
-                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
                   <defs>
                     <linearGradient id="gradient-main" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={MAIN_COLOR} stopOpacity={0.1} />
@@ -386,8 +387,9 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     tickLine={false}
                     axisLine={false}
                     tickMargin={12}
-                    minTickGap={30}
-                    tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
+                    minTickGap={isMobile ? 15 : 0}
+                    interval={isMobile ? 'preserveStartEnd' : 0}
+                    tick={{ fontSize: 10, fill: theme.palette.text.secondary }}
                   />
                   <YAxis
                     tickLine={false}
@@ -395,7 +397,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     tickMargin={12}
                     tickFormatter={config.formatter}
                     tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
-                    width={60}
+                    width={80}
                   />
                   <Tooltip
                     cursor={{ stroke: theme.palette.divider, strokeWidth: 1, strokeDasharray: '4 4' }}
@@ -427,15 +429,16 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                   />
                 </AreaChart>
               ) : (
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} barGap={0}>
+                <BarChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 5 }} barGap={0}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.5)} />
                   <XAxis
                     dataKey="label"
                     tickLine={false}
                     axisLine={false}
                     tickMargin={12}
-                    minTickGap={30}
-                    tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
+                    minTickGap={isMobile ? 15 : 0}
+                    interval={isMobile ? 'preserveStartEnd' : 0}
+                    tick={{ fontSize: 10, fill: theme.palette.text.secondary }}
                   />
                   <YAxis
                     tickLine={false}
@@ -443,7 +446,7 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
                     tickMargin={12}
                     tickFormatter={config.formatter}
                     tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
-                    width={60}
+                    width={80}
                   />
                   <Tooltip
                     cursor={{ fill: alpha(theme.palette.divider, 0.2) }}

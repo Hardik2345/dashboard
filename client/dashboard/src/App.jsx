@@ -38,7 +38,7 @@ const AuthorBrandSelector = lazy(() => import('./components/AuthorBrandSelector.
 import Footer from './components/Footer.jsx';
 
 const KPIs = lazy(() => import('./components/KPIs.jsx'));
-const FunnelChart = lazy(() => import('./components/FunnelChart.jsx'));
+const FunnelChart = lazy(() => import('./components/charts/FunnelChart.jsx'));
 const OrderSplit = lazy(() => import('./components/OrderSplit.jsx'));
 const PaymentSalesSplit = lazy(() => import('./components/PaymentSalesSplit.jsx'));
 const TrafficSourceSplit = lazy(() => import('./components/TrafficSourceSplit.jsx'));
@@ -245,6 +245,8 @@ export default function App() {
     if (utm?.source) base.utm_source = utm.source;
     if (utm?.medium) base.utm_medium = utm.medium;
     if (utm?.campaign) base.utm_campaign = utm.campaign;
+    if (utm?.term) base.utm_term = utm.term;
+    if (utm?.content) base.utm_content = utm.content;
     if (salesChannel) base.sales_channel = salesChannel;
 
     if (isAuthor) {
@@ -275,7 +277,7 @@ export default function App() {
 
   // Reset UTM filters when brand changes
   useEffect(() => {
-    dispatch(setUtm({ source: '', medium: '', campaign: '' }));
+    dispatch(setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }));
   }, [activeBrandKey, dispatch]);
 
   useEffect(() => {
@@ -461,20 +463,13 @@ export default function App() {
 
   const handleProductChange = useCallback((value) => {
     // Reset UTMs when product changes
-    dispatch(setUtm({ source: '', medium: '', campaign: '' }));
+    dispatch(setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }));
     dispatch(setProductSelection(value || DEFAULT_PRODUCT_OPTION));
   }, [dispatch]);
 
   const handleUtmChange = useCallback((val) => {
-    // If source is changing, reset dependent filters (medium, campaign) ONLY if they aren't provided
-    if (val && typeof val === 'object' && 'source' in val) {
-      const update = { ...val };
-      if (!('medium' in val)) update.medium = '';
-      if (!('campaign' in val)) update.campaign = '';
-      dispatch(setUtm(update));
-    } else {
-      dispatch(setUtm(val));
-    }
+    // Simply dispatch the new UTM object; multiselect logic is handled in the components
+    dispatch(setUtm(val));
   }, [dispatch]);
 
   const handleSalesChannelChange = useCallback((val) => {
@@ -512,6 +507,19 @@ export default function App() {
         // Ignore storage write errors
       }
       return next;
+    });
+  }, []);
+
+  // Wrapper to prevent skeleton flash on refresh
+  const handleFunnelData = useCallback((newData) => {
+    setFunnelData(prev => {
+      // If we are loading and have no stats yet in the new update,
+      // but we ALREADY have stats from before, keep showing the old stats
+      // to avoid a skeleton flash during the refresh.
+      if (newData.loading && !newData.stats && prev?.stats) {
+        return { ...newData, stats: prev.stats };
+      }
+      return newData;
     });
   }, []);
 
@@ -774,6 +782,10 @@ export default function App() {
   const brandsForSelector = isAuthor ? authorBrands : viewerBrands;
   const showMultipleBrands = isAuthor ? authorBrands.length > 0 : viewerBrands.length > 1;
 
+
+
+
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -968,7 +980,7 @@ export default function App() {
                               query={metricsQuery}
                               selectedMetric={selectedMetric}
                               onSelectMetric={handleSelectMetric}
-                              onFunnelData={setFunnelData}
+                              onFunnelData={handleFunnelData}
                               productId={productSelection.id}
                               productLabel={productSelection.label}
                               utmOptions={utmOptions}
@@ -983,7 +995,6 @@ export default function App() {
                                     query={metricsQuery}
                                     selectedMetric={selectedMetric}
                                     onSelectMetric={handleSelectMetric}
-                                    onFunnelData={setFunnelData}
                                     productId={productSelection.id}
                                     productLabel={productSelection.label}
                                     utmOptions={utmOptions}
@@ -1002,7 +1013,32 @@ export default function App() {
                             </Grid>
 
                             <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-                            <FunnelChart funnelData={funnelData} />
+                            {funnelData?.stats ? (
+                              <Suspense fallback={<Skeleton variant="rounded" width="100%" height={250} />}>
+                                <FunnelChart
+                                  data={[
+                                    {
+                                      label: 'Sessions',
+                                      value: funnelData.stats.total_sessions || 0,
+                                      change: funnelData.deltas?.sessions?.diff_pct ? Number(funnelData.deltas.sessions.diff_pct).toFixed(1) : undefined,
+                                    },
+                                    {
+                                      label: 'Add to Cart',
+                                      value: funnelData.stats.total_atc_sessions || 0,
+                                      change: funnelData.deltas?.atc?.diff_pct ? Number(funnelData.deltas.atc.diff_pct).toFixed(1) : undefined,
+                                    },
+                                    {
+                                      label: 'Orders',
+                                      value: funnelData.stats.total_orders || 0,
+                                      change: (funnelData.deltas?.orders?.diff_pct || funnelData.deltas?.orders?.diff_pp) ? Number(funnelData.deltas?.orders?.diff_pct || funnelData.deltas?.orders?.diff_pp).toFixed(1) : undefined,
+                                    }
+                                  ]}
+                                  height={250}
+                                />
+                              </Suspense>
+                            ) : (
+                              <Skeleton variant="rounded" width="100%" height={250} />
+                            )}
                             {hasPermission('payment_split_order') && <OrderSplit query={metricsQuery} />}
                             {hasPermission('payment_split_sales') && <PaymentSalesSplit query={metricsQuery} />}
                             {hasPermission('traffic_split') && <TrafficSourceSplit query={metricsQuery} />}
