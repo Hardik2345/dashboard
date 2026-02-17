@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import Grid from "@mui/material/Grid2";
-import { Stack, Typography, Box, useTheme } from "@mui/material";
+import { Stack, Typography, Box, useTheme, useMediaQuery } from "@mui/material";
 import { GlassChip } from "./ui/GlassChip.jsx";
 import KPIStat from "./KPIStat.jsx";
 import {
@@ -38,6 +38,7 @@ export default function KPIs({
   showRow = null, // null for both, 1 for row 1, 2 for row 2
 }) {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const isDark = theme.palette.mode === 'dark';
   const [loading, setLoading] = useState(true);
   const [deltaLoading, setDeltaLoading] = useState(true);
@@ -351,26 +352,47 @@ export default function KPIs({
               />
             </Grid>
             <Grid size={{ xs: 6, sm: 6, md: 3 }}>
-              <KPIStat
-                label="Conversion Rate"
-                value={data.cvr?.cvr ?? 0}
-                loading={loading}
-                deltaLoading={deltaLoading}
-                formatter={(v) => nfPct.format(v)}
-                delta={
-                  typeof cvrDeltaValue === "number" && data.cvrDelta
-                    ? { value: cvrDeltaValue, direction: data.cvrDelta.direction }
-                    : undefined
-                }
-                onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
-                selected={selectedMetric === "cvr"}
-              />
+              {isMobile ? (
+                /* Original CVR position for mobile Row 1 */
+                <KPIStat
+                  label="Conversion Rate"
+                  value={data.cvr?.cvr ?? 0}
+                  loading={loading}
+                  deltaLoading={deltaLoading}
+                  formatter={(v) => nfPct.format(v)}
+                  delta={
+                    typeof cvrDeltaValue === "number" && data.cvrDelta
+                      ? { value: cvrDeltaValue, direction: data.cvrDelta.direction }
+                      : undefined
+                  }
+                  onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
+                  selected={selectedMetric === "cvr"}
+                />
+              ) : (
+                /* New Web Performance position for desktop Row 1 */
+                <KPIStat
+                  label="Web Performance(Avg)"
+                  value={webVitalsData.performanceAvg ?? 0}
+                  loading={webVitalsData.loading}
+                  deltaLoading={webVitalsData.loading}
+                  formatter={(v) => nfFloat.format(v)}
+                  delta={
+                    webVitalsData.performanceChange !== null
+                      ? {
+                        value: webVitalsData.performanceChange,
+                        direction: webVitalsData.performanceChange > 0 ? 'up' : 'down'
+                      }
+                      : undefined
+                  }
+                  selected={false}
+                />
+              )}
             </Grid>
           </>
         )}
 
-        {/* Row 2: Sessions, ATC, Web Perf (3 items) */}
-        {(showRow === null || showRow === 2) && (
+        {/* Row 2 split: Sessions and ATC */}
+        {(showRow === null || showRow === 2 || showRow === 'sessions_atc') && (
           <>
             <Grid size={{ xs: 6, sm: 4, md: 4 }}>
               <KPIStat
@@ -412,26 +434,49 @@ export default function KPIs({
                 selected={selectedMetric === "atc"}
               />
             </Grid>
+          </>
+        )}
+
+        {/* Row 2 split: Web Performance (Mobile) or CVR (Desktop) */}
+        {(showRow === null || showRow === 2 || showRow === 'web_perf_cvr') && (
+          <>
             <Grid size={{ xs: 12, sm: 4, md: 4 }}>
-              {/* New Web Performance Card */}
-              <KPIStat
-                label="Web Performance(Avg)"
-                value={webVitalsData.performanceAvg ?? 0}
-                loading={webVitalsData.loading}
-                deltaLoading={webVitalsData.loading}
-                formatter={(v) => nfFloat.format(v)}
-                delta={
-                  webVitalsData.performanceChange !== null
-                    ? {
-                      value: webVitalsData.performanceChange,
-                      // Higher performance score is better -> 'up' is green
-                      direction: webVitalsData.performanceChange > 0 ? 'up' : 'down'
-                    }
-                    : undefined
-                }
-                selected={false} // Not clickable for filtering
-                centerOnMobile={true}
-              />
+              {isMobile ? (
+                /* Original Web Performance position for mobile Row 2 */
+                <KPIStat
+                  label="Web Performance(Avg)"
+                  value={webVitalsData.performanceAvg ?? 0}
+                  loading={webVitalsData.loading}
+                  deltaLoading={webVitalsData.loading}
+                  formatter={(v) => nfFloat.format(v)}
+                  delta={
+                    webVitalsData.performanceChange !== null
+                      ? {
+                        value: webVitalsData.performanceChange,
+                        direction: webVitalsData.performanceChange > 0 ? 'up' : 'down'
+                      }
+                      : undefined
+                  }
+                  selected={false}
+                  centerOnMobile={true}
+                />
+              ) : (
+                /* New CVR position for desktop Row 2 */
+                <KPIStat
+                  label="Conversion Rate"
+                  value={data.cvr?.cvr ?? 0}
+                  loading={loading}
+                  deltaLoading={deltaLoading}
+                  formatter={(v) => nfPct.format(v)}
+                  delta={
+                    typeof cvrDeltaValue === "number" && data.cvrDelta
+                      ? { value: cvrDeltaValue, direction: data.cvrDelta.direction }
+                      : undefined
+                  }
+                  onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
+                  selected={selectedMetric === "cvr"}
+                />
+              )}
             </Grid>
           </>
         )}

@@ -13,11 +13,13 @@ import {
     ListItemText,
     useTheme,
     Collapse,
+    Fade,
     Accordion,
     AccordionSummary,
     AccordionDetails,
     Checkbox,
     FormControlLabel,
+    Stack,
 } from '@mui/material';
 import {
     CalendarDays,
@@ -29,6 +31,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { DatePicker } from '@shopify/polaris';
 import dayjs from 'dayjs';
 import SearchableSelect from './ui/SearchableSelect.jsx';
+import StaticSearchableList from './ui/StaticSearchableList.jsx';
 
 // Date Presets (Same as MobileTopBar for consistency)
 const DATE_PRESETS = [
@@ -69,6 +72,10 @@ export default function UnifiedFilterBar({
     const [dateAnchor, setDateAnchor] = useState(null);
     const [brandAnchor, setBrandAnchor] = useState(null);
     const [filterAnchor, setFilterAnchor] = useState(null);
+    const [utmSourceAnchor, setUtmSourceAnchor] = useState(null);
+    const [utmMediumAnchor, setUtmMediumAnchor] = useState(null);
+    const [utmCampaignAnchor, setUtmCampaignAnchor] = useState(null);
+    const [utmExpanded, setUtmExpanded] = useState(false); // Toggle visibility of UTM settings
     const [expandedAccordion, setExpandedAccordion] = useState('channel'); // Default expanded
 
     const handleAccordionChange = (panel) => (event, isExpanded) => {
@@ -123,11 +130,97 @@ export default function UnifiedFilterBar({
 
     const activeFilterCount = [
         salesChannel,
-        utm?.source?.length,
-        utm?.medium?.length,
-        utm?.campaign?.length,
         productValue?.id // Product is active if ID exists and not default
     ].filter(Boolean).length;
+
+    const utmCount = [
+        utm?.source?.length || 0,
+        utm?.medium?.length || 0,
+        utm?.campaign?.length || 0,
+        utm?.term?.length || 0,
+        utm?.content?.length || 0
+    ].reduce((a, b) => a + b, 0);
+
+    const handleUtmSourceClick = (event) => setUtmSourceAnchor(event.currentTarget);
+    const handleUtmSourceClose = () => setUtmSourceAnchor(null);
+
+    const handleUtmMediumClick = (event) => setUtmMediumAnchor(event.currentTarget);
+    const handleUtmMediumClose = () => setUtmMediumAnchor(null);
+
+    const handleUtmCampaignClick = (event) => setUtmCampaignAnchor(event.currentTarget);
+    const handleUtmCampaignClose = () => setUtmCampaignAnchor(null);
+
+    const toggleUtmExpanded = () => setUtmExpanded(prev => !prev);
+
+    // UTM Nested Options
+    const utmSourceOptions = useMemo(() => Object.keys(utmOptions?.utm_tree || {}), [utmOptions]);
+
+    const utmMediumOptions = useMemo(() => {
+        const sources = utm?.source || [];
+        if (sources.length === 0) {
+            // If no source selected, show all mediums across all sources? 
+            // Or only allow selection after source?
+            // Let's show all for better UX initially, or follow "strictly nested"
+            const allMediums = new Set();
+            Object.values(utmOptions?.utm_tree || {}).forEach(s => {
+                Object.keys(s.mediums || {}).forEach(m => allMediums.add(m));
+            });
+            return Array.from(allMediums);
+        }
+        const mediums = new Set();
+        sources.forEach(s => {
+            const data = utmOptions?.utm_tree?.[s];
+            if (data?.mediums) {
+                Object.keys(data.mediums).forEach(m => mediums.add(m));
+            }
+        });
+        return Array.from(mediums);
+    }, [utmOptions, utm?.source]);
+
+    const utmCampaignOptions = useMemo(() => {
+        const sources = utm?.source || [];
+        const selectedMediums = utm?.medium || [];
+        if (sources.length === 0 && selectedMediums.length === 0) {
+            const allCampaigns = new Set();
+            Object.values(utmOptions?.utm_tree || {}).forEach(s => {
+                Object.values(s.mediums || {}).forEach(m => {
+                    Object.keys(m.campaigns || {}).forEach(c => allCampaigns.add(c));
+                });
+            });
+            return Array.from(allCampaigns);
+        }
+
+        const campaigns = new Set();
+        Object.entries(utmOptions?.utm_tree || {}).forEach(([s, sData]) => {
+            if (sources.length > 0 && !sources.includes(s)) return;
+            Object.entries(sData.mediums || {}).forEach(([m, mData]) => {
+                if (selectedMediums.length > 0 && !selectedMediums.includes(m)) return;
+                Object.keys(mData.campaigns || {}).forEach(c => campaigns.add(c));
+            });
+        });
+        return Array.from(campaigns);
+    }, [utmOptions, utm?.source, utm?.medium]);
+
+    const utmSourceLabel = useMemo(() => {
+        const selected = utm?.source || [];
+        if (selected.length === 0) return "Source";
+        if (selected.length === 1) return selected[0];
+        return `Source (${selected.length})`;
+    }, [utm?.source]);
+
+    const utmMediumLabel = useMemo(() => {
+        const selected = utm?.medium || [];
+        if (selected.length === 0) return "Medium";
+        if (selected.length === 1) return selected[0];
+        return `Medium (${selected.length})`;
+    }, [utm?.medium]);
+
+    const utmCampaignLabel = useMemo(() => {
+        const selected = utm?.campaign || [];
+        if (selected.length === 0) return "Campaign";
+        if (selected.length === 1) return selected[0];
+        return `Campaign (${selected.length})`;
+    }, [utm?.campaign]);
 
     return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -142,10 +235,144 @@ export default function UnifiedFilterBar({
                     borderRadius: '12px',
                     bgcolor: isDark ? 'rgba(255,255,255,0.05)' : '#fff',
                     overflow: 'hidden',
-                    height: 40, // Fixed height for consistency
+                    height: 40,
                 }}
             >
-                {/* Metric/Date Segment */}
+                {/* 1. Filter Icon (Far Left) - Toggles UTM Visibility */}
+                <Box sx={{ px: 0.75, display: 'flex', alignItems: 'center' }}>
+                    <IconButton
+                        onClick={toggleUtmExpanded}
+                        size="small"
+                        sx={{
+                            width: 32,
+                            height: 32,
+                            bgcolor: utmCount > 0 ? 'primary.main' : 'transparent',
+                            color: utmCount > 0 ? 'primary.contrastText' : 'text.secondary',
+                            borderRadius: '50%',
+                            border: '1px solid',
+                            borderColor: utmCount > 0 ? 'primary.main' : isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                            transition: 'all 0.3s ease-in-out',
+                            transform: utmExpanded ? 'rotate(90deg)' : 'none',
+                            '&:hover': {
+                                bgcolor: utmCount > 0 ? 'primary.dark' : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                                transform: utmExpanded ? 'rotate(90deg) scale(1.1)' : 'scale(1.1)',
+                            }
+                        }}
+                    >
+                        <Filter size={16} />
+                        {utmCount > 0 && (
+                            <Box
+                                sx={{
+                                    position: 'absolute',
+                                    top: -4,
+                                    right: -4,
+                                    bgcolor: 'error.main',
+                                    color: 'error.contrastText',
+                                    borderRadius: '50%',
+                                    width: 14,
+                                    height: 14,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '0.6rem',
+                                    fontWeight: 700,
+                                    border: '1px solid',
+                                    borderColor: isDark ? '#1e1e1e' : '#fff'
+                                }}
+                            >
+                                {utmCount}
+                            </Box>
+                        )}
+                    </IconButton>
+                </Box>
+
+                <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+
+                {/* 2. UTM Filter Group (Toggled by Icon) */}
+                <Collapse in={utmExpanded} orientation="horizontal" unmountOnExit timeout={350}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)', whiteSpace: 'nowrap' }}>
+                        {/* ... Source Button ... */}
+                        <Button
+                            onClick={handleUtmSourceClick}
+                            endIcon={<ChevronDown size={14} />}
+                            sx={{
+                                px: 1.5,
+                                height: 40,
+                                color: (utm?.source?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
+                                textTransform: 'none',
+                                fontWeight: 500,
+                                fontSize: '0.85rem',
+                                borderRadius: 0,
+                                '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                            }}
+                        >
+                            {utmSourceLabel}
+                        </Button>
+
+                        <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+
+                        {/* ... Medium Button ... */}
+                        <Button
+                            onClick={handleUtmMediumClick}
+                            endIcon={<ChevronDown size={14} />}
+                            sx={{
+                                px: 1.5,
+                                height: 40,
+                                color: (utm?.medium?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
+                                textTransform: 'none',
+                                fontWeight: 500,
+                                fontSize: '0.85rem',
+                                borderRadius: 0,
+                                '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                            }}
+                        >
+                            {utmMediumLabel}
+                        </Button>
+
+                        <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+
+                        {/* ... Campaign Button ... */}
+                        <Button
+                            onClick={handleUtmCampaignClick}
+                            endIcon={<ChevronDown size={14} />}
+                            sx={{
+                                px: 1.5,
+                                height: 40,
+                                color: (utm?.campaign?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
+                                textTransform: 'none',
+                                fontWeight: 500,
+                                fontSize: '0.85rem',
+                                borderRadius: 0,
+                                '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                            }}
+                        >
+                            {utmCampaignLabel}
+                        </Button>
+
+                        <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+
+                        {/* Clear Button at the end of UTMs */}
+                        <Button
+                            onClick={() => onUtmChange({ source: [], medium: [], campaign: [], term: [], content: [] })}
+                            sx={{
+                                px: 1.5,
+                                height: 40,
+                                color: 'error.main',
+                                textTransform: 'none',
+                                fontWeight: 600,
+                                fontSize: '0.75rem',
+                                minWidth: 'auto',
+                                '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }
+                            }}
+                        >
+                            Clear
+                        </Button>
+
+                        <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+                    </Box>
+                </Collapse>
+
+                {/* 3. Date Segment */}
                 <Button
                     onClick={handleDateClick}
                     startIcon={<CalendarDays size={16} />}
@@ -166,7 +393,7 @@ export default function UnifiedFilterBar({
 
                 <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
 
-                {/* Brand Segment (Only if multibrand/author) */}
+                {/* 4. Brand Segment (Only if multibrand/author) */}
                 {(isAuthor || brands.length > 1) && (
                     <>
                         <Button
@@ -194,7 +421,7 @@ export default function UnifiedFilterBar({
                     </>
                 )}
 
-                {/* Division/Filters Segment */}
+                {/* 5. Division/Filters Segment */}
                 <Button
                     onClick={handleFilterClick}
                     endIcon={<ChevronDown size={14} />}
@@ -443,200 +670,7 @@ export default function UnifiedFilterBar({
                         </Accordion>
                     )}
 
-                    {/* UTM PARAMETERS Section */}
-                    {allowedFilters.utm && (
-                        <Accordion
-                            expanded={expandedAccordion === 'utm'}
-                            onChange={handleAccordionChange('utm')}
-                            disableGutters
-                            elevation={0}
-                            sx={{
-                                bgcolor: 'transparent',
-                                '&:before': { display: 'none' }
-                            }}
-                        >
-                            <AccordionSummary
-                                expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
-                                sx={{
-                                    px: 2,
-                                    minHeight: 44,
-                                    '& .MuiAccordionSummary-content': { my: 1 }
-                                }}
-                            >
-                                <Typography sx={{ fontSize: '0.75rem', fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                    Utm Parameters
-                                </Typography>
-                            </AccordionSummary>
-                            <AccordionDetails sx={{ px: 2, pb: 2, pt: 0 }}>
-                                <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                                    {Object.entries(utmOptions?.utm_tree || {}).map(([source, sourceData]) => {
-                                        const isSourceSelected = (utm?.source || []).includes(source);
-                                        return (
-                                            <Accordion
-                                                key={source}
-                                                disableGutters
-                                                elevation={0}
-                                                sx={{
-                                                    bgcolor: 'transparent',
-                                                    '&:before': { display: 'none' },
-                                                    borderBottom: '1px solid',
-                                                    borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'
-                                                }}
-                                            >
-                                                <AccordionSummary
-                                                    expandIcon={<ExpandMoreIcon sx={{ fontSize: 16 }} />}
-                                                    sx={{
-                                                        minHeight: 36,
-                                                        px: 0,
-                                                        '& .MuiAccordionSummary-content': { my: 0.5, alignItems: 'center' }
-                                                    }}
-                                                >
-                                                    <Checkbox
-                                                        size="small"
-                                                        checked={isSourceSelected}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        onChange={(e) => {
-                                                            const newSources = e.target.checked
-                                                                ? [...(utm?.source || []), source]
-                                                                : (utm?.source || []).filter(s => s !== source);
-                                                            onUtmChange({ ...utm, source: newSources });
-                                                        }}
-                                                    />
-                                                    <Typography sx={{ fontSize: '0.8rem', fontWeight: isSourceSelected ? 600 : 400 }}>{source}</Typography>
-                                                </AccordionSummary>
-                                                <AccordionDetails sx={{ px: 2, pb: 1, pt: 0 }}>
-                                                    {Object.entries(sourceData.mediums || {}).map(([medium, mediumData]) => {
-                                                        const isMediumSelected = (utm?.medium || []).includes(medium);
-                                                        return (
-                                                            <Accordion
-                                                                key={medium}
-                                                                disableGutters
-                                                                elevation={0}
-                                                                sx={{ bgcolor: 'transparent', '&:before': { display: 'none' } }}
-                                                            >
-                                                                <AccordionSummary
-                                                                    expandIcon={<ExpandMoreIcon sx={{ fontSize: 14 }} />}
-                                                                    sx={{
-                                                                        minHeight: 32,
-                                                                        px: 0,
-                                                                        '& .MuiAccordionSummary-content': { my: 0.5, alignItems: 'center' }
-                                                                    }}
-                                                                >
-                                                                    <Checkbox
-                                                                        size="small"
-                                                                        checked={isMediumSelected}
-                                                                        onClick={(e) => e.stopPropagation()}
-                                                                        onChange={(e) => {
-                                                                            const newMediums = e.target.checked
-                                                                                ? [...(utm?.medium || []), medium]
-                                                                                : (utm?.medium || []).filter(m => m !== medium);
-                                                                            onUtmChange({ ...utm, medium: newMediums });
-                                                                        }}
-                                                                    />
-                                                                    <Typography sx={{ fontSize: '0.75rem', fontWeight: isMediumSelected ? 600 : 400 }}>{medium}</Typography>
-                                                                </AccordionSummary>
-                                                                <AccordionDetails sx={{ px: 2, pb: 1, pt: 0 }}>
-                                                                    {Object.entries(mediumData.campaigns || {}).map(([campaign, campaignData]) => {
-                                                                        const isCampaignSelected = (utm?.campaign || []).includes(campaign);
-                                                                        return (
-                                                                            <Accordion
-                                                                                key={campaign}
-                                                                                disableGutters
-                                                                                elevation={0}
-                                                                                sx={{ bgcolor: 'transparent', '&:before': { display: 'none' } }}
-                                                                            >
-                                                                                <AccordionSummary
-                                                                                    expandIcon={<ExpandMoreIcon sx={{ fontSize: 13 }} />}
-                                                                                    sx={{
-                                                                                        minHeight: 30,
-                                                                                        px: 0,
-                                                                                        '& .MuiAccordionSummary-content': { my: 0.5, alignItems: 'center' }
-                                                                                    }}
-                                                                                >
-                                                                                    <Checkbox
-                                                                                        size="small"
-                                                                                        checked={isCampaignSelected}
-                                                                                        onClick={(e) => e.stopPropagation()}
-                                                                                        onChange={(e) => {
-                                                                                            const newCampaigns = e.target.checked
-                                                                                                ? [...(utm?.campaign || []), campaign]
-                                                                                                : (utm?.campaign || []).filter(c => c !== campaign);
-                                                                                            onUtmChange({ ...utm, campaign: newCampaigns });
-                                                                                        }}
-                                                                                    />
-                                                                                    <Typography sx={{ fontSize: '0.75rem', fontWeight: isCampaignSelected ? 600 : 400 }}>{campaign}</Typography>
-                                                                                </AccordionSummary>
-                                                                                <AccordionDetails sx={{ px: 2, pb: 1, pt: 0 }}>
-                                                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                                                                        {campaignData.terms?.length > 0 && (
-                                                                                            <Box>
-                                                                                                <Typography variant="overline" sx={{ fontSize: '0.6rem', color: 'text.secondary' }}>Terms</Typography>
-                                                                                                <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                                                                                                    {campaignData.terms.map(term => (
-                                                                                                        <FormControlLabel
-                                                                                                            key={term}
-                                                                                                            control={
-                                                                                                                <Checkbox
-                                                                                                                    size="small"
-                                                                                                                    checked={(utm?.term || []).includes(term)}
-                                                                                                                    onChange={(e) => {
-                                                                                                                        const next = e.target.checked
-                                                                                                                            ? [...(utm?.term || []), term]
-                                                                                                                            : (utm?.term || []).filter(x => x !== term);
-                                                                                                                        onUtmChange({ ...utm, term: next });
-                                                                                                                    }}
-                                                                                                                />
-                                                                                                            }
-                                                                                                            label={<Typography sx={{ fontSize: '0.7rem' }}>{term}</Typography>}
-                                                                                                            sx={{ ml: 0 }}
-                                                                                                        />
-                                                                                                    ))}
-                                                                                                </Box>
-                                                                                            </Box>
-                                                                                        )}
-                                                                                        {campaignData.contents?.length > 0 && (
-                                                                                            <Box>
-                                                                                                <Typography variant="overline" sx={{ fontSize: '0.6rem', color: 'text.secondary' }}>Content</Typography>
-                                                                                                <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                                                                                                    {campaignData.contents.map(ct => (
-                                                                                                        <FormControlLabel
-                                                                                                            key={ct}
-                                                                                                            control={
-                                                                                                                <Checkbox
-                                                                                                                    size="small"
-                                                                                                                    checked={(utm?.content || []).includes(ct)}
-                                                                                                                    onChange={(e) => {
-                                                                                                                        const next = e.target.checked
-                                                                                                                            ? [...(utm?.content || []), ct]
-                                                                                                                            : (utm?.content || []).filter(x => x !== ct);
-                                                                                                                        onUtmChange({ ...utm, content: next });
-                                                                                                                    }}
-                                                                                                                />
-                                                                                                            }
-                                                                                                            label={<Typography sx={{ fontSize: '0.7rem' }}>{ct}</Typography>}
-                                                                                                            sx={{ ml: 0 }}
-                                                                                                        />
-                                                                                                    ))}
-                                                                                                </Box>
-                                                                                            </Box>
-                                                                                        )}
-                                                                                    </Box>
-                                                                                </AccordionDetails>
-                                                                            </Accordion>
-                                                                        );
-                                                                    })}
-                                                                </AccordionDetails>
-                                                            </Accordion>
-                                                        );
-                                                    })}
-                                                </AccordionDetails>
-                                            </Accordion>
-                                        );
-                                    })}
-                                </Box>
-                            </AccordionDetails>
-                        </Accordion>
-                    )}
+                    {/* UTM PARAMETERS Link (Moved to ball button) */}
                 </Box>
 
                 <Box sx={{ p: 2, pt: 1, borderTop: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}>
@@ -665,6 +699,93 @@ export default function UnifiedFilterBar({
                         CLEAR ALL FILTERS
                     </Button>
                 </Box>
+            </Popover>
+
+            {/* UTM Source Popover */}
+            <Popover
+                open={Boolean(utmSourceAnchor)}
+                anchorEl={utmSourceAnchor}
+                onClose={handleUtmSourceClose}
+                TransitionComponent={Fade}
+                transitionDuration={300}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                PaperProps={{
+                    sx: {
+                        mt: 1, borderRadius: 3, width: 200,
+                        backdropFilter: 'blur(12px)',
+                        backgroundColor: isDark ? 'rgba(30, 30, 30, 0.7)' : 'rgba(255, 255, 255, 0.85)',
+                        border: '1px solid',
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+                        boxShadow: isDark ? '0 8px 32px rgba(0, 0, 0, 0.5)' : '0 8px 32px rgba(0, 0, 0, 0.1)',
+                    }
+                }}
+            >
+                <StaticSearchableList
+                    label="UTM Source"
+                    options={utmSourceOptions}
+                    value={utm?.source || []}
+                    onChange={(val) => onUtmChange({ ...utm, source: val })}
+                    isDark={isDark}
+                />
+            </Popover>
+
+            {/* UTM Medium Popover */}
+            <Popover
+                open={Boolean(utmMediumAnchor)}
+                anchorEl={utmMediumAnchor}
+                onClose={handleUtmMediumClose}
+                TransitionComponent={Fade}
+                transitionDuration={300}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                PaperProps={{
+                    sx: {
+                        mt: 1, borderRadius: 3, width: 200,
+                        backdropFilter: 'blur(12px)',
+                        backgroundColor: isDark ? 'rgba(30, 30, 30, 0.7)' : 'rgba(255, 255, 255, 0.85)',
+                        border: '1px solid',
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+                        boxShadow: isDark ? '0 8px 32px rgba(0, 0, 0, 0.5)' : '0 8px 32px rgba(0, 0, 0, 0.1)',
+                    }
+                }}
+            >
+                <StaticSearchableList
+                    label="UTM Medium"
+                    options={utmMediumOptions}
+                    value={utm?.medium || []}
+                    onChange={(val) => onUtmChange({ ...utm, medium: val })}
+                    isDark={isDark}
+                />
+            </Popover>
+
+            {/* UTM Campaign Popover */}
+            <Popover
+                open={Boolean(utmCampaignAnchor)}
+                anchorEl={utmCampaignAnchor}
+                onClose={handleUtmCampaignClose}
+                TransitionComponent={Fade}
+                transitionDuration={300}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                PaperProps={{
+                    sx: {
+                        mt: 1, borderRadius: 3, width: 200,
+                        backdropFilter: 'blur(12px)',
+                        backgroundColor: isDark ? 'rgba(30, 30, 30, 0.7)' : 'rgba(255, 255, 255, 0.85)',
+                        border: '1px solid',
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+                        boxShadow: isDark ? '0 8px 32px rgba(0, 0, 0, 0.5)' : '0 8px 32px rgba(0, 0, 0, 0.1)',
+                    }
+                }}
+            >
+                <StaticSearchableList
+                    label="UTM Campaign"
+                    options={utmCampaignOptions}
+                    value={utm?.campaign || []}
+                    onChange={(val) => onUtmChange({ ...utm, campaign: val })}
+                    isDark={isDark}
+                />
             </Popover>
         </Box>
     );

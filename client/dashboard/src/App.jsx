@@ -39,6 +39,7 @@ import Footer from './components/Footer.jsx';
 
 const KPIs = lazy(() => import('./components/KPIs.jsx'));
 const FunnelChart = lazy(() => import('./components/charts/FunnelChart.jsx'));
+const ModeOfPayment = lazy(() => import('./components/ModeOfPayment.jsx'));
 const OrderSplit = lazy(() => import('./components/OrderSplit.jsx'));
 const PaymentSalesSplit = lazy(() => import('./components/PaymentSalesSplit.jsx'));
 const TrafficSourceSplit = lazy(() => import('./components/TrafficSourceSplit.jsx'));
@@ -998,9 +999,20 @@ export default function App() {
                                     productId={productSelection.id}
                                     productLabel={productSelection.label}
                                     utmOptions={utmOptions}
-                                    showRow={2}
+                                    showRow={isMobile ? 'sessions_atc' : 2}
                                   />
                                   <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+                                  {isMobile && (
+                                    <KPIs
+                                      query={metricsQuery}
+                                      selectedMetric={selectedMetric}
+                                      onSelectMetric={handleSelectMetric}
+                                      productId={productSelection.id}
+                                      productLabel={productSelection.label}
+                                      utmOptions={utmOptions}
+                                      showRow="web_perf_cvr"
+                                    />
+                                  )}
                                 </Stack>
                               </Grid>
 
@@ -1012,7 +1024,32 @@ export default function App() {
                               )}
                             </Grid>
 
-                            <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
+                            {hasPermission('traffic_split') && <TrafficSourceSplit query={metricsQuery} />}
+                          </Stack>
+                        </Suspense>
+                      ) : (
+                        <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to load dashboard metrics.
+                          </Typography>
+                        </Paper>
+                      )
+                    )}
+
+                    {/* Author-only tabs */}
+                    {isAuthor && authorTab === 'access' && (
+                      <Suspense fallback={<SectionFallback count={2} />}>
+                        <Stack spacing={{ xs: 2, md: 3 }}>
+                          <AccessControlCard />
+                        </Stack>
+                      </Suspense>
+                    )}
+
+                    {isAuthor && authorTab === 'product-conversion' && (
+                      hasBrand ? (
+                        <Suspense fallback={<SectionFallback />}>
+                          <Stack spacing={{ xs: 2, md: 3 }}>
+                            <Typography variant="h6" sx={{ color: darkMode === 'dark' ? 'text.primary' : 'text.secondary', fontWeight: 600, mt: 1 }}>Funnels</Typography>
                             {funnelData?.stats ? (
                               <Suspense fallback={<Skeleton variant="rounded" width="100%" height={250} />}>
                                 <FunnelChart
@@ -1039,38 +1076,15 @@ export default function App() {
                             ) : (
                               <Skeleton variant="rounded" width="100%" height={250} />
                             )}
-                            {hasPermission('payment_split_order') && <OrderSplit query={metricsQuery} />}
-                            {hasPermission('payment_split_sales') && <PaymentSalesSplit query={metricsQuery} />}
-                            {hasPermission('traffic_split') && <TrafficSourceSplit query={metricsQuery} />}
+                            {(hasPermission('payment_split_order') || hasPermission('payment_split_sales')) && <ModeOfPayment query={metricsQuery} />}
+
+                            <ProductConversionTable
+                              brandKey={activeBrandKey}
+                              brands={authorBrands}
+                              onBrandChange={handleAuthorBrandChange}
+                              brandsLoading={authorBrandsLoading}
+                            />
                           </Stack>
-                        </Suspense>
-                      ) : (
-                        <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                          <Typography variant="body2" color="text.secondary">
-                            Select a brand to load dashboard metrics.
-                          </Typography>
-                        </Paper>
-                      )
-                    )}
-
-                    {/* Author-only tabs */}
-                    {isAuthor && authorTab === 'access' && (
-                      <Suspense fallback={<SectionFallback count={2} />}>
-                        <Stack spacing={{ xs: 2, md: 3 }}>
-                          <AccessControlCard />
-                        </Stack>
-                      </Suspense>
-                    )}
-
-                    {isAuthor && authorTab === 'product-conversion' && (
-                      hasBrand ? (
-                        <Suspense fallback={<SectionFallback />}>
-                          <ProductConversionTable
-                            brandKey={activeBrandKey}
-                            brands={authorBrands}
-                            onBrandChange={handleAuthorBrandChange}
-                            brandsLoading={authorBrandsLoading}
-                          />
                         </Suspense>
                       ) : (
                         <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
