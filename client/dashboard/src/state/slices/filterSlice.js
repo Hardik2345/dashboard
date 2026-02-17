@@ -41,7 +41,7 @@ function loadInitialUtm() {
   } catch {
     // ignore
   }
-  return { source: '', medium: '', campaign: '' };
+  return { source: [], medium: [], campaign: [], term: [], content: [] };
 }
 
 const filterSlice = createSlice({

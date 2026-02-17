@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Card, CardContent, Typography, Skeleton, Stack, useTheme, Select, MenuItem, FormControl, Box, Grid } from '@mui/material';
+import { ArrowDropUp, ArrowDropDown } from '@mui/icons-material';
 import { Doughnut } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -7,6 +8,7 @@ import {
     Tooltip as ChartTooltip,
 } from 'chart.js';
 import { getTrafficSourceSplit } from '../lib/api.js';
+import dayjs from 'dayjs';
 
 ChartJS.register(ArcElement, ChartTooltip);
 
@@ -70,7 +72,9 @@ export default function TrafficSourceSplit({ query }) {
         setLoading(true);
 
         getTrafficSourceSplit(query)
-            .then(res => { if (!cancelled) { setData(res); setLoading(false); } })
+            .then(res => {
+                if (!cancelled) { setData(res); setLoading(false); }
+            })
             .catch(() => setLoading(false));
         return () => { cancelled = true; };
     }, [query]);
@@ -83,12 +87,34 @@ export default function TrafficSourceSplit({ query }) {
     const directVal = validData ? getMetricValue(data.direct) : 0;
     const othersVal = validData ? getMetricValue(data.others) : 0;
 
-    // Debug data
-    useEffect(() => {
-        if (data) {
-            console.log("TrafficSplit Data:", data);
+    const getDelta = (sourceObj) => {
+        if (!sourceObj || !validData) return undefined;
+        const d = metric === 'sessions' ? sourceObj.delta : sourceObj.atc_delta;
+        // If atc_delta is missing but we are in atc_sessions mode, it might be 0 or backend not updated
+        if (d === undefined || d === null) return 0;
+        return d;
+    };
+
+
+    // Derived comparison range
+    const comparisonRange = useMemo(() => {
+        if (data?.prev_range) return data.prev_range;
+        if (!query?.start || !query?.end) return null;
+        try {
+            const s = dayjs(query.start);
+            const e = dayjs(query.end);
+            const diffDays = e.diff(s, 'day') + 1;
+            const pEnd = s.subtract(1, 'day');
+            const pStart = pEnd.subtract(diffDays - 1, 'day');
+            return {
+                start: pStart.format('YYYY-MM-DD'),
+                end: pEnd.format('YYYY-MM-DD')
+            };
+        } catch (err) {
+            console.error("Error deriving comparison range:", err);
+            return null;
         }
-    }, [data]);
+    }, [data?.prev_range, query?.start, query?.end]);
 
     const total = metaVal + googleVal + directVal + othersVal;
     const empty = total === 0;
@@ -243,10 +269,14 @@ export default function TrafficSourceSplit({ query }) {
         return nfCompact.format(Math.round(count));
     };
 
-    const DetailItem = ({ label, value, color }) => {
+    const DetailItem = ({ label, value, color, delta }) => {
         // We calculate pct based on current valid total, not animated total to avoid jumpiness
         const pct = getPercent(value);
         const animatedValue = useCountUp(value);
+
+        const deltaColor = delta > 0 ? '#00C853' : delta < 0 ? '#FF1744' : 'text.secondary';
+        const deltaIcon = delta > 0 ? '+' : '';
+        const formattedDelta = delta !== undefined && delta !== null ? `${deltaIcon}${Math.round(delta)}%` : '-';
 
         return (
             <Box
@@ -270,20 +300,34 @@ export default function TrafficSourceSplit({ query }) {
                     }}
                 />
 
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Stack spacing={0.25}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} sx={{ flexWrap: 'wrap' }}>
+                    <Stack spacing={0.25} sx={{ minWidth: 'fit-content' }}>
                         <Typography variant="body2" color="text.secondary" fontWeight={500} sx={{ fontSize: '0.8rem' }}>{label}</Typography>
-                        <Stack direction="row" alignItems="baseline" spacing={0.5}>
-                            <Typography variant="subtitle1" fontWeight={700} sx={{ fontSize: '1rem' }}>
+                        <Stack direction="row" alignItems="baseline" spacing={0.5} sx={{ flexWrap: 'wrap' }}>
+                            <Typography variant="subtitle1" fontWeight={700} sx={{ fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
                                 {nfCompact.format(Math.round(animatedValue))}
                             </Typography>
-                            <Typography variant="caption" color="text.secondary">
+                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                                 ({nfPct1.format(pct)}%)
                             </Typography>
                         </Stack>
                     </Stack>
-                    <Box sx={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: `${color}15` }}>
-                        <Typography variant="caption" fontWeight={700} sx={{ color: color }}>{Math.round(pct)}%</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.8, flexShrink: 0, flexWrap: 'nowrap' }}>
+                        <Box sx={{ width: 34, height: 24, borderRadius: '30%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: isDark ? 'rgba(102, 119, 121, 0.44)' : 'rgba(102, 119, 121, 0.06)', flexShrink: 0 }}>
+                            <Typography variant="caption" fontWeight={700} sx={{ color: 'text.secondary', fontSize: '0.7rem' }}>{Math.round(pct)}%</Typography>
+                        </Box>
+                        {delta !== undefined && (
+                            <Stack direction="row" alignItems="center" spacing={0} sx={{ bgcolor: delta > 0 ? '#00c85315' : delta < 0 ? '#ff174415' : 'transparent', px: 0.5, py: 0.2, borderRadius: 1 }}>
+                                {delta > 0 ? (
+                                    <ArrowDropUp sx={{ color: deltaColor, fontSize: '1.1rem', ml: -0.5 }} />
+                                ) : delta < 0 ? (
+                                    <ArrowDropDown sx={{ color: deltaColor, fontSize: '1.1rem', ml: -0.5 }} />
+                                ) : null}
+                                <Typography variant="caption" fontWeight={700} sx={{ color: deltaColor, fontSize: '0.75rem' }}>
+                                    {Math.abs(Math.round(delta))}%
+                                </Typography>
+                            </Stack>
+                        )}
                     </Box>
                 </Stack>
             </Box>
@@ -293,35 +337,52 @@ export default function TrafficSourceSplit({ query }) {
     return (
         <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', height: '100%' }}>
             <CardContent sx={{ p: 2.5 }}> {/* Reduced main padding */}
-                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
-                    <Stack spacing={0.25}>
-                        <Typography variant="h6" fontWeight={700} sx={{ fontSize: '1.1rem' }}>Traffic Split</Typography>
-                        <Typography variant="caption" color="text.secondary">By Source Group</Typography>
-                    </Stack>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 3 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 1 }}>
+                        <Box sx={{ flex: '1 1 auto', minWidth: '150px' }}>
+                            <Typography variant="h6" fontWeight={700} sx={{ fontSize: '1.1rem', lineHeight: 1.2 }}>Traffic Split</Typography>
+                            <Typography variant="caption" color="text.secondary" fontWeight={500} sx={{ display: 'block', mt: 0.25 }}>By Source Group</Typography>
+                        </Box>
 
-                    <FormControl size="small">
-                        <Select
-                            value={metric}
-                            onChange={(e) => setMetric(e.target.value)}
-                            disableUnderline
-                            variant="standard"
-                            sx={{
-                                fontSize: '0.8125rem',
-                                fontWeight: 600,
-                                bgcolor: theme.palette.action.selected,
-                                px: 2,
-                                py: 0.5,
-                                borderRadius: 8,
-                                '& .MuiSelect-select': { py: 0, pr: '24px !important' },
-                                '&:hover': { bgcolor: theme.palette.action.hover },
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            <MenuItem value="sessions">Sessions</MenuItem>
-                            <MenuItem value="atc_sessions">ATC Sessions</MenuItem>
-                        </Select>
-                    </FormControl>
-                </Stack>
+                        <FormControl size="small" sx={{ minWidth: 100 }}>
+                            <Select
+                                value={metric}
+                                onChange={(e) => setMetric(e.target.value)}
+                                sx={{
+                                    height: 32,
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    borderRadius: 1.5,
+                                    bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                                    '.MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                    '&:hover .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                }}
+                            >
+                                <MenuItem value="sessions" sx={{ fontSize: '0.75rem' }}>Sessions</MenuItem>
+                                <MenuItem value="atc_sessions" sx={{ fontSize: '0.75rem' }}>ATC Sessions</MenuItem>
+                            </Select>
+                        </FormControl>
+                    </Box>
+
+                    {comparisonRange && query?.start && query?.end && (
+                        <Box>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', px: 1, py: 0.4, borderRadius: 1.5, display: 'inline-block', fontSize: '0.7rem' }}>
+                                {(() => {
+                                    const fmt = (s, e) => {
+                                        const start = dayjs(s);
+                                        const end = dayjs(e);
+                                        if (start.isSame(end, 'day')) {
+                                            return start.format('MMM D');
+                                        }
+                                        return `${start.format('MMM D')} - ${end.format('MMM D')}`;
+                                    };
+                                    return `${fmt(query.start, query.end)} vs ${fmt(comparisonRange.start, comparisonRange.end)}`;
+                                })()}
+                            </Typography>
+                        </Box>
+                    )}
+                </Box>
 
                 {loading ? (
                     <Skeleton variant="rounded" width="100%" height={240} />
@@ -374,16 +435,16 @@ export default function TrafficSourceSplit({ query }) {
                         <Grid item xs={12} md={7}>
                             <Grid container spacing={1.5}> {/* Reduced inner spacing */}
                                 <Grid item xs={6}>
-                                    <DetailItem label="Meta" value={metaVal} color={colors.meta} />
+                                    <DetailItem label="Meta" value={metaVal} color={colors.meta} delta={getDelta(data.meta)} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Google" value={googleVal} color={colors.google} />
+                                    <DetailItem label="Google" value={googleVal} color={colors.google} delta={getDelta(data.google)} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Direct" value={directVal} color={colors.direct} />
+                                    <DetailItem label="Direct" value={directVal} color={colors.direct} delta={getDelta(data.direct)} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Others" value={othersVal} color={colors.others} />
+                                    <DetailItem label="Others" value={othersVal} color={colors.others} delta={getDelta(data.others)} />
                                 </Grid>
                             </Grid>
                         </Grid>

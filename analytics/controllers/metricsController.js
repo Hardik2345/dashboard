@@ -1111,57 +1111,89 @@ function buildMetricsController() {
 
         console.log(`[TrafficSplit] Request for ${start} to ${end}`);
 
+        // Calculate previous directory
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+        const diffTime = Math.abs(endDate - startDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // inclusive days
+
+        const prevEnd = new Date(startDate);
+        prevEnd.setDate(prevEnd.getDate() - 1);
+        const prevStart = new Date(prevEnd);
+        prevStart.setDate(prevStart.getDate() - diffDays + 1);
+
+        const formatDate = (d) => d.toISOString().split('T')[0];
+        const pStart = formatDate(prevStart);
+        const pEnd = formatDate(prevEnd);
+
+        console.log(`[TrafficSplit] Current: ${start} to ${end}, Previous: ${pStart} to ${pEnd}`);
+
         const sql = `
           SELECT 
             utm_source, 
             utm_source_sessions as sessions, 
             utm_source_atc_sessions as atc_sessions,
-            utm_names
+            utm_names,
+            date
           FROM overall_utm_summary
-          WHERE date >= ? AND date <= ?
+          WHERE (date >= ? AND date <= ?) OR (date >= ? AND date <= ?)
         `;
 
         const rows = await conn.query(sql, {
           type: QueryTypes.SELECT,
-          replacements: [start, end]
+          replacements: [start, end, pStart, pEnd]
         });
         console.log(`[TrafficSplit] Rows found: ${rows.length}`);
 
         // Normalize and aggregate
-        let meta = { sessions: 0, atc_sessions: 0 };
-        let google = { sessions: 0, atc_sessions: 0 };
-        let direct = { sessions: 0, atc_sessions: 0 };
-        let others = { sessions: 0, atc_sessions: 0 };
+        const initStats = () => ({ sessions: 0, atc_sessions: 0 });
 
-        // Detailed breakdown for Others
+        let current = {
+          meta: initStats(), google: initStats(), direct: initStats(), others: initStats()
+        };
+        let previous = {
+          meta: initStats(), google: initStats(), direct: initStats(), others: initStats()
+        };
+
+        // Detailed breakdown for Others (Current Period Only)
         const othersMap = new Map(); // name -> { sessions, atc }
         const metaMap = new Map();
 
-        rows.forEach(r => {
+        rows.forEach((r, idx) => {
+          let rowDate = r.date;
+          if (rowDate instanceof Date) {
+            // Add 12 hours to safely cross timezone boundaries (e.g. 18:30 prev day -> 06:30 current day)
+            const adjustedDate = new Date(rowDate.getTime() + 12 * 60 * 60 * 1000);
+            rowDate = adjustedDate.toISOString().split('T')[0];
+          }
+
+          const isCurrent = rowDate >= start && rowDate <= end;
+          const targetBucket = isCurrent ? current : previous;
+
           const source = (r.utm_source || '').toLowerCase().trim();
           const sess = Number(r.sessions || 0);
           const atc = Number(r.atc_sessions || 0);
 
+          let category = 'others';
           let isOthers = false;
           let isMeta = false;
 
           if (source === 'meta' || source.includes('facebook') || source.includes('instagram')) {
-            meta.sessions += sess;
-            meta.atc_sessions += atc;
+            category = 'meta';
             isMeta = true;
           } else if (source === 'google' || source.includes('google')) {
-            google.sessions += sess;
-            google.atc_sessions += atc;
+            category = 'google';
           } else if (source === 'direct' || source === '(direct)' || source === '(none)') {
-            direct.sessions += sess;
-            direct.atc_sessions += atc;
+            category = 'direct';
           } else {
-            others.sessions += sess;
-            others.atc_sessions += atc;
             isOthers = true;
           }
 
-          if ((isOthers || isMeta) && r.utm_names) {
+          targetBucket[category].sessions += sess;
+          targetBucket[category].atc_sessions += atc;
+
+          // Process breakdown ONLY for current period
+          if (isCurrent && (isOthers || isMeta) && r.utm_names) {
             try {
               const details = typeof r.utm_names === 'string' ? JSON.parse(r.utm_names) : r.utm_names;
               if (Array.isArray(details)) {
@@ -1197,6 +1229,24 @@ function buildMetricsController() {
           .sort((a, b) => b.sessions - a.sessions)
           .slice(0, 15); // Top 15
 
+        // Calculate Deltas
+        const calcDelta = (curr, prev) => {
+          if (prev === 0) return curr > 0 ? 100 : 0; // If prev is 0 and curr > 0, treat as 100% growth (or just 100 to show positive)
+          return ((curr - prev) / prev) * 100;
+        };
+
+        console.log(`[TrafficSplit] Meta ATCs (Curr/Prev): ${current.meta.atc_sessions} / ${previous.meta.atc_sessions}`);
+        const addDelta = (cat) => ({
+          ...current[cat],
+          delta: calcDelta(current[cat].sessions, previous[cat].sessions),
+          atc_delta: calcDelta(current[cat].atc_sessions, previous[cat].atc_sessions)
+        });
+
+        const meta = addDelta('meta');
+        const google = addDelta('google');
+        const direct = addDelta('direct');
+        const others = addDelta('others');
+
         const total_sessions = meta.sessions + google.sessions + direct.sessions + others.sessions;
         const total_atc = meta.atc_sessions + google.atc_sessions + direct.atc_sessions + others.atc_sessions;
 
@@ -1208,7 +1258,8 @@ function buildMetricsController() {
           others_breakdown: othersBreakdown,
           meta_breakdown: metaBreakdown,
           total_sessions,
-          total_atc_sessions: total_atc
+          total_atc_sessions: total_atc,
+          prev_range: { start: pStart, end: pEnd }
         });
 
       } catch (e) {
@@ -3412,64 +3463,55 @@ function buildMetricsController() {
               return '';
             };
 
-            // 1. Base Logic
-            let sql = `
-              WITH base AS (
-                SELECT utm_source, utm_medium, utm_campaign, order_app_name
-                FROM shopify_orders
-                WHERE created_date >= ? AND created_date <= ?
-              )
-              SELECT 'utm_source' AS field, utm_source AS val FROM base
-                WHERE utm_source IS NOT NULL AND utm_source <> '' GROUP BY utm_source
-              UNION ALL
+            // 1. Fetch flat Sales Channel options
+            const channelSql = `
+              SELECT DISTINCT order_app_name AS val 
+              FROM shopify_orders 
+              WHERE created_date >= ? AND created_date <= ?
+                AND order_app_name IS NOT NULL AND order_app_name <> ''
+              ORDER BY val
             `;
+            const channelRows = await conn.query(channelSql, {
+              type: QueryTypes.SELECT,
+              replacements: [start, end]
+            });
 
-            // 2. Medium: Filter by Source
-            const sourceFilterClause = getSourceFilter();
-            sql += `
-              SELECT 'utm_medium' AS field, utm_medium AS val FROM base
-                WHERE utm_medium IS NOT NULL AND utm_medium <> '' ${sourceFilterClause} GROUP BY utm_medium
-              UNION ALL
+            // 2. Fetch Hierarchical UTM data
+            const utmSql = `
+              SELECT DISTINCT utm_source, utm_medium, utm_campaign, utm_term, utm_content
+              FROM shopify_orders 
+              WHERE created_date >= ? AND created_date <= ?
+                AND utm_source IS NOT NULL AND utm_source <> ''
+              ORDER BY utm_source, utm_medium, utm_campaign, utm_term, utm_content
             `;
+            const utmRows = await conn.query(utmSql, {
+              type: QueryTypes.SELECT,
+              replacements: [start, end]
+            });
 
-            // 3. Campaign: Filter by Source
-            // Rerun the logic to push params again (since placeholders must match order)
-            let campaignSourceFilter = '';
-            if (filters.utm_source) {
-              const vals = Array.isArray(filters.utm_source) ? filters.utm_source : [filters.utm_source];
-              if (vals.length > 0) {
-                const placeholders = vals.map(() => '?').join(', ');
-                replacements.push(...vals);
-                campaignSourceFilter = `AND utm_source IN (${placeholders})`;
+            // 3. Build UTM Tree
+            const utmTree = {};
+            for (const row of utmRows) {
+              const { utm_source: s, utm_medium: m, utm_campaign: c, utm_term: t, utm_content: ct } = row;
+              if (!s) continue;
+              if (!utmTree[s]) utmTree[s] = { mediums: {} };
+              if (m) {
+                if (!utmTree[s].mediums[m]) utmTree[s].mediums[m] = { campaigns: {} };
+                if (c) {
+                  if (!utmTree[s].mediums[m].campaigns[c]) utmTree[s].mediums[m].campaigns[c] = { terms: [], contents: [] };
+                  if (t && !utmTree[s].mediums[m].campaigns[c].terms.includes(t)) {
+                    utmTree[s].mediums[m].campaigns[c].terms.push(t);
+                  }
+                  if (ct && !utmTree[s].mediums[m].campaigns[c].contents.includes(ct)) {
+                    utmTree[s].mediums[m].campaigns[c].contents.push(ct);
+                  }
+                }
               }
             }
 
-            sql += `
-              SELECT 'utm_campaign' AS field, utm_campaign AS val FROM base
-                WHERE utm_campaign IS NOT NULL AND utm_campaign <> '' ${campaignSourceFilter} GROUP BY utm_campaign
-              UNION ALL
-              SELECT 'sales_channel' AS field, order_app_name AS val FROM base
-                WHERE order_app_name IS NOT NULL AND order_app_name <> '' GROUP BY order_app_name
-              ORDER BY field, val
-              LIMIT 4000
-            `;
-
-            const optionRows = await conn.query(sql, {
-              type: QueryTypes.SELECT,
-              replacements: replacements
-            });
-
-            // Partition results by field
-            const opts = { utm_source: [], utm_medium: [], utm_campaign: [], sales_channel: [] };
-            for (const row of optionRows) {
-              if (opts[row.field]) opts[row.field].push(row.val);
-            }
-
             filterOptions = {
-              utm_source: opts.utm_source.sort(),
-              utm_medium: opts.utm_medium.sort(),
-              utm_campaign: opts.utm_campaign.sort(),
-              sales_channel: opts.sales_channel.sort(),
+              sales_channel: channelRows.map(r => r.val),
+              utm_tree: utmTree
             };
             mark('filter_options', s);
           }
