@@ -20,12 +20,16 @@ import {
     Checkbox,
     FormControlLabel,
     Stack,
+    TextField,
+    InputAdornment,
 } from '@mui/material';
 import {
     CalendarDays,
     ChevronDown,
     Download,
     Filter,
+    Search,
+    X,
 } from 'lucide-react';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { DatePicker } from '@shopify/polaris';
@@ -77,6 +81,7 @@ export default function UnifiedFilterBar({
     const [utmCampaignAnchor, setUtmCampaignAnchor] = useState(null);
     const [utmExpanded, setUtmExpanded] = useState(false); // Toggle visibility of UTM settings
     const [expandedAccordion, setExpandedAccordion] = useState('channel'); // Default expanded
+    const [productSearch, setProductSearch] = useState('');
 
     const handleAccordionChange = (panel) => (event, isExpanded) => {
         setExpandedAccordion(isExpanded ? panel : false);
@@ -129,8 +134,8 @@ export default function UnifiedFilterBar({
     const handleFilterClose = () => setFilterAnchor(null);
 
     const activeFilterCount = [
-        salesChannel,
-        productValue?.id // Product is active if ID exists and not default
+        ...(Array.isArray(salesChannel) ? salesChannel : [salesChannel]),
+        ...(Array.isArray(productValue) ? productValue : [productValue])?.map(p => p?.id)
     ].filter(Boolean).length;
 
     const utmCount = [
@@ -612,15 +617,51 @@ export default function UnifiedFilterBar({
                                     Channel
                                 </Typography>
                             </AccordionSummary>
-                            <AccordionDetails sx={{ px: 2, pb: 2, pt: 0 }}>
-                                <SearchableSelect
-                                    label="Sales Channel"
-                                    options={['Online Store', 'Point of Sale', 'Draft Orders', 'Google', 'Facebook']}
-                                    value={salesChannel}
-                                    onChange={onSalesChannelChange}
-                                    sx={{ width: '100%' }}
-                                    size="small"
-                                />
+                            <AccordionDetails sx={{ px: 0, pb: 1, pt: 0 }}>
+                                <List dense sx={{ py: 0 }}>
+                                    {(utmOptions?.sales_channel || []).map((channel) => {
+                                        const selectedChannels = Array.isArray(salesChannel) ? salesChannel : (salesChannel ? [salesChannel] : []);
+                                        const isSelected = selectedChannels.includes(channel);
+                                        return (
+                                            <ListItemButton
+                                                key={channel}
+                                                dense
+                                                onClick={() => {
+                                                    const newChannels = isSelected
+                                                        ? selectedChannels.filter(c => c !== channel)
+                                                        : [...selectedChannels, channel];
+                                                    onSalesChannelChange(newChannels);
+                                                }}
+                                                sx={{
+                                                    px: 2,
+                                                    py: 0.5,
+                                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                                                }}
+                                            >
+                                                <Checkbox
+                                                    edge="start"
+                                                    checked={isSelected}
+                                                    tabIndex={-1}
+                                                    disableRipple
+                                                    size="small"
+                                                    sx={{ py: 0 }}
+                                                />
+                                                <ListItemText
+                                                    primary={channel}
+                                                    primaryTypographyProps={{
+                                                        fontSize: '0.85rem',
+                                                        fontWeight: isSelected ? 600 : 400
+                                                    }}
+                                                />
+                                            </ListItemButton>
+                                        );
+                                    })}
+                                    {(!utmOptions?.sales_channel || utmOptions.sales_channel.length === 0) && (
+                                        <Box sx={{ p: 2, textAlign: 'center' }}>
+                                            <Typography variant="caption" color="text.secondary">No channels found</Typography>
+                                        </Box>
+                                    )}
+                                </List>
                             </AccordionDetails>
                         </Accordion>
                     )}
@@ -651,21 +692,91 @@ export default function UnifiedFilterBar({
                                     Product
                                 </Typography>
                             </AccordionSummary>
-                            <AccordionDetails sx={{ px: 2, pb: 2, pt: 0 }}>
-                                <SearchableSelect
-                                    label="Product"
-                                    options={productOptions}
-                                    value={productValue?.id || ''}
-                                    onChange={(newId) => {
-                                        const selected = productOptions.find(p => p.id === newId);
-                                        onProductChange(selected);
-                                    }}
-                                    valueKey="id"
-                                    labelKey="label"
-                                    sx={{ width: '100%' }}
-                                    loading={productLoading}
-                                    size="small"
-                                />
+                            <AccordionDetails sx={{ px: 0, pb: 0, pt: 0 }}>
+                                <Box sx={{ px: 2, pb: 1, pt: 0.5 }}>
+                                    <TextField
+                                        size="small"
+                                        placeholder="Search products..."
+                                        fullWidth
+                                        value={productSearch}
+                                        onChange={(e) => setProductSearch(e.target.value)}
+                                        InputProps={{
+                                            startAdornment: (
+                                                <InputAdornment position="start">
+                                                    <Search size={14} />
+                                                </InputAdornment>
+                                            ),
+                                            endAdornment: productSearch && (
+                                                <InputAdornment position="end">
+                                                    <IconButton size="small" onClick={() => setProductSearch('')}>
+                                                        <X size={14} />
+                                                    </IconButton>
+                                                </InputAdornment>
+                                            ),
+                                            sx: { fontSize: '0.8rem', borderRadius: '8px' }
+                                        }}
+                                    />
+                                </Box>
+                                <List dense sx={{
+                                    maxHeight: 250,
+                                    overflowY: 'auto',
+                                    py: 0,
+                                    borderTop: '1px solid',
+                                    borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
+                                }}>
+                                    {productOptions
+                                        .filter(p => p.label.toLowerCase().includes(productSearch.toLowerCase()))
+                                        .map((p) => {
+                                            const selectedProducts = Array.isArray(productValue) ? productValue : (productValue?.id ? [productValue] : []);
+                                            const isSelected = selectedProducts.some(sp => sp.id === p.id);
+                                            return (
+                                                <ListItemButton
+                                                    key={p.id}
+                                                    dense
+                                                    onClick={() => {
+                                                        const newProducts = isSelected
+                                                            ? selectedProducts.filter(sp => sp.id !== p.id)
+                                                            : [...selectedProducts, p];
+                                                        onProductChange(newProducts);
+                                                    }}
+                                                    sx={{
+                                                        px: 2,
+                                                        py: 0.5,
+                                                        '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                                                    }}
+                                                >
+                                                    <Checkbox
+                                                        edge="start"
+                                                        checked={isSelected}
+                                                        tabIndex={-1}
+                                                        disableRipple
+                                                        size="small"
+                                                        sx={{ py: 0 }}
+                                                    />
+                                                    <ListItemText
+                                                        primary={p.label}
+                                                        secondary={p.detail}
+                                                        primaryTypographyProps={{
+                                                            fontSize: '0.85rem',
+                                                            fontWeight: isSelected ? 600 : 400,
+                                                            noWrap: true
+                                                        }}
+                                                        secondaryTypographyProps={{ fontSize: '0.75rem', noWrap: true }}
+                                                    />
+                                                </ListItemButton>
+                                            );
+                                        })}
+                                    {productOptions.length === 0 && !productLoading && (
+                                        <Box sx={{ p: 2, textAlign: 'center' }}>
+                                            <Typography variant="caption" color="text.secondary">No products found</Typography>
+                                        </Box>
+                                    )}
+                                    {productLoading && (
+                                        <Box sx={{ p: 2, textAlign: 'center' }}>
+                                            <Typography variant="caption" color="text.secondary">Loading products...</Typography>
+                                        </Box>
+                                    )}
+                                </List>
                             </AccordionDetails>
                         </Accordion>
                     )}
