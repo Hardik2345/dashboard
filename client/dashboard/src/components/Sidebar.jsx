@@ -14,6 +14,7 @@ import {
   Table2,
   Bell,
   LogOut,
+  Filter,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -46,7 +47,7 @@ const NAV_ITEMS = [
     group: 'main',
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
-      { id: 'product-conversion', label: 'Product Conversion', icon: Table2 },
+      { id: 'product-conversion', label: 'Funnels', icon: Filter },
       { id: 'alerts', label: 'Alerts', icon: Bell },
     ]
   },

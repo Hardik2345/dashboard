@@ -13,12 +13,13 @@ import {
   Table2,
   Bell,
   ShieldCheck,
-  Store
+  Store,
+  Filter
 } from 'lucide-react';
 
 const MOBILE_NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
-  { id: 'product-conversion', label: 'Conversion', icon: Table2 },
+  { id: 'product-conversion', label: 'Funnels', icon: Filter },
   { id: 'alerts', label: 'Alerts', icon: Bell },
   { id: 'access', label: 'Access', icon: ShieldCheck },
   { id: 'brands', label: 'Setup', icon: Store },
@@ -239,7 +240,8 @@ export default function App() {
     }
   }, [isAuthor, viewerBrands, globalBrandKey, dispatch]);
 
-  const metricsQuery = useMemo(() => {
+  // Trend Query (Supports Arrays)
+  const trendMetricsQuery = useMemo(() => {
     const base = { start: formatDate(start), end: formatDate(end) };
     const key = (activeBrandKey || '').toString().trim().toUpperCase();
     if (key) base.brand_key = key;
@@ -248,17 +250,40 @@ export default function App() {
     if (utm?.campaign) base.utm_campaign = utm.campaign;
     if (utm?.term) base.utm_term = utm.term;
     if (utm?.content) base.utm_content = utm.content;
+
+    // Arrays allowed here
     if (salesChannel) base.sales_channel = salesChannel;
 
     if (isAuthor) {
       base.refreshKey = authorRefreshKey;
     }
 
-    if (productSelection?.id && (isAuthor || hasPermission('product_filter'))) {
-      base.product_id = productSelection.id;
+    if (productSelection && (isAuthor || hasPermission('product_filter'))) {
+      // Support array of products
+      const products = Array.isArray(productSelection) ? productSelection : [productSelection];
+      const ids = products.map(p => p.id).filter(Boolean);
+      if (ids.length > 0) base.product_id = ids;
     }
     return base;
-  }, [start, end, compareMode, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id, utm, salesChannel]);
+  }, [start, end, compareMode, activeBrandKey, isAuthor, authorRefreshKey, productSelection, utm, salesChannel]);
+
+  // General Query (Legacy / Single Value Fallback)
+  const generalMetricsQuery = useMemo(() => {
+    const base = { ...trendMetricsQuery };
+
+    // Fallback to single value for components that don't support arrays yet
+    if (Array.isArray(base.sales_channel)) {
+      base.sales_channel = base.sales_channel[0] || '';
+    }
+    if (Array.isArray(base.product_id)) {
+      base.product_id = base.product_id[0] || '';
+    }
+    // Also fallback UTMs if needed? most backends handle arrays now but let's be safe if specific components break
+    // Actually metricsController seems to handle arrays mostly via `extractUtmParam` or `appendUtmWhere` which handles arrays.
+    // But let's keep consistency with the requirement "only Trend Graph and 6 KPI Cards".
+
+    return base;
+  }, [trendMetricsQuery]);
 
   const handleAuthorBrandChange = useCallback((nextKeyRaw) => {
     const normalized = (nextKeyRaw || '').toString().trim().toUpperCase();
@@ -891,8 +916,7 @@ export default function App() {
                     </Box>
                   )}
 
-                  {/* Fallback Brand Selector - Desktop Only (Non-Dashboard Tabs) */}
-                  {!isMobile && authorTab !== 'dashboard' && (isAuthor || showMultipleBrands) && (
+                  {!isMobile && authorTab !== 'dashboard' && authorTab !== 'product-conversion' && (isAuthor || showMultipleBrands) && (
                     <Box sx={{ mb: 1 }}>
                       <AuthorBrandSelector
                         brands={isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }))}
@@ -976,14 +1000,14 @@ export default function App() {
                       hasBrand ? (
                         <Suspense fallback={<SectionFallback count={5} />}>
                           <Stack spacing={{ xs: 1, md: 1 }}>
-                            {/* Row 1 KPIs - Full Width */}
+                            {/* Row 1 KPIs - Full Width (Updates with Multiselect) */}
                             <KPIs
-                              query={metricsQuery}
+                              query={trendMetricsQuery}
                               selectedMetric={selectedMetric}
                               onSelectMetric={handleSelectMetric}
                               onFunnelData={handleFunnelData}
-                              productId={productSelection.id}
-                              productLabel={productSelection.label}
+                              productId={Array.isArray(productSelection) ? productSelection[0]?.id : productSelection?.id}
+                              productLabel={Array.isArray(productSelection) && productSelection.length > 1 ? `${productSelection.length} Products` : (Array.isArray(productSelection) ? productSelection[0]?.label : productSelection?.label)}
                               utmOptions={utmOptions}
                               showRow={1}
                             />
@@ -993,22 +1017,22 @@ export default function App() {
                               <Grid size={{ xs: 12, md: hasPermission('web_vitals') ? 9 : 12 }}>
                                 <Stack spacing={{ xs: 1, md: 1 }}>
                                   <KPIs
-                                    query={metricsQuery}
+                                    query={trendMetricsQuery}
                                     selectedMetric={selectedMetric}
                                     onSelectMetric={handleSelectMetric}
-                                    productId={productSelection.id}
-                                    productLabel={productSelection.label}
+                                    productId={Array.isArray(productSelection) ? productSelection[0]?.id : productSelection?.id}
+                                    productLabel={Array.isArray(productSelection) && productSelection.length > 1 ? `${productSelection.length} Products` : (Array.isArray(productSelection) ? productSelection[0]?.label : productSelection?.label)}
                                     utmOptions={utmOptions}
                                     showRow={isMobile ? 'sessions_atc' : 2}
                                   />
-                                  <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
+                                  <HourlySalesCompare query={trendMetricsQuery} metric={selectedMetric} />
                                   {isMobile && (
                                     <KPIs
-                                      query={metricsQuery}
+                                      query={trendMetricsQuery}
                                       selectedMetric={selectedMetric}
                                       onSelectMetric={handleSelectMetric}
-                                      productId={productSelection.id}
-                                      productLabel={productSelection.label}
+                                      productId={Array.isArray(productSelection) ? productSelection[0]?.id : productSelection?.id}
+                                      productLabel={Array.isArray(productSelection) && productSelection.length > 1 ? `${productSelection.length} Products` : (Array.isArray(productSelection) ? productSelection[0]?.label : productSelection?.label)}
                                       utmOptions={utmOptions}
                                       showRow="web_perf_cvr"
                                     />
@@ -1019,12 +1043,12 @@ export default function App() {
                               {/* Right Column: Web Vitals Sidebar */}
                               {hasPermission('web_vitals') && (
                                 <Grid size={{ xs: 12, md: 3 }}>
-                                  <WebVitals query={metricsQuery} />
+                                  <WebVitals query={generalMetricsQuery} />
                                 </Grid>
                               )}
                             </Grid>
 
-                            {hasPermission('traffic_split') && <TrafficSourceSplit query={metricsQuery} />}
+                            {hasPermission('traffic_split') && <TrafficSourceSplit query={generalMetricsQuery} />}
                           </Stack>
                         </Suspense>
                       ) : (
@@ -1076,7 +1100,7 @@ export default function App() {
                             ) : (
                               <Skeleton variant="rounded" width="100%" height={250} />
                             )}
-                            {(hasPermission('payment_split_order') || hasPermission('payment_split_sales')) && <ModeOfPayment query={metricsQuery} />}
+                            {(hasPermission('payment_split_order') || hasPermission('payment_split_sales')) && <ModeOfPayment query={generalMetricsQuery} />}
 
                             <ProductConversionTable
                               brandKey={activeBrandKey}

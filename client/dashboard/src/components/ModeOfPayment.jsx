@@ -185,7 +185,7 @@ export default function ModeOfPayment({ query }) {
     );
 
     return (
-        <Card elevation={0} sx={{ height: '100%', border: '1px solid', borderColor: 'divider', borderRadius: 4 }}>
+        <Card elevation={0} sx={{ height: '100%', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
             <CardContent>
                 <Typography variant="h6" component="div" sx={{ mb: 0.5, fontSize: '1rem', fontWeight: 600 }}>
                     Mode of Payment <span className="text-muted-foreground text-sm font-normal">(excluding cancelled orders)</span>
