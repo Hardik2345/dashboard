@@ -58,7 +58,7 @@ function getPreviousRange(start, end) {
     };
 }
 
-export default function ModeOfPayment({ query }) {
+const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
     const theme = useTheme();
     const isDark = theme.palette.mode === 'dark';
     const [loading, setLoading] = useState(true);
@@ -232,4 +232,6 @@ export default function ModeOfPayment({ query }) {
             </CardContent>
         </Card>
     );
-}
+});
+
+export default ModeOfPayment;

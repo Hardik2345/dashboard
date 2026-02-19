@@ -4,7 +4,7 @@ import { Card, CardContent, useTheme } from '@mui/material';
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
-export default function FunnelChart({
+const FunnelChart = React.memo(function FunnelChart({
     data = [],
     height = 300,
     className,
@@ -306,4 +306,6 @@ export default function FunnelChart({
             </CardContent>
         </Card>
     );
-}
+});
+
+export default FunnelChart;

@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, memo } from 'react';
 import { Card, CardContent, Typography, Skeleton, Stack, useTheme, Select, MenuItem, FormControl, Box, Grid } from '@mui/material';
 import { ArrowDropUp, ArrowDropDown } from '@mui/icons-material';
 import { Doughnut } from 'react-chartjs-2';
@@ -55,7 +55,7 @@ function useCountUp(end, duration = 800) {
     return count;
 }
 
-export default function TrafficSourceSplit({ query }) {
+export default memo(function TrafficSourceSplit({ query }) {
     const theme = useTheme();
     const isDark = theme.palette.mode === 'dark';
     const [loading, setLoading] = useState(true);
@@ -453,4 +453,4 @@ export default function TrafficSourceSplit({ query }) {
             </CardContent>
         </Card>
     );
-}
+});
