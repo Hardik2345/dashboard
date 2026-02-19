@@ -64,7 +64,9 @@ export default function UnifiedFilterBar({
     onUtmChange,
     salesChannel,
     onSalesChannelChange,
-    allowedFilters = { product: true, utm: true, salesChannel: true },
+    deviceType,
+    onDeviceTypeChange,
+    allowedFilters = { product: true, utm: true, salesChannel: true, deviceType: true },
     utmOptions = {}, // Add prop
     onDownload // Callback for download button
 }) {
@@ -135,6 +137,7 @@ export default function UnifiedFilterBar({
 
     const activeFilterCount = [
         ...(Array.isArray(salesChannel) ? salesChannel : [salesChannel]),
+        ...(Array.isArray(deviceType) ? deviceType : []),
         ...(Array.isArray(productValue) ? productValue : [productValue])?.map(p => p?.id)
     ].filter(Boolean).length;
 
@@ -661,6 +664,76 @@ export default function UnifiedFilterBar({
                                             <Typography variant="caption" color="text.secondary">No channels found</Typography>
                                         </Box>
                                     )}
+                                </List>
+                            </AccordionDetails>
+                        </Accordion>
+                    )}
+
+                    {/* DEVICE TYPE Section */}
+                    {allowedFilters.deviceType && (
+                        <Accordion
+                            expanded={expandedAccordion === 'deviceType'}
+                            onChange={handleAccordionChange('deviceType')}
+                            disableGutters
+                            elevation={0}
+                            sx={{
+                                bgcolor: 'transparent',
+                                '&:before': { display: 'none' },
+                                borderBottom: expandedAccordion === 'deviceType' ? '1px solid' : 'none',
+                                borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+                            }}
+                        >
+                            <AccordionSummary
+                                expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
+                                sx={{
+                                    px: 2,
+                                    minHeight: 44,
+                                    '& .MuiAccordionSummary-content': { my: 1 }
+                                }}
+                            >
+                                <Typography sx={{ fontSize: '0.75rem', fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    Device Type
+                                </Typography>
+                            </AccordionSummary>
+                            <AccordionDetails sx={{ px: 0, pb: 1, pt: 0 }}>
+                                <List dense sx={{ py: 0 }}>
+                                    {['Desktop', 'Mobile', 'Others'].map((type) => {
+                                        const selectedTypes = Array.isArray(deviceType) ? deviceType : [];
+                                        const isSelected = selectedTypes.includes(type);
+                                        return (
+                                            <ListItemButton
+                                                key={type}
+                                                dense
+                                                onClick={() => {
+                                                    const newTypes = isSelected
+                                                        ? selectedTypes.filter(t => t !== type)
+                                                        : [...selectedTypes, type];
+                                                    onDeviceTypeChange(newTypes);
+                                                }}
+                                                sx={{
+                                                    px: 2,
+                                                    py: 0.5,
+                                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                                                }}
+                                            >
+                                                <Checkbox
+                                                    edge="start"
+                                                    checked={isSelected}
+                                                    tabIndex={-1}
+                                                    disableRipple
+                                                    size="small"
+                                                    sx={{ py: 0 }}
+                                                />
+                                                <ListItemText
+                                                    primary={type}
+                                                    primaryTypographyProps={{
+                                                        fontSize: '0.85rem',
+                                                        fontWeight: isSelected ? 600 : 400
+                                                    }}
+                                                />
+                                            </ListItemButton>
+                                        );
+                                    })}
                                 </List>
                             </AccordionDetails>
                         </Accordion>

@@ -2,7 +2,7 @@ const { QueryTypes } = require('sequelize');
 const redisClient = require('../lib/redis');
 const logger = require('../utils/logger');
 const { RangeSchema, isoDate } = require('../validation/schemas');
-const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta, computeTotalSessions, computeAtcSessions, hasUtmFilters, appendUtmWhere, extractUtmParam } = require('../utils/metricsUtils');
+const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta, computeTotalSessions, computeAtcSessions, hasUtmFilters, appendUtmWhere, extractUtmParam, buildDeviceTypeUserAgentClause, computeSessionsFromDeviceColumns } = require('../utils/metricsUtils');
 const { previousWindow, prevDayStr, parseIsoDate, formatIsoDate, shiftDays } = require('../utils/dateUtils');
 const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrands } = require('../config/brands');
@@ -179,6 +179,17 @@ async function calcTotalSessionsDelta({ start, end, align, compare, conn, filter
       const prevWin = previousWindow(start, end);
       const isCurrentRangeToday = isToday(start) || isToday(end);
       const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
+
+      // If device_type filter is active, use device-specific columns
+      if (filters?.device_type) {
+        const curr = await computeSessionsFromDeviceColumns({ start, end, conn, filters, metric: 'sessions' });
+        const prev = await computeSessionsFromDeviceColumns({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters, metric: 'sessions' });
+        const diff = curr - prev;
+        const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
+        const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+        return { metric: 'TOTAL_SESSIONS_DELTA', range: { start, end }, current: curr, previous: prev, diff_pct, direction, align: 'hour', hour: targetHour };
+      }
+
       const sqlRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
       const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
       const [currRow, prevRow, overallCurrRow] = await Promise.all([
@@ -263,6 +274,17 @@ async function calcAtcSessionsDelta({ start, end, align, compare, conn, filters 
       const prevWin = previousWindow(start, end);
       const isCurrentRangeToday = isToday(start) || isToday(end);
       const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
+
+      // If device_type filter is active, use device-specific columns
+      if (filters?.device_type) {
+        const curr = await computeSessionsFromDeviceColumns({ start, end, conn, filters, metric: 'atc' });
+        const prev = await computeSessionsFromDeviceColumns({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters, metric: 'atc' });
+        const diff = curr - prev;
+        const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
+        const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+        return { metric: 'ATC_SESSIONS_DELTA', range: { start, end }, current: curr, previous: prev, diff_pct, direction, align: 'hour', hour: targetHour };
+      }
+
       const sqlRange = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
       const sqlOverallAtc = `SELECT COALESCE(SUM(total_atc_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
       const [currRow, prevRow, overallCurrRow] = await Promise.all([
@@ -1816,8 +1838,9 @@ function buildMetricsController() {
           utm_content: extractUtmParam(req.query.utm_content),
           product_id: req.query.product_id || null, // Allow array or string
           sales_channel: extractUtmParam(req.query.sales_channel),
+          device_type: extractUtmParam(req.query.device_type),
         };
-        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel);
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel || filters.device_type);
 
         let querySql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, hour, total_sales, number_of_orders,
         COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
@@ -1926,6 +1949,56 @@ function buildMetricsController() {
         if (filters.product_id) {
           for (const [dateStr, count] of productSessionsMap.entries()) {
             distributeSessions(dateStr, count);
+          }
+        }
+
+        // NEW: Fetch device-type specific sessions from hourly_sessions_summary_shopify
+        if (filters.device_type && !filters.product_id) {
+          try {
+            const types = Array.isArray(filters.device_type) ? filters.device_type : [filters.device_type];
+            const sessCols = [];
+            const atcCols = [];
+            for (const t of types) {
+              const lower = (t || '').toString().toLowerCase().trim();
+              if (lower === 'desktop') {
+                sessCols.push('desktop_sessions');
+                atcCols.push('desktop_atc_sessions');
+              } else if (lower === 'mobile') {
+                sessCols.push('mobile_sessions', 'tablet_sessions');
+                atcCols.push('mobile_atc_sessions', 'tablet_atc_sessions');
+              } else if (lower === 'others') {
+                sessCols.push('other_sessions');
+                atcCols.push('other_atc_sessions');
+              }
+            }
+            if (sessCols.length > 0) {
+              const sessExpr = sessCols.map(c => `COALESCE(${c}, 0)`).join(' + ');
+              const atcExpr = atcCols.map(c => `COALESCE(${c}, 0)`).join(' + ');
+              const deviceSessionSql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, hour,
+                (${sessExpr}) AS device_sessions,
+                (${atcExpr}) AS device_atc_sessions
+                FROM hourly_sessions_summary_shopify
+                WHERE date >= ? AND date <= ?
+                GROUP BY date, hour`;
+              const deviceRows = await req.brandDb.sequelize.query(deviceSessionSql, {
+                type: QueryTypes.SELECT, replacements: [start, end]
+              });
+              for (const dr of deviceRows) {
+                if (!dr?.date) continue;
+                const dateStr = dr.date instanceof Date ? dr.date.toISOString().slice(0, 10) : String(dr.date);
+                const hourVal = typeof dr.hour === 'number' ? dr.hour : Number(dr.hour);
+                if (!Number.isFinite(hourVal) || hourVal < 0 || hourVal > 23) continue;
+                const key = `${dateStr}#${hourVal}`;
+                const existing = rowMap.get(key) || { sales: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, orders: 0, atc: 0 };
+                existing.sessions += Number(dr.device_sessions || 0);
+                existing.adjusted_sessions += Number(dr.device_sessions || 0);
+                existing.raw_sessions += Number(dr.device_sessions || 0);
+                existing.atc += Number(dr.device_atc_sessions || 0);
+                rowMap.set(key, existing);
+              }
+            }
+          } catch (err) {
+            console.warn('[hourlyTrend] Failed to fetch device-type sessions', err);
           }
         }
 
@@ -3379,8 +3452,9 @@ function buildMetricsController() {
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
           sales_channel: extractUtmParam(req.query.sales_channel),
+          device_type: extractUtmParam(req.query.device_type),
         };
-        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.sales_channel);
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.sales_channel || filters.device_type);
 
         const traceStart = req._reqStart || Date.now();
         const spans = [];

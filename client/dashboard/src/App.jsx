@@ -7,6 +7,7 @@ import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider
 import Grid from '@mui/material/Grid2';
 import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
+import SidebarToggle from './components/ui/SidebarToggle.jsx';
 import { AnimeNavBar } from './components/ui/AnimeNavBar.jsx';
 import {
   LayoutGrid,
@@ -31,7 +32,7 @@ import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
 import { useAppDispatch, useAppSelector } from './state/hooks.js';
 import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
 import { setBrand } from './state/slices/brandSlice.js';
-import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setCompareMode, setSelectedMetric, setUtm, setSalesChannel } from './state/slices/filterSlice.js';
+import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setCompareMode, setSelectedMetric, setUtm, setSalesChannel, setDeviceType } from './state/slices/filterSlice.js';
 import MobileTopBar from './components/MobileTopBar.jsx';
 const MobileFilterDrawer = lazy(() => import('./components/MobileFilterDrawer.jsx'));
 const UnifiedFilterBar = lazy(() => import('./components/UnifiedFilterBar.jsx'));
@@ -91,7 +92,7 @@ export default function App() {
   const authState = useAppSelector((state) => state.auth);
   const globalBrandKey = useAppSelector((state) => state.brand.brand);
   const { user, initialized, loginStatus, loginError } = useAppSelector((state) => state.auth);
-  const { range, compareMode, selectedMetric, productSelection, utm, salesChannel } = useAppSelector((state) => state.filters);
+  const { range, compareMode, selectedMetric, productSelection, utm, salesChannel, deviceType } = useAppSelector((state) => state.filters);
   const loggingIn = loginStatus === 'loading';
   // range holds ISO strings; normalize to dayjs for components that expect it
   const [start, end] = useMemo(
@@ -144,6 +145,7 @@ export default function App() {
 
   const [authorRefreshKey, setAuthorRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false); // Valid New State
   const [darkMode, setDarkMode] = useState(loadInitialThemeMode);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -253,6 +255,7 @@ export default function App() {
 
     // Arrays allowed here
     if (salesChannel) base.sales_channel = salesChannel;
+    if (deviceType && deviceType.length > 0) base.device_type = deviceType;
 
     if (isAuthor) {
       base.refreshKey = authorRefreshKey;
@@ -265,7 +268,7 @@ export default function App() {
       if (ids.length > 0) base.product_id = ids;
     }
     return base;
-  }, [start, end, compareMode, activeBrandKey, isAuthor, authorRefreshKey, productSelection, utm, salesChannel]);
+  }, [start, end, compareMode, activeBrandKey, isAuthor, authorRefreshKey, productSelection, utm, salesChannel, deviceType]);
 
   // General Query (Legacy / Single Value Fallback)
   const generalMetricsQuery = useMemo(() => {
@@ -502,6 +505,10 @@ export default function App() {
     dispatch(setSalesChannel(val));
   }, [dispatch]);
 
+  const handleDeviceTypeChange = useCallback((val) => {
+    dispatch(setDeviceType(val));
+  }, [dispatch]);
+
   const handleSidebarOpen = useCallback(() => setSidebarOpen(true), []);
   const handleSidebarClose = useCallback(() => setSidebarOpen(false), []);
   const handleSidebarTabChange = useCallback((tabId) => {
@@ -663,12 +670,13 @@ export default function App() {
       utm_source: utm?.source, // Dependent filtering
       utm_medium: utm?.medium,
       utm_campaign: utm?.campaign,
-      sales_channel: salesChannel
+      sales_channel: salesChannel,
+      device_type: deviceType
     })
       .then(res => {
         if (res.filter_options) setUtmOptions(res.filter_options);
       });
-  }, [activeBrandKey, start, end, utm, isAuthor, authorTab, salesChannel]);
+  }, [activeBrandKey, start, end, utm, isAuthor, authorTab, salesChannel, deviceType]);
 
   // Check auth on mount
   useEffect(() => {
@@ -820,13 +828,29 @@ export default function App() {
           {/* Sidebar Navigation - only for authors */}
           {isAuthor && (
             <Sidebar
-              open={sidebarOpen}
-              onClose={handleSidebarClose}
+              open={isMobile ? sidebarOpen : desktopSidebarOpen}
+              onClose={isMobile ? handleSidebarClose : () => setDesktopSidebarOpen(false)}
               activeTab={authorTab}
               onTabChange={handleSidebarTabChange}
               darkMode={darkMode === 'dark'}
               user={user}
               onLogout={handleLogout}
+            />
+          )}
+
+          {/* Sidebar Toggle Button - Desktop Only */}
+          {isAuthor && !isMobile && (
+            <SidebarToggle
+              checked={desktopSidebarOpen}
+              onChange={setDesktopSidebarOpen}
+              isDark={darkMode === 'dark'}
+              style={{
+                position: 'fixed',
+                top: 24,
+                left: desktopSidebarOpen ? (DRAWER_WIDTH - 44) : 16,
+                zIndex: 1301,
+                transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+              }}
             />
           )}
 
@@ -838,8 +862,12 @@ export default function App() {
               display: 'flex',
               flexDirection: 'column',
               minHeight: '100svh',
-              width: isAuthor ? { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` } : '100%',
-              ml: isAuthor ? { xs: 0, md: `${DRAWER_WIDTH}px` } : 0,
+              width: isAuthor ? { xs: '100%', md: desktopSidebarOpen ? `calc(100% - ${DRAWER_WIDTH}px)` : '100%' } : '100%',
+              ml: isAuthor ? { xs: 0, md: desktopSidebarOpen ? `${DRAWER_WIDTH}px` : 0 } : 0,
+              transition: (theme) => theme.transitions.create(['width', 'margin'], {
+                easing: theme.transitions.easing.sharp,
+                duration: theme.transitions.duration.enteringScreen,
+              }),
             }}
           >
             {/* Sticky Header */}
@@ -851,7 +879,8 @@ export default function App() {
                 bgcolor: darkMode === 'dark' ? '#000000' : '#FDFDFD',
                 borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
                 borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-                transition: 'border-color 0.2s ease',
+                transition: 'all 0.3s ease',
+                pl: isAuthor && !isMobile && !desktopSidebarOpen ? '56px' : 0,
               }}
             >
               <Header
@@ -905,10 +934,13 @@ export default function App() {
                         onUtmChange={handleUtmChange}
                         salesChannel={salesChannel}
                         onSalesChannelChange={handleSalesChannelChange}
+                        deviceType={deviceType}
+                        onDeviceTypeChange={handleDeviceTypeChange}
                         allowedFilters={{
                           product: hasPermission('product_filter'),
                           utm: hasPermission('utm_filter'),
-                          salesChannel: hasPermission('sales_channel_filter')
+                          salesChannel: hasPermission('sales_channel_filter'),
+                          deviceType: true
                         }}
                         utmOptions={utmOptions}
                         onDownload={() => console.log('Download triggered')}
@@ -942,6 +974,8 @@ export default function App() {
                       onUtmChange={handleUtmChange}
                       salesChannel={salesChannel}
                       onSalesChannelChange={handleSalesChannelChange}
+                      deviceType={deviceType}
+                      onDeviceTypeChange={handleDeviceTypeChange}
                       showUtmFilter={hasPermission('utm_filter')}
                       showSalesChannel={hasPermission('sales_channel_filter')}
                       utmOptions={utmOptions}
@@ -1048,6 +1082,7 @@ export default function App() {
                               )}
                             </Grid>
 
+                            {(hasPermission('payment_split_order') || hasPermission('payment_split_sales')) && <ModeOfPayment query={generalMetricsQuery} />}
                             {hasPermission('traffic_split') && <TrafficSourceSplit query={generalMetricsQuery} />}
                           </Stack>
                         </Suspense>
@@ -1100,7 +1135,6 @@ export default function App() {
                             ) : (
                               <Skeleton variant="rounded" width="100%" height={250} />
                             )}
-                            {(hasPermission('payment_split_order') || hasPermission('payment_split_sales')) && <ModeOfPayment query={generalMetricsQuery} />}
 
                             <ProductConversionTable
                               brandKey={activeBrandKey}

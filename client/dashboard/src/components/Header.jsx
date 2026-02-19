@@ -11,7 +11,8 @@ import {
   Moon,
   LayoutGrid,
   SlidersHorizontal,
-  LogOut
+  LogOut,
+  PanelLeft // Added
 } from 'lucide-react';
 import SkyToggle from './ui/SkyToggle.jsx';
 
@@ -123,7 +124,7 @@ export default function Header({
               }}
             />
           ) : (
-            <>
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
               <Typography variant="h5" sx={{ fontWeight: 700, color: darkMode ? '#fff' : '#111', display: 'flex', alignItems: 'center', gap: 2 }}>
                 Welcome, {firstName} <span style={{ fontSize: '1.2rem' }}>👋</span>
 
@@ -196,7 +197,7 @@ export default function Header({
               <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
                 Your store at a glance
               </Typography>
-            </>
+            </Box>
           )}
         </Box>
 
