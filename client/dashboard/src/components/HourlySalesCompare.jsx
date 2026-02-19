@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, memo } from 'react';
 import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, MenuItem, InputLabel, Stack, useMediaQuery } from '@mui/material';
 import { useTheme, alpha } from '@mui/material/styles';
 import {
@@ -137,7 +137,7 @@ function formatRangeLabel(range) {
   return `${sMonth} ${sDay}, ${sYear} - ${eMonth} ${eDay}, ${eYear}`;
 }
 
-export default function HourlySalesCompare({ query, metric = 'sales' }) {
+export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState([]);
   const [viewMode, setViewMode] = useState('hourly');
@@ -476,4 +476,4 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
       </CardContent>
     </Card>
   );
-}
+});

@@ -36,7 +36,7 @@ import MobileTopBar from './components/MobileTopBar.jsx';
 const MobileFilterDrawer = lazy(() => import('./components/MobileFilterDrawer.jsx'));
 const UnifiedFilterBar = lazy(() => import('./components/UnifiedFilterBar.jsx'));
 const AuthorBrandSelector = lazy(() => import('./components/AuthorBrandSelector.jsx'));
-import Footer from './components/Footer.jsx';
+const Footer = lazy(() => import('./components/Footer.jsx'));
 
 const KPIs = lazy(() => import('./components/KPIs.jsx'));
 const FunnelChart = lazy(() => import('./components/charts/FunnelChart.jsx'));
@@ -1148,7 +1148,7 @@ export default function App() {
                 </AnimatePresence>
               </Stack>
             </Box>
-            <Footer />
+            <Suspense fallback={null}><Footer /></Suspense>
           </Box>
         </Box>
         {isMobile && (
