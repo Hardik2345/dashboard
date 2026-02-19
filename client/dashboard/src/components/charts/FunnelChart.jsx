@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { AreaChart, Area, ResponsiveContainer, LabelList, YAxis, XAxis, Tooltip } from 'recharts';
 import { Card, CardContent, useTheme } from '@mui/material';
-import { ArrowUp, ArrowDown, Minus } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 const FunnelChart = React.memo(function FunnelChart({
@@ -87,7 +87,7 @@ const FunnelChart = React.memo(function FunnelChart({
         <Card elevation={0} sx={{ height: '100%', border: '1px solid', borderColor: 'divider' }} className={className}>
             <CardContent sx={{ p: 3, '&:last-child': { pb: 3 }, position: 'relative' }}>
                 {/* View Mode Toggle */}
-                <div className="absolute top-3 right-3 z-30 flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="absolute top-3 right-3 z-30 hidden md:flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg border border-gray-200 dark:border-gray-700">
                     <button
                         onClick={() => setViewMode('new')}
                         className={cn(
@@ -148,7 +148,7 @@ const FunnelChart = React.memo(function FunnelChart({
                                                 "flex items-center text-[10px] md:text-xs font-medium mb-1 md:mb-1.5",
                                                 step.change > 0 ? "text-emerald-500" : step.change < 0 ? "text-rose-500" : "text-gray-500"
                                             )}>
-                                                {step.change > 0 ? <ArrowUp className="w-2.5 h-2.5 md:w-3 md:h-3 mr-0.5" /> : step.change < 0 ? <ArrowDown className="w-2.5 h-2.5 md:w-3 md:h-3 mr-0.5" /> : <Minus className="w-2.5 h-2.5 md:w-3 md:h-3 mr-0.5" />}
+                                                {step.change > 0 ? <TrendingUp className="w-2.5 h-2.5 md:w-3 md:h-3 mr-0.5" /> : step.change < 0 ? <TrendingDown className="w-2.5 h-2.5 md:w-3 md:h-3 mr-0.5" /> : <Minus className="w-2.5 h-2.5 md:w-3 md:h-3 mr-0.5" />}
                                                 <span className="ml-[1px]">{Math.abs(step.change)}%</span>
                                             </div>
                                         )}

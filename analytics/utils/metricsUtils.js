@@ -143,6 +143,9 @@ async function computeTotalOrders({ start, end, conn, filters }) {
 }
 
 async function computeTotalSessions({ start, end, conn, filters }) {
+  if (filters?.device_type) {
+    return computeSessionsFromDeviceColumns({ start, end, conn, filters, metric: 'sessions' });
+  }
   if (hasUtmFilters(filters)) {
     return computeSessionsFromSnapshot({ start, end, conn, filters, column: 'sessions' });
   }
@@ -150,6 +153,9 @@ async function computeTotalSessions({ start, end, conn, filters }) {
 }
 
 async function computeAtcSessions({ start, end, conn, filters }) {
+  if (filters?.device_type) {
+    return computeSessionsFromDeviceColumns({ start, end, conn, filters, metric: 'atc' });
+  }
   if (hasUtmFilters(filters)) {
     return computeSessionsFromSnapshot({ start, end, conn, filters, column: 'sessions_with_cart_additions' });
   }
@@ -178,6 +184,11 @@ function appendUtmWhere(sql, params, filters) {
   append('utm_term', filters.utm_term);
   append('utm_content', filters.utm_content);
   append('order_app_name', filters.sales_channel);
+  // Device type filter on user_agent
+  const dtClause = buildDeviceTypeUserAgentClause(filters.device_type);
+  if (dtClause) {
+    sql += ` AND (${dtClause})`;
+  }
   return sql;
 }
 
@@ -195,8 +206,6 @@ async function computeSessionsFromSnapshot({ start, end, conn, filters, column }
   const { sales_channel, ...filtersForSnapshot } = filters || {};
   snapshotSql = appendUtmWhere(snapshotSql, snapParams, filtersForSnapshot);
 
-  snapshotSql += " AND landing_page_type = 'Product'";
-
   const snapRows = await conn.query(snapshotSql, { type: QueryTypes.SELECT, replacements: snapParams });
   return Number(snapRows[0]?.total || 0);
 }
@@ -209,7 +218,8 @@ function hasUtmFilters(filters) {
     filters.utm_campaign ||
     filters.utm_term ||
     filters.utm_content ||
-    filters.sales_channel
+    filters.sales_channel ||
+    filters.device_type
   );
 }
 
@@ -253,6 +263,11 @@ function buildShopifyOrdersWhere(start, end, filters) {
     add('utm_term', filters.utm_term);
     add('utm_content', filters.utm_content);
     add('order_app_name', filters.sales_channel);
+    // Device type filter on user_agent
+    const dtClause = buildDeviceTypeUserAgentClause(filters.device_type);
+    if (dtClause) {
+      parts.push(`(${dtClause})`);
+    }
   }
 
   const where = parts.length ? `WHERE ${parts.join(" AND ")}` : "";
@@ -333,6 +348,60 @@ async function cvrForRange({ start, end, conn, filters }) {
   return { cvr, cvr_percent: cvr * 100 };
 }
 
+/**
+ * Build a SQL clause for device_type filter on user_agent column.
+ * @param {string|string[]|null} deviceType - e.g. ['Desktop','Mobile'] or 'Desktop'
+ * @returns {string|null} SQL snippet like "(user_agent LIKE '%Windows%')" or null
+ */
+function buildDeviceTypeUserAgentClause(deviceType) {
+  if (!deviceType) return null;
+  const types = Array.isArray(deviceType) ? deviceType : [deviceType];
+  if (types.length === 0) return null;
+
+  const clauses = [];
+  for (const t of types) {
+    const lower = (t || '').toString().toLowerCase().trim();
+    if (lower === 'desktop') {
+      clauses.push("user_agent LIKE '%Windows%'");
+    } else if (lower === 'mobile') {
+      clauses.push("(user_agent LIKE '%Android%' OR user_agent LIKE '%iPhone%')");
+    } else if (lower === 'others') {
+      clauses.push("(user_agent NOT LIKE '%Windows%' AND user_agent NOT LIKE '%Android%' AND user_agent NOT LIKE '%iPhone%')");
+    }
+  }
+  if (clauses.length === 0) return null;
+  return clauses.join(' OR ');
+}
+
+/**
+ * Query device-specific session/atc columns from hourly_sessions_summary_shopify.
+ * Mobile = mobile + tablet columns.
+ */
+async function computeSessionsFromDeviceColumns({ start, end, conn, filters, metric }) {
+  const types = Array.isArray(filters.device_type) ? filters.device_type : [filters.device_type];
+  const cols = [];
+  for (const t of types) {
+    const lower = (t || '').toString().toLowerCase().trim();
+    if (lower === 'desktop') {
+      cols.push(metric === 'atc' ? 'desktop_atc_sessions' : 'desktop_sessions');
+    } else if (lower === 'mobile') {
+      cols.push(metric === 'atc' ? 'mobile_atc_sessions' : 'mobile_sessions');
+      cols.push(metric === 'atc' ? 'tablet_atc_sessions' : 'tablet_sessions');
+    } else if (lower === 'others') {
+      cols.push(metric === 'atc' ? 'other_atc_sessions' : 'other_sessions');
+    }
+  }
+  if (cols.length === 0) {
+    // Fallback to total
+    const totalCol = metric === 'atc' ? 'number_of_atc_sessions' : 'COALESCE(adjusted_number_of_sessions, number_of_sessions)';
+    cols.push(totalCol);
+  }
+  const sumExpr = cols.map(c => `COALESCE(${c}, 0)`).join(' + ');
+  const sql = `SELECT COALESCE(SUM(${sumExpr}), 0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ?`;
+  const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements: [start, end] });
+  return Number(rows[0]?.total || 0);
+}
+
 module.exports = {
   rawSum,
   computeMetricDelta,
@@ -356,6 +425,8 @@ module.exports = {
   hasUtmFilters,
   appendUtmWhere,
   extractUtmParam,
+  buildDeviceTypeUserAgentClause,
+  computeSessionsFromDeviceColumns,
 };
 
 function extractUtmParam(val) {

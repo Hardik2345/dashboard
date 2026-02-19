@@ -1,7 +1,7 @@
 import { Card, CardContent, Typography, Skeleton, Box } from '@mui/material';
 import { useTheme, alpha } from '@mui/material/styles';
-import ArrowDropUpIcon from '@mui/icons-material/ArrowDropUp';
-import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 
 export default function KPIStat({ label, value, hint, loading, deltaLoading, formatter, delta, onSelect, selected, centerOnMobile = false }) {
   const theme = useTheme();
@@ -87,9 +87,9 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
               ) : delta && typeof delta.value === 'number' ? (
                 <>
                   {delta.direction === 'up' ? (
-                    <ArrowDropUpIcon fontSize="small" sx={{ color: '#10b981' }} />
+                    <TrendingUpIcon sx={{ fontSize: 16, color: '#10b981' }} />
                   ) : delta.direction === 'down' ? (
-                    <ArrowDropDownIcon fontSize="small" sx={{ color: '#ef4444' }} />
+                    <TrendingDownIcon sx={{ fontSize: 16, color: '#ef4444' }} />
                   ) : (
                     <Box sx={{ width: 0, height: 0 }} />
                   )}
@@ -98,7 +98,7 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
                     sx={{
                       color: delta.direction === 'up' ? '#10b981' : delta.direction === 'down' ? '#ef4444' : 'text.secondary',
                       fontWeight: 600,
-                      ml: -0.5
+                      ml: 0.5
                     }}
                   >
                     {Math.abs(delta.value).toFixed(1)}%
@@ -107,7 +107,7 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
               ) : (
                 // Reserve space to keep all cards equal height
                 <Box sx={{ visibility: 'hidden' }}>
-                  <ArrowDropUpIcon fontSize="small" />
+                  <TrendingUpIcon sx={{ fontSize: 16 }} />
                   <Typography variant="body2">0.0%</Typography>
                 </Box>
               )}

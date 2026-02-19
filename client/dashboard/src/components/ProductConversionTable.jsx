@@ -38,8 +38,8 @@ import DownloadIcon from '@mui/icons-material/Download';
 import CheckIcon from '@mui/icons-material/Check';
 import KeyboardArrowLeft from '@mui/icons-material/KeyboardArrowLeft';
 import KeyboardArrowRight from '@mui/icons-material/KeyboardArrowRight';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import CloseIcon from '@mui/icons-material/Close';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -357,7 +357,7 @@ function DeltaBadge({ current, previous, isPercent }) {
   }
 
   const color = diff >= 0 ? 'success.main' : 'error.main';
-  const Icon = diff >= 0 ? ArrowUpwardIcon : ArrowDownwardIcon;
+  const Icon = diff >= 0 ? TrendingUpIcon : TrendingDownIcon;
 
   return (
     <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', ml: 0, color, fontSize: '0.75rem', fontWeight: 500 }}>
@@ -397,10 +397,10 @@ function DetailedFilterPanel({
   const isDark = theme.palette.mode === 'dark';
 
   const glassStyle = {
-    bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.6)',
+    bgcolor: isDark ? 'rgba(65, 65, 65, 0.15)' : 'rgba(255, 255, 255, 0.6)',
     backdropFilter: 'blur(12px)',
     border: '1px solid',
-    borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)',
+    borderColor: 'divider',
     borderRadius: 2,
     transition: 'all 0.2s ease',
   };
@@ -486,16 +486,20 @@ function DetailedFilterPanel({
       display: 'flex',
       flexDirection: 'column',
       ...glassStyle,
-      bgcolor: isDark ? 'rgba(15, 15, 15, 0.8)' : 'rgba(255, 255, 255, 0.7)', // Slightly more opaque for readability
-      border: { md: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.1)'}` },
+      bgcolor: 'background.paper',
+      border: '1px solid',
+      borderColor: 'divider',
       borderRadius: { md: 3 },
       overflow: 'hidden',
-      boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
+      boxShadow: isDark
+        ? '0 20px 40px rgba(0, 0, 0, 0.6), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.1)'
+        : '0 8px 32px rgba(0, 0, 0, 0.12)',
     }}>
       {/* Header */}
       <Box sx={{
         p: 2,
-        borderBottom: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'}`,
+        borderBottom: '1px solid',
+        borderColor: 'divider',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -518,7 +522,8 @@ function DetailedFilterPanel({
           sx={{
             bgcolor: 'transparent',
             '&:before': { display: 'none' },
-            borderBottom: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)'}`
+            borderBottom: '1px solid',
+            borderColor: 'divider'
           }}
         >
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
@@ -555,7 +560,7 @@ function DetailedFilterPanel({
                     onClick={() => handleToggleColumn(col.id)}
                     sx={{
                       transition: 'background-color 0.2s',
-                      '&:hover': { bgcolor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)' }
+                      '&:hover': { bgcolor: 'action.hover' }
                     }}
                   >
                     <ListItemIcon sx={{ minWidth: 36 }}>
@@ -565,7 +570,7 @@ function DetailedFilterPanel({
                         tabIndex={-1}
                         disableRipple
                         size="small"
-                        sx={{ p: 0.5, color: isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.2)' }}
+                        sx={{ p: 0.5, color: 'action.disabled', '&.Mui-checked': { color: 'primary.main' } }}
                       />
                     </ListItemIcon>
                     <ListItemText primary={col.label} primaryTypographyProps={{ fontSize: '0.875rem' }} />
@@ -585,7 +590,8 @@ function DetailedFilterPanel({
           sx={{
             bgcolor: 'transparent',
             '&:before': { display: 'none' },
-            borderBottom: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)'}`
+            borderBottom: '1px solid',
+            borderColor: 'divider'
           }}
         >
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
@@ -623,7 +629,7 @@ function DetailedFilterPanel({
                         onClick={() => handleToggleType(type)}
                         sx={{
                           transition: 'background-color 0.2s',
-                          '&:hover': { bgcolor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)' }
+                          '&:hover': { bgcolor: 'action.hover' }
                         }}
                       >
                         <ListItemIcon sx={{ minWidth: 36 }}>
@@ -633,7 +639,7 @@ function DetailedFilterPanel({
                             tabIndex={-1}
                             disableRipple
                             size="small"
-                            sx={{ p: 0.5, color: isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.2)' }}
+                            sx={{ p: 0.5, color: 'action.disabled', '&.Mui-checked': { color: 'primary.main' } }}
                           />
                         </ListItemIcon>
                         <ListItemText primary={type} primaryTypographyProps={{ fontSize: '0.875rem' }} />
@@ -679,9 +685,9 @@ function DetailedFilterPanel({
                 p: 2,
                 mb: 2,
                 borderRadius: 2,
-                bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                bgcolor: 'action.hover',
                 border: '1px dashed',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)'
+                borderColor: 'divider'
               }}>
                 <Stack spacing={2}>
                   <FormControl size="small" fullWidth>
@@ -783,8 +789,9 @@ function DetailedFilterPanel({
                           alignItems: 'center',
                           justifyContent: 'space-between',
                           borderRadius: 2,
-                          bgcolor: isDark ? 'rgba(92, 163, 224, 0.05)' : 'rgba(25, 118, 210, 0.03)',
-                          border: `1px solid ${isDark ? 'rgba(92, 163, 224, 0.3)' : 'rgba(25, 118, 210, 0.2)'}`
+                          bgcolor: isDark ? 'rgba(91, 163, 224, 0.08)' : 'rgba(11, 107, 203, 0.04)',
+                          border: '1px solid',
+                          borderColor: isDark ? 'rgba(91, 163, 224, 0.3)' : 'rgba(11, 107, 203, 0.2)'
                         }}
                       >
                         <Box>
@@ -812,7 +819,7 @@ function DetailedFilterPanel({
 
       {/* Footer */}
       {(filters.length > 0) && (
-        <Box sx={{ p: 2, borderTop: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'}`, bgcolor: 'transparent' }}>
+        <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider', bgcolor: 'transparent' }}>
           <Button
             fullWidth
             variant="text"
@@ -822,10 +829,10 @@ function DetailedFilterPanel({
             sx={{
               ...glassStyle,
               textTransform: 'none',
-              bgcolor: isDark ? 'rgba(211, 47, 47, 0.1)' : 'rgba(211, 47, 47, 0.05)',
+              bgcolor: 'rgba(211, 47, 47, 0.08)',
               borderColor: 'rgba(211, 47, 47, 0.3)',
               '&:hover': {
-                bgcolor: isDark ? 'rgba(211, 47, 47, 0.2)' : 'rgba(211, 47, 47, 0.1)',
+                bgcolor: 'rgba(211, 47, 47, 0.15)',
                 borderColor: 'rgba(211, 47, 47, 0.5)',
               }
             }}

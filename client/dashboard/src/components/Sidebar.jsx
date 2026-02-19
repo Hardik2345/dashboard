@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Box,
   Drawer,
@@ -186,19 +187,37 @@ export default function Sidebar({
   }
 
   return (
-    <Box
-      component="nav"
-      sx={{
-        width: DRAWER_WIDTH,
-        flexShrink: 0,
-        height: '100vh',
-        position: 'fixed',
-        left: 0,
-        top: 0,
-        zIndex: 1200,
-      }}
-    >
-      <NavContent />
-    </Box>
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={isMobile ? false : { x: -DRAWER_WIDTH }}
+          animate={{ x: 0 }}
+          exit={{ x: -DRAWER_WIDTH }}
+          transition={{
+            type: "spring",
+            stiffness: 260,
+            damping: 30
+          }}
+          style={{
+            width: DRAWER_WIDTH,
+            height: '100vh',
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            zIndex: 1200,
+          }}
+        >
+          <Box
+            component="nav"
+            sx={{
+              width: '100%',
+              height: '100%',
+            }}
+          >
+            <NavContent />
+          </Box>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
