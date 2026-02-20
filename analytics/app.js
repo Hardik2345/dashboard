@@ -118,7 +118,7 @@ const User = sequelize.define('user', {
 // Tables are created idempotently on startup (MySQL CREATE TABLE IF NOT EXISTS)
 sequelize.define('access_control_settings', {
   id: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, autoIncrement: true },
-  mode: { type: DataTypes.ENUM('domain','whitelist'), allowNull: false, defaultValue: 'domain' },
+  mode: { type: DataTypes.ENUM('domain', 'whitelist'), allowNull: false, defaultValue: 'domain' },
   auto_provision_brand_user: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 0 },
   updated_by: { type: DataTypes.BIGINT, allowNull: true },
   updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP') }
@@ -403,7 +403,7 @@ passport.deserializeUser(async (obj, done) => {
       // Fallback to legacy local author via master DB user
       const authorEmail = (process.env.AUTHOR_EMAIL || '').toLowerCase();
       if (authorEmail !== email.toLowerCase()) return done(null, false);
-      const authorUser = await User.findByPk(obj.id, { attributes: ['id','email','role','is_active'] });
+      const authorUser = await User.findByPk(obj.id, { attributes: ['id', 'email', 'role', 'is_active'] });
       if (!authorUser || !authorUser.is_active || authorUser.role !== 'author') return done(null, false);
       return cacheResult({ id: authorUser.id, email: authorUser.email, role: 'author', brandKey: null, isAuthor: true });
     }
@@ -476,7 +476,7 @@ app.get('/', (req, res) => {
 // Routers
 app.use('/auth', buildAuthRouter({ passport, accessCache }));
 app.use('/activity', buildActivityRouter({ sessionTrackingEnabled, recordSessionActivity }));
-app.use('/author', buildAuthorBrandsRouter(sequelize));
+// app.use('/author', buildAuthorBrandsRouter(sequelize));
 app.use('/author', buildAuthorRouter());
 app.use('/metrics', buildMetricsRouter(sequelize));
 app.use('/external', buildExternalRouter());

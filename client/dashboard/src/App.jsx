@@ -23,7 +23,7 @@ const MOBILE_NAV_ITEMS = [
   { id: 'product-conversion', label: 'Funnels', icon: Filter },
   { id: 'alerts', label: 'Alerts', icon: Bell },
   { id: 'access', label: 'Access', icon: ShieldCheck },
-  { id: 'brands', label: 'Setup', icon: Store },
+  //  { id: 'brands', label: 'Setup', icon: Store },
 ];
 import { listAuthorBrands, getTopProducts, getDashboardSummary } from './lib/api.js';
 import { TextField, Button, Paper, Typography } from '@mui/material';
@@ -1237,6 +1237,7 @@ export default function App() {
 
 
 
+/*
                     {isAuthor && authorTab === 'brands' && (
                       <Suspense fallback={<SectionFallback count={2} />}>
                         <Stack spacing={{ xs: 2, md: 3 }}>
@@ -1245,6 +1246,7 @@ export default function App() {
                         </Stack>
                       </Suspense>
                     )}
+                    */
 
                     {authorTab === 'alerts' && (
                       authorBrands.length ? (

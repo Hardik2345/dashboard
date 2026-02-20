@@ -589,7 +589,7 @@ export default function MobileFilterDrawer({
                     {/* PRODUCT VIEW */}
                     {view === 'PRODUCT' && (
                         <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                            <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', position: 'sticky', top: 0, bgcolor: 'transparent', backdropFilter: 'blur(10px)', zIndex: 5 }}>
+                            <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', position: 'sticky', top: 0, bgcolor: isDark ? 'rgba(15, 15, 15, 0.9)' : 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(40px)', zIndex: 10 }}>
                                 <TextField
                                     size="small"
                                     fullWidth
@@ -711,7 +711,7 @@ export default function MobileFilterDrawer({
                     {/* UTM OPTIONS VIEWS */}
                     {['UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN'].includes(view) && (
                         <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                            <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', position: 'sticky', top: 0, bgcolor: 'transparent', backdropFilter: 'blur(10px)', zIndex: 5 }}>
+                            <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', position: 'sticky', top: 0, bgcolor: isDark ? 'rgba(15, 15, 15, 0.9)' : 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(40px)', zIndex: 10 }}>
                                 <TextField
                                     size="small"
                                     fullWidth
