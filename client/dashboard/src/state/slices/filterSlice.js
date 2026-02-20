@@ -41,7 +41,7 @@ function loadInitialUtm() {
   } catch {
     // ignore
   }
-  return { source: '', medium: '', campaign: '' };
+  return { source: [], medium: [], campaign: [], term: [], content: [] };
 }
 
 const filterSlice = createSlice({
@@ -50,9 +50,10 @@ const filterSlice = createSlice({
     range: loadInitialRange(),
     compareMode: null,
     selectedMetric: DEFAULT_TREND_METRIC,
-    productSelection: DEFAULT_PRODUCT_OPTION,
+    productSelection: [DEFAULT_PRODUCT_OPTION],
     utm: loadInitialUtm(),
-    salesChannel: '',
+    salesChannel: [],
+    deviceType: [],
   },
   reducers: {
     setRange(state, action) {
@@ -71,17 +72,47 @@ const filterSlice = createSlice({
       state.selectedMetric = action.payload || DEFAULT_TREND_METRIC;
     },
     setProductSelection(state, action) {
-      // Revert to single value
-      state.productSelection = action.payload || DEFAULT_PRODUCT_OPTION;
+      // Support array or single object, normalize to array
+      const payload = action.payload;
+      if (Array.isArray(payload)) {
+        state.productSelection = payload.length > 0 ? payload : [DEFAULT_PRODUCT_OPTION];
+      } else if (payload) {
+        state.productSelection = [payload];
+      } else {
+        state.productSelection = [DEFAULT_PRODUCT_OPTION];
+      }
+      // Ensure we don't have duplicates
+      const unique = new Map(state.productSelection.map(p => [p.id, p]));
+      state.productSelection = Array.from(unique.values());
     },
     setUtm(state, action) {
       state.utm = { ...state.utm, ...action.payload };
     },
     setSalesChannel(state, action) {
-      state.salesChannel = action.payload || '';
+      // Support array or string
+      const payload = action.payload;
+      if (Array.isArray(payload)) {
+        state.salesChannel = payload;
+      } else if (typeof payload === 'string') {
+        // If it's a comma separated string, split it? Or just treat as single?
+        // Existing behavior was single string. Let's wrap in array if it's a single non-empty string
+        state.salesChannel = payload ? [payload] : [];
+      } else {
+        state.salesChannel = [];
+      }
+    },
+    setDeviceType(state, action) {
+      const payload = action.payload;
+      if (Array.isArray(payload)) {
+        state.deviceType = payload;
+      } else if (typeof payload === 'string') {
+        state.deviceType = payload ? [payload] : [];
+      } else {
+        state.deviceType = [];
+      }
     },
   },
 });
 
-export const { setRange, setCompareMode, setSelectedMetric, setProductSelection, setUtm, setSalesChannel } = filterSlice.actions;
+export const { setRange, setCompareMode, setSelectedMetric, setProductSelection, setUtm, setSalesChannel, setDeviceType } = filterSlice.actions;
 export default filterSlice.reducer;

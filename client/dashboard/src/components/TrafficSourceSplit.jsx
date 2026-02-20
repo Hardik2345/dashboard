@@ -1,6 +1,6 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, memo } from 'react';
 import { Card, CardContent, Typography, Skeleton, Stack, useTheme, Select, MenuItem, FormControl, Box, Grid } from '@mui/material';
-import { ArrowDropUp, ArrowDropDown } from '@mui/icons-material';
+import { TrendingUp, TrendingDown } from '@mui/icons-material';
 import { Doughnut } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -55,7 +55,7 @@ function useCountUp(end, duration = 800) {
     return count;
 }
 
-export default function TrafficSourceSplit({ query }) {
+export default memo(function TrafficSourceSplit({ query }) {
     const theme = useTheme();
     const isDark = theme.palette.mode === 'dark';
     const [loading, setLoading] = useState(true);
@@ -319,9 +319,9 @@ export default function TrafficSourceSplit({ query }) {
                         {delta !== undefined && (
                             <Stack direction="row" alignItems="center" spacing={0} sx={{ bgcolor: delta > 0 ? '#00c85315' : delta < 0 ? '#ff174415' : 'transparent', px: 0.5, py: 0.2, borderRadius: 1 }}>
                                 {delta > 0 ? (
-                                    <ArrowDropUp sx={{ color: deltaColor, fontSize: '1.1rem', ml: -0.5 }} />
+                                    <TrendingUp sx={{ color: deltaColor, fontSize: '0.9rem' }} />
                                 ) : delta < 0 ? (
-                                    <ArrowDropDown sx={{ color: deltaColor, fontSize: '1.1rem', ml: -0.5 }} />
+                                    <TrendingDown sx={{ color: deltaColor, fontSize: '0.9rem' }} />
                                 ) : null}
                                 <Typography variant="caption" fontWeight={700} sx={{ color: deltaColor, fontSize: '0.75rem' }}>
                                     {Math.abs(Math.round(delta))}%
@@ -453,4 +453,4 @@ export default function TrafficSourceSplit({ query }) {
             </CardContent>
         </Card>
     );
-}
+});

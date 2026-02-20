@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Card, CardContent, Stack, Typography, Button, TextField, Chip, Snackbar, Alert, Grid, Box } from '@mui/material';
+import { Card, CardContent, Stack, Typography, Button, TextField, Snackbar, Alert, Grid, Box } from '@mui/material';
+import { GlassChip } from './ui/GlassChip.jsx';
 import { listAdjustmentBuckets, createAdjustmentBucket, deactivateAdjustmentBucket, activateAdjustmentBucket, listAuthorBrands } from '../lib/api.js';
 
-function pct(v) { return `${(Number(v)||0).toFixed(2)}%`; }
+function pct(v) { return `${(Number(v) || 0).toFixed(2)}%`; }
 
 export default function AuthorAdjustments({ brandKey: externalBrandKey, onBrandKeyChange, brands: externalBrands }) {
   const [buckets, setBuckets] = useState([]);
@@ -12,7 +13,7 @@ export default function AuthorAdjustments({ brandKey: externalBrandKey, onBrandK
   const [brands, setBrands] = useState(externalBrands || []);
   const [internalBrandKey, setInternalBrandKey] = useState(externalBrandKey || '');
   const brandKey = isBrandControlled ? (externalBrandKey || '') : internalBrandKey;
-  const [form, setForm] = useState({ lower_bound_sessions:'', upper_bound_sessions:'', offset_pct:'', priority:'100', effective_from:'', effective_to:'', notes:'' });
+  const [form, setForm] = useState({ lower_bound_sessions: '', upper_bound_sessions: '', offset_pct: '', priority: '100', effective_from: '', effective_to: '', notes: '' });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -93,7 +94,7 @@ export default function AuthorAdjustments({ brandKey: externalBrandKey, onBrandK
     const r = await createAdjustmentBucket(payload);
     setCreating(false);
     if (r.error) { setError(r.data?.error || 'Create failed'); return; }
-    setForm({ lower_bound_sessions:'', upper_bound_sessions:'', offset_pct:'', priority:'100', effective_from:'', effective_to:'', notes:'' });
+    setForm({ lower_bound_sessions: '', upper_bound_sessions: '', offset_pct: '', priority: '100', effective_from: '', effective_to: '', notes: '' });
     loadBuckets();
   }
 
@@ -128,17 +129,17 @@ export default function AuthorAdjustments({ brandKey: externalBrandKey, onBrandK
         <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
           <Stack spacing={2.5} component="form" onSubmit={handleCreate}>
             <Typography variant="h6">Create Adjustment Bucket</Typography>
-            
+
             {/* Mobile: Centered stacked layout */}
             <Box sx={{ display: { xs: 'flex', md: 'none' }, justifyContent: 'center' }}>
               <Stack spacing={1.5} sx={{ width: '100%', maxWidth: 400 }}>
-                <TextField size="small" label="Lower bound sessions" required type="number" value={form.lower_bound_sessions} onChange={e=>setForm(f=>({...f, lower_bound_sessions:e.target.value}))} fullWidth />
-                <TextField size="small" label="Upper bound sessions" required type="number" value={form.upper_bound_sessions} onChange={e=>setForm(f=>({...f, upper_bound_sessions:e.target.value}))} fullWidth />
-                <TextField size="small" label="Offset %" required type="number" value={form.offset_pct} onChange={e=>setForm(f=>({...f, offset_pct:e.target.value}))} fullWidth />
-                <TextField size="small" label="Priority" required type="number" value={form.priority} onChange={e=>setForm(f=>({...f, priority:e.target.value}))} fullWidth />
-                <TextField size="small" label="Notes" value={form.notes} onChange={e=>setForm(f=>({...f, notes:e.target.value}))} fullWidth />
-                <TextField size="small" label="Effective from (YYYY-MM-DD)" value={form.effective_from} onChange={e=>setForm(f=>({...f, effective_from:e.target.value}))} fullWidth />
-                <TextField size="small" label="Effective to (YYYY-MM-DD)" value={form.effective_to} onChange={e=>setForm(f=>({...f, effective_to:e.target.value}))} fullWidth />
+                <TextField size="small" label="Lower bound sessions" required type="number" value={form.lower_bound_sessions} onChange={e => setForm(f => ({ ...f, lower_bound_sessions: e.target.value }))} fullWidth />
+                <TextField size="small" label="Upper bound sessions" required type="number" value={form.upper_bound_sessions} onChange={e => setForm(f => ({ ...f, upper_bound_sessions: e.target.value }))} fullWidth />
+                <TextField size="small" label="Offset %" required type="number" value={form.offset_pct} onChange={e => setForm(f => ({ ...f, offset_pct: e.target.value }))} fullWidth />
+                <TextField size="small" label="Priority" required type="number" value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))} fullWidth />
+                <TextField size="small" label="Notes" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} fullWidth />
+                <TextField size="small" label="Effective from (YYYY-MM-DD)" value={form.effective_from} onChange={e => setForm(f => ({ ...f, effective_from: e.target.value }))} fullWidth />
+                <TextField size="small" label="Effective to (YYYY-MM-DD)" value={form.effective_to} onChange={e => setForm(f => ({ ...f, effective_to: e.target.value }))} fullWidth />
                 <Button type="submit" variant="contained" size="small" disabled={creating} fullWidth>
                   {creating ? 'Creating...' : 'Create bucket'}
                 </Button>
@@ -149,13 +150,13 @@ export default function AuthorAdjustments({ brandKey: externalBrandKey, onBrandK
             {/* Desktop: Grid layout */}
             <Box sx={{ display: { xs: 'none', md: 'block' } }}>
               <Grid container spacing={1.5}>
-                <Grid item xs={12} sm={6}><TextField size="small" label="Lower bound sessions" required type="number" value={form.lower_bound_sessions} onChange={e=>setForm(f=>({...f, lower_bound_sessions:e.target.value}))} fullWidth /></Grid>
-                <Grid item xs={12} sm={6}><TextField size="small" label="Upper bound sessions" required type="number" value={form.upper_bound_sessions} onChange={e=>setForm(f=>({...f, upper_bound_sessions:e.target.value}))} fullWidth /></Grid>
-                <Grid item xs={12} sm={4}><TextField size="small" label="Offset %" required type="number" value={form.offset_pct} onChange={e=>setForm(f=>({...f, offset_pct:e.target.value}))} fullWidth /></Grid>
-                <Grid item xs={12} sm={4}><TextField size="small" label="Priority" required type="number" value={form.priority} onChange={e=>setForm(f=>({...f, priority:e.target.value}))} fullWidth /></Grid>
-                <Grid item xs={12} sm={4}><TextField size="small" label="Notes" value={form.notes} onChange={e=>setForm(f=>({...f, notes:e.target.value}))} fullWidth /></Grid>
-                <Grid item xs={12} sm={6}><TextField size="small" label="Effective from (YYYY-MM-DD)" value={form.effective_from} onChange={e=>setForm(f=>({...f, effective_from:e.target.value}))} fullWidth /></Grid>
-                <Grid item xs={12} sm={6}><TextField size="small" label="Effective to (YYYY-MM-DD)" value={form.effective_to} onChange={e=>setForm(f=>({...f, effective_to:e.target.value}))} fullWidth /></Grid>
+                <Grid item xs={12} sm={6}><TextField size="small" label="Lower bound sessions" required type="number" value={form.lower_bound_sessions} onChange={e => setForm(f => ({ ...f, lower_bound_sessions: e.target.value }))} fullWidth /></Grid>
+                <Grid item xs={12} sm={6}><TextField size="small" label="Upper bound sessions" required type="number" value={form.upper_bound_sessions} onChange={e => setForm(f => ({ ...f, upper_bound_sessions: e.target.value }))} fullWidth /></Grid>
+                <Grid item xs={12} sm={4}><TextField size="small" label="Offset %" required type="number" value={form.offset_pct} onChange={e => setForm(f => ({ ...f, offset_pct: e.target.value }))} fullWidth /></Grid>
+                <Grid item xs={12} sm={4}><TextField size="small" label="Priority" required type="number" value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))} fullWidth /></Grid>
+                <Grid item xs={12} sm={4}><TextField size="small" label="Notes" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} fullWidth /></Grid>
+                <Grid item xs={12} sm={6}><TextField size="small" label="Effective from (YYYY-MM-DD)" value={form.effective_from} onChange={e => setForm(f => ({ ...f, effective_from: e.target.value }))} fullWidth /></Grid>
+                <Grid item xs={12} sm={6}><TextField size="small" label="Effective to (YYYY-MM-DD)" value={form.effective_to} onChange={e => setForm(f => ({ ...f, effective_to: e.target.value }))} fullWidth /></Grid>
               </Grid>
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 2 }}>
                 <Button type="submit" variant="contained" size="small" disabled={creating}>
@@ -177,23 +178,23 @@ export default function AuthorAdjustments({ brandKey: externalBrandKey, onBrandK
             <Stack spacing={1}>
               {buckets.map(b => (
                 <Card key={b.id} variant="outlined" sx={{ p: { xs: 1.5, md: 1.5 } }}>
-                  <Stack direction={{ xs:'column', sm:'row' }} spacing={{ xs: 1.25, sm: 1.5 }} alignItems={{ xs: 'flex-start', sm:'center' }} justifyContent="space-between">
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 1.25, sm: 1.5 }} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between">
                     <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" rowGap={1}>
-                      <Chip size="small" label={`${b.lower_bound_sessions}–${b.upper_bound_sessions}`} variant="outlined" />
-                      <Chip size="small" label={`${pct(b.offset_pct)}`} color={b.offset_pct >= 0 ? 'success' : 'error'} />
-                      <Chip size="small" label={b.active ? 'Active' : 'Inactive'} color={b.active ? 'primary' : 'default'} />
+                      <GlassChip size="small" label={`${b.lower_bound_sessions}–${b.upper_bound_sessions}`} isDark={darkMode === 'dark'} />
+                      <GlassChip size="small" label={`${pct(b.offset_pct)}`} color={b.offset_pct >= 0 ? 'success' : 'error'} isDark={darkMode === 'dark'} />
+                      <GlassChip size="small" label={b.active ? 'Active' : 'Inactive'} color={b.active ? 'primary' : 'default'} isDark={darkMode === 'dark'} />
                       {(b.effective_from || b.effective_to) && (
-                        <Chip size="small" label={`${b.effective_from || '∞'} → ${b.effective_to || '∞'}`} variant="outlined" />
+                        <GlassChip size="small" label={`${b.effective_from || '∞'} → ${b.effective_to || '∞'}`} isDark={darkMode === 'dark'} />
                       )}
                     </Stack>
                     <Stack direction="row" spacing={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>
                       {b.active ? (
-                        <Button size="small" disabled={deactivatingId===b.id} onClick={()=>handleDeactivate(b.id)} fullWidth>
-                          {deactivatingId===b.id? 'Deactivating…' : 'Deactivate'}
+                        <Button size="small" disabled={deactivatingId === b.id} onClick={() => handleDeactivate(b.id)} fullWidth>
+                          {deactivatingId === b.id ? 'Deactivating…' : 'Deactivate'}
                         </Button>
                       ) : (
-                        <Button size="small" variant="outlined" disabled={activatingId===b.id} onClick={()=>handleActivate(b.id)} fullWidth>
-                          {activatingId===b.id? 'Activating…' : 'Activate'}
+                        <Button size="small" variant="outlined" disabled={activatingId === b.id} onClick={() => handleActivate(b.id)} fullWidth>
+                          {activatingId === b.id ? 'Activating…' : 'Activate'}
                         </Button>
                       )}
                     </Stack>
