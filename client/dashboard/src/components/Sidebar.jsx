@@ -56,7 +56,7 @@ const NAV_ITEMS = [
     group: 'admin',
     items: [
       { id: 'access', label: 'Access Control', icon: ShieldCheck },
-      { id: 'brands', label: 'Brand Setup', icon: Store },
+      //      { id: 'brands', label: 'Brand Setup', icon: Store },
     ]
   }
 ];
@@ -173,6 +173,7 @@ export default function Sidebar({
           Logout
         </button>
 
+        {/*
         <div className="flex justify-center pt-1 pb-4">
           <img
             src="/brand-logo.jpg"
@@ -183,6 +184,7 @@ export default function Sidebar({
             )}
           />
         </div>
+*/}
       </div>
     </div>
   );

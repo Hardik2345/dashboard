@@ -265,23 +265,38 @@ export default function Header({
 
               {/* Customize Widget Button - Only for admins */}
               {isAdmin && (
-                <Button
-                  variant="contained"
-                  startIcon={<LayoutGrid size={18} />}
-                  sx={{
-                    bgcolor: '#37B29B',
-                    color: '#fff',
-                    textTransform: 'none',
-                    fontWeight: 600,
-                    borderRadius: '10px',
-                    px: 2,
-                    py: 1,
-                    '&:hover': { bgcolor: '#2D9381' },
-                    boxShadow: 'none'
-                  }}
-                >
-                  Customize Widget
-                </Button>
+                <Box sx={{ ml: 1 }}>
+                  {/*
+                  <Button
+                    variant="contained"
+                    startIcon={<LayoutGrid size={18} />}
+                    sx={{
+                      bgcolor: '#37B29B',
+                      color: '#fff',
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      borderRadius: '10px',
+                      px: 2,
+                      py: 1,
+                      '&:hover': { bgcolor: '#2D9381' },
+                      boxShadow: 'none'
+                    }}
+                  >
+                    Customize Widget
+                  </Button>
+                  */}
+                  <img
+                    src="/brand-logo.jpg"
+                    alt="TechIt"
+                    style={{
+                      height: '36px',
+                      width: 'auto',
+                      objectFit: 'contain',
+                      opacity: 0.9,
+                      filter: darkMode ? 'invert(1) hue-rotate(180deg) brightness(1.5)' : 'none'
+                    }}
+                  />
+                </Box>
               )}
             </>
           )}
@@ -290,11 +305,9 @@ export default function Header({
           {isMobile && (
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
               <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
-              {!isAdmin && (
-                <IconButton onClick={onLogout} size="small" sx={{ color: '#d32f2f' }}>
-                  <LogOut size={20} />
-                </IconButton>
-              )}
+              <IconButton onClick={onLogout} size="small" sx={{ color: '#d32f2f' }}>
+                <LogOut size={20} />
+              </IconButton>
             </Box>
           )}
         </Box>
