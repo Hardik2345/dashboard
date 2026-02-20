@@ -20,10 +20,11 @@ const alertSchema = new mongoose.Schema({
   quiet_hours_start: { type: Number },
   quiet_hours_end: { type: Number },
   last_triggered_at: { type: Date },
+  current_state: { type: String, enum: ['NORMAL', 'TRIGGERED', 'CRITICAL'], default: 'NORMAL' },
 }, { collection: 'alerts' });
 
 alertSchema.index({ brand_id: 1, is_active: 1 });
-alertSchema.pre('save', function(next) { this.updated_at = new Date(); next(); });
-alertSchema.pre('findOneAndUpdate', function(next) { this.set({ updated_at: new Date() }); next(); });
+alertSchema.pre('save', function (next) { this.updated_at = new Date(); next(); });
+alertSchema.pre('findOneAndUpdate', function (next) { this.set({ updated_at: new Date() }); next(); });
 
 module.exports = mongoose.model('Alert', alertSchema);
