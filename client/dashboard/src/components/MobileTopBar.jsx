@@ -626,8 +626,20 @@ export default function MobileTopBar({
 
             {/* Mobile Drawer for UTM Filters Removed (Moved to global MobileFilterDrawer) */}
           </Box>
-          <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'block', md: 'none' }, mr: 0.5, textAlign: 'right' }}>
-            Scope: <b>{productValue?.label || 'All products'}</b>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{
+              display: { xs: 'block', md: 'none' },
+              mr: 0.5,
+              textAlign: 'right',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '180px'
+            }}
+          >
+            Scope: <b>{Array.isArray(productValue) ? (productValue.length > 1 ? `${productValue.length} Products` : (productValue[0]?.label || 'All products')) : (productValue?.label || 'All products')}</b>
           </Typography>
         </Box>
 
