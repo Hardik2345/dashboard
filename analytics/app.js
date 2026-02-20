@@ -476,7 +476,7 @@ app.get('/', (req, res) => {
 // Routers
 app.use('/auth', buildAuthRouter({ passport, accessCache }));
 app.use('/activity', buildActivityRouter({ sessionTrackingEnabled, recordSessionActivity }));
-// app.use('/author', buildAuthorBrandsRouter(sequelize));
+app.use('/author', buildAuthorBrandsRouter(sequelize));
 app.use('/author', buildAuthorRouter());
 app.use('/metrics', buildMetricsRouter(sequelize));
 app.use('/external', buildExternalRouter());
