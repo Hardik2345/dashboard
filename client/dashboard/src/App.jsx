@@ -980,7 +980,7 @@ export default function App() {
                     </Box>
                   )}
 
-                  {!isMobile && authorTab !== 'dashboard' && authorTab !== 'product-conversion' && (isAuthor || showMultipleBrands) && (
+                  {!isMobile && authorTab !== 'dashboard' && authorTab !== 'product-conversion' && authorTab !== 'alerts' && authorTab !== 'access' && (isAuthor || showMultipleBrands) && (
                     <Box sx={{ mb: 1 }}>
                       <AuthorBrandSelector
                         brands={isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }))}
@@ -1237,7 +1237,7 @@ export default function App() {
 
 
 
-/*
+                    {/*
                     {isAuthor && authorTab === 'brands' && (
                       <Suspense fallback={<SectionFallback count={2} />}>
                         <Stack spacing={{ xs: 2, md: 3 }}>
@@ -1246,7 +1246,7 @@ export default function App() {
                         </Stack>
                       </Suspense>
                     )}
-                    */
+                    */}
 
                     {authorTab === 'alerts' && (
                       authorBrands.length ? (
