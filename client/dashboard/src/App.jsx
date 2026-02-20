@@ -231,6 +231,20 @@ export default function App() {
     return viewerPermissions.includes(perm);
   }, [isAuthor, viewerPermissions]);
 
+  const accessibleTabs = useMemo(() => {
+    if (isAuthor) return null;
+    const tabs = ['dashboard'];
+    // Keep viewers on dashboard tab only, even if they have funnel permission (since it's inline now)
+    return tabs;
+  }, [isAuthor]);
+
+  const showSidebar = isAuthor || (accessibleTabs && accessibleTabs.length > 1);
+
+  const mobileNavItems = useMemo(() => {
+    if (isAuthor) return MOBILE_NAV_ITEMS;
+    return MOBILE_NAV_ITEMS.filter(item => accessibleTabs?.includes(item.id));
+  }, [isAuthor, accessibleTabs]);
+
   useEffect(() => {
     if (!isAuthor && viewerBrands.length) {
       const current = (globalBrandKey || '').toString().trim().toUpperCase();
@@ -842,8 +856,8 @@ export default function App() {
       <CssBaseline />
       <AppProvider i18n={enTranslations} theme={{ colorScheme: darkMode === 'dark' ? 'dark' : 'light' }}>
         <Box sx={{ display: 'flex', minHeight: '100svh', bgcolor: 'background.default' }}>
-          {/* Sidebar Navigation - only for authors */}
-          {isAuthor && (
+          {/* Sidebar Navigation - for authors OR viewers with multiple tabs */}
+          {showSidebar && (
             <Sidebar
               open={isMobile ? sidebarOpen : desktopSidebarOpen}
               onClose={isMobile ? handleSidebarClose : () => setDesktopSidebarOpen(false)}
@@ -852,11 +866,12 @@ export default function App() {
               darkMode={darkMode === 'dark'}
               user={user}
               onLogout={handleLogout}
+              allowedTabs={accessibleTabs}
             />
           )}
 
           {/* Sidebar Toggle Button - Desktop Only */}
-          {isAuthor && !isMobile && (
+          {showSidebar && !isMobile && (
             <SidebarToggle
               checked={desktopSidebarOpen}
               onChange={setDesktopSidebarOpen}
@@ -879,8 +894,8 @@ export default function App() {
               display: 'flex',
               flexDirection: 'column',
               minHeight: '100svh',
-              width: isAuthor ? { xs: '100%', md: desktopSidebarOpen ? `calc(100% - ${DRAWER_WIDTH}px)` : '100%' } : '100%',
-              ml: isAuthor ? { xs: 0, md: desktopSidebarOpen ? `${DRAWER_WIDTH}px` : 0 } : 0,
+              width: showSidebar ? { xs: '100%', md: desktopSidebarOpen ? `calc(100% - ${DRAWER_WIDTH}px)` : '100%' } : '100%',
+              ml: showSidebar ? { xs: 0, md: desktopSidebarOpen ? `${DRAWER_WIDTH}px` : 0 } : 0,
               transition: (theme) => theme.transitions.create(['width', 'margin'], {
                 easing: theme.transitions.easing.sharp,
                 duration: theme.transitions.duration.enteringScreen,
@@ -897,19 +912,19 @@ export default function App() {
                 borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
                 borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
                 transition: 'all 0.3s ease',
-                pl: isAuthor && !isMobile && !desktopSidebarOpen ? '56px' : 0,
+                pl: showSidebar && !isMobile && !desktopSidebarOpen ? '56px' : 0,
               }}
             >
               <Header
                 user={user}
                 onLogout={handleLogout}
-                onMenuClick={isAuthor ? handleSidebarOpen : undefined}
-                showMenuButton={isAuthor}
+                onMenuClick={showSidebar ? handleSidebarOpen : undefined}
+                showMenuButton={showSidebar}
                 isAdmin={isAuthor}
                 darkMode={darkMode === 'dark'}
                 onToggleDarkMode={handleToggleDarkMode}
                 brandKey={activeBrandKey}
-                showFilterButton={isAuthor || hasPermission('product_filter') || hasPermission('utm_filter') || hasPermission('sales_channel_filter') || showMultipleBrands}
+                showFilterButton={showSidebar || hasPermission('product_filter') || hasPermission('utm_filter') || hasPermission('sales_channel_filter') || hasPermission('device_type_filter') || showMultipleBrands}
                 onFilterClick={() => setMobileFilterOpen(true)}
               />
             </Box>
@@ -957,7 +972,7 @@ export default function App() {
                           product: hasPermission('product_filter'),
                           utm: hasPermission('utm_filter'),
                           salesChannel: hasPermission('sales_channel_filter'),
-                          deviceType: true
+                          deviceType: hasPermission('device_type_filter')
                         }}
                         utmOptions={utmOptions}
                         onDownload={() => console.log('Download triggered')}
@@ -1004,6 +1019,7 @@ export default function App() {
                   showProductFilter={hasPermission('product_filter')}
                   showUtmFilter={hasPermission('utm_filter')}
                   showSalesChannel={hasPermission('sales_channel_filter')}
+                  showDeviceType={hasPermission('device_type_filter')}
                   open={mobileFilterOpen}
                   onClose={() => setMobileFilterOpen(false)}
                   brandKey={activeBrandKey}
@@ -1016,6 +1032,8 @@ export default function App() {
                   onUtmChange={handleUtmChange}
                   salesChannel={salesChannel}
                   onSalesChannelChange={handleSalesChannelChange}
+                  deviceType={deviceType}
+                  onDeviceTypeChange={handleDeviceTypeChange}
                   utmOptions={utmOptions}
                   dateRange={normalizedRange}
                   isDark={darkMode === 'dark'}
@@ -1061,6 +1079,7 @@ export default function App() {
                               productLabel={Array.isArray(productSelection) && productSelection.length > 1 ? `${productSelection.length} Products` : (Array.isArray(productSelection) ? productSelection[0]?.label : productSelection?.label)}
                               utmOptions={utmOptions}
                               showRow={1}
+                              showWebVitals={hasPermission('web_vitals')}
                             />
 
                             <Grid container spacing={2}>
@@ -1075,8 +1094,54 @@ export default function App() {
                                     productLabel={Array.isArray(productSelection) && productSelection.length > 1 ? `${productSelection.length} Products` : (Array.isArray(productSelection) ? productSelection[0]?.label : productSelection?.label)}
                                     utmOptions={utmOptions}
                                     showRow={isMobile ? 'sessions_atc' : 2}
+                                    showWebVitals={hasPermission('web_vitals')}
                                   />
                                   <HourlySalesCompare query={trendMetricsQuery} metric={selectedMetric} />
+
+                                  {/* Funnel Chart - Inline for viewers with permission only */}
+                                  {!isAuthor && hasPermission('sessions_drop_off_funnel') && (
+                                    funnelData?.stats ? (
+                                      <Suspense fallback={<Skeleton variant="rounded" width="100%" height={250} />}>
+                                        <Box sx={{ mt: 2 }}>
+                                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 500, ml: 1 }}>Sessions Drop-off Funnel</Typography>
+                                          <FunnelChart
+                                            data={[
+                                              {
+                                                label: 'Sessions',
+                                                value: funnelData.stats.total_sessions || 0,
+                                                change: funnelData.deltas?.sessions?.diff_pct ? Number(funnelData.deltas.sessions.diff_pct).toFixed(1) : undefined,
+                                              },
+                                              {
+                                                label: 'Add to Cart',
+                                                value: funnelData.stats.total_atc_sessions || 0,
+                                                change: funnelData.deltas?.atc?.diff_pct ? Number(funnelData.deltas.atc.diff_pct).toFixed(1) : undefined,
+                                              },
+                                              {
+                                                label: 'Orders',
+                                                value: funnelData.stats.total_orders || 0,
+                                                change: (funnelData.deltas?.orders?.diff_pct || funnelData.deltas?.orders?.diff_pp) ? Number(funnelData.deltas?.orders?.diff_pct || funnelData.deltas?.orders?.diff_pp).toFixed(1) : undefined,
+                                              }
+                                            ]}
+                                            height={250}
+                                          />
+                                        </Box>
+                                      </Suspense>
+                                    ) : (
+                                      <Skeleton variant="rounded" width="100%" height={290} />
+                                    )
+                                  )}
+
+                                  {!isAuthor && hasPermission('product_conversion') && (
+                                    <Box sx={{ mt: 3 }}>
+                                      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 500, ml: 1 }}>Product Performance</Typography>
+                                      <Suspense fallback={<Skeleton variant="rounded" width="100%" height={300} />}>
+                                        <ProductConversionTable
+                                          brandKey={activeBrandKey}
+                                          showCompareMode={hasPermission('compare_mode')}
+                                        />
+                                      </Suspense>
+                                    </Box>
+                                  )}
                                   {isMobile && (
                                     <KPIs
                                       query={trendMetricsQuery}
@@ -1086,6 +1151,7 @@ export default function App() {
                                       productLabel={Array.isArray(productSelection) && productSelection.length > 1 ? `${productSelection.length} Products` : (Array.isArray(productSelection) ? productSelection[0]?.label : productSelection?.label)}
                                       utmOptions={utmOptions}
                                       showRow="web_perf_cvr"
+                                      showWebVitals={hasPermission('web_vitals')}
                                     />
                                   )}
                                 </Stack>
@@ -1113,14 +1179,6 @@ export default function App() {
                     )}
 
                     {/* Author-only tabs */}
-                    {isAuthor && authorTab === 'access' && (
-                      <Suspense fallback={<SectionFallback count={2} />}>
-                        <Stack spacing={{ xs: 2, md: 3 }}>
-                          <AccessControlCard />
-                        </Stack>
-                      </Suspense>
-                    )}
-
                     {isAuthor && authorTab === 'product-conversion' && (
                       hasBrand ? (
                         <Suspense fallback={<SectionFallback />}>
@@ -1155,20 +1213,29 @@ export default function App() {
 
                             <ProductConversionTable
                               brandKey={activeBrandKey}
-                              brands={authorBrands}
-                              onBrandChange={handleAuthorBrandChange}
-                              brandsLoading={authorBrandsLoading}
+                              showCompareMode={true}
                             />
                           </Stack>
                         </Suspense>
                       ) : (
                         <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
                           <Typography variant="body2" color="text.secondary">
-                            Select a brand to load product conversion data.
+                            Select a brand to view conversion metrics.
                           </Typography>
                         </Paper>
                       )
                     )}
+
+                    {isAuthor && authorTab === 'access' && (
+                      <Suspense fallback={<SectionFallback count={2} />}>
+                        <Stack spacing={{ xs: 2, md: 3 }}>
+                          <AccessControlCard />
+                        </Stack>
+                      </Suspense>
+                    )}
+
+
+
 
                     {isAuthor && authorTab === 'brands' && (
                       <Suspense fallback={<SectionFallback count={2} />}>
@@ -1202,15 +1269,17 @@ export default function App() {
             <Suspense fallback={null}><Footer /></Suspense>
           </Box>
         </Box>
-        {isMobile && (
-          <AnimeNavBar
-            items={MOBILE_NAV_ITEMS}
-            activeTab={authorTab}
-            onTabChange={handleSidebarTabChange}
-            isDark={darkMode === 'dark'}
-          />
-        )}
-      </AppProvider>
+        {
+          isMobile && mobileNavItems.length > 1 && (
+            <AnimeNavBar
+              items={mobileNavItems}
+              activeTab={authorTab}
+              onTabChange={handleSidebarTabChange}
+              isDark={darkMode === 'dark'}
+            />
+          )
+        }
+      </AppProvider >
     </ThemeProvider >
   );
 }

@@ -230,6 +230,13 @@ export default function UnifiedFilterBar({
         return `Campaign (${selected.length})`;
     }, [utm?.campaign]);
 
+
+
+    // --- Visibility Logic ---
+    const showUtm = allowedFilters.utm;
+    const showBrand = isAuthor || brands.length > 1;
+    const showDivision = allowedFilters.salesChannel || allowedFilters.deviceType || allowedFilters.product;
+
     return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {/* The Unified Bar */}
@@ -247,138 +254,142 @@ export default function UnifiedFilterBar({
                 }}
             >
                 {/* 1. Filter Icon (Far Left) - Toggles UTM Visibility */}
-                <Box sx={{ px: 0.75, display: 'flex', alignItems: 'center' }}>
-                    <IconButton
-                        onClick={toggleUtmExpanded}
-                        size="small"
-                        sx={{
-                            width: 32,
-                            height: 32,
-                            bgcolor: utmCount > 0 ? 'primary.main' : 'transparent',
-                            color: utmCount > 0 ? 'primary.contrastText' : 'text.secondary',
-                            borderRadius: '50%',
-                            border: '1px solid',
-                            borderColor: utmCount > 0 ? 'primary.main' : isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                            transition: 'all 0.3s ease-in-out',
-                            transform: utmExpanded ? 'rotate(90deg)' : 'none',
-                            '&:hover': {
-                                bgcolor: utmCount > 0 ? 'primary.dark' : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                                transform: utmExpanded ? 'rotate(90deg) scale(1.1)' : 'scale(1.1)',
-                            }
-                        }}
-                    >
-                        <Filter size={16} />
-                        {utmCount > 0 && (
-                            <Box
-                                sx={{
-                                    position: 'absolute',
-                                    top: -4,
-                                    right: -4,
-                                    bgcolor: 'error.main',
-                                    color: 'error.contrastText',
-                                    borderRadius: '50%',
-                                    width: 14,
-                                    height: 14,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '0.6rem',
-                                    fontWeight: 700,
-                                    border: '1px solid',
-                                    borderColor: isDark ? '#1e1e1e' : '#fff'
-                                }}
-                            >
-                                {utmCount}
-                            </Box>
-                        )}
-                    </IconButton>
-                </Box>
+                {showUtm && (
+                    <Box sx={{ px: 0.75, display: 'flex', alignItems: 'center' }}>
+                        <IconButton
+                            onClick={toggleUtmExpanded}
+                            size="small"
+                            sx={{
+                                width: 32,
+                                height: 32,
+                                bgcolor: utmCount > 0 ? 'primary.main' : 'transparent',
+                                color: utmCount > 0 ? 'primary.contrastText' : 'text.secondary',
+                                borderRadius: '50%',
+                                border: '1px solid',
+                                borderColor: utmCount > 0 ? 'primary.main' : isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                                transition: 'all 0.3s ease-in-out',
+                                transform: utmExpanded ? 'rotate(90deg)' : 'none',
+                                '&:hover': {
+                                    bgcolor: utmCount > 0 ? 'primary.dark' : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                                    transform: utmExpanded ? 'rotate(90deg) scale(1.1)' : 'scale(1.1)',
+                                }
+                            }}
+                        >
+                            <Filter size={16} />
+                            {utmCount > 0 && (
+                                <Box
+                                    sx={{
+                                        position: 'absolute',
+                                        top: -4,
+                                        right: -4,
+                                        bgcolor: 'error.main',
+                                        color: 'error.contrastText',
+                                        borderRadius: '50%',
+                                        width: 14,
+                                        height: 14,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '0.6rem',
+                                        fontWeight: 700,
+                                        border: '1px solid',
+                                        borderColor: isDark ? '#1e1e1e' : '#fff'
+                                    }}
+                                >
+                                    {utmCount}
+                                </Box>
+                            )}
+                        </IconButton>
+                    </Box>
+                )}
 
-                <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+                {showUtm && <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />}
 
                 {/* 2. UTM Filter Group (Toggled by Icon) */}
-                <Collapse in={utmExpanded} orientation="horizontal" unmountOnExit timeout={350}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)', whiteSpace: 'nowrap' }}>
-                        {/* ... Source Button ... */}
-                        <Button
-                            onClick={handleUtmSourceClick}
-                            endIcon={<ChevronDown size={14} />}
-                            sx={{
-                                px: 1.5,
-                                height: 40,
-                                color: (utm?.source?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
-                                textTransform: 'none',
-                                fontWeight: 500,
-                                fontSize: '0.85rem',
-                                borderRadius: 0,
-                                '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
-                            }}
-                        >
-                            {utmSourceLabel}
-                        </Button>
+                {showUtm && (
+                    <Collapse in={utmExpanded} orientation="horizontal" unmountOnExit timeout={350}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)', whiteSpace: 'nowrap' }}>
+                            {/* ... Source Button ... */}
+                            <Button
+                                onClick={handleUtmSourceClick}
+                                endIcon={<ChevronDown size={14} />}
+                                sx={{
+                                    px: 1.5,
+                                    height: 40,
+                                    color: (utm?.source?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
+                                    textTransform: 'none',
+                                    fontWeight: 500,
+                                    fontSize: '0.85rem',
+                                    borderRadius: 0,
+                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                                }}
+                            >
+                                {utmSourceLabel}
+                            </Button>
 
-                        <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+                            <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
 
-                        {/* ... Medium Button ... */}
-                        <Button
-                            onClick={handleUtmMediumClick}
-                            endIcon={<ChevronDown size={14} />}
-                            sx={{
-                                px: 1.5,
-                                height: 40,
-                                color: (utm?.medium?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
-                                textTransform: 'none',
-                                fontWeight: 500,
-                                fontSize: '0.85rem',
-                                borderRadius: 0,
-                                '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
-                            }}
-                        >
-                            {utmMediumLabel}
-                        </Button>
+                            {/* ... Medium Button ... */}
+                            <Button
+                                onClick={handleUtmMediumClick}
+                                endIcon={<ChevronDown size={14} />}
+                                sx={{
+                                    px: 1.5,
+                                    height: 40,
+                                    color: (utm?.medium?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
+                                    textTransform: 'none',
+                                    fontWeight: 500,
+                                    fontSize: '0.85rem',
+                                    borderRadius: 0,
+                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                                }}
+                            >
+                                {utmMediumLabel}
+                            </Button>
 
-                        <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+                            <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
 
-                        {/* ... Campaign Button ... */}
-                        <Button
-                            onClick={handleUtmCampaignClick}
-                            endIcon={<ChevronDown size={14} />}
-                            sx={{
-                                px: 1.5,
-                                height: 40,
-                                color: (utm?.campaign?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
-                                textTransform: 'none',
-                                fontWeight: 500,
-                                fontSize: '0.85rem',
-                                borderRadius: 0,
-                                '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
-                            }}
-                        >
-                            {utmCampaignLabel}
-                        </Button>
+                            {/* ... Campaign Button ... */}
+                            <Button
+                                onClick={handleUtmCampaignClick}
+                                endIcon={<ChevronDown size={14} />}
+                                sx={{
+                                    px: 1.5,
+                                    height: 40,
+                                    color: (utm?.campaign?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
+                                    textTransform: 'none',
+                                    fontWeight: 500,
+                                    fontSize: '0.85rem',
+                                    borderRadius: 0,
+                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                                }}
+                            >
+                                {utmCampaignLabel}
+                            </Button>
 
-                        <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+                            <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
 
-                        {/* Clear Button at the end of UTMs */}
-                        <Button
-                            onClick={() => onUtmChange({ source: [], medium: [], campaign: [], term: [], content: [] })}
-                            sx={{
-                                px: 1.5,
-                                height: 40,
-                                color: 'error.main',
-                                textTransform: 'none',
-                                fontWeight: 600,
-                                fontSize: '0.75rem',
-                                minWidth: 'auto',
-                                '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }
-                            }}
-                        >
-                            Clear
-                        </Button>
+                            {/* Clear Button at the end of UTMs */}
+                            <Button
+                                onClick={() => onUtmChange({ source: [], medium: [], campaign: [], term: [], content: [] })}
+                                sx={{
+                                    px: 1.5,
+                                    height: 40,
+                                    color: 'error.main',
+                                    textTransform: 'none',
+                                    fontWeight: 600,
+                                    fontSize: '0.75rem',
+                                    minWidth: 'auto',
+                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }
+                                }}
+                            >
+                                Clear
+                            </Button>
 
-                        <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
-                    </Box>
-                </Collapse>
+                            <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+                        </Box>
+                    </Collapse>
+                )}
 
                 {/* 3. Date Segment */}
                 <Button
@@ -399,10 +410,10 @@ export default function UnifiedFilterBar({
                     {dateLabel}
                 </Button>
 
-                <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+                {(showBrand || showDivision) && <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />}
 
                 {/* 4. Brand Segment (Only if multibrand/author) */}
-                {(isAuthor || brands.length > 1) && (
+                {showBrand && (
                     <>
                         <Button
                             onClick={handleBrandClick}
@@ -425,46 +436,48 @@ export default function UnifiedFilterBar({
                                 {brandKey || 'Select Brand'}
                             </Box>
                         </Button>
-                        <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+                        {showDivision && <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />}
                     </>
                 )}
 
                 {/* 5. Division/Filters Segment */}
-                <Button
-                    onClick={handleFilterClick}
-                    endIcon={<ChevronDown size={14} />}
-                    sx={{
-                        px: 2,
-                        height: '100%',
-                        color: 'text.primary',
-                        textTransform: 'none',
-                        fontWeight: 500,
-                        fontSize: '0.875rem',
-                        borderRadius: 0,
-                        '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
-                    }}
-                >
-                    Division(All)
-                    {activeFilterCount > 0 && (
-                        <Box
-                            component="span"
-                            sx={{
-                                ml: 1,
-                                bgcolor: 'primary.main',
-                                color: 'primary.contrastText',
-                                borderRadius: '50%',
-                                width: 18,
-                                height: 18,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '0.65rem'
-                            }}
-                        >
-                            {activeFilterCount}
-                        </Box>
-                    )}
-                </Button>
+                {showDivision && (
+                    <Button
+                        onClick={handleFilterClick}
+                        endIcon={<ChevronDown size={14} />}
+                        sx={{
+                            px: 2,
+                            height: '100%',
+                            color: 'text.primary',
+                            textTransform: 'none',
+                            fontWeight: 500,
+                            fontSize: '0.875rem',
+                            borderRadius: 0,
+                            '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                        }}
+                    >
+                        Division(All)
+                        {activeFilterCount > 0 && (
+                            <Box
+                                component="span"
+                                sx={{
+                                    ml: 1,
+                                    bgcolor: 'primary.main',
+                                    color: 'primary.contrastText',
+                                    borderRadius: '50%',
+                                    width: 18,
+                                    height: 18,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '0.65rem'
+                                }}
+                            >
+                                {activeFilterCount}
+                            </Box>
+                        )}
+                    </Button>
+                )}
             </Paper>
 
             {/* Download Button (Separate) */}

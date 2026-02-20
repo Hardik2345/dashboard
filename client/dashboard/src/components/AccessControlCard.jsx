@@ -38,7 +38,7 @@ import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import { adminListUsers, adminUpsertUser, adminDeleteUser, listAuthorBrands, listDomainRules, upsertDomainRule, deleteDomainRule } from '../lib/api';
 
-const PERMISSION_OPTIONS = ["all", "product_filter", "utm_filter", "web_vitals", "payment_split_order", "payment_split_sales", "traffic_split", "sales_channel_filter"];
+const PERMISSION_OPTIONS = ["all", "product_filter", "utm_filter", "web_vitals", "payment_split_order", "payment_split_sales", "traffic_split", "sales_channel_filter", "device_type_filter", "sessions_drop_off_funnel", "product_conversion", "compare_mode"];
 
 const emptyForm = {
   email: '',
@@ -520,6 +520,35 @@ export default function AccessControlCard() {
                   options={PERMISSION_OPTIONS}
                   value={form.permissions}
                   onChange={(_, val) => handleFormChange('permissions', val)}
+                  disablePortal={false}
+                  ListboxProps={{
+                    sx: { maxHeight: 250 }
+                  }}
+                  slotProps={{
+                    popper: {
+                      sx: { zIndex: 99999 },
+                      modifiers: [
+                        {
+                          name: 'flip',
+                          enabled: false,
+                        },
+                        {
+                          name: 'preventOverflow',
+                          enabled: true,
+                          options: {
+                            boundary: 'window',
+                          },
+                        },
+                        {
+                          name: 'computeStyles',
+                          options: {
+                            adaptive: false,
+                            gpuAcceleration: false,
+                          },
+                        },
+                      ],
+                    }
+                  }}
                   renderTags={(value, getTagProps) =>
                     value.map((option, index) => (
                       <Chip variant="outlined" label={option} {...getTagProps({ index })} />
@@ -611,6 +640,35 @@ export default function AccessControlCard() {
                 options={PERMISSION_OPTIONS}
                 value={domainForm.permissions}
                 onChange={(_, val) => setDomainForm(prev => ({ ...prev, permissions: val }))}
+                disablePortal={false}
+                ListboxProps={{
+                  sx: { maxHeight: 250 }
+                }}
+                slotProps={{
+                  popper: {
+                    sx: { zIndex: 99999 },
+                    modifiers: [
+                      {
+                        name: 'flip',
+                        enabled: false,
+                      },
+                      {
+                        name: 'preventOverflow',
+                        enabled: true,
+                        options: {
+                          boundary: 'window',
+                        },
+                      },
+                      {
+                        name: 'computeStyles',
+                        options: {
+                          adaptive: false,
+                          gpuAcceleration: false,
+                        },
+                      },
+                    ],
+                  }
+                }}
                 renderTags={(value, getTagProps) =>
                   value.map((option, index) => (
                     <Chip variant="outlined" label={option} {...getTagProps({ index })} />
