@@ -656,16 +656,31 @@ export default function App() {
   }, [utm]);
 
   // Fetch UTM Options (Lifted from MobileTopBar)
+  // Fetch UTM Options (Lifted from MobileTopBar)
+  const lastFetchParams = useMemo(() => {
+    return {
+      brand: activeBrandKey,
+      start: formatDate(start),
+      end: formatDate(end),
+      utm: JSON.stringify(utm),
+      salesChannel: JSON.stringify(salesChannel),
+      deviceType: JSON.stringify(deviceType)
+    };
+  }, [activeBrandKey, start, end, utm, salesChannel, deviceType]);
+
   useEffect(() => {
     const canFetch = isAuthor ? authorTab === 'dashboard' : hasPermission('utm_filter');
     if (!activeBrandKey || !canFetch) return;
-    const s = formatDate(start);
-    const e = formatDate(end);
+
+    // We use lastFetchParams to decide if we REALLY need a fetch.
+    // However, since this effect depends on the memoized lastFetchParams,
+    // it will only run when the params actually change.
+    // The previous check was potentially too aggressive by blocking on brand_key alone.
 
     getDashboardSummary({
       brand_key: activeBrandKey,
-      start: s,
-      end: e,
+      start: formatDate(start),
+      end: formatDate(end),
       include_utm_options: true,
       utm_source: utm?.source, // Dependent filtering
       utm_medium: utm?.medium,
@@ -674,9 +689,11 @@ export default function App() {
       device_type: deviceType
     })
       .then(res => {
-        if (res.filter_options) setUtmOptions(res.filter_options);
+        if (res.filter_options) {
+          setUtmOptions({ ...res.filter_options, brand_key: activeBrandKey });
+        }
       });
-  }, [activeBrandKey, start, end, utm, isAuthor, authorTab, salesChannel, deviceType]);
+  }, [lastFetchParams, isAuthor, authorTab]); // Depend on stable memoized params
 
   // Check auth on mount
   useEffect(() => {
@@ -989,7 +1006,7 @@ export default function App() {
                   showSalesChannel={hasPermission('sales_channel_filter')}
                   open={mobileFilterOpen}
                   onClose={() => setMobileFilterOpen(false)}
-                  brandKey={authorBrandKey}
+                  brandKey={activeBrandKey}
                   brands={isAuthor ? authorBrands : viewerBrands.map(b => ({ key: b }))}
                   onBrandChange={handleAuthorBrandChange}
                   productOptions={productOptions}
@@ -1000,7 +1017,7 @@ export default function App() {
                   salesChannel={salesChannel}
                   onSalesChannelChange={handleSalesChannelChange}
                   utmOptions={utmOptions}
-                  dateRange={range}
+                  dateRange={normalizedRange}
                   isDark={darkMode === 'dark'}
                 />
               </Box>

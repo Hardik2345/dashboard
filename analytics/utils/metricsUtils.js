@@ -162,20 +162,38 @@ async function computeAtcSessions({ start, end, conn, filters }) {
   return rawSum("total_atc_sessions", { start, end, conn });
 }
 
-function appendUtmWhere(sql, params, filters) {
+function appendUtmWhere(sql, params, filters, mapDirectToNull = false) {
   if (!filters) return sql;
   const append = (col, val) => {
     if (!val) return;
     const vals = Array.isArray(val) ? val : (typeof val === 'string' && val.includes(',') ? val.split(',') : [val]);
-    if (vals.length === 0) return;
+    const cleanVals = vals.map(v => v.trim()).filter(Boolean);
+    if (cleanVals.length === 0) return;
 
-    if (vals.length === 1) {
-      // Trim values just in case
+    // Special handling for 'direct' in snapshot tables (where it is NULL)
+    if (mapDirectToNull && col === 'utm_source') {
+      const hasDirect = cleanVals.some(v => v.toLowerCase() === 'direct');
+      const otherVals = cleanVals.filter(v => v.toLowerCase() !== 'direct');
+
+      if (hasDirect) {
+        if (otherVals.length === 0) {
+          // Only direct
+          sql += ` AND ${col} IS NULL`;
+        } else {
+          // Mixed
+          sql += ` AND (${col} IN (${otherVals.map(() => '?').join(', ')}) OR ${col} IS NULL)`;
+          params.push(...otherVals);
+        }
+        return;
+      }
+    }
+
+    if (cleanVals.length === 1) {
       sql += ` AND ${col} = ?`;
-      params.push(vals[0].trim());
+      params.push(cleanVals[0]);
     } else {
-      sql += ` AND ${col} IN (${vals.map(() => '?').join(', ')})`;
-      params.push(...vals.map(v => v.trim()));
+      sql += ` AND ${col} IN (${cleanVals.map(() => '?').join(', ')})`;
+      params.push(...cleanVals);
     }
   };
   append('utm_source', filters.utm_source);
@@ -204,7 +222,8 @@ async function computeSessionsFromSnapshot({ start, end, conn, filters, column }
 
   // Use shared helper, but exclude sales_channel (order_app_name) as it doesn't exist in snapshot
   const { sales_channel, ...filtersForSnapshot } = filters || {};
-  snapshotSql = appendUtmWhere(snapshotSql, snapParams, filtersForSnapshot);
+  // Pass true to map 'direct' -> NULL for snapshot tables
+  snapshotSql = appendUtmWhere(snapshotSql, snapParams, filtersForSnapshot, true);
 
   const snapRows = await conn.query(snapshotSql, { type: QueryTypes.SELECT, replacements: snapParams });
   return Number(snapRows[0]?.total || 0);
