@@ -925,7 +925,7 @@ const MemoizedTable = memo(({
   );
 });
 
-export default function ProductConversionTable({ brandKey }) {
+export default function ProductConversionTable({ brandKey, showCompareMode = true }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
 
@@ -989,6 +989,13 @@ export default function ProductConversionTable({ brandKey }) {
   // Exception: if table is very small (no data), use min height.
   const panelHeight = pageSize === 10 ? Math.max(600, estimatedTableHeight) : Math.max(400, estimatedTableHeight / 4);
   const [visibleColumnIds, setVisibleColumnIds] = useState(['landing_page_path', 'sessions', 'atc', 'cvr']);
+
+  // Effect to enforce compareMode = false if showCompareMode is false
+  useEffect(() => {
+    if (!showCompareMode && compareMode) {
+      dispatch(setCompareMode(false));
+    }
+  }, [showCompareMode, compareMode, dispatch]);
 
   // Compute visible columns
   const visibleColumns = useMemo(() => {
@@ -1328,34 +1335,36 @@ export default function ProductConversionTable({ brandKey }) {
           )}
 
           {/* Compare Selector (Right) */}
-          <Box sx={{ justifySelf: 'end' }}>
-            <FormControl size="small">
-              <Select
-                value={compareMode ? 'compare' : 'none'}
-                onChange={handleCompareModeChange}
-                size="small"
-                sx={{
-                  bgcolor: 'background.paper',
-                  fontSize: 12,
-                  height: 36,
-                  borderRadius: 2,
-                  fontWeight: 500,
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'divider' },
-                  '& .MuiSelect-select': { py: 0.5, px: 2 }
-                }}
-                MenuProps={{
-                  PaperProps: { sx: { width: 'var(--select-width)' } },
-                  onEntering: (node) => {
-                    const selectNode = node.parentElement?.querySelector('[role="combobox"]');
-                    if (selectNode) node.style.width = `${selectNode.clientWidth}px`;
-                  }
-                }}
-              >
-                <MenuItem value="none" sx={{ fontSize: 13 }}>No comparison</MenuItem>
-                <MenuItem value="compare" sx={{ fontSize: 13 }}>Compare</MenuItem>
-              </Select>
-            </FormControl>
-          </Box>
+          {showCompareMode && (
+            <Box sx={{ justifySelf: 'end' }}>
+              <FormControl size="small">
+                <Select
+                  value={compareMode ? 'compare' : 'none'}
+                  onChange={handleCompareModeChange}
+                  size="small"
+                  sx={{
+                    bgcolor: 'background.paper',
+                    fontSize: 12,
+                    height: 36,
+                    borderRadius: 2,
+                    fontWeight: 500,
+                    '& .MuiOutlinedInput-notchedOutline': { borderColor: 'divider' },
+                    '& .MuiSelect-select': { py: 0.5, px: 2 }
+                  }}
+                  MenuProps={{
+                    PaperProps: { sx: { width: 'var(--select-width)' } },
+                    onEntering: (node) => {
+                      const selectNode = node.parentElement?.querySelector('[role="combobox"]');
+                      if (selectNode) node.style.width = `${selectNode.clientWidth}px`;
+                    }
+                  }}
+                >
+                  <MenuItem value="none" sx={{ fontSize: 13 }}>No comparison</MenuItem>
+                  <MenuItem value="compare" sx={{ fontSize: 13 }}>Compare</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+          )}
         </Box>
       </Box>
 
@@ -1388,25 +1397,27 @@ export default function ProductConversionTable({ brandKey }) {
           </Button>
 
           {/* Compare Button */}
-          <FormControl size="small" sx={{ minWidth: 100 }}>
-            <Select
-              value={compareMode ? 'compare' : 'none'}
-              onChange={handleCompareModeChange}
-              size="small"
-              IconComponent={SwapVertIcon}
-              sx={{
-                ...glassStyle,
-                height: 38,
-                fontSize: '0.8125rem',
-                color: 'text.secondary',
-                '& .MuiSelect-select': { py: 0, px: 1.5 },
-                '& .MuiOutlinedInput-notchedOutline': { border: 'none' }
-              }}
-            >
-              <MenuItem value="none">No comparison</MenuItem>
-              <MenuItem value="compare">Compare</MenuItem>
-            </Select>
-          </FormControl>
+          {showCompareMode && (
+            <FormControl size="small" sx={{ minWidth: 100 }}>
+              <Select
+                value={compareMode ? 'compare' : 'none'}
+                onChange={handleCompareModeChange}
+                size="small"
+                IconComponent={SwapVertIcon}
+                sx={{
+                  ...glassStyle,
+                  height: 38,
+                  fontSize: '0.8125rem',
+                  color: 'text.secondary',
+                  '& .MuiSelect-select': { py: 0, px: 1.5 },
+                  '& .MuiOutlinedInput-notchedOutline': { border: 'none' }
+                }}
+              >
+                <MenuItem value="none">No comparison</MenuItem>
+                <MenuItem value="compare">Compare</MenuItem>
+              </Select>
+            </FormControl>
+          )}
 
           {/* Export CSV Button */}
           <Button
@@ -1430,23 +1441,25 @@ export default function ProductConversionTable({ brandKey }) {
 
           {/* Date Range Pickers (Cleaned up) */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, ml: 0.5 }}>
-            <DateRangePicker
-              startDate={compareStart}
-              endDate={compareEnd}
-              onApply={applyCompDateChange}
-              label="Compare"
-              labelPrefix="Comp:"
-              activePresetLabel={activeCompPreset}
-              disabled={!compareMode}
-              disableDatesAfter={dayjs().subtract(1, 'day').toDate()}
-              sx={{
-                ...glassStyle,
-                minWidth: 150,
-                height: 38,
-                borderRadius: 2,
-                '& .MuiTypography-root': { fontSize: '0.72rem' }
-              }}
-            />
+            {showCompareMode && (
+              <DateRangePicker
+                startDate={compareStart}
+                endDate={compareEnd}
+                onApply={applyCompDateChange}
+                label="Compare"
+                labelPrefix="Comp:"
+                activePresetLabel={activeCompPreset}
+                disabled={!compareMode}
+                disableDatesAfter={dayjs().subtract(1, 'day').toDate()}
+                sx={{
+                  ...glassStyle,
+                  minWidth: 150,
+                  height: 38,
+                  borderRadius: 2,
+                  '& .MuiTypography-root': { fontSize: '0.72rem' }
+                }}
+              />
+            )}
 
             <DateRangePicker
               startDate={start}

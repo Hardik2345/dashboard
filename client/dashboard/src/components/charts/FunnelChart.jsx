@@ -61,11 +61,11 @@ const FunnelChart = React.memo(function FunnelChart({
     // Generate gradient stops for segmented look
     const gradientStops = useMemo(() => {
         const colors = [
-            '#0d9488', // teal-600
-            '#14b8a6', // teal-500
-            '#2dd4bf', // teal-400
-            '#5eead4', // teal-300
-            '#99f6e4', // teal-200
+            '#10b981', // emerald-500 (Primary sync)
+            '#34d399', // emerald-400
+            '#6ee7b7', // emerald-300
+            '#a7f3d0', // emerald-200
+            '#d1fae5', // emerald-100
         ];
 
         return data.map((_, index) => {
@@ -84,7 +84,7 @@ const FunnelChart = React.memo(function FunnelChart({
 
 
     return (
-        <Card elevation={0} sx={{ height: '100%', border: '1px solid', borderColor: 'divider' }} className={className}>
+        <Card elevation={0} sx={{ height: '100%', border: '1px solid', borderColor: 'divider', borderRadius: { xs: 2, md: 3 } }} className={className}>
             <CardContent sx={{ p: 3, '&:last-child': { pb: 3 }, position: 'relative' }}>
                 {/* View Mode Toggle */}
                 <div className="absolute top-3 right-3 z-30 hidden md:flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -93,7 +93,7 @@ const FunnelChart = React.memo(function FunnelChart({
                         className={cn(
                             "px-3 py-1 text-[10px] md:text-xs font-medium rounded-md transition-all duration-200",
                             viewMode === 'new'
-                                ? "bg-white dark:bg-gray-700 text-teal-600 dark:text-teal-400 shadow-sm"
+                                ? "bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm"
                                 : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
                         )}
                     >
@@ -104,7 +104,7 @@ const FunnelChart = React.memo(function FunnelChart({
                         className={cn(
                             "px-3 py-1 text-[10px] md:text-xs font-medium rounded-md transition-all duration-200",
                             viewMode === 'legacy'
-                                ? "bg-white dark:bg-gray-700 text-teal-600 dark:text-teal-400 shadow-sm"
+                                ? "bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm"
                                 : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
                         )}
                     >
@@ -119,7 +119,7 @@ const FunnelChart = React.memo(function FunnelChart({
                             key={i}
                             className={cn(
                                 "flex-1 h-full transition-all duration-300 ease-in-out border-r border-dashed border-gray-200 dark:border-gray-800 last:border-r-0",
-                                hoveredIndex === i ? "bg-gradient-to-t from-teal-500/20 to-transparent" : "bg-transparent"
+                                hoveredIndex === i ? "bg-gradient-to-t from-emerald-500/20 to-transparent" : "bg-transparent"
                             )}
                             onMouseEnter={() => setHoveredIndex(i)}
                             onMouseLeave={() => setHoveredIndex(null)}
@@ -205,7 +205,7 @@ const FunnelChart = React.memo(function FunnelChart({
                                     <defs>
                                         <filter id="funnelCombinedShadow" x="-50%" y="-50%" width="200%" height="200%">
                                             <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="rgba(0, 0, 0, 0.3)" result="shadowDown" />
-                                            <feDropShadow dx="0" dy="-15" stdDeviation="20" floodColor="#14b8a6" floodOpacity="0.4" result="shadowUp" />
+                                            <feDropShadow dx="0" dy="-8" stdDeviation="12" floodColor="#10b981" floodOpacity="0.3" result="shadowUp" />
                                             <feMerge>
                                                 <feMergeNode in="shadowDown" />
                                                 <feMergeNode in="shadowUp" />
@@ -288,7 +288,7 @@ const FunnelChart = React.memo(function FunnelChart({
                                     return (
                                         <div key={i} className="flex-1 flex flex-col justify-end items-center h-full">
                                             <div
-                                                className="w-[80%] bg-teal-500 rounded-t-md relative flex items-center justify-center transition-all duration-500 ease-out hover:opacity-90"
+                                                className="w-[80%] bg-emerald-500 rounded-t-md relative flex items-center justify-center transition-all duration-500 ease-out hover:opacity-90"
                                                 style={{ height: `${heightPct}%` }}
                                             >
                                                 {/* Percentage Label inside bar */}

@@ -36,6 +36,7 @@ export default function KPIs({
   productLabel,
   utmOptions, // Prop from App
   showRow = null, // null for both, 1 for row 1, 2 for row 2
+  showWebVitals = true,
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -371,22 +372,39 @@ export default function KPIs({
                 />
               ) : (
                 /* New Web Performance position for desktop Row 1 */
-                <KPIStat
-                  label="Web Performance(Avg)"
-                  value={webVitalsData.performanceAvg ?? 0}
-                  loading={webVitalsData.loading}
-                  deltaLoading={webVitalsData.loading}
-                  formatter={(v) => nfFloat.format(v)}
-                  delta={
-                    webVitalsData.performanceChange !== null
-                      ? {
-                        value: webVitalsData.performanceChange,
-                        direction: webVitalsData.performanceChange > 0 ? 'up' : 'down'
-                      }
-                      : undefined
-                  }
-                  selected={false}
-                />
+                showWebVitals ? (
+                  <KPIStat
+                    label="Web Performance(Avg)"
+                    value={webVitalsData.performanceAvg ?? 0}
+                    loading={webVitalsData.loading}
+                    deltaLoading={webVitalsData.loading}
+                    formatter={(v) => nfFloat.format(v)}
+                    delta={
+                      webVitalsData.performanceChange !== null
+                        ? {
+                          value: webVitalsData.performanceChange,
+                          direction: webVitalsData.performanceChange > 0 ? 'up' : 'down'
+                        }
+                        : undefined
+                    }
+                    selected={false}
+                  />
+                ) : (
+                  <KPIStat
+                    label="Conversion Rate"
+                    value={data.cvr?.cvr ?? 0}
+                    loading={loading}
+                    deltaLoading={deltaLoading}
+                    formatter={(v) => nfPct.format(v)}
+                    delta={
+                      typeof cvrDeltaValue === "number" && data.cvrDelta
+                        ? { value: cvrDeltaValue, direction: data.cvrDelta.direction }
+                        : undefined
+                    }
+                    onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
+                    selected={selectedMetric === "cvr"}
+                  />
+                )
               )}
             </Grid>
           </>
@@ -395,7 +413,7 @@ export default function KPIs({
         {/* Row 2 split: Sessions and ATC */}
         {(showRow === null || showRow === 2 || showRow === 'sessions_atc') && (
           <>
-            <Grid size={{ xs: 6, sm: 4, md: 4 }}>
+            <Grid size={{ xs: 6, sm: 4, md: showWebVitals ? 4 : 6 }}>
               <KPIStat
                 label="Total Sessions"
                 value={totalSessions}
@@ -416,7 +434,7 @@ export default function KPIs({
                 selected={selectedMetric === "sessions"}
               />
             </Grid>
-            <Grid size={{ xs: 6, sm: 4, md: 4 }}>
+            <Grid size={{ xs: 6, sm: 4, md: showWebVitals ? 4 : 6 }}>
               <KPIStat
                 label="ATC Sessions"
                 value={totalAtcSessions}
@@ -439,44 +457,48 @@ export default function KPIs({
         )}
 
         {/* Row 2 split: Web Performance (Mobile) or CVR (Desktop) */}
-        {(showRow === null || showRow === 2 || showRow === 'web_perf_cvr') && (
+        {(showRow === null || showRow === 2 || showRow === 'web_perf_cvr') && (showWebVitals || isMobile) && (
           <>
             <Grid size={{ xs: 12, sm: 4, md: 4 }}>
               {isMobile ? (
                 /* Original Web Performance position for mobile Row 2 */
-                <KPIStat
-                  label="Web Performance(Avg)"
-                  value={webVitalsData.performanceAvg ?? 0}
-                  loading={webVitalsData.loading}
-                  deltaLoading={webVitalsData.loading}
-                  formatter={(v) => nfFloat.format(v)}
-                  delta={
-                    webVitalsData.performanceChange !== null
-                      ? {
-                        value: webVitalsData.performanceChange,
-                        direction: webVitalsData.performanceChange > 0 ? 'up' : 'down'
-                      }
-                      : undefined
-                  }
-                  selected={false}
-                  centerOnMobile={true}
-                />
+                showWebVitals ? (
+                  <KPIStat
+                    label="Web Performance(Avg)"
+                    value={webVitalsData.performanceAvg ?? 0}
+                    loading={webVitalsData.loading}
+                    deltaLoading={webVitalsData.loading}
+                    formatter={(v) => nfFloat.format(v)}
+                    delta={
+                      webVitalsData.performanceChange !== null
+                        ? {
+                          value: webVitalsData.performanceChange,
+                          direction: webVitalsData.performanceChange > 0 ? 'up' : 'down'
+                        }
+                        : undefined
+                    }
+                    selected={false}
+                    centerOnMobile={true}
+                  />
+                ) : null
               ) : (
                 /* New CVR position for desktop Row 2 */
-                <KPIStat
-                  label="Conversion Rate"
-                  value={data.cvr?.cvr ?? 0}
-                  loading={loading}
-                  deltaLoading={deltaLoading}
-                  formatter={(v) => nfPct.format(v)}
-                  delta={
-                    typeof cvrDeltaValue === "number" && data.cvrDelta
-                      ? { value: cvrDeltaValue, direction: data.cvrDelta.direction }
-                      : undefined
-                  }
-                  onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
-                  selected={selectedMetric === "cvr"}
-                />
+                showWebVitals ? (
+                  <KPIStat
+                    label="Conversion Rate"
+                    value={data.cvr?.cvr ?? 0}
+                    loading={loading}
+                    deltaLoading={deltaLoading}
+                    formatter={(v) => nfPct.format(v)}
+                    delta={
+                      typeof cvrDeltaValue === "number" && data.cvrDelta
+                        ? { value: cvrDeltaValue, direction: data.cvrDelta.direction }
+                        : undefined
+                    }
+                    onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
+                    selected={selectedMetric === "cvr"}
+                  />
+                ) : null
               )}
             </Grid>
           </>

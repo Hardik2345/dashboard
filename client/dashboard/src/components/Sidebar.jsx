@@ -69,11 +69,21 @@ export default function Sidebar({
   darkMode = false,
   user,
   onLogout,
+  allowedTabs, // Array of tab IDs. If provided, specific filtering is applied.
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const initials = getInitials(user?.name, user?.email);
   const avatarColor = getAvatarColor(initials);
+
+  const filteredNavItems = useMemo(() => {
+    if (!allowedTabs) return NAV_ITEMS;
+    const set = new Set(allowedTabs);
+    return NAV_ITEMS.map(group => ({
+      ...group,
+      items: group.items.filter(item => set.has(item.id))
+    })).filter(group => group.items.length > 0);
+  }, [allowedTabs]);
 
   const NavContent = () => (
     <div className={cn(
@@ -97,7 +107,7 @@ export default function Sidebar({
 
       {/* Navigation Items */}
       <nav className="flex-1 px-4 space-y-6 overflow-y-auto">
-        {NAV_ITEMS.map((section, sIdx) => (
+        {filteredNavItems.map((section, sIdx) => (
           <div key={section.group} className="space-y-1">
             {sIdx > 0 && <div className="my-4 border-t border-zinc-100 dark:border-zinc-800" />}
             {section.items.map((item) => {
@@ -162,6 +172,17 @@ export default function Sidebar({
           <LogOut size={16} />
           Logout
         </button>
+
+        <div className="flex justify-center pt-1 pb-4">
+          <img
+            src="/brand-logo.jpg"
+            alt="TechIt"
+            className={cn(
+              "h-9 w-auto object-contain opacity-70",
+              darkMode && "invert hue-rotate-180 brightness-1.5"
+            )}
+          />
+        </div>
       </div>
     </div>
   );

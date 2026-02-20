@@ -53,6 +53,10 @@ export default function MobileFilterDrawer({
     showUtmFilter = true,
     showSalesChannel = true,
 
+    deviceType = [],
+    onDeviceTypeChange,
+    showDeviceType = true,
+
     showProductTypeFilter = false,
     productTypes = [],
     onProductTypeChange,
@@ -62,6 +66,7 @@ export default function MobileFilterDrawer({
     const [tempProduct, setTempProduct] = useState(productValue);
     const [tempUtm, setTempUtm] = useState(utm);
     const [tempSalesChannel, setTempSalesChannel] = useState(salesChannel);
+    const [tempDeviceType, setTempDeviceType] = useState(deviceType);
 
     // Product Type State
     const [tempProductTypes, setTempProductTypes] = useState(productTypes || []);
@@ -77,16 +82,18 @@ export default function MobileFilterDrawer({
     }, [view]);
 
     // Sync local state with props when drawer opens
+    // Sync local state with props when drawer opens
     useEffect(() => {
         if (open) {
             setTempBrand(brandKey);
             setTempProduct(productValue);
             setTempUtm(utm);
             setTempSalesChannel(salesChannel);
+            setTempDeviceType(deviceType);
             setTempProductTypes(productTypes || []);
             setView('ROOT');
         }
-    }, [open, brandKey, productValue, utm, salesChannel]); // Removed productTypes to prevent reset loop
+    }, [open, brandKey, productValue, utm, salesChannel, deviceType]); // Removed productTypes to prevent reset loop
 
     // Fetch Product Types
     useEffect(() => {
@@ -147,7 +154,7 @@ export default function MobileFilterDrawer({
     }, [lastFetchParams, propUtmOptions]);
 
     const handleBack = () => {
-        if (['BRAND', 'PRODUCT', 'UTM', 'SALES_CHANNEL'].includes(view)) {
+        if (['BRAND', 'PRODUCT', 'UTM', 'SALES_CHANNEL', 'DEVICE_TYPE'].includes(view)) {
             setView('ROOT');
         } else if (['UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN'].includes(view)) {
             setView('UTM');
@@ -167,6 +174,7 @@ export default function MobileFilterDrawer({
             case 'UTM_MEDIUM': return 'Medium';
             case 'UTM_CAMPAIGN': return 'Campaign';
             case 'SALES_CHANNEL': return 'Sales Channel';
+            case 'DEVICE_TYPE': return 'Device Type';
             default: return 'Filters';
         }
     };
@@ -234,6 +242,7 @@ export default function MobileFilterDrawer({
         if (onUtmChange) onUtmChange({ source: '', medium: '', campaign: '' });
         if (onProductChange) onProductChange({ id: '', label: 'All products', detail: 'Whole store' });
         if (onSalesChannelChange) onSalesChannelChange('');
+        if (onDeviceTypeChange) onDeviceTypeChange([]);
         onClose();
     };
 
@@ -242,6 +251,7 @@ export default function MobileFilterDrawer({
         if (onProductChange) onProductChange(tempProduct);
         if (onUtmChange) onUtmChange(tempUtm);
         if (onSalesChannelChange) onSalesChannelChange(tempSalesChannel);
+        if (onDeviceTypeChange) onDeviceTypeChange(tempDeviceType);
         if (onProductTypeChange) onProductTypeChange(tempProductTypes);
         onClose();
     };
@@ -298,8 +308,10 @@ export default function MobileFilterDrawer({
             {((Array.isArray(productValue) ? productValue.some(p => p.id !== '') : (productValue?.id && productValue.id !== '')) ||
                 (Array.isArray(utm?.source) ? utm.source.length > 0 : utm?.source) ||
                 (Array.isArray(utm?.medium) ? utm.medium.length > 0 : utm?.medium) ||
+                (Array.isArray(utm?.medium) ? utm.medium.length > 0 : utm?.medium) ||
                 (Array.isArray(utm?.campaign) ? utm.campaign.length > 0 : utm?.campaign) ||
-                (Array.isArray(salesChannel) ? salesChannel.length > 0 : salesChannel)) && (
+                (Array.isArray(salesChannel) ? salesChannel.length > 0 : salesChannel) ||
+                (Array.isArray(deviceType) ? deviceType.length > 0 : deviceType)) && (
                     <Fade in={true} timeout={500}>
                         <Box
                             sx={{
@@ -377,6 +389,23 @@ export default function MobileFilterDrawer({
                                                 onDelete={() => {
                                                     if (onSalesChannelChange) onSalesChannelChange('');
                                                     setTempSalesChannel('');
+                                                }}
+                                                size="small"
+                                                isDark={isDark}
+                                                sx={{ borderRadius: '9999px' }}
+                                            />
+                                        </div>
+                                    </Grow>
+                                )}
+                                {/* Device Type Chip */}
+                                {(Array.isArray(deviceType) ? deviceType.length > 0 : deviceType) && (
+                                    <Grow in={true}>
+                                        <div>
+                                            <GlassChip
+                                                label={`Device: ${Array.isArray(deviceType) ? deviceType.join(', ') : deviceType}`}
+                                                onDelete={() => {
+                                                    if (onDeviceTypeChange) onDeviceTypeChange([]);
+                                                    setTempDeviceType([]);
                                                 }}
                                                 size="small"
                                                 isDark={isDark}
@@ -502,15 +531,33 @@ export default function MobileFilterDrawer({
                             )}
 
                             {/* Sales Channel Item */}
+                            {/* SALES CHANNEL Item */}
                             {showSalesChannel && (
                                 <ListItemButton
                                     onClick={() => setView('SALES_CHANNEL')}
                                     sx={{ py: 2, justifyContent: 'space-between' }}
+                                    divider
                                 >
                                     <Box>
                                         <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>Sales Channel</Typography>
                                         <Typography variant="body1" fontSize={14} fontWeight={500}>
                                             {Array.isArray(tempSalesChannel) ? (tempSalesChannel.length > 0 ? tempSalesChannel.join(', ') : 'All') : (tempSalesChannel || 'All')}
+                                        </Typography>
+                                    </Box>
+                                    <ChevronRightIcon color="action" />
+                                </ListItemButton>
+                            )}
+
+                            {/* DEVICE TYPE Item */}
+                            {showDeviceType && (
+                                <ListItemButton
+                                    onClick={() => setView('DEVICE_TYPE')}
+                                    sx={{ py: 2, justifyContent: 'space-between' }}
+                                >
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>Device Type</Typography>
+                                        <Typography variant="body1" fontSize={14} fontWeight={500}>
+                                            {Array.isArray(tempDeviceType) ? (tempDeviceType.length > 0 ? tempDeviceType.join(', ') : 'All') : (tempDeviceType || 'All')}
                                         </Typography>
                                     </Box>
                                     <ChevronRightIcon color="action" />
@@ -772,6 +819,43 @@ export default function MobileFilterDrawer({
                                     {(Array.isArray(tempSalesChannel) ? tempSalesChannel.includes(channel) : tempSalesChannel === channel) && <CheckIcon fontSize="small" color="primary" />}
                                 </ListItemButton>
                             ))}
+                        </List>
+                    )}
+
+                    {/* DEVICE TYPE VIEW */}
+                    {view === 'DEVICE_TYPE' && (
+                        <List disablePadding>
+                            <ListItemButton
+                                onClick={() => {
+                                    setTempDeviceType([]);
+                                    handleBack();
+                                }}
+                                selected={!tempDeviceType || tempDeviceType.length === 0}
+                                sx={{ py: 1.5 }}
+                            >
+                                <ListItemText primary="All" />
+                                {(!tempDeviceType || tempDeviceType.length === 0) && <CheckIcon fontSize="small" color="primary" />}
+                            </ListItemButton>
+                            {['Desktop', 'Mobile', 'Others'].map((type) => {
+                                const selectedTypes = Array.isArray(tempDeviceType) ? tempDeviceType : [];
+                                const isSelected = selectedTypes.includes(type);
+                                return (
+                                    <ListItemButton
+                                        key={type}
+                                        onClick={() => {
+                                            const newTypes = isSelected
+                                                ? selectedTypes.filter(t => t !== type)
+                                                : [...selectedTypes, type];
+                                            setTempDeviceType(newTypes);
+                                        }}
+                                        selected={isSelected}
+                                        sx={{ py: 1.5 }}
+                                    >
+                                        <ListItemText primary={type} />
+                                        {isSelected && <CheckIcon fontSize="small" color="primary" />}
+                                    </ListItemButton>
+                                );
+                            })}
                         </List>
                     )}
 
