@@ -90,6 +90,7 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
       recipients,
       is_active: src.is_active ? 1 : 0,
       last_triggered_at: null,
+      current_state: src.current_state || 'NORMAL',
       created_at: src.created_at,
       updated_at: src.updated_at || src.created_at,
     };
@@ -128,6 +129,7 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
       quiet_hours_start: quietStart,
       quiet_hours_end: quietEnd,
       is_active: isActive ? 1 : 0,
+      current_state: payload.current_state || (existing?.current_state ?? 'NORMAL'),
     };
   }
 

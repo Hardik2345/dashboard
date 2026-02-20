@@ -125,6 +125,7 @@ const AlertSchema = z.object({
     }
     return val;
   }, z.union([z.number().int().min(0).max(1), z.null()])).optional(),
+  current_state: z.enum(['NORMAL', 'TRIGGERED', 'CRITICAL']).optional(),
 }).superRefine((data, ctx) => {
   if (data.metric_type === 'derived' && !data.formula) {
     ctx.addIssue({
