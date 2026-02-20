@@ -2270,6 +2270,24 @@ function buildMetricsController() {
           }
         }
 
+        // NEW: Fetch UTM Sessions for Daily Trend
+        let utmSessionsMap = new Map();
+        if (hasFilters && !filters.product_id) {
+          try {
+            let utmSessSql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') as date, SUM(sessions) as sessions, SUM(sessions_with_cart_additions) as atc FROM product_sessions_snapshot WHERE date >= ? AND date <= ?`;
+            const utmSessReplacements = [start, end];
+            utmSessSql = appendUtmWhere(utmSessSql, utmSessReplacements, { ...filters, sales_channel: null }, true);
+            utmSessSql += ` GROUP BY date`;
+
+            const utmSessRows = await req.brandDb.sequelize.query(utmSessSql, { type: QueryTypes.SELECT, replacements: utmSessReplacements });
+            utmSessRows.forEach(r => {
+              utmSessionsMap.set(String(r.date), { sessions: Number(r.sessions || 0), atc: Number(r.atc || 0) });
+            });
+          } catch (err) {
+            console.warn('[dailyTrend] Failed to fetch UTM sessions', err);
+          }
+        }
+
         const map = new Map(rows.map(r => {
           const d = String(r.date);
           let sessions = Number(r.sessions || 0);
@@ -2282,6 +2300,12 @@ function buildMetricsController() {
             sessions = productData.sessions;
             adjusted = productData.sessions;
             raw = productData.sessions;
+          } else if (hasFilters) {
+            // Use UTM sessions
+            const utmData = utmSessionsMap.get(d) || { sessions: 0, atc: 0 };
+            sessions = utmData.sessions;
+            adjusted = utmData.sessions;
+            raw = utmData.sessions;
           }
 
           return [d, { sales: Number(r.sales || 0), orders: Number(r.orders || 0), sessions, adjusted_sessions: adjusted, raw_sessions: raw, atc: Number(r.atc || 0) }];
@@ -2307,13 +2331,19 @@ function buildMetricsController() {
             metrics = { sales: 0, orders: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, atc: 0 };
           }
 
-          // If filtering by product, always try to override sessions/atc from the product map
+          // If filtering by product OR UTM filters, override sessions/atc
           if (filters.product_id) {
             const productData = productSessionsMap.get(d) || { sessions: 0, atc: 0 };
             metrics.sessions = productData.sessions;
             metrics.adjusted_sessions = productData.sessions;
             metrics.raw_sessions = productData.sessions;
-            metrics.atc = productData.atc; // Use ATC from product sessions
+            metrics.atc = productData.atc;
+          } else if (hasFilters) {
+            const utmData = utmSessionsMap.get(d) || { sessions: 0, atc: 0 };
+            metrics.sessions = utmData.sessions;
+            metrics.adjusted_sessions = utmData.sessions;
+            metrics.raw_sessions = utmData.sessions;
+            metrics.atc = utmData.atc;
           }
 
           const over = overallMap.get(d);
@@ -2322,7 +2352,7 @@ function buildMetricsController() {
           // Priority Logic for Sessions:
           // 1. adjusted_total_sessions (overall_summary)
           // 2. total_sessions (overall_summary)
-          // 3. metrics.sessions (hour_wise_sales or product sessions)
+          // 3. metrics.sessions (hour_wise_sales or product sessions or UTM sessions)
           let bestSession = metrics.sessions;
           let bestAtc = metrics.atc;
 
@@ -2379,32 +2409,50 @@ function buildMetricsController() {
             compSql += ` GROUP BY date ORDER BY date ASC`;
           }
 
+          // NEW: Fetch Comparison UTM Sessions
+          let compUtmSessionsMap = new Map();
+          if (hasFilters && !filters.product_id) {
+            try {
+              let compUtmSessSql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') as date, SUM(sessions) as sessions, SUM(sessions_with_cart_additions) as atc FROM product_sessions_snapshot WHERE date >= ? AND date <= ?`;
+              const compUtmSessReplacements = [prevWin.prevStart, prevWin.prevEnd];
+              compUtmSessSql = appendUtmWhere(compUtmSessSql, compUtmSessReplacements, { ...filters, sales_channel: null }, true);
+              compUtmSessSql += ` GROUP BY date`;
+
+              const compUtmSessRows = await req.brandDb.sequelize.query(compUtmSessSql, { type: QueryTypes.SELECT, replacements: compUtmSessReplacements });
+              compUtmSessRows.forEach(r => {
+                compUtmSessionsMap.set(String(r.date), { sessions: Number(r.sessions || 0), atc: Number(r.atc || 0) });
+              });
+            } catch (err) {
+              console.warn('[dailyTrend] Failed to fetch comparison UTM sessions', err);
+            }
+          }
+
+          const rowsPrev = await req.brandDb.sequelize.query(compSql, { type: QueryTypes.SELECT, replacements: compReplacements });
+
           // NEW: Fetch Comparison Product Sessions
           let compProductSessionsMap = new Map();
           if (filters.product_id) {
             try {
-              let compSessionSql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') as date, SUM(sessions) as sessions, SUM(sessions_with_cart_additions) as atc FROM mv_product_sessions_by_path_daily WHERE date >= ? AND date <= ?`;
-              const compSessionReplacements = [prevWin.prevStart, prevWin.prevEnd];
+              let sessionSql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') as date, SUM(sessions) as sessions, SUM(sessions_with_cart_additions) as atc FROM mv_product_sessions_by_path_daily WHERE date >= ? AND date <= ?`;
+              const sessionReplacements = [prevWin.prevStart, prevWin.prevEnd];
 
               if (Array.isArray(filters.product_id)) {
-                compSessionSql += ` AND product_id IN (?)`;
-                compSessionReplacements.push(filters.product_id);
+                sessionSql += ` AND product_id IN (?)`;
+                sessionReplacements.push(filters.product_id);
               } else {
-                compSessionSql += ` AND product_id = ?`;
-                compSessionReplacements.push(filters.product_id);
+                sessionSql += ` AND product_id = ?`;
+                sessionReplacements.push(filters.product_id);
               }
-              compSessionSql += ` GROUP BY date`;
+              sessionSql += ` GROUP BY date`;
 
-              const compSessionRows = await req.brandDb.sequelize.query(compSessionSql, { type: QueryTypes.SELECT, replacements: compSessionReplacements });
-              compSessionRows.forEach(r => {
+              const sessionRows = await req.brandDb.sequelize.query(sessionSql, { type: QueryTypes.SELECT, replacements: sessionReplacements });
+              sessionRows.forEach(r => {
                 compProductSessionsMap.set(String(r.date), { sessions: Number(r.sessions || 0), atc: Number(r.atc || 0) });
               });
             } catch (err) {
               console.warn('[dailyTrend] Failed to fetch comparison product sessions', err);
             }
           }
-
-          const rowsPrev = await req.brandDb.sequelize.query(compSql, { type: QueryTypes.SELECT, replacements: compReplacements });
 
 
           const mapPrev = new Map(rowsPrev.map(r => {
@@ -2419,6 +2467,12 @@ function buildMetricsController() {
               sessions = productData.sessions;
               adjusted = productData.sessions;
               raw = productData.sessions;
+            } else if (hasFilters) {
+              // Use UTM sessions
+              const utmData = compUtmSessionsMap.get(d) || { sessions: 0, atc: 0 };
+              sessions = utmData.sessions;
+              adjusted = utmData.sessions;
+              raw = utmData.sessions;
             }
 
             return [d, { sales: Number(r.sales || 0), orders: Number(r.orders || 0), sessions, adjusted_sessions: adjusted, raw_sessions: raw, atc: Number(r.atc || 0) }];
@@ -2445,13 +2499,19 @@ function buildMetricsController() {
               metrics = { sales: 0, orders: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, atc: 0 };
             }
 
-            // Fallback: If filtering by product, use comparison product sessions map
+            // Fallback: If filtering by product OR UTM filters, use appropriate map
             if (filters.product_id) {
               const productData = compProductSessionsMap.get(d) || { sessions: 0, atc: 0 };
               metrics.sessions = productData.sessions;
               metrics.adjusted_sessions = productData.sessions;
               metrics.raw_sessions = productData.sessions;
               metrics.atc = productData.atc;
+            } else if (hasFilters) {
+              const utmData = compUtmSessionsMap.get(d) || { sessions: 0, atc: 0 };
+              metrics.sessions = utmData.sessions;
+              metrics.adjusted_sessions = utmData.sessions;
+              metrics.raw_sessions = utmData.sessions;
+              metrics.atc = utmData.atc;
             }
 
             const over = overallMapPrev.get(d);
