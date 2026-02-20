@@ -38,8 +38,8 @@ import DownloadIcon from '@mui/icons-material/Download';
 import CheckIcon from '@mui/icons-material/Check';
 import KeyboardArrowLeft from '@mui/icons-material/KeyboardArrowLeft';
 import KeyboardArrowRight from '@mui/icons-material/KeyboardArrowRight';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import CloseIcon from '@mui/icons-material/Close';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -357,7 +357,7 @@ function DeltaBadge({ current, previous, isPercent }) {
   }
 
   const color = diff >= 0 ? 'success.main' : 'error.main';
-  const Icon = diff >= 0 ? ArrowUpwardIcon : ArrowDownwardIcon;
+  const Icon = diff >= 0 ? TrendingUpIcon : TrendingDownIcon;
 
   return (
     <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', ml: 0, color, fontSize: '0.75rem', fontWeight: 500 }}>
@@ -387,30 +387,29 @@ function DetailedFilterPanel({
   brandKey,
   date,
   productTypes = [],
-  onProductTypeChange
+  availableProductTypes = [],
+  loadingTypes = false,
+  onProductTypeChange,
+  expanded,
+  onExpandedChange
 }) {
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
 
-  const [expanded, setExpanded] = useState('metrics');
-
-  const handleAccordionChange = (panel) => (event, isExpanded) => {
-    setExpanded(isExpanded ? panel : false);
+  const glassStyle = {
+    bgcolor: isDark ? 'rgba(65, 65, 65, 0.15)' : 'rgba(255, 255, 255, 0.6)',
+    backdropFilter: 'blur(12px)',
+    border: '1px solid',
+    borderColor: 'divider',
+    borderRadius: 2,
+    transition: 'all 0.2s ease',
   };
 
-  // Product Types State
-  const [availableProductTypes, setAvailableProductTypes] = useState([]);
-  const [loadingTypes, setLoadingTypes] = useState(false);
+  const handleAccordionChange = (panel) => (event, isExpanded) => {
+    onExpandedChange(isExpanded ? panel : false);
+  };
 
-  useEffect(() => {
-    if (!brandKey) return;
-    setLoadingTypes(true);
-    getProductTypes({
-      brand_key: brandKey,
-      date: date ? dayjs(date).format('YYYY-MM-DD') : undefined
-    }).then(res => {
-      if (res.types) setAvailableProductTypes(res.types);
-    }).finally(() => setLoadingTypes(false));
-  }, [brandKey, date]);
+  // Product Types State - MOVED TO PARENT
 
   const handleToggleType = (type) => {
     const current = productTypes || [];
@@ -481,11 +480,33 @@ function DetailedFilterPanel({
 
   // Render as a persistent panel (Box/Card style)
   return (
-    <Box sx={{ width: { xs: '100%', md: 320 }, height: { xs: '100%', md: height || 800 }, display: 'flex', flexDirection: 'column', bgcolor: 'background.paper', border: { md: `1px solid ${theme.palette.divider}` }, borderRadius: { md: 3 }, overflow: 'hidden' }}>
+    <Box sx={{
+      width: { xs: '100%', md: 320 },
+      height: { xs: '100%', md: height || 800 },
+      display: 'flex',
+      flexDirection: 'column',
+      ...glassStyle,
+      bgcolor: 'background.paper',
+      border: '1px solid',
+      borderColor: 'divider',
+      borderRadius: { md: 3 },
+      overflow: 'hidden',
+      boxShadow: isDark
+        ? '0 20px 40px rgba(0, 0, 0, 0.6), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.1)'
+        : '0 8px 32px rgba(0, 0, 0, 0.12)',
+    }}>
       {/* Header */}
-      <Box sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'background.default' }}>
+      <Box sx={{
+        p: 2,
+        borderBottom: '1px solid',
+        borderColor: 'divider',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        bgcolor: 'transparent'
+      }}>
         <Typography variant="h6" fontWeight={600} fontSize="0.95rem" color="text.primary">Filter Panel</Typography>
-        <IconButton onClick={onClose} size="small"><CloseIcon fontSize="small" /></IconButton>
+        <IconButton onClick={onClose} size="small" sx={{ ...glassStyle, borderRadius: '50%', p: 0.5 }}><CloseIcon fontSize="small" /></IconButton>
       </Box>
 
       <Box sx={{ overflowY: 'auto', flex: 1, p: 2 }}>
@@ -498,7 +519,12 @@ function DetailedFilterPanel({
           onChange={handleAccordionChange('metrics')}
           disableGutters
           elevation={0}
-          sx={{ '&:before': { display: 'none' }, borderBottom: `1px solid ${theme.palette.divider}` }}
+          sx={{
+            bgcolor: 'transparent',
+            '&:before': { display: 'none' },
+            borderBottom: '1px solid',
+            borderColor: 'divider'
+          }}
         >
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
@@ -519,14 +545,24 @@ function DetailedFilterPanel({
                     size="small"
                   />
                 </ListItemIcon>
-                <ListItemText primary="All Metrics" primaryTypographyProps={{ fontWeight: 600, fontSize: '0.875rem' }} />
+                <ListItemText primary="All Metrics" primaryTypographyProps={{ fontWeight: 600, fontSize: '0.875rem', color: isAllSelected ? 'primary.main' : 'text.primary' }} />
               </ListItem>
 
               {/* Individual Metrics */}
               {metricCols.map((col) => {
                 const isChecked = visibleColumnIds.includes(col.id);
                 return (
-                  <ListItem key={col.id} dense divider button onClick={() => handleToggleColumn(col.id)}>
+                  <ListItem
+                    key={col.id}
+                    dense
+                    divider
+                    button
+                    onClick={() => handleToggleColumn(col.id)}
+                    sx={{
+                      transition: 'background-color 0.2s',
+                      '&:hover': { bgcolor: 'action.hover' }
+                    }}
+                  >
                     <ListItemIcon sx={{ minWidth: 36 }}>
                       <Checkbox
                         edge="start"
@@ -534,6 +570,7 @@ function DetailedFilterPanel({
                         tabIndex={-1}
                         disableRipple
                         size="small"
+                        sx={{ p: 0.5, color: 'action.disabled', '&.Mui-checked': { color: 'primary.main' } }}
                       />
                     </ListItemIcon>
                     <ListItemText primary={col.label} primaryTypographyProps={{ fontSize: '0.875rem' }} />
@@ -550,7 +587,12 @@ function DetailedFilterPanel({
           onChange={handleAccordionChange('productTypes')}
           disableGutters
           elevation={0}
-          sx={{ '&:before': { display: 'none' }, borderBottom: `1px solid ${theme.palette.divider}` }}
+          sx={{
+            bgcolor: 'transparent',
+            '&:before': { display: 'none' },
+            borderBottom: '1px solid',
+            borderColor: 'divider'
+          }}
         >
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
@@ -574,12 +616,22 @@ function DetailedFilterPanel({
                         size="small"
                       />
                     </ListItemIcon>
-                    <ListItemText primary="Select All" primaryTypographyProps={{ fontWeight: 600, fontSize: '0.875rem' }} />
+                    <ListItemText primary="Select All" primaryTypographyProps={{ fontWeight: 600, fontSize: '0.875rem', color: isAllTypesSelected ? 'primary.main' : 'text.primary' }} />
                   </ListItem>
                   {availableProductTypes.map((type) => {
                     const isChecked = productTypes.includes(type);
                     return (
-                      <ListItem key={type} dense divider button onClick={() => handleToggleType(type)}>
+                      <ListItem
+                        key={type}
+                        dense
+                        divider
+                        button
+                        onClick={() => handleToggleType(type)}
+                        sx={{
+                          transition: 'background-color 0.2s',
+                          '&:hover': { bgcolor: 'action.hover' }
+                        }}
+                      >
                         <ListItemIcon sx={{ minWidth: 36 }}>
                           <Checkbox
                             edge="start"
@@ -587,6 +639,7 @@ function DetailedFilterPanel({
                             tabIndex={-1}
                             disableRipple
                             size="small"
+                            sx={{ p: 0.5, color: 'action.disabled', '&.Mui-checked': { color: 'primary.main' } }}
                           />
                         </ListItemIcon>
                         <ListItemText primary={type} primaryTypographyProps={{ fontSize: '0.875rem' }} />
@@ -610,7 +663,7 @@ function DetailedFilterPanel({
           onChange={handleAccordionChange('filters')}
           disableGutters
           elevation={0}
-          sx={{ '&:before': { display: 'none' } }}
+          sx={{ bgcolor: 'transparent', '&:before': { display: 'none' } }}
         >
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Typography variant="subtitle2" color="text.primary" sx={{ textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
@@ -628,7 +681,14 @@ function DetailedFilterPanel({
 
             {/* Add Filter Form */}
             <Collapse in={showAddForm} unmountOnExit>
-              <Card variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: 'background.default', borderStyle: 'dashed' }}>
+              <Card variant="outlined" sx={{
+                p: 2,
+                mb: 2,
+                borderRadius: 2,
+                bgcolor: 'action.hover',
+                border: '1px dashed',
+                borderColor: 'divider'
+              }}>
                 <Stack spacing={2}>
                   <FormControl size="small" fullWidth>
                     <InputLabel>Field</InputLabel>
@@ -719,7 +779,21 @@ function DetailedFilterPanel({
                   {filters.map((f, idx) => {
                     const col = allColumns.find(c => c.id === f.field);
                     return (
-                      <Card key={idx} variant="outlined" sx={{ p: 1, pl: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 2, borderColor: 'primary.main' }}>
+                      <Card
+                        key={idx}
+                        variant="outlined"
+                        sx={{
+                          p: 1,
+                          pl: 2,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          borderRadius: 2,
+                          bgcolor: isDark ? 'rgba(91, 163, 224, 0.08)' : 'rgba(11, 107, 203, 0.04)',
+                          border: '1px solid',
+                          borderColor: isDark ? 'rgba(91, 163, 224, 0.3)' : 'rgba(11, 107, 203, 0.2)'
+                        }}
+                      >
                         <Box>
                           <Typography variant="caption" display="block" color="text.secondary" fontSize="0.65rem" fontWeight={600} sx={{ textTransform: 'uppercase' }}>
                             {col?.label || f.field}
@@ -745,8 +819,24 @@ function DetailedFilterPanel({
 
       {/* Footer */}
       {(filters.length > 0) && (
-        <Box sx={{ p: 2, borderTop: `1px solid ${theme.palette.divider}`, bgcolor: 'background.paper' }}>
-          <Button fullWidth variant="outlined" color="error" onClick={onClearFilters} startIcon={<DeleteIcon />} sx={{ textTransform: 'none' }}>
+        <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider', bgcolor: 'transparent' }}>
+          <Button
+            fullWidth
+            variant="text"
+            color="error"
+            onClick={onClearFilters}
+            startIcon={<DeleteIcon />}
+            sx={{
+              ...glassStyle,
+              textTransform: 'none',
+              bgcolor: 'rgba(211, 47, 47, 0.08)',
+              borderColor: 'rgba(211, 47, 47, 0.3)',
+              '&:hover': {
+                bgcolor: 'rgba(211, 47, 47, 0.15)',
+                borderColor: 'rgba(211, 47, 47, 0.5)',
+              }
+            }}
+          >
             Clear All Filters
           </Button>
         </Box>
@@ -836,12 +926,43 @@ const MemoizedTable = memo(({
 });
 
 export default function ProductConversionTable({ brandKey }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+
+  // Available Product Types (Fetched here now)
+  const [availableProductTypes, setAvailableProductTypes] = useState([]);
+  const [loadingTypes, setLoadingTypes] = useState(false);
+  const [expanded, setExpanded] = useState('metrics');
 
   const dispatch = useAppDispatch();
   const productState = useAppSelector((state) => state.productConversion);
   const { start, end, page, pageSize, sortBy, sortDir, rows, totalCount, status, error, compareMode, compareStart, compareEnd, productTypes } = productState;
   const [exporting, setExporting] = useState(false);
   const [localSearch, setLocalSearch] = useState(productState.search || '');
+
+  useEffect(() => {
+    if (!brandKey) return;
+    setLoadingTypes(true);
+    getProductTypes({
+      brand_key: brandKey,
+      date: end ? dayjs(end).format('YYYY-MM-DD') : undefined
+    }).then(res => {
+      if (res.types) setAvailableProductTypes(res.types);
+    }).finally(() => setLoadingTypes(false));
+  }, [brandKey, end]);
+
+  const glassStyle = {
+    bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.6)',
+    backdropFilter: 'blur(12px)',
+    border: '1px solid',
+    borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)',
+    borderRadius: 2,
+    transition: 'all 0.2s ease',
+    '&:hover': {
+      bgcolor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(255, 255, 255, 0.8)',
+      borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.12)',
+    }
+  };
 
   // Columns definition (Memoized to prevent recreation)
   const columns = useMemo(() => [
@@ -857,7 +978,6 @@ export default function ProductConversionTable({ brandKey }) {
   // Panel State (Boolean togglable)
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showTypeFilter, setShowTypeFilter] = useState(false);
-  const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   // Dynamic Height Calculation for Filter Panel
@@ -1239,9 +1359,119 @@ export default function ProductConversionTable({ brandKey }) {
         </Box>
       </Box>
 
-      {/* Desktop Header */}
-      <Box sx={{ display: { xs: 'none', md: 'flex' }, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', pr: 1 }}>
-        <Box sx={{ width: 300 }}>
+      {/* Desktop Header - Redesigned */}
+      <Box sx={{ display: { xs: 'none', md: 'flex' }, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 2 }}>
+
+        {/* Left Actions */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+
+          {/* Add Metrics Button (Old Filter) */}
+          <Button
+            variant="text"
+            size="small"
+            startIcon={<AddIcon fontSize="small" />}
+            onClick={() => {
+              setShowFilterPanel(!showFilterPanel);
+              setExpanded('metrics');
+            }}
+            sx={{
+              ...glassStyle,
+              height: 38,
+              px: 1.5,
+              textTransform: 'none',
+              color: 'text.secondary',
+              fontSize: '0.8125rem',
+              fontWeight: 500
+            }}
+          >
+            Add Metrics
+          </Button>
+
+          {/* Compare Button */}
+          <FormControl size="small" sx={{ minWidth: 100 }}>
+            <Select
+              value={compareMode ? 'compare' : 'none'}
+              onChange={handleCompareModeChange}
+              size="small"
+              IconComponent={SwapVertIcon}
+              sx={{
+                ...glassStyle,
+                height: 38,
+                fontSize: '0.8125rem',
+                color: 'text.secondary',
+                '& .MuiSelect-select': { py: 0, px: 1.5 },
+                '& .MuiOutlinedInput-notchedOutline': { border: 'none' }
+              }}
+            >
+              <MenuItem value="none">No comparison</MenuItem>
+              <MenuItem value="compare">Compare</MenuItem>
+            </Select>
+          </FormControl>
+
+          {/* Export CSV Button */}
+          <Button
+            variant="text"
+            size="small"
+            startIcon={exporting ? <CircularProgress size={16} /> : <DownloadIcon fontSize="small" />}
+            onClick={handleExport}
+            disabled={exporting || status === 'loading'}
+            sx={{
+              ...glassStyle,
+              height: 38,
+              px: 1.5,
+              textTransform: 'none',
+              color: 'text.secondary',
+              fontSize: '0.8125rem',
+              fontWeight: 500
+            }}
+          >
+            Export CSV
+          </Button>
+
+          {/* Date Range Pickers (Cleaned up) */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, ml: 0.5 }}>
+            <DateRangePicker
+              startDate={compareStart}
+              endDate={compareEnd}
+              onApply={applyCompDateChange}
+              label="Compare"
+              labelPrefix="Comp:"
+              activePresetLabel={activeCompPreset}
+              disabled={!compareMode}
+              disableDatesAfter={dayjs().subtract(1, 'day').toDate()}
+              sx={{
+                ...glassStyle,
+                minWidth: 150,
+                height: 38,
+                borderRadius: 2,
+                '& .MuiTypography-root': { fontSize: '0.72rem' }
+              }}
+            />
+
+            <DateRangePicker
+              startDate={start}
+              endDate={end}
+              onApply={applyDateChange}
+              variant="primary"
+              labelPrefix="Curr:"
+              activePresetLabel={activePreset}
+              disableDatesAfter={compareMode ? dayjs().subtract(1, 'day').toDate() : null}
+              sx={{
+                ...glassStyle,
+                minWidth: 150,
+                height: 38,
+                borderRadius: 2,
+                bgcolor: isDark ? 'rgba(92, 163, 224, 0.1)' : 'rgba(91, 163, 226, 0.08)',
+                color: isDark ? '#5ba3e0' : '#1976d2',
+                borderColor: isDark ? 'rgba(91, 163, 224, 0.3)' : 'rgba(25, 118, 210, 0.2)',
+                '& .MuiTypography-root': { fontSize: '0.72rem', fontWeight: 600 }
+              }}
+            />
+          </Box>
+        </Box>
+
+        {/* Right Search */}
+        <Box sx={{ width: 240 }}>
           <TextField
             size="small"
             placeholder="Search products..."
@@ -1251,78 +1481,18 @@ export default function ProductConversionTable({ brandKey }) {
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
-                  <SearchIcon fontSize="small" color="action" />
+                  <SearchIcon fontSize="small" color="disabled" />
                 </InputAdornment>
               ),
-              sx: { bgcolor: 'background.paper', fontSize: '0.875rem' }
+              sx: {
+                ...glassStyle,
+                height: 38,
+                fontSize: '0.875rem',
+                '& fieldset': { border: 'none' },
+                '& input::placeholder': { opacity: 0.6 }
+              }
             }}
           />
-        </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-
-          <FormControl size="small" sx={{ minWidth: 150 }}>
-            <Select
-              value={compareMode ? 'compare' : 'none'}
-              onChange={handleCompareModeChange}
-              size="small"
-              sx={{ bgcolor: 'background.paper', fontSize: '0.875rem' }}
-            >
-              <MenuItem value="none">No comparison</MenuItem>
-              <MenuItem value="compare">Compare</MenuItem>
-            </Select>
-          </FormControl>
-
-          <DateRangePicker
-            startDate={compareStart}
-            endDate={compareEnd}
-            onApply={applyCompDateChange}
-            label="Select comparison"
-            labelPrefix="Compare:"
-            activePresetLabel={activeCompPreset}
-            disabled={!compareMode}
-            disableDatesAfter={dayjs().subtract(1, 'day').toDate()}
-          />
-
-          <DateRangePicker
-            startDate={start}
-            endDate={end}
-            onApply={applyDateChange}
-            variant="primary"
-            labelPrefix="Current:"
-            activePresetLabel={activePreset}
-            disableDatesAfter={compareMode ? dayjs().subtract(1, 'day').toDate() : null}
-          />
-
-
-
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={exporting ? <CircularProgress size={16} /> : <DownloadIcon fontSize="small" />}
-            onClick={handleExport}
-            disabled={exporting || status === 'loading'}
-            sx={{ height: 36 }}
-          >
-            Export CSV
-          </Button>
-
-          <Tooltip title="Filter">
-            <IconButton
-              onClick={() => setShowFilterPanel(!showFilterPanel)}
-              sx={{
-                bgcolor: (showFilterPanel || productState.filters?.length > 0) ? 'primary.main' : 'background.paper',
-                color: (showFilterPanel || productState.filters?.length > 0) ? 'primary.contrastText' : 'text.primary',
-                border: '1px solid',
-                borderColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.3)' : 'divider',
-                borderRadius: 2,
-                width: 36, height: 36,
-                '&:hover': { bgcolor: (showFilterPanel || productState.filters?.length > 0) ? 'primary.dark' : 'action.hover' }
-              }}
-            >
-              <FilterListIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-
         </Box>
       </Box>
 
@@ -1478,7 +1648,11 @@ export default function ProductConversionTable({ brandKey }) {
               brandKey={brandKey}
               date={end}
               productTypes={productTypes}
+              availableProductTypes={availableProductTypes}
+              loadingTypes={loadingTypes}
               onProductTypeChange={handleProductTypeChange}
+              expanded={expanded}
+              onExpandedChange={setExpanded}
             />
           </Drawer>
         ) : (
@@ -1515,7 +1689,11 @@ export default function ProductConversionTable({ brandKey }) {
               brandKey={brandKey}
               date={end}
               productTypes={productTypes}
+              availableProductTypes={availableProductTypes}
+              loadingTypes={loadingTypes}
               onProductTypeChange={handleProductTypeChange}
+              expanded={expanded}
+              onExpandedChange={setExpanded}
             />
           </Collapse>
         )}

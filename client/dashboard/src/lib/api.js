@@ -436,11 +436,14 @@ export async function getTrafficSourceSplit(args) {
   const json = await getJSON('/metrics/traffic-source-split', params);
   return {
     meta: json?.meta || { sessions: 0, atc_sessions: 0 },
+    meta_breakdown: json?.meta_breakdown || [],
     google: json?.google || { sessions: 0, atc_sessions: 0 },
     direct: json?.direct || { sessions: 0, atc_sessions: 0 },
     others: json?.others || { sessions: 0, atc_sessions: 0 },
+    others_breakdown: json?.others_breakdown || [],
     total_sessions: Number(json?.total_sessions || 0),
     total_atc_sessions: Number(json?.total_atc_sessions || 0),
+    prev_range: json?.prev_range || null,
     error: json?.__error
   };
 }
