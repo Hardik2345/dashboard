@@ -1,5 +1,13 @@
 require('dotenv').config();
 
+// ── Startup banner (prints BEFORE logger can silence console) ──
+const _realLog = process.stdout.write.bind(process.stdout);
+_realLog(`\n========================================\n`);
+_realLog(`  ANALYTICS SERVICE — NEW CODE v2026-02-14\n`);
+_realLog(`  Started at: ${new Date().toISOString()}\n`);
+_realLog(`  NODE_ENV:   ${process.env.NODE_ENV || '(not set)'}\n`);
+_realLog(`========================================\n\n`);
+
 const { init, sequelize } = require('./app');
 const { closeAll: closeBrandConnections } = require('./lib/brandConnectionManager');
 const logger = require('./utils/logger');

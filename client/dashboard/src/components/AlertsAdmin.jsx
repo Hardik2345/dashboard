@@ -6,12 +6,11 @@ import {
   Card,
   CardContent,
   CardHeader,
-  Chip,
+  DialogTitle,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
-  DialogTitle,
   Divider,
   FormControl,
   FormControlLabel,
@@ -40,6 +39,7 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
+import { GlassChip } from './ui/GlassChip.jsx';
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -60,6 +60,9 @@ import {
   updateAlert,
 } from "../lib/api.js";
 import { toast } from "react-toastify";
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+dayjs.extend(relativeTime);
 
 // defined base metrics that cannot be derived
 const BASE_METRICS = ['total_orders', 'total_sales', 'total_sessions', 'atc_sessions', 'performance'];
@@ -147,6 +150,7 @@ function formatCondition(type, value) {
 
 export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -986,17 +990,18 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                           </Box>
 
                           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                            <Chip label={alert.brand_key || alert.brand?.key || 'All'} size="small" variant="outlined" />
-                            <Chip
-                              label={formatCondition(alert.threshold_type, alert.threshold_value)}
+                            <GlassChip label={alert.brand_key || alert.brand?.key || 'All'} size="small" isDark={isDark} />
+                            <GlassChip
+                              label={alert.is_active ? 'Active' : 'Inactive'}
                               size="small"
-                              sx={{ fontWeight: 500, bgcolor: 'action.hover' }}
+                              color={alert.is_active ? 'success' : 'default'}
+                              isDark={isDark}
                             />
-                            <Chip
+                            <GlassChip
                               size="small"
                               label={alert.severity}
                               color={alert.severity === 'high' ? 'error' : alert.severity === 'medium' ? 'warning' : 'success'}
-                              sx={{ fontWeight: 600, textTransform: 'capitalize' }}
+                              isDark={isDark}
                             />
                           </Box>
 
@@ -1011,6 +1016,13 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                             >
                               Edit
                             </Button>
+                            {alert.updated_at && (
+                              <GlassChip
+                                label={`Updated ${dayjs(alert.updated_at).fromNow()}`}
+                                size="small"
+                                isDark={isDark}
+                              />
+                            )}
                             <Button
                               startIcon={<DeleteIcon />}
                               size="small"
@@ -1045,27 +1057,22 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                           <TableRow key={alert.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
                             <TableCell sx={{ fontWeight: 600 }}>{alert.name || '—'}</TableCell>
                             <TableCell>
-                              <Chip label={alert.brand_key || alert.brand?.key || 'All'} size="small" variant="outlined" />
+                              <GlassChip label={alert.brand_key || alert.brand?.key || 'All'} size="small" isDark={isDark} />
                             </TableCell>
                             <TableCell>{alert.metric_name}</TableCell>
                             <TableCell>
-                              <Chip
+                              <GlassChip
                                 label={formatCondition(alert.threshold_type, alert.threshold_value)}
                                 size="small"
-                                sx={{
-                                  fontWeight: 500,
-                                  bgcolor: 'action.hover',
-                                  borderRadius: '6px',
-                                  '& .MuiChip-label': { px: 1.5 }
-                                }}
+                                isDark={isDark}
                               />
                             </TableCell>
                             <TableCell>
-                              <Chip
+                              <GlassChip
                                 size="small"
                                 label={alert.severity}
                                 color={alert.severity === 'high' ? 'error' : alert.severity === 'medium' ? 'warning' : 'success'}
-                                sx={{ fontWeight: 600, textTransform: 'capitalize' }}
+                                isDark={isDark}
                               />
                             </TableCell>
                             <TableCell>

@@ -1,30 +1,64 @@
 import { useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Box,
   Drawer,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Typography,
+  IconButton,
   useTheme,
   useMediaQuery,
+  Avatar,
 } from '@mui/material';
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import SecurityIcon from '@mui/icons-material/Security';
-import StorefrontIcon from '@mui/icons-material/Storefront';
-import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
-import TableChartIcon from '@mui/icons-material/TableChart';
+import {
+  LayoutGrid,
+  ShieldCheck,
+  Store,
+  Table2,
+  Bell,
+  LogOut,
+  Filter,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const DRAWER_WIDTH = 260;
 
+const AVATAR_COLORS = [
+  '#F44336', '#E91E63', '#9C27B0', '#673AB7', '#3F51B5',
+  '#2196F3', '#03A9F4', '#00BCD4', '#009688', '#4CAF50',
+  '#8BC34A', '#CDDC39', '#FFEB3B', '#FFC107', '#FF9800', '#FF5722'
+];
+
+const getInitials = (name, email) => {
+  const str = name || email || 'U';
+  return str.charAt(0).toUpperCase();
+};
+
+const getAvatarColor = (initial) => {
+  const code = initial.charCodeAt(0);
+  return AVATAR_COLORS[code % AVATAR_COLORS.length];
+};
+
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: DashboardIcon },
-  { id: 'access', label: 'Access Control', icon: SecurityIcon },
-  { id: 'brands', label: 'Brand Setup', icon: StorefrontIcon },
-  { id: 'product-conversion', label: 'Product Conversion', icon: TableChartIcon },
-  { id: 'alerts', label: 'Alerts', icon: NotificationsActiveIcon },
+  {
+    group: 'main',
+    items: [
+      { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
+      { id: 'product-conversion', label: 'Funnels', icon: Filter },
+      { id: 'alerts', label: 'Alerts', icon: Bell },
+    ]
+  },
+  {
+    group: 'admin',
+    items: [
+      { id: 'access', label: 'Access Control', icon: ShieldCheck },
+      { id: 'brands', label: 'Brand Setup', icon: Store },
+    ]
+  }
 ];
 
 export default function Sidebar({
@@ -33,147 +67,157 @@ export default function Sidebar({
   activeTab,
   onTabChange,
   darkMode = false,
+  user,
+  onLogout,
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const initials = getInitials(user?.name, user?.email);
+  const avatarColor = getAvatarColor(initials);
 
-  const drawerContent = useMemo(
-    () => (
-      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        {/* Header area */}
-        <Box
-          sx={{
-            px: 2,
-            py: 1.5,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-start',
-            minHeight: { xs: 56, md: 64 },
-            borderBottom: '1px solid',
-            borderColor: darkMode ? 'grey.800' : 'grey.200',
-          }}
-        >
-          <Box
-            component="img"
-            src="/brand-logo.jpg"
-            alt="Datum"
-            sx={{
-              height: 32,
-              width: 'auto',
-              maxWidth: '100%',
-              objectFit: 'contain',
-              borderRadius: 0.5,
-              ...(darkMode && {
-                bgcolor: '#121212',
-                filter: 'invert(1) hue-rotate(180deg) brightness(1.2)',
-              }),
-            }}
-          />
-        </Box>
+  const NavContent = () => (
+    <div className={cn(
+      "flex flex-col h-full bg-white dark:bg-zinc-950",
+      !isMobile && "border-r border-zinc-200 dark:border-zinc-800"
+    )}>
+      <div className="px-6 py-6 flex items-center justify-between">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2">
+            <img
+              src="/brand-logo-dark.png"
+              alt="Datum"
+              className={cn(
+                "h-20 w-30",
+                darkMode && "invert hue-rotate-180 brightness-1.2"
+              )}
+            />
+          </div>
+        </div>
+      </div>
 
-        {/* Navigation items */}
-        <Box sx={{ flex: 1, py: 1, px: 1 }}>
-          <List disablePadding>
-            {NAV_ITEMS.map((item) => {
+      {/* Navigation Items */}
+      <nav className="flex-1 px-4 space-y-6 overflow-y-auto">
+        {NAV_ITEMS.map((section, sIdx) => (
+          <div key={section.group} className="space-y-1">
+            {sIdx > 0 && <div className="my-4 border-t border-zinc-100 dark:border-zinc-800" />}
+            {section.items.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
 
               return (
-                <ListItem key={item.id} disablePadding sx={{ mb: 0.5 }}>
-                  <ListItemButton
-                    selected={isActive}
-                    onClick={() => {
-                      onTabChange(item.id);
-                      if (isMobile) {
-                        onClose();
-                      }
-                    }}
-                    sx={{
-                      borderRadius: 1.5,
-                      py: 1.25,
-                      px: 2,
-                      '&.Mui-selected': {
-                        bgcolor: 'primary.main',
-                        color: 'primary.contrastText',
-                        '&:hover': {
-                          bgcolor: 'primary.dark',
-                        },
-                        '& .MuiListItemIcon-root': {
-                          color: 'inherit',
-                        },
-                      },
-                      '&:hover': {
-                        bgcolor: isActive ? 'primary.dark' : 'action.hover',
-                      },
-                    }}
-                  >
-                    <ListItemIcon
-                      sx={{
-                        minWidth: 40,
-                        color: isActive ? 'inherit' : 'text.secondary',
-                      }}
-                    >
-                      <Icon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={item.label}
-                      primaryTypographyProps={{
-                        fontSize: '0.9rem',
-                        fontWeight: isActive ? 600 : 500,
-                      }}
-                    />
-                  </ListItemButton>
-                </ListItem>
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    onTabChange(item.id);
+                    if (isMobile) onClose();
+                  }}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium",
+                    isActive
+                      ? "bg-black text-white dark:bg-white dark:text-black shadow-sm"
+                      : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                  )}
+                >
+                  <Icon size={18} className={isActive ? "text-white dark:text-black" : "text-zinc-400"} />
+                  {item.label}
+                </button>
               );
             })}
-          </List>
-        </Box>
-      </Box>
-    ),
-    [activeTab, onTabChange, onClose, isMobile, darkMode]
+          </div>
+        ))}
+      </nav>
+
+      {/* User Profile Section */}
+      <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 space-y-4">
+        <div className="flex items-center gap-3 px-2">
+          <Avatar
+            src={user?.avatar_url || user?.picture || ""}
+            alt={user?.name || user?.email || "User"}
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: '10px',
+              bgcolor: avatarColor,
+              color: '#fff',
+              fontSize: '1rem',
+              fontWeight: 'bold'
+            }}
+          >
+            {!user?.avatar_url && !user?.picture && initials}
+          </Avatar>
+          <div className="flex flex-col items-start text-left min-w-0">
+            <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate w-full uppercase">
+              {user?.name || user?.email?.split('@')[0] || 'User'}
+            </span>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400 capitalize">
+              {user?.role || (user?.isAuthor ? 'Admin' : 'Viewer')}
+            </span>
+          </div>
+        </div>
+
+        <button
+          onClick={onLogout}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 transition-colors"
+        >
+          <LogOut size={16} />
+          Logout
+        </button>
+      </div>
+    </div>
   );
 
-  // Mobile: temporary drawer (overlay)
   if (isMobile) {
     return (
       <Drawer
         variant="temporary"
         open={open}
         onClose={onClose}
-        ModalProps={{
-          keepMounted: true, // Better mobile performance
-        }}
+        ModalProps={{ keepMounted: true }}
         sx={{
           '& .MuiDrawer-paper': {
             width: DRAWER_WIDTH,
             boxSizing: 'border-box',
             borderRight: 'none',
-            boxShadow: theme.shadows[8],
           },
         }}
       >
-        {drawerContent}
+        <NavContent />
       </Drawer>
     );
   }
 
-  // Desktop: permanent drawer
   return (
-    <Drawer
-      variant="permanent"
-      open
-      sx={{
-        width: DRAWER_WIDTH,
-        flexShrink: 0,
-        '& .MuiDrawer-paper': {
-          width: DRAWER_WIDTH,
-          boxSizing: 'border-box',
-          borderRight: 1,
-          borderColor: 'divider',
-        },
-      }}
-    >
-      {drawerContent}
-    </Drawer>
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={isMobile ? false : { x: -DRAWER_WIDTH }}
+          animate={{ x: 0 }}
+          exit={{ x: -DRAWER_WIDTH }}
+          transition={{
+            type: "spring",
+            stiffness: 260,
+            damping: 30
+          }}
+          style={{
+            width: DRAWER_WIDTH,
+            height: '100vh',
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            zIndex: 1200,
+          }}
+        >
+          <Box
+            component="nav"
+            sx={{
+              width: '100%',
+              height: '100%',
+            }}
+          >
+            <NavContent />
+          </Box>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

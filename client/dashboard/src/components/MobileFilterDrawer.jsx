@@ -103,32 +103,48 @@ export default function MobileFilterDrawer({
     }, [open, showProductTypeFilter, tempBrand]);
 
     // Fetch UTM options
+    const lastFetchParams = useMemo(() => {
+        return {
+            open,
+            brand: tempBrand,
+            start: dateRange?.[0]?.format?.('YYYY-MM-DD'),
+            end: dateRange?.[1]?.format?.('YYYY-MM-DD'),
+            utm: JSON.stringify(tempUtm),
+            salesChannel: JSON.stringify(tempSalesChannel)
+        };
+    }, [open, tempBrand, dateRange, tempUtm, tempSalesChannel]);
+
     useEffect(() => {
-        if (propUtmOptions) {
+        if (propUtmOptions && propUtmOptions.brand_key === tempBrand && propUtmOptions.utm_source) {
             setUtmOptions(propUtmOptions);
             return;
         }
 
         if (!open || !tempBrand) return;
 
-        const [start, end] = dateRange || [];
-        const s = start?.format ? start.format('YYYY-MM-DD') : undefined;
-        const e = end?.format ? end.format('YYYY-MM-DD') : undefined;
+        // If we already have options for THIS brand, and it's not a dependent refresh trigger, skip?
+        // Actually, if we depend on lastFetchParams, this effect only runs when they change.
+        if (utmOptions && utmOptions.brand_key === tempBrand && !propUtmOptions) {
+            // If we have local options for this brand and no updated props, we might still want to refresh
+            // if tempUtm changed. But to avoid loops, let's be conservative.
+        }
 
         getDashboardSummary({
             brand_key: tempBrand,
-            start: s,
-            end: e,
+            start: lastFetchParams.start,
+            end: lastFetchParams.end,
             include_utm_options: true,
-            utm_source: tempUtm?.source,
+            utm_source: tempUtm?.source, // Still support dependent filtering if needed
             utm_medium: tempUtm?.medium,
             utm_campaign: tempUtm?.campaign,
             sales_channel: tempSalesChannel
         }).then(res => {
-            if (res.filter_options) setUtmOptions(res.filter_options);
+            if (res.filter_options) {
+                setUtmOptions({ ...res.filter_options, brand_key: tempBrand });
+            }
         }).catch(err => console.error("Failed to load UTM options", err));
 
-    }, [open, tempBrand, dateRange, tempUtm, view, tempSalesChannel, propUtmOptions]);
+    }, [lastFetchParams, propUtmOptions]);
 
     const handleBack = () => {
         if (['BRAND', 'PRODUCT', 'UTM', 'SALES_CHANNEL'].includes(view)) {
@@ -154,6 +170,60 @@ export default function MobileFilterDrawer({
             default: return 'Filters';
         }
     };
+
+    // --- UTM Logic (Mirrors UnifiedFilterBar) ---
+    const utmSourceOptions = useMemo(() => Object.keys(utmOptions?.utm_tree || {}), [utmOptions]);
+
+    const utmMediumOptions = useMemo(() => {
+        const sources = tempUtm?.source || [];
+        // If no source selected, show all mediums? UnifiedFilterBar shows all.
+        if (!sources || sources.length === 0) {
+            const allMediums = new Set();
+            Object.values(utmOptions?.utm_tree || {}).forEach(s => {
+                Object.keys(s.mediums || {}).forEach(m => allMediums.add(m));
+            });
+            return Array.from(allMediums);
+        }
+
+        // If source selected, show only relevant mediums
+        const mediums = new Set();
+        (Array.isArray(sources) ? sources : [sources]).forEach(s => {
+            const data = utmOptions?.utm_tree?.[s];
+            if (data?.mediums) {
+                Object.keys(data.mediums).forEach(m => mediums.add(m));
+            }
+        });
+        return Array.from(mediums);
+    }, [utmOptions, tempUtm?.source]);
+
+    const utmCampaignOptions = useMemo(() => {
+        const sources = tempUtm?.source || [];
+        const selectedMediums = tempUtm?.medium || [];
+
+        if ((!sources || sources.length === 0) && (!selectedMediums || selectedMediums.length === 0)) {
+            const allCampaigns = new Set();
+            Object.values(utmOptions?.utm_tree || {}).forEach(s => {
+                Object.values(s.mediums || {}).forEach(m => {
+                    Object.keys(m.campaigns || {}).forEach(c => allCampaigns.add(c));
+                });
+            });
+            return Array.from(allCampaigns);
+        }
+
+        const campaigns = new Set();
+        Object.entries(utmOptions?.utm_tree || {}).forEach(([s, sData]) => {
+            const sourceMatch = !sources || sources.length === 0 || (Array.isArray(sources) ? sources.includes(s) : sources === s);
+            if (!sourceMatch) return;
+
+            Object.entries(sData.mediums || {}).forEach(([m, mData]) => {
+                const mediumMatch = !selectedMediums || selectedMediums.length === 0 || (Array.isArray(selectedMediums) ? selectedMediums.includes(m) : selectedMediums === m);
+                if (!mediumMatch) return;
+
+                Object.keys(mData.campaigns || {}).forEach(c => campaigns.add(c));
+            });
+        });
+        return Array.from(campaigns);
+    }, [utmOptions, tempUtm?.source, tempUtm?.medium]);
 
     const activeUtmCount = [tempUtm?.source, tempUtm?.medium, tempUtm?.campaign].map(v => {
         if (Array.isArray(v)) return v.length > 0;
@@ -207,79 +277,50 @@ export default function MobileFilterDrawer({
             anchor="bottom"
             open={open}
             onClose={onClose}
+            sx={{ zIndex: 11000 }}
             PaperProps={{
                 sx: {
-                    borderTopLeftRadius: 16,
-                    borderTopRightRadius: 16,
-                    height: '60vh',
-                    maxHeight: '85vh',
-                    bgcolor: 'transparent',
+                    borderTopLeftRadius: 24,
+                    borderTopRightRadius: 24,
+                    height: '70vh',
+                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.7)',
+                    backdropFilter: 'blur(25px)',
+                    backgroundImage: 'none',
                     display: 'flex',
-                    flexDirection: 'column'
+                    flexDirection: 'column',
+                    border: '1px solid',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.05)',
+                    boxShadow: '0 -10px 40px rgba(0,0,0,0.3)',
                 }
             }}
         >
             {/* Active Filters List (Scrollable) - Shows COMMITTED filters (props) */}
-            {((productValue?.id && productValue.id !== '') || utm?.source || utm?.medium || utm?.campaign || salesChannel) && (
-                <Fade in={true} timeout={500}>
-                    <Box
-                        sx={{
-                            width: '100%',
-                            overflowX: 'auto',
-                            bgcolor: 'transparent',
-                            py: 1,
-                            scrollbarWidth: 'none',
-                            '&::-webkit-scrollbar': { display: 'none' }
-                        }}
-                    >
-                        <Box sx={{ display: 'flex', gap: 1, px: 2, alignItems: 'center', minWidth: 'max-content' }}>
-                            {/* Product Chip */}
-                            {(productValue?.id && productValue.id !== '') && (
-                                <Grow in={true}>
-                                    <div>
-                                        <GlassChip
-                                            label={`Product: ${productValue.label}`}
-                                            onDelete={() => {
-                                                if (onProductChange) onProductChange({ id: '', label: 'All products', detail: 'Whole store' });
-                                                setTempProduct({ id: '', label: 'All products', detail: 'Whole store' });
-                                            }}
-                                            size="small"
-                                            isDark={isDark}
-                                            sx={{ borderRadius: '9999px' }}
-                                        />
-                                    </div>
-                                </Grow>
-                            )}
-                            {/* Product Type Chip */}
-                            {productTypes && productTypes.length > 0 && (
-                                <Grow in={true}>
-                                    <div>
-                                        <GlassChip
-                                            label={`Types: ${productTypes.length} selected`}
-                                            onDelete={() => {
-                                                if (onProductTypeChange) onProductTypeChange([]);
-                                                setTempProductTypes([]);
-                                            }}
-                                            size="small"
-                                            isDark={isDark}
-                                            sx={{ borderRadius: '9999px' }}
-                                        />
-                                    </div>
-                                </Grow>
-                            )}
-                            {/* UTM Chips */}
-                            {['source', 'medium', 'campaign'].map(field => {
-                                const val = utm?.[field];
-                                if (!val || (Array.isArray(val) && val.length === 0)) return null;
-                                return (
-                                    <Grow key={field} in={true}>
+            {((Array.isArray(productValue) ? productValue.some(p => p.id !== '') : (productValue?.id && productValue.id !== '')) ||
+                (Array.isArray(utm?.source) ? utm.source.length > 0 : utm?.source) ||
+                (Array.isArray(utm?.medium) ? utm.medium.length > 0 : utm?.medium) ||
+                (Array.isArray(utm?.campaign) ? utm.campaign.length > 0 : utm?.campaign) ||
+                (Array.isArray(salesChannel) ? salesChannel.length > 0 : salesChannel)) && (
+                    <Fade in={true} timeout={500}>
+                        <Box
+                            sx={{
+                                width: '100%',
+                                overflowX: 'auto',
+                                bgcolor: 'transparent',
+                                py: 1,
+                                scrollbarWidth: 'none',
+                                '&::-webkit-scrollbar': { display: 'none' }
+                            }}
+                        >
+                            <Box sx={{ display: 'flex', gap: 1, px: 2, alignItems: 'center', minWidth: 'max-content' }}>
+                                {/* Product Chip */}
+                                {(Array.isArray(productValue) ? productValue.some(p => p.id !== '') : (productValue?.id && productValue.id !== '')) && (
+                                    <Grow in={true}>
                                         <div>
                                             <GlassChip
-                                                label={`${field.charAt(0).toUpperCase() + field.slice(1)}: ${Array.isArray(val) ? val.join(', ') : val}`}
+                                                label={Array.isArray(productValue) && productValue.length > 1 ? `Products: ${productValue.length}` : `Product: ${Array.isArray(productValue) ? productValue[0]?.label : productValue?.label}`}
                                                 onDelete={() => {
-                                                    const update = { ...utm, [field]: '' };
-                                                    if (onUtmChange) onUtmChange(update);
-                                                    setTempUtm(update);
+                                                    if (onProductChange) onProductChange({ id: '', label: 'All products', detail: 'Whole store' });
+                                                    setTempProduct({ id: '', label: 'All products', detail: 'Whole store' });
                                                 }}
                                                 size="small"
                                                 isDark={isDark}
@@ -287,29 +328,67 @@ export default function MobileFilterDrawer({
                                             />
                                         </div>
                                     </Grow>
-                                )
-                            })}
-                            {/* Sales Channel Chip */}
-                            {salesChannel && (
-                                <Grow in={true}>
-                                    <div>
-                                        <GlassChip
-                                            label={`Channel: ${salesChannel}`}
-                                            onDelete={() => {
-                                                if (onSalesChannelChange) onSalesChannelChange('');
-                                                setTempSalesChannel('');
-                                            }}
-                                            size="small"
-                                            isDark={isDark}
-                                            sx={{ borderRadius: '9999px' }}
-                                        />
-                                    </div>
-                                </Grow>
-                            )}
+                                )}
+                                {/* Product Type Chip */}
+                                {productTypes && productTypes.length > 0 && (
+                                    <Grow in={true}>
+                                        <div>
+                                            <GlassChip
+                                                label={`Types: ${productTypes.length} selected`}
+                                                onDelete={() => {
+                                                    if (onProductTypeChange) onProductTypeChange([]);
+                                                    setTempProductTypes([]);
+                                                }}
+                                                size="small"
+                                                isDark={isDark}
+                                                sx={{ borderRadius: '9999px' }}
+                                            />
+                                        </div>
+                                    </Grow>
+                                )}
+                                {/* UTM Chips */}
+                                {['source', 'medium', 'campaign'].map(field => {
+                                    const val = utm?.[field];
+                                    if (!val || (Array.isArray(val) && val.length === 0)) return null;
+                                    return (
+                                        <Grow key={field} in={true}>
+                                            <div>
+                                                <GlassChip
+                                                    label={`${field.charAt(0).toUpperCase() + field.slice(1)}: ${Array.isArray(val) ? val.join(', ') : val}`}
+                                                    onDelete={() => {
+                                                        const update = { ...utm, [field]: '' };
+                                                        if (onUtmChange) onUtmChange(update);
+                                                        setTempUtm(update);
+                                                    }}
+                                                    size="small"
+                                                    isDark={isDark}
+                                                    sx={{ borderRadius: '9999px' }}
+                                                />
+                                            </div>
+                                        </Grow>
+                                    )
+                                })}
+                                {/* Sales Channel Chip */}
+                                {(Array.isArray(salesChannel) ? salesChannel.length > 0 : salesChannel) && (
+                                    <Grow in={true}>
+                                        <div>
+                                            <GlassChip
+                                                label={`Channel: ${salesChannel}`}
+                                                onDelete={() => {
+                                                    if (onSalesChannelChange) onSalesChannelChange('');
+                                                    setTempSalesChannel('');
+                                                }}
+                                                size="small"
+                                                isDark={isDark}
+                                                sx={{ borderRadius: '9999px' }}
+                                            />
+                                        </div>
+                                    </Grow>
+                                )}
+                            </Box>
                         </Box>
-                    </Box>
-                </Fade>
-            )}
+                    </Fade>
+                )}
 
             {/* Header */}
             <Box sx={{
@@ -319,7 +398,7 @@ export default function MobileFilterDrawer({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                bgcolor: isDark ? '#1a1a1a' : '#ffffff',
+                bgcolor: 'transparent',
                 position: 'sticky',
                 top: 0,
                 zIndex: 10
@@ -340,7 +419,7 @@ export default function MobileFilterDrawer({
             </Box>
 
             {/* Content */}
-            <Box sx={{ p: 0, overflowY: 'auto', flex: 1, bgcolor: isDark ? '#1a1a1a' : '#ffffff', position: 'relative' }}>
+            <Box sx={{ p: 0, overflowY: 'auto', flex: 1, bgcolor: 'transparent', position: 'relative' }}>
 
                 {/* ANIMATED VIEWS */}
                 <Box key={view} sx={{ animation: 'fadeIn 0.3s ease-in-out' }}>
@@ -381,7 +460,7 @@ export default function MobileFilterDrawer({
                                     <Box>
                                         <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>Product</Typography>
                                         <Typography variant="body1" fontSize={14} fontWeight={500}>
-                                            {tempProduct?.label || 'All products'}
+                                            {Array.isArray(tempProduct) ? (tempProduct.length > 1 ? `${tempProduct.length} Products` : (tempProduct[0]?.label || 'All products')) : (tempProduct?.label || 'All products')}
                                         </Typography>
                                     </Box>
                                     <ChevronRightIcon color="action" />
@@ -431,7 +510,7 @@ export default function MobileFilterDrawer({
                                     <Box>
                                         <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>Sales Channel</Typography>
                                         <Typography variant="body1" fontSize={14} fontWeight={500}>
-                                            {tempSalesChannel || 'All'}
+                                            {Array.isArray(tempSalesChannel) ? (tempSalesChannel.length > 0 ? tempSalesChannel.join(', ') : 'All') : (tempSalesChannel || 'All')}
                                         </Typography>
                                     </Box>
                                     <ChevronRightIcon color="action" />
@@ -462,8 +541,8 @@ export default function MobileFilterDrawer({
 
                     {/* PRODUCT VIEW */}
                     {view === 'PRODUCT' && (
-                        <Box>
-                            <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', position: 'sticky', top: 0, bgcolor: 'background.paper', zIndex: 5 }}>
+                        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                            <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', position: 'sticky', top: 0, bgcolor: 'transparent', backdropFilter: 'blur(10px)', zIndex: 5 }}>
                                 <TextField
                                     size="small"
                                     fullWidth
@@ -475,7 +554,9 @@ export default function MobileFilterDrawer({
                             </Box>
                             <List disablePadding>
                                 {productOptions.filter(opt => !searchText || (opt.label || '').toLowerCase().includes(searchText.toLowerCase())).map((opt) => {
-                                    const isSelected = (tempProduct?.id || '') === (opt.id || '');
+                                    const isSelected = Array.isArray(tempProduct)
+                                        ? tempProduct.some(p => p.id === opt.id)
+                                        : (tempProduct?.id || '') === (opt.id || '');
                                     return (
                                         <ListItemButton
                                             key={opt.id || 'all'}
@@ -582,8 +663,8 @@ export default function MobileFilterDrawer({
 
                     {/* UTM OPTIONS VIEWS */}
                     {['UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN'].includes(view) && (
-                        <Box>
-                            <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', position: 'sticky', top: 0, bgcolor: 'background.paper', zIndex: 5 }}>
+                        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                            <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider', position: 'sticky', top: 0, bgcolor: 'transparent', backdropFilter: 'blur(10px)', zIndex: 5 }}>
                                 <TextField
                                     size="small"
                                     fullWidth
@@ -610,48 +691,55 @@ export default function MobileFilterDrawer({
                                     />
                                     <ListItemText primary="All" />
                                 </ListItemButton>
-                                {(utmOptions?.[`utm_${view.replace('UTM_', '').toLowerCase()}`] || [])
-                                    .filter(opt => !searchText || String(opt).toLowerCase().includes(searchText.toLowerCase()))
-                                    .map(opt => {
-                                        const field = view.replace('UTM_', '').toLowerCase();
-                                        const current = tempUtm?.[field];
-                                        const isSelected = Array.isArray(current)
-                                            ? current.includes(opt)
-                                            : current === opt;
 
-                                        return (
-                                            <ListItemButton
-                                                key={opt}
-                                                onClick={() => {
-                                                    let newVal;
-                                                    if (Array.isArray(current)) {
-                                                        newVal = current.includes(opt)
-                                                            ? current.filter(x => x !== opt)
-                                                            : [...current, opt];
-                                                    } else {
-                                                        // Was string or null, now array
-                                                        // If it was already this val (shouldn't happen if we strictly use arrays but for safety), toggle off
-                                                        if (current === opt) newVal = [];
-                                                        else newVal = current ? [current, opt] : [opt];
-                                                    }
-                                                    // Handle the case where user had single string selected before update
-                                                    // If current was string and not equal to opt, we make it array [current, opt]
+                                {(() => {
+                                    let options = [];
+                                    if (view === 'UTM_SOURCE') options = utmSourceOptions;
+                                    else if (view === 'UTM_MEDIUM') options = utmMediumOptions;
+                                    else if (view === 'UTM_CAMPAIGN') options = utmCampaignOptions;
 
-                                                    setTempUtm({ ...tempUtm, [field]: newVal });
-                                                    // handleBack(); // Keep open for multi-select
-                                                }}
-                                                selected={isSelected}
-                                                sx={{ py: 0.5 }} // denser
-                                            >
-                                                <Checkbox
-                                                    checked={isSelected}
-                                                    size="small"
-                                                    sx={{ p: 0.5, mr: 1 }}
-                                                />
-                                                <ListItemText primary={opt} primaryTypographyProps={{ fontSize: 14, noWrap: true }} />
-                                            </ListItemButton>
-                                        );
-                                    })}
+                                    return options.filter(opt => !searchText || String(opt).toLowerCase().includes(searchText.toLowerCase()))
+                                        .map(opt => {
+                                            const field = view.replace('UTM_', '').toLowerCase();
+                                            const current = tempUtm?.[field];
+                                            const isSelected = Array.isArray(current)
+                                                ? current.includes(opt)
+                                                : current === opt;
+
+                                            return (
+                                                <ListItemButton
+                                                    key={opt}
+                                                    onClick={() => {
+                                                        let newVal;
+                                                        if (Array.isArray(current)) {
+                                                            newVal = current.includes(opt)
+                                                                ? current.filter(x => x !== opt)
+                                                                : [...current, opt];
+                                                        } else {
+                                                            // Was string or null, now array
+                                                            // If it was already this val (shouldn't happen if we strictly use arrays but for safety), toggle off
+                                                            if (current === opt) newVal = [];
+                                                            else newVal = current ? [current, opt] : [opt];
+                                                        }
+                                                        // Handle the case where user had single string selected before update
+                                                        // If current was string and not equal to opt, we make it array [current, opt]
+
+                                                        setTempUtm({ ...tempUtm, [field]: newVal });
+                                                        // handleBack(); // Keep open for multi-select
+                                                    }}
+                                                    selected={isSelected}
+                                                    sx={{ py: 0.5 }} // denser
+                                                >
+                                                    <Checkbox
+                                                        checked={isSelected}
+                                                        size="small"
+                                                        sx={{ p: 0.5, mr: 1 }}
+                                                    />
+                                                    <ListItemText primary={opt} primaryTypographyProps={{ fontSize: 14, noWrap: true }} />
+                                                </ListItemButton>
+                                            );
+                                        })
+                                })()}
                             </List>
                         </Box>
                     )}
@@ -677,11 +765,11 @@ export default function MobileFilterDrawer({
                                         setTempSalesChannel(channel);
                                         handleBack();
                                     }}
-                                    selected={tempSalesChannel === channel}
+                                    selected={Array.isArray(tempSalesChannel) ? tempSalesChannel.includes(channel) : tempSalesChannel === channel}
                                     sx={{ py: 1.5 }}
                                 >
                                     <ListItemText primary={channel} />
-                                    {tempSalesChannel === channel && <CheckIcon fontSize="small" color="primary" />}
+                                    {(Array.isArray(tempSalesChannel) ? tempSalesChannel.includes(channel) : tempSalesChannel === channel) && <CheckIcon fontSize="small" color="primary" />}
                                 </ListItemButton>
                             ))}
                         </List>
@@ -691,14 +779,14 @@ export default function MobileFilterDrawer({
             </Box>
 
             {/* Footer */}
-            <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 2, bgcolor: isDark ? '#1a1a1a' : '#ffffff' }}>
+            <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 2, bgcolor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255,255,255,0.3)' }}>
                 <Button
                     fullWidth
                     variant="outlined"
                     color="inherit"
                     onClick={handleClearAll}
                     startIcon={<DeleteIcon />}
-                    sx={{ textTransform: 'none', borderColor: 'divider', color: 'text.secondary' }}
+                    sx={{ textTransform: 'none', borderColor: 'divider', color: 'text.secondary', borderRadius: '12px' }}
                 >
                     Clear
                 </Button>
@@ -706,11 +794,11 @@ export default function MobileFilterDrawer({
                     fullWidth
                     variant="contained"
                     onClick={handleApply}
-                    sx={{ textTransform: 'none' }}
+                    sx={{ textTransform: 'none', borderRadius: '12px' }}
                 >
                     Apply
                 </Button>
             </Box>
-        </Drawer>
+        </Drawer >
     );
 }

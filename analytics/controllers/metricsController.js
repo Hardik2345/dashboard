@@ -2,7 +2,7 @@ const { QueryTypes } = require('sequelize');
 const redisClient = require('../lib/redis');
 const logger = require('../utils/logger');
 const { RangeSchema, isoDate } = require('../validation/schemas');
-const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta, computeTotalSessions, computeAtcSessions, hasUtmFilters, appendUtmWhere, extractUtmParam } = require('../utils/metricsUtils');
+const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta, computeTotalSessions, computeAtcSessions, hasUtmFilters, appendUtmWhere, extractUtmParam, buildDeviceTypeUserAgentClause, computeSessionsFromDeviceColumns } = require('../utils/metricsUtils');
 const { previousWindow, prevDayStr, parseIsoDate, formatIsoDate, shiftDays } = require('../utils/dateUtils');
 const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrands } = require('../config/brands');
@@ -179,6 +179,17 @@ async function calcTotalSessionsDelta({ start, end, align, compare, conn, filter
       const prevWin = previousWindow(start, end);
       const isCurrentRangeToday = isToday(start) || isToday(end);
       const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
+
+      // If device_type filter is active, use device-specific columns
+      if (filters?.device_type) {
+        const curr = await computeSessionsFromDeviceColumns({ start, end, conn, filters, metric: 'sessions' });
+        const prev = await computeSessionsFromDeviceColumns({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters, metric: 'sessions' });
+        const diff = curr - prev;
+        const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
+        const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+        return { metric: 'TOTAL_SESSIONS_DELTA', range: { start, end }, current: curr, previous: prev, diff_pct, direction, align: 'hour', hour: targetHour };
+      }
+
       const sqlRange = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
       const sqlOverallSessions = `SELECT COALESCE(SUM(total_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
       const [currRow, prevRow, overallCurrRow] = await Promise.all([
@@ -263,6 +274,17 @@ async function calcAtcSessionsDelta({ start, end, align, compare, conn, filters 
       const prevWin = previousWindow(start, end);
       const isCurrentRangeToday = isToday(start) || isToday(end);
       const prevCompareHour = isCurrentRangeToday ? Math.max(0, targetHour - 1) : targetHour;
+
+      // If device_type filter is active, use device-specific columns
+      if (filters?.device_type) {
+        const curr = await computeSessionsFromDeviceColumns({ start, end, conn, filters, metric: 'atc' });
+        const prev = await computeSessionsFromDeviceColumns({ start: prevWin.prevStart, end: prevWin.prevEnd, conn, filters, metric: 'atc' });
+        const diff = curr - prev;
+        const diff_pct = prev > 0 ? (diff / prev) * 100 : (curr > 0 ? 100 : 0);
+        const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+        return { metric: 'ATC_SESSIONS_DELTA', range: { start, end }, current: curr, previous: prev, diff_pct, direction, align: 'hour', hour: targetHour };
+      }
+
       const sqlRange = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
       const sqlOverallAtc = `SELECT COALESCE(SUM(total_atc_sessions),0) AS total FROM overall_summary WHERE date >= ? AND date <= ?`;
       const [currRow, prevRow, overallCurrRow] = await Promise.all([
@@ -1111,47 +1133,141 @@ function buildMetricsController() {
 
         console.log(`[TrafficSplit] Request for ${start} to ${end}`);
 
+        // Calculate previous directory
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+        const diffTime = Math.abs(endDate - startDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // inclusive days
+
+        const prevEnd = new Date(startDate);
+        prevEnd.setDate(prevEnd.getDate() - 1);
+        const prevStart = new Date(prevEnd);
+        prevStart.setDate(prevStart.getDate() - diffDays + 1);
+
+        const formatDate = (d) => d.toISOString().split('T')[0];
+        const pStart = formatDate(prevStart);
+        const pEnd = formatDate(prevEnd);
+
+        console.log(`[TrafficSplit] Current: ${start} to ${end}, Previous: ${pStart} to ${pEnd}`);
+
         const sql = `
           SELECT 
             utm_source, 
-            SUM(utm_source_sessions) as sessions, 
-            SUM(utm_source_atc_sessions) as atc_sessions
+            utm_source_sessions as sessions, 
+            utm_source_atc_sessions as atc_sessions,
+            utm_names,
+            date
           FROM overall_utm_summary
-          WHERE date >= ? AND date <= ?
-          GROUP BY utm_source
+          WHERE (date >= ? AND date <= ?) OR (date >= ? AND date <= ?)
         `;
 
         const rows = await conn.query(sql, {
           type: QueryTypes.SELECT,
-          replacements: [start, end]
+          replacements: [start, end, pStart, pEnd]
         });
-        console.log(`[TrafficSplit] Rows found: ${rows.length}`, rows[0]);
+        console.log(`[TrafficSplit] Rows found: ${rows.length}`);
 
         // Normalize and aggregate
-        let meta = { sessions: 0, atc_sessions: 0 };
-        let google = { sessions: 0, atc_sessions: 0 };
-        let direct = { sessions: 0, atc_sessions: 0 };
-        let others = { sessions: 0, atc_sessions: 0 };
+        const initStats = () => ({ sessions: 0, atc_sessions: 0 });
 
-        rows.forEach(r => {
+        let current = {
+          meta: initStats(), google: initStats(), direct: initStats(), others: initStats()
+        };
+        let previous = {
+          meta: initStats(), google: initStats(), direct: initStats(), others: initStats()
+        };
+
+        // Detailed breakdown for Others (Current Period Only)
+        const othersMap = new Map(); // name -> { sessions, atc }
+        const metaMap = new Map();
+
+        rows.forEach((r, idx) => {
+          let rowDate = r.date;
+          if (rowDate instanceof Date) {
+            // Add 12 hours to safely cross timezone boundaries (e.g. 18:30 prev day -> 06:30 current day)
+            const adjustedDate = new Date(rowDate.getTime() + 12 * 60 * 60 * 1000);
+            rowDate = adjustedDate.toISOString().split('T')[0];
+          }
+
+          const isCurrent = rowDate >= start && rowDate <= end;
+          const targetBucket = isCurrent ? current : previous;
+
           const source = (r.utm_source || '').toLowerCase().trim();
           const sess = Number(r.sessions || 0);
           const atc = Number(r.atc_sessions || 0);
 
+          let category = 'others';
+          let isOthers = false;
+          let isMeta = false;
+
           if (source === 'meta' || source.includes('facebook') || source.includes('instagram')) {
-            meta.sessions += sess;
-            meta.atc_sessions += atc;
+            category = 'meta';
+            isMeta = true;
           } else if (source === 'google' || source.includes('google')) {
-            google.sessions += sess;
-            google.atc_sessions += atc;
+            category = 'google';
           } else if (source === 'direct' || source === '(direct)' || source === '(none)') {
-            direct.sessions += sess;
-            direct.atc_sessions += atc;
+            category = 'direct';
           } else {
-            others.sessions += sess;
-            others.atc_sessions += atc;
+            isOthers = true;
+          }
+
+          targetBucket[category].sessions += sess;
+          targetBucket[category].atc_sessions += atc;
+
+          // Process breakdown ONLY for current period
+          if (isCurrent && (isOthers || isMeta) && r.utm_names) {
+            try {
+              const details = typeof r.utm_names === 'string' ? JSON.parse(r.utm_names) : r.utm_names;
+              if (Array.isArray(details)) {
+                details.forEach(d => {
+                  const name = (d.utm_name || 'Unknown').trim();
+                  const dSess = Number(d.sessions || 0);
+                  const dAtc = Number(d.atc_sessions || 0);
+
+                  const targetMap = isOthers ? othersMap : metaMap;
+
+                  if (!targetMap.has(name)) {
+                    targetMap.set(name, { sessions: 0, atc: 0 });
+                  }
+                  const entry = targetMap.get(name);
+                  entry.sessions += dSess;
+                  entry.atc += dAtc;
+                });
+              }
+            } catch (err) {
+              // ignore parse error
+            }
           }
         });
+
+        // Convert Map to sorted array
+        const othersBreakdown = Array.from(othersMap.entries())
+          .map(([name, stats]) => ({ name, sessions: stats.sessions, atc_sessions: stats.atc }))
+          .sort((a, b) => b.sessions - a.sessions)
+          .slice(0, 15); // Top 15
+
+        const metaBreakdown = Array.from(metaMap.entries())
+          .map(([name, stats]) => ({ name, sessions: stats.sessions, atc_sessions: stats.atc }))
+          .sort((a, b) => b.sessions - a.sessions)
+          .slice(0, 15); // Top 15
+
+        // Calculate Deltas
+        const calcDelta = (curr, prev) => {
+          if (prev === 0) return curr > 0 ? 100 : 0; // If prev is 0 and curr > 0, treat as 100% growth (or just 100 to show positive)
+          return ((curr - prev) / prev) * 100;
+        };
+
+        console.log(`[TrafficSplit] Meta ATCs (Curr/Prev): ${current.meta.atc_sessions} / ${previous.meta.atc_sessions}`);
+        const addDelta = (cat) => ({
+          ...current[cat],
+          delta: calcDelta(current[cat].sessions, previous[cat].sessions),
+          atc_delta: calcDelta(current[cat].atc_sessions, previous[cat].atc_sessions)
+        });
+
+        const meta = addDelta('meta');
+        const google = addDelta('google');
+        const direct = addDelta('direct');
+        const others = addDelta('others');
 
         const total_sessions = meta.sessions + google.sessions + direct.sessions + others.sessions;
         const total_atc = meta.atc_sessions + google.atc_sessions + direct.atc_sessions + others.atc_sessions;
@@ -1161,8 +1277,11 @@ function buildMetricsController() {
           google,
           direct,
           others,
+          others_breakdown: othersBreakdown,
+          meta_breakdown: metaBreakdown,
           total_sessions,
-          total_atc_sessions: total_atc
+          total_atc_sessions: total_atc,
+          prev_range: { start: pStart, end: pEnd }
         });
 
       } catch (e) {
@@ -1606,35 +1725,64 @@ function buildMetricsController() {
           return res.status(400).json({ error: 'start must be on or before end' });
         }
 
-        const productIdRaw = (req.query.product_id || '').toString().trim();
-        if (!productIdRaw) {
-          return res.status(400).json({ error: 'product_id is required' });
-        }
+        const filters = {
+          product_id: req.query.product_id || null,
+          sales_channel: extractUtmParam(req.query.sales_channel),
+          utm_source: extractUtmParam(req.query.utm_source),
+          utm_medium: extractUtmParam(req.query.utm_medium),
+          utm_campaign: extractUtmParam(req.query.utm_campaign),
+          utm_term: extractUtmParam(req.query.utm_term),
+          utm_content: extractUtmParam(req.query.utm_content),
+        };
 
         const conn = req.brandDb.sequelize;
 
-        const sessionsSql = `
+        // Sessions Query (Product Level, likely no channel breakdown in MV)
+        let sessionsSql = `
           SELECT
             SUM(sessions) AS total_sessions,
             SUM(sessions_with_cart_additions) AS total_atc_sessions
           FROM mv_product_sessions_by_path_daily
-          WHERE product_id = ?
-            AND product_id IS NOT NULL
-            AND date >= ? AND date <= ?
+          WHERE date >= ? AND date <= ?
         `;
+        const sessionReplacements = [rangeStart, rangeEnd];
 
-        const ordersSql = `
+        if (filters.product_id) {
+          if (Array.isArray(filters.product_id)) {
+            sessionsSql += ` AND product_id IN (?)`;
+            sessionReplacements.push(filters.product_id);
+          } else {
+            sessionsSql += ` AND product_id = ?`;
+            sessionReplacements.push(filters.product_id);
+          }
+        }
+        // NOTE: If MV supports channel/UTM, add here. Assuming it doesn't for now.
+
+        // Orders/Sales Query (Supports all filters)
+        let ordersSql = `
           SELECT
             COUNT(DISTINCT order_name) AS total_orders,
             COALESCE(SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity), 0) AS total_sales
           FROM shopify_orders
-          WHERE product_id = ?
-            AND created_date >= ? AND created_date <= ?
+          WHERE created_date >= ? AND created_date <= ?
         `;
+        const orderReplacements = [rangeStart, rangeEnd];
+
+        ordersSql = appendUtmWhere(ordersSql, orderReplacements, filters);
+
+        if (filters.product_id) {
+          if (Array.isArray(filters.product_id)) {
+            ordersSql += ` AND product_id IN (?)`;
+            orderReplacements.push(filters.product_id);
+          } else {
+            ordersSql += ` AND product_id = ?`;
+            orderReplacements.push(filters.product_id);
+          }
+        }
 
         const [[sessRow], [orderRow]] = await Promise.all([
-          conn.query(sessionsSql, { type: QueryTypes.SELECT, replacements: [productIdRaw, rangeStart, rangeEnd] }),
-          conn.query(ordersSql, { type: QueryTypes.SELECT, replacements: [productIdRaw, rangeStart, rangeEnd] }),
+          conn.query(sessionsSql, { type: QueryTypes.SELECT, replacements: sessionReplacements }),
+          conn.query(ordersSql, { type: QueryTypes.SELECT, replacements: orderReplacements }),
         ]);
 
         const totalSessions = Number(sessRow?.total_sessions || 0);
@@ -1646,7 +1794,8 @@ function buildMetricsController() {
         const cvr = totalSessions > 0 ? totalOrders / totalSessions : 0;
 
         return res.json({
-          product_id: productIdRaw,
+
+          product_id: filters.product_id,
           brand_key: req.brandKey || null,
           range: { start: rangeStart, end: rangeEnd },
           sessions: totalSessions,
@@ -1685,11 +1834,13 @@ function buildMetricsController() {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
-          utm_campaign: extractUtmParam(req.query.utm_campaign),
-          product_id: (req.query.product_id || '').trim() || null,
+          utm_term: extractUtmParam(req.query.utm_term),
+          utm_content: extractUtmParam(req.query.utm_content),
+          product_id: req.query.product_id || null, // Allow array or string
           sales_channel: extractUtmParam(req.query.sales_channel),
+          device_type: extractUtmParam(req.query.device_type),
         };
-        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel);
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel || filters.device_type);
 
         let querySql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, hour, total_sales, number_of_orders,
         COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
@@ -1715,27 +1866,140 @@ function buildMetricsController() {
                  FROM shopify_orders 
                  WHERE created_date >= ? AND created_date <= ?`;
           querySql = appendUtmWhere(querySql, queryReplacements, filters);
-          if (filters.product_id) { querySql += ` AND product_id = ?`; queryReplacements.push(filters.product_id); }
+
+          if (filters.product_id) {
+            if (Array.isArray(filters.product_id)) {
+              querySql += ` AND product_id IN (?)`;
+              queryReplacements.push(filters.product_id);
+            } else {
+              querySql += ` AND product_id = ?`;
+              queryReplacements.push(filters.product_id);
+            }
+          }
           querySql += ` GROUP BY date, hour`;
         }
 
         const rows = await req.brandDb.sequelize.query(querySql, { type: QueryTypes.SELECT, replacements: queryReplacements });
 
+        // NEW: Fetch Product Sessions if filtered by product
+        let productSessionsMap = new Map(); // date -> count
+        if (filters.product_id) {
+          try {
+            let sessionSql = `SELECT date, SUM(sessions) as sessions FROM mv_product_sessions_by_path_daily WHERE date >= ? AND date <= ?`;
+            const sessionReplacements = [start, end];
+
+            if (Array.isArray(filters.product_id)) {
+              sessionSql += ` AND product_id IN (?)`;
+              sessionReplacements.push(filters.product_id);
+            } else {
+              sessionSql += ` AND product_id = ?`;
+              sessionReplacements.push(filters.product_id);
+            }
+            sessionSql += ` GROUP BY date`;
+
+            const sessionRows = await req.brandDb.sequelize.query(sessionSql, { type: QueryTypes.SELECT, replacements: sessionReplacements });
+            sessionRows.forEach(r => {
+              productSessionsMap.set(String(r.date), Number(r.sessions || 0));
+            });
+          } catch (err) {
+            console.warn('[hourlyTrend] Failed to fetch product sessions', err);
+          }
+        }
+
         const rowMap = new Map();
+
+        // Helper to distribute daily sessions over hours
+        const distributeSessions = (dateStr, totalSessions) => {
+          // Distribute evenly over 24 hours for now (simple estimation)
+          // Or we could distribute only over active hours if we had that data.
+          const perHour = totalSessions / 24;
+          for (let h = 0; h < 24; h++) {
+            const key = `${dateStr}#${h}`;
+            const existing = rowMap.get(key) || { sales: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, orders: 0, atc: 0 };
+            existing.sessions += perHour;
+            existing.adjusted_sessions += perHour;
+            existing.raw_sessions += perHour;
+            rowMap.set(key, existing);
+          }
+        };
+
+        // Populate rowMap with Sales/Orders from main query
         for (const row of rows) {
           if (!row?.date) continue;
           const dateStr = row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date);
           const hourVal = typeof row.hour === 'number' ? row.hour : Number(row.hour);
           if (!Number.isFinite(hourVal) || hourVal < 0 || hourVal > 23) continue;
           const key = `${dateStr}#${hourVal}`;
-          rowMap.set(key, {
-            sales: Number(row.total_sales || 0),
-            sessions: Number(row.raw_number_of_sessions || 0),
-            adjusted_sessions: Number(row.adjusted_number_of_sessions || 0),
-            raw_sessions: Number(row.raw_number_of_sessions || 0),
-            orders: Number(row.number_of_orders || 0),
-            atc: Number(row.number_of_atc_sessions || 0),
-          });
+
+          const existing = rowMap.get(key) || { sales: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, orders: 0, atc: 0 };
+          existing.sales += Number(row.total_sales || 0);
+          existing.orders += Number(row.number_of_orders || 0);
+          existing.atc += Number(row.number_of_atc_sessions || 0);
+
+          if (!filters.product_id) {
+            // If NOT filtering by product, use the sessions from the main query (hour_wise_sales)
+            existing.sessions += Number(row.raw_number_of_sessions || 0);
+            existing.adjusted_sessions += Number(row.adjusted_number_of_sessions || 0);
+            existing.raw_sessions += Number(row.raw_number_of_sessions || 0);
+          }
+          rowMap.set(key, existing);
+        }
+
+        // If filtering by product, distribute the fetched daily sessions
+        if (filters.product_id) {
+          for (const [dateStr, count] of productSessionsMap.entries()) {
+            distributeSessions(dateStr, count);
+          }
+        }
+
+        // NEW: Fetch device-type specific sessions from hourly_sessions_summary_shopify
+        if (filters.device_type && !filters.product_id) {
+          try {
+            const types = Array.isArray(filters.device_type) ? filters.device_type : [filters.device_type];
+            const sessCols = [];
+            const atcCols = [];
+            for (const t of types) {
+              const lower = (t || '').toString().toLowerCase().trim();
+              if (lower === 'desktop') {
+                sessCols.push('desktop_sessions');
+                atcCols.push('desktop_atc_sessions');
+              } else if (lower === 'mobile') {
+                sessCols.push('mobile_sessions', 'tablet_sessions');
+                atcCols.push('mobile_atc_sessions', 'tablet_atc_sessions');
+              } else if (lower === 'others') {
+                sessCols.push('other_sessions');
+                atcCols.push('other_atc_sessions');
+              }
+            }
+            if (sessCols.length > 0) {
+              const sessExpr = sessCols.map(c => `COALESCE(${c}, 0)`).join(' + ');
+              const atcExpr = atcCols.map(c => `COALESCE(${c}, 0)`).join(' + ');
+              const deviceSessionSql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, hour,
+                (${sessExpr}) AS device_sessions,
+                (${atcExpr}) AS device_atc_sessions
+                FROM hourly_sessions_summary_shopify
+                WHERE date >= ? AND date <= ?
+                GROUP BY date, hour`;
+              const deviceRows = await req.brandDb.sequelize.query(deviceSessionSql, {
+                type: QueryTypes.SELECT, replacements: [start, end]
+              });
+              for (const dr of deviceRows) {
+                if (!dr?.date) continue;
+                const dateStr = dr.date instanceof Date ? dr.date.toISOString().slice(0, 10) : String(dr.date);
+                const hourVal = typeof dr.hour === 'number' ? dr.hour : Number(dr.hour);
+                if (!Number.isFinite(hourVal) || hourVal < 0 || hourVal > 23) continue;
+                const key = `${dateStr}#${hourVal}`;
+                const existing = rowMap.get(key) || { sales: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, orders: 0, atc: 0 };
+                existing.sessions += Number(dr.device_sessions || 0);
+                existing.adjusted_sessions += Number(dr.device_sessions || 0);
+                existing.raw_sessions += Number(dr.device_sessions || 0);
+                existing.atc += Number(dr.device_atc_sessions || 0);
+                rowMap.set(key, existing);
+              }
+            }
+          } catch (err) {
+            console.warn('[hourlyTrend] Failed to fetch device-type sessions', err);
+          }
         }
 
         const startDate = new Date(`${start}T00:00:00Z`);
@@ -1927,8 +2191,9 @@ function buildMetricsController() {
           utm_source: extractUtmParam(req.query.utm_source),
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
-          utm_campaign: extractUtmParam(req.query.utm_campaign),
-          product_id: (req.query.product_id || '').trim() || null,
+          utm_term: extractUtmParam(req.query.utm_term),
+          utm_content: extractUtmParam(req.query.utm_content),
+          product_id: req.query.product_id || null, // Allow array
           sales_channel: extractUtmParam(req.query.sales_channel),
         };
         const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel);
@@ -1962,16 +2227,63 @@ function buildMetricsController() {
                 FROM shopify_orders 
                 WHERE created_date >= ? AND created_date <= ?`;
           sql = appendUtmWhere(sql, replacements, filters);
-          if (filters.product_id) { sql += ` AND product_id = ?`; replacements.push(filters.product_id); }
+
+          if (filters.product_id) {
+            if (Array.isArray(filters.product_id)) {
+              sql += ` AND product_id IN (?)`;
+              replacements.push(filters.product_id);
+            } else {
+              sql += ` AND product_id = ?`;
+              replacements.push(filters.product_id);
+            }
+          }
           sql += ` GROUP BY date ORDER BY date ASC`;
         }
 
         const rows = await req.brandDb.sequelize.query(sql, { type: QueryTypes.SELECT, replacements: replacements });
         const debugInfo = { brand: req.brandKey, rows: rows.slice(0, 5), overallRows: [] };
 
+        // NEW: Fetch Product Sessions for Daily Trend
+        let productSessionsMap = new Map();
+        if (filters.product_id) {
+          try {
+            // Include ATC sessions and format date to match daily buckets
+            let sessionSql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') as date, SUM(sessions) as sessions, SUM(sessions_with_cart_additions) as atc FROM mv_product_sessions_by_path_daily WHERE date >= ? AND date <= ?`;
+            const sessionReplacements = [start, end];
+
+            if (Array.isArray(filters.product_id)) {
+              sessionSql += ` AND product_id IN (?)`;
+              sessionReplacements.push(filters.product_id);
+            } else {
+              sessionSql += ` AND product_id = ?`;
+              sessionReplacements.push(filters.product_id);
+            }
+            sessionSql += ` GROUP BY date`;
+
+            const sessionRows = await req.brandDb.sequelize.query(sessionSql, { type: QueryTypes.SELECT, replacements: sessionReplacements });
+            sessionRows.forEach(r => {
+              productSessionsMap.set(String(r.date), { sessions: Number(r.sessions || 0), atc: Number(r.atc || 0) });
+            });
+          } catch (err) {
+            console.warn('[dailyTrend] Failed to fetch product sessions', err);
+          }
+        }
+
         const map = new Map(rows.map(r => {
           const d = String(r.date);
-          return [d, { sales: Number(r.sales || 0), orders: Number(r.orders || 0), sessions: Number(r.sessions || 0), adjusted_sessions: Number(r.adjusted_sessions || 0), raw_sessions: Number(r.raw_sessions || 0), atc: Number(r.atc || 0) }];
+          let sessions = Number(r.sessions || 0);
+          let adjusted = Number(r.adjusted_sessions || 0);
+          let raw = Number(r.raw_sessions || 0);
+
+          if (filters.product_id) {
+            // Override sessions with data from MV
+            const productSess = productSessionsMap.get(d) || 0;
+            sessions = productSess;
+            adjusted = productSess;
+            raw = productSess;
+          }
+
+          return [d, { sales: Number(r.sales || 0), orders: Number(r.orders || 0), sessions, adjusted_sessions: adjusted, raw_sessions: raw, atc: Number(r.atc || 0) }];
         }));
 
         let overallMap = new Map();
@@ -1988,13 +2300,27 @@ function buildMetricsController() {
         }
 
         const points = dayList.map(d => {
-          const metrics = map.get(d) || { sales: 0, orders: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, atc: 0 };
+          let metrics = map.get(d);
+          if (!metrics) {
+            // If no sales data, initialize zero metrics
+            metrics = { sales: 0, orders: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, atc: 0 };
+          }
+
+          // If filtering by product, always try to override sessions/atc from the product map
+          if (filters.product_id) {
+            const productData = productSessionsMap.get(d) || { sessions: 0, atc: 0 };
+            metrics.sessions = productData.sessions;
+            metrics.adjusted_sessions = productData.sessions;
+            metrics.raw_sessions = productData.sessions;
+            metrics.atc = productData.atc; // Use ATC from product sessions
+          }
+
           const over = overallMap.get(d);
 
           // Priority Logic for Sessions:
           // 1. adjusted_total_sessions (overall_summary)
           // 2. total_sessions (overall_summary)
-          // 3. metrics.sessions (hour_wise_sales)
+          // 3. metrics.sessions (hour_wise_sales or product sessions)
           let bestSession = metrics.sessions;
           if (over) {
             if (over.adjusted_total_sessions != null) {
@@ -2044,10 +2370,47 @@ function buildMetricsController() {
             compSql += ` GROUP BY date ORDER BY date ASC`;
           }
 
+          // NEW: Fetch Comparison Product Sessions
+          let compProductSessionsMap = new Map();
+          if (filters.product_id) {
+            try {
+              let compSessionSql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') as date, SUM(sessions) as sessions, SUM(sessions_with_cart_additions) as atc FROM mv_product_sessions_by_path_daily WHERE date >= ? AND date <= ?`;
+              const compSessionReplacements = [prevWin.prevStart, prevWin.prevEnd];
+
+              if (Array.isArray(filters.product_id)) {
+                compSessionSql += ` AND product_id IN (?)`;
+                compSessionReplacements.push(filters.product_id);
+              } else {
+                compSessionSql += ` AND product_id = ?`;
+                compSessionReplacements.push(filters.product_id);
+              }
+              compSessionSql += ` GROUP BY date`;
+
+              const compSessionRows = await req.brandDb.sequelize.query(compSessionSql, { type: QueryTypes.SELECT, replacements: compSessionReplacements });
+              compSessionRows.forEach(r => {
+                compProductSessionsMap.set(String(r.date), { sessions: Number(r.sessions || 0), atc: Number(r.atc || 0) });
+              });
+            } catch (err) {
+              console.warn('[dailyTrend] Failed to fetch comparison product sessions', err);
+            }
+          }
+
           const rowsPrev = await req.brandDb.sequelize.query(compSql, { type: QueryTypes.SELECT, replacements: compReplacements });
           const mapPrev = new Map(rowsPrev.map(r => {
             const d = String(r.date);
-            return [d, { sales: Number(r.sales || 0), orders: Number(r.orders || 0), sessions: Number(r.sessions || 0), adjusted_sessions: Number(r.adjusted_sessions || 0), raw_sessions: Number(r.raw_sessions || 0), atc: Number(r.atc || 0) }];
+            let sessions = Number(r.sessions || 0);
+            let adjusted = Number(r.adjusted_sessions || 0);
+            let raw = Number(r.raw_sessions || 0);
+
+            if (filters.product_id) {
+              // Override sessions with data from MV for comparison
+              const productSess = compProductSessionsMap.get(d) || 0;
+              sessions = productSess;
+              adjusted = productSess;
+              raw = productSess;
+            }
+
+            return [d, { sales: Number(r.sales || 0), orders: Number(r.orders || 0), sessions, adjusted_sessions: adjusted, raw_sessions: raw, atc: Number(r.atc || 0) }];
           }));
 
           let overallMapPrev = new Map();
@@ -2065,7 +2428,21 @@ function buildMetricsController() {
           const prevPoints = [];
           for (let ts = parseIsoDate(prevWin.prevStart).getTime(); ts <= parseIsoDate(prevWin.prevEnd).getTime(); ts += DAY_MS) {
             const d = formatIsoDate(new Date(ts));
-            const metrics = mapPrev.get(d) || { sales: 0, orders: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, atc: 0 };
+            let metrics = mapPrev.get(d);
+
+            if (!metrics) {
+              metrics = { sales: 0, orders: 0, sessions: 0, adjusted_sessions: 0, raw_sessions: 0, atc: 0 };
+            }
+
+            // Fallback: If filtering by product, use comparison product sessions map
+            if (filters.product_id) {
+              const productData = compProductSessionsMap.get(d) || { sessions: 0, atc: 0 };
+              metrics.sessions = productData.sessions;
+              metrics.adjusted_sessions = productData.sessions;
+              metrics.raw_sessions = productData.sessions;
+              metrics.atc = productData.atc;
+            }
+
             const over = overallMapPrev.get(d);
 
             // Comparison Priority Logic
@@ -3165,8 +3542,9 @@ function buildMetricsController() {
           utm_medium: extractUtmParam(req.query.utm_medium),
           utm_campaign: extractUtmParam(req.query.utm_campaign),
           sales_channel: extractUtmParam(req.query.sales_channel),
+          device_type: extractUtmParam(req.query.device_type),
         };
-        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.sales_channel);
+        const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.sales_channel || filters.device_type);
 
         const traceStart = req._reqStart || Date.now();
         const spans = [];
@@ -3499,45 +3877,71 @@ function buildMetricsController() {
             const s = Date.now();
             const conn = req.brandDb.sequelize;
 
-            const baseWhere = 'created_date >= ? AND created_date <= ?';
-            const baseReplacements = [start, end];
+            // Dynamic query to support dependent dropdowns source->medium and source->campaign
+            let replacements = [start, end];
 
-            const optionSql = `
-              SELECT
-                GROUP_CONCAT(DISTINCT CASE
-                  WHEN utm_source IS NOT NULL AND utm_source <> '' THEN utm_source
-                  ELSE NULL END) AS utm_source,
-                GROUP_CONCAT(DISTINCT CASE
-                  WHEN utm_medium IS NOT NULL AND utm_medium <> ''
-                    AND (${filters.utm_source ? 'utm_source = ?' : '1=1'})
-                  THEN utm_medium ELSE NULL END) AS utm_medium,
-                GROUP_CONCAT(DISTINCT CASE
-                  WHEN utm_campaign IS NOT NULL AND utm_campaign <> ''
-                    AND (${filters.utm_source ? 'utm_source = ?' : '1=1'})
-                    AND (${filters.utm_medium ? 'utm_medium = ?' : '1=1'})
-                    AND (${filters.sales_channel ? 'order_app_name = ?' : '1=1'})
-                  THEN utm_campaign ELSE NULL END) AS utm_campaign,
-                GROUP_CONCAT(DISTINCT CASE
-                  WHEN order_app_name IS NOT NULL AND order_app_name <> '' THEN order_app_name
-                  ELSE NULL END) AS sales_channel
-              FROM shopify_orders
-              WHERE ${baseWhere}
+            // Helper to get Source filter clause
+            const getSourceFilter = () => {
+              if (filters.utm_source) {
+                const vals = Array.isArray(filters.utm_source) ? filters.utm_source : [filters.utm_source];
+                if (vals.length > 0) {
+                  const placeholders = vals.map(() => '?').join(', ');
+                  replacements.push(...vals);
+                  return `AND utm_source IN (${placeholders})`;
+                }
+              }
+              return '';
+            };
+
+            // 1. Fetch flat Sales Channel options
+            const channelSql = `
+              SELECT DISTINCT order_app_name AS val 
+              FROM shopify_orders 
+              WHERE created_date >= ? AND created_date <= ?
+                AND order_app_name IS NOT NULL AND order_app_name <> ''
+              ORDER BY val
             `;
+            const channelRows = await conn.query(channelSql, {
+              type: QueryTypes.SELECT,
+              replacements: [start, end]
+            });
 
-            const optionReplacements = [...baseReplacements];
-            if (filters.utm_source) optionReplacements.push(filters.utm_source);
-            if (filters.utm_source) optionReplacements.push(filters.utm_source);
-            if (filters.utm_medium) optionReplacements.push(filters.utm_medium);
-            if (filters.sales_channel) optionReplacements.push(filters.sales_channel);
+            // 2. Fetch Hierarchical UTM data
+            const utmSql = `
+              SELECT DISTINCT utm_source, utm_medium, utm_campaign, utm_term, utm_content
+              FROM shopify_orders 
+              WHERE created_date >= ? AND created_date <= ?
+                AND utm_source IS NOT NULL AND utm_source <> ''
+              ORDER BY utm_source, utm_medium, utm_campaign, utm_term, utm_content
+            `;
+            const utmRows = await conn.query(utmSql, {
+              type: QueryTypes.SELECT,
+              replacements: [start, end]
+            });
 
-            const [row] = await conn.query(optionSql, { type: QueryTypes.SELECT, replacements: optionReplacements });
-            const splitList = (value) => (value ? value.split(',').map(v => v.trim()).filter(Boolean) : []);
+            // 3. Build UTM Tree
+            const utmTree = {};
+            for (const row of utmRows) {
+              const { utm_source: s, utm_medium: m, utm_campaign: c, utm_term: t, utm_content: ct } = row;
+              if (!s) continue;
+              if (!utmTree[s]) utmTree[s] = { mediums: {} };
+              if (m) {
+                if (!utmTree[s].mediums[m]) utmTree[s].mediums[m] = { campaigns: {} };
+                if (c) {
+                  if (!utmTree[s].mediums[m].campaigns[c]) utmTree[s].mediums[m].campaigns[c] = { terms: [], contents: [] };
+                  if (t && !utmTree[s].mediums[m].campaigns[c].terms.includes(t)) {
+                    utmTree[s].mediums[m].campaigns[c].terms.push(t);
+                  }
+                  if (ct && !utmTree[s].mediums[m].campaigns[c].contents.includes(ct)) {
+                    utmTree[s].mediums[m].campaigns[c].contents.push(ct);
+                  }
+                }
+              }
+            }
 
             filterOptions = {
-              utm_source: splitList(row?.utm_source).sort(),
-              utm_medium: splitList(row?.utm_medium).sort(),
-              utm_campaign: splitList(row?.utm_campaign).sort(),
-              sales_channel: splitList(row?.sales_channel).sort(),
+              sales_channel: channelRows.map(r => r.val),
+              utm_tree: utmTree
             };
             mark('filter_options', s);
           }
