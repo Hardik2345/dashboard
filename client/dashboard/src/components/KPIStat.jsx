@@ -3,7 +3,7 @@ import { useTheme, alpha } from '@mui/material/styles';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 
-export default function KPIStat({ label, value, hint, loading, deltaLoading, formatter, delta, onSelect, selected, centerOnMobile = false }) {
+export default function KPIStat({ label, value, hint, loading, deltaLoading, formatter, delta, onSelect, selected, centerOnMobile = false, action, sx = {}, activeColor = '#10b981' }) {
   const theme = useTheme();
   const clickable = typeof onSelect === 'function';
 
@@ -28,19 +28,20 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
         cursor: clickable ? 'pointer' : 'default',
         position: 'relative',
         border: '1px solid',
-        borderColor: selected ? '#10b981' : 'divider',
+        borderColor: selected ? activeColor : 'divider',
         bgcolor: 'background.paper',
         boxShadow: selected
-          ? `0 0 0 1px #10b981, 0 10px 20px ${alpha('#10b981', 0.2)}, 0 6px 6px ${alpha('#10b981', 0.1)}`
+          ? `0 0 0 1px ${activeColor}, 0 10px 20px ${alpha(activeColor, 0.2)}, 0 6px 6px ${alpha(activeColor, 0.1)}`
           : '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)',
         '&:hover': clickable ? {
-          borderColor: selected ? '#10b981' : 'divider',
+          borderColor: selected ? activeColor : 'divider',
           boxShadow: selected
-            ? `0 0 0 1.5px #10b981, 0 14px 28px ${alpha('#10b981', 0.25)}, 0 10px 10px ${alpha('#10b981', 0.15)}`
+            ? `0 0 0 1.5px ${activeColor}, 0 14px 28px ${alpha(activeColor, 0.25)}, 0 10px 10px ${alpha(activeColor, 0.15)}`
             : '0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23)',
           transform: 'translateY(-4px)'
         } : {},
         '&:focus-visible': clickable ? { borderColor: 'primary.main' } : undefined,
+        ...sx
       }}
     >
       <CardContent sx={{
@@ -52,9 +53,23 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
         alignItems: centerOnMobile ? { xs: 'center', md: 'flex-start' } : 'flex-start',
         textAlign: centerOnMobile ? { xs: 'center', md: 'left' } : 'left'
       }}>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.25, whiteSpace: 'nowrap' }}>
-          {label}
-        </Typography>
+        <Box sx={{
+          display: 'flex',
+          justifyContent: centerOnMobile ? { xs: 'center', md: 'space-between' } : 'space-between',
+          alignItems: 'center',
+          mb: 0.25,
+          width: '100%',
+          position: 'relative'
+        }}>
+          <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+            {label}
+          </Typography>
+          {action && (
+            <Box sx={{ position: centerOnMobile ? { xs: 'absolute', md: 'static' } : 'static', right: 0 }}>
+              {action}
+            </Box>
+          )}
+        </Box>
         {loading ? (
           <Skeleton variant="text" width={120} height={32} />
         ) : (
