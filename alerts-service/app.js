@@ -28,6 +28,33 @@ mongoose.set('strictQuery', true);
 // ---- Routes -----------------------------------------------------------------
 app.get('/health', (_req, res) => res.json({ ok: true }));
 app.use('/alerts', requireAuthor, buildAlertsRouter({ Alert, AlertChannel, BrandAlertChannel, getNextSeq }));
+const Session = require('./models/session');
+
+app.post('/track', async (req, res) => {
+  try {
+    const sessionData = req.body;
+
+    // Check for idempotency key to prevent duplicates
+    if (!sessionData.idempotency_key) {
+      return res.status(400).json({ error: 'idempotency_key is required' });
+    }
+
+    const existingSession = await Session.findOne({ idempotency_key: sessionData.idempotency_key });
+    if (existingSession) {
+      // Already processed this event, return success without saving again
+      return res.status(200).json({ message: 'Event already processed', session: existingSession });
+    }
+
+    // Save new session document
+    const session = new Session(sessionData);
+    await session.save();
+
+    res.status(201).json({ message: 'Session tracked successfully', session });
+  } catch (err) {
+    logger.error('Error tracking session:', err);
+    res.status(500).json({ error: 'Failed to track alert' });
+  }
+});
 
 // ---- Start ------------------------------------------------------------------
 async function start() {
