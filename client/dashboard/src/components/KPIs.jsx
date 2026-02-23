@@ -44,7 +44,7 @@ export default function KPIs({
   const [loading, setLoading] = useState(true);
   const [deltaLoading, setDeltaLoading] = useState(true);
   const [data, setData] = useState({});
-  const [revenueMode, setRevenueMode] = useState('T'); // 'T' | 'G'
+  const [revenueMode, setRevenueMode] = useState('G'); // 'T' | 'G'
   const start = query?.start;
   const end = query?.end;
   const brandKey = query?.brand_key;
