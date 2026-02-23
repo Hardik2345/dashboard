@@ -17,6 +17,7 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
 
   return (
     <Card
+      className="kpi-stat-card"
       elevation={0}
       onClick={clickable ? onSelect : undefined}
       onKeyDown={handleKeyDown}
@@ -24,6 +25,7 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
       tabIndex={clickable ? 0 : undefined}
       aria-pressed={clickable ? Boolean(selected) : undefined}
       sx={{
+        height: '100%',
         transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
         cursor: clickable ? 'pointer' : 'default',
         position: 'relative',
@@ -65,7 +67,7 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
             {label}
           </Typography>
           {action && (
-            <Box sx={{ position: centerOnMobile ? { xs: 'absolute', md: 'static' } : 'static', right: 0 }}>
+            <Box sx={{ position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)' }}>
               {action}
             </Box>
           )}

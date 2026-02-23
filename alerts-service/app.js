@@ -56,6 +56,27 @@ app.post('/track', async (req, res) => {
   }
 });
 
+
+app.post('/qtash/push-notifications', async (req, res) => {
+  try {
+    console.log(req.body);
+    // const payload = { ...req.body };
+
+    // // Exclude the email body
+    // delete payload.email_body;
+    // delete payload.emailBody;
+    // delete payload.html;
+
+    // const notification = new PushNotification(payload);
+    // await notification.save();
+
+    // res.status(200).json({ message: 'Push notification logged successfully' });
+  } catch (err) {
+    logger.error('Error logging push notification:', err);
+    res.status(500).json({ error: 'Failed to log push notification' });
+  }
+});
+
 // ---- Start ------------------------------------------------------------------
 async function start() {
   try {
