@@ -44,7 +44,7 @@ export default function KPIs({
   const [loading, setLoading] = useState(true);
   const [deltaLoading, setDeltaLoading] = useState(true);
   const [data, setData] = useState({});
-  const [revenueMode, setRevenueMode] = useState('T'); // 'T' | 'N'
+  const [revenueMode, setRevenueMode] = useState('T'); // 'T' | 'G'
   const start = query?.start;
   const end = query?.end;
   const brandKey = query?.brand_key;
@@ -316,7 +316,7 @@ export default function KPIs({
             </Grid>
             <Grid size={{ xs: 6, sm: 6, md: 3 }}>
               <KPIStat
-                label={revenueMode === 'T' ? "Total Revenue" : "Net Revenue"}
+                label={revenueMode === 'T' ? "Total Revenue" : "Gross Revenue"}
                 action={
                   <Box
                     sx={{
@@ -334,7 +334,7 @@ export default function KPIs({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setRevenueMode(prev => prev === 'T' ? 'N' : 'T');
+                      setRevenueMode(prev => prev === 'T' ? 'G' : 'T');
                     }}
                   >
                     <Box sx={{
@@ -349,12 +349,12 @@ export default function KPIs({
                     <Box sx={{
                       px: 1, py: 0.25,
                       borderRadius: 10,
-                      bgcolor: revenueMode === 'N' ? '#3b82f6' : 'transparent',
-                      color: revenueMode === 'N' ? '#fff' : 'text.secondary',
+                      bgcolor: revenueMode === 'G' ? '#3b82f6' : 'transparent',
+                      color: revenueMode === 'G' ? '#fff' : 'text.secondary',
                       fontSize: '0.65rem', fontWeight: 600,
                       transition: 'all 0.2s ease',
-                      boxShadow: revenueMode === 'N' ? '0 1px 2px rgba(0,0,0,0.2)' : 'none'
-                    }}>N</Box>
+                      boxShadow: revenueMode === 'G' ? '0 1px 2px rgba(0,0,0,0.2)' : 'none'
+                    }}>G</Box>
                   </Box>
                 }
                 value={revenueMode === 'T' ? (data.sales?.value ?? 0) : ((data.sales?.value ?? 0) / 1.18)}
