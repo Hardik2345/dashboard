@@ -29,6 +29,27 @@ mongoose.set('strictQuery', true);
 app.get('/health', (_req, res) => res.json({ ok: true }));
 app.use('/alerts', requireAuthor, buildAlertsRouter({ Alert, AlertChannel, BrandAlertChannel, getNextSeq }));
 
+
+app.post('/qtash/push-notifications', async (req, res) => {
+  try {
+    console.log(req.body);
+    // const payload = { ...req.body };
+
+    // // Exclude the email body
+    // delete payload.email_body;
+    // delete payload.emailBody;
+    // delete payload.html;
+
+    // const notification = new PushNotification(payload);
+    // await notification.save();
+
+    // res.status(200).json({ message: 'Push notification logged successfully' });
+  } catch (err) {
+    logger.error('Error logging push notification:', err);
+    res.status(500).json({ error: 'Failed to log push notification' });
+  }
+});
+
 // ---- Start ------------------------------------------------------------------
 async function start() {
   try {
