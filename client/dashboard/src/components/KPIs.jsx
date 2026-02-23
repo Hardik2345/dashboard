@@ -316,7 +316,7 @@ export default function KPIs({
             </Grid>
             <Grid size={{ xs: 6, sm: 6, md: 3 }}>
               <KPIStat
-                label={revenueMode === 'T' ? "Total Revenue" : "Net Revenue"}
+                label={revenueMode === 'G' ? "Gross Revenue" : "Net Revenue"}
                 action={
                   <Box
                     sx={{
@@ -334,30 +334,30 @@ export default function KPIs({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setRevenueMode(prev => prev === 'T' ? 'G' : 'T');
+                      setRevenueMode(prev => prev === 'G' ? 'N' : 'G');
                     }}
                   >
                     <Box sx={{
                       px: 1, py: 0.25,
                       borderRadius: 10,
-                      bgcolor: revenueMode === 'T' ? 'primary.main' : 'transparent',
-                      color: revenueMode === 'T' ? 'primary.contrastText' : 'text.secondary',
-                      fontSize: '0.65rem', fontWeight: 600,
-                      transition: 'all 0.2s ease',
-                      boxShadow: revenueMode === 'T' ? '0 1px 2px rgba(0,0,0,0.2)' : 'none'
-                    }}>T</Box>
-                    <Box sx={{
-                      px: 1, py: 0.25,
-                      borderRadius: 10,
-                      bgcolor: revenueMode === 'G' ? '#3b82f6' : 'transparent',
-                      color: revenueMode === 'G' ? '#fff' : 'text.secondary',
+                      bgcolor: revenueMode === 'G' ? 'primary.main' : 'transparent',
+                      color: revenueMode === 'G' ? 'primary.contrastText' : 'text.secondary',
                       fontSize: '0.65rem', fontWeight: 600,
                       transition: 'all 0.2s ease',
                       boxShadow: revenueMode === 'G' ? '0 1px 2px rgba(0,0,0,0.2)' : 'none'
                     }}>G</Box>
+                    <Box sx={{
+                      px: 1, py: 0.25,
+                      borderRadius: 10,
+                      bgcolor: revenueMode === 'N' ? '#3b82f6' : 'transparent',
+                      color: revenueMode === 'N' ? '#fff' : 'text.secondary',
+                      fontSize: '0.65rem', fontWeight: 600,
+                      transition: 'all 0.2s ease',
+                      boxShadow: revenueMode === 'N' ? '0 1px 2px rgba(0,0,0,0.2)' : 'none'
+                    }}>N</Box>
                   </Box>
                 }
-                value={revenueMode === 'T' ? (data.sales?.value ?? 0) : ((data.sales?.value ?? 0) / 1.18)}
+                value={revenueMode === 'G' ? (data.sales?.value ?? 0) : ((data.sales?.value ?? 0) / 1.18)}
                 loading={loading}
                 deltaLoading={deltaLoading}
                 formatter={(v) => nfMoney.format(v)}
@@ -373,7 +373,7 @@ export default function KPIs({
                   onSelectMetric ? () => onSelectMetric("sales") : undefined
                 }
                 selected={selectedMetric === "sales"}
-                activeColor={revenueMode === 'T' ? '#10b981' : '#3b82f6'}
+                activeColor={revenueMode === 'G' ? '#10b981' : '#3b82f6'}
               />
             </Grid>
             <Grid size={{ xs: 6, sm: 6, md: 3 }}>
