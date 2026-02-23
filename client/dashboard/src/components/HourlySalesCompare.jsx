@@ -3,7 +3,7 @@ import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, Menu
 import { useTheme, alpha } from '@mui/material/styles';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell
+  BarChart, Bar, Cell, LabelList
 } from 'recharts';
 import { getHourlyTrend, getDailyTrend, getMonthlyTrend, getHourlySalesSummary } from '../lib/api.js';
 
@@ -415,7 +415,9 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     fill="transparent"
                     activeDot={false}
                     dot={{ r: 3, fill: 'white', stroke: PREV_COLOR, strokeWidth: 1.5 }}
-                  />
+                  >
+                    <LabelList dataKey="comparisonValue" position="top" formatter={config.formatter} fontSize={10} fill={theme.palette.text.secondary} />
+                  </Area>
                   <Area
                     type="monotone"
                     hide={!visibleLines.includes('primary')}
@@ -427,7 +429,9 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     fillOpacity={1}
                     activeDot={{ r: 6, fill: MAIN_COLOR, stroke: 'white', strokeWidth: 3 }}
                     dot={{ r: 3, fill: 'white', stroke: MAIN_COLOR, strokeWidth: 1.5 }}
-                  />
+                  >
+                    <LabelList dataKey="value" position="top" formatter={config.formatter} fontSize={10} fill={theme.palette.text.secondary} />
+                  </Area>
                 </AreaChart>
               ) : (
                 <BarChart data={chartData} margin={{ top: 10, right: 20, left: 15, bottom: 5 }} barGap={0}>
@@ -460,7 +464,9 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     fill={alpha(MAIN_COLOR, 0.4)}
                     radius={[4, 4, 0, 0]}
                     maxBarSize={40}
-                  />
+                  >
+                    <LabelList dataKey="comparisonValue" position="top" formatter={config.formatter} fontSize={10} fill={theme.palette.text.secondary} />
+                  </Bar>
                   <Bar
                     hide={!visibleLines.includes('primary')}
                     dataKey="value"
@@ -468,7 +474,9 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     fill={MAIN_COLOR}
                     radius={[4, 4, 0, 0]}
                     maxBarSize={40}
-                  />
+                  >
+                    <LabelList dataKey="value" position="top" formatter={config.formatter} fontSize={10} fill={theme.palette.text.secondary} />
+                  </Bar>
                 </BarChart>
               )}
             </ResponsiveContainer>
