@@ -316,7 +316,7 @@ export default function KPIs({
             </Grid>
             <Grid size={{ xs: 6, sm: 6, md: 3 }}>
               <KPIStat
-                label={revenueMode === 'T' ? "Total Revenue" : "Gross Revenue"}
+                label={revenueMode === 'T' ? "Total Revenue" : "Net Revenue"}
                 action={
                   <Box
                     sx={{

@@ -375,7 +375,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
           <Box sx={{ width: '100%', height: 200 }}>
             <ResponsiveContainer width="100%" height="100%">
               {viewMode === 'hourly' ? (
-                <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 15, bottom: 5 }}>
+                <AreaChart data={chartData} margin={{ top: 25, right: 20, left: 15, bottom: 5 }}>
                   <defs>
                     <linearGradient id="gradient-main" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={MAIN_COLOR} stopOpacity={0.1} />
@@ -415,9 +415,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     fill="transparent"
                     activeDot={false}
                     dot={{ r: 3, fill: 'white', stroke: PREV_COLOR, strokeWidth: 1.5 }}
-                  >
-                    <LabelList dataKey="comparisonValue" position="top" formatter={config.formatter} fontSize={10} fill={theme.palette.text.secondary} />
-                  </Area>
+                  />
                   <Area
                     type="monotone"
                     hide={!visibleLines.includes('primary')}
@@ -430,11 +428,11 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     activeDot={{ r: 6, fill: MAIN_COLOR, stroke: 'white', strokeWidth: 3 }}
                     dot={{ r: 3, fill: 'white', stroke: MAIN_COLOR, strokeWidth: 1.5 }}
                   >
-                    <LabelList dataKey="value" position="top" formatter={config.formatter} fontSize={10} fill={theme.palette.text.secondary} />
+                    {viewMode !== 'hourly' && <LabelList dataKey="value" position="top" formatter={config.formatter} fontSize={9} offset={8} fill={theme.palette.text.primary} />}
                   </Area>
                 </AreaChart>
               ) : (
-                <BarChart data={chartData} margin={{ top: 10, right: 20, left: 15, bottom: 5 }} barGap={0}>
+                <BarChart data={chartData} margin={{ top: 25, right: 20, left: 15, bottom: 5 }} barGap={0}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.5)} />
                   <XAxis
                     dataKey="label"
@@ -464,9 +462,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     fill={alpha(MAIN_COLOR, 0.4)}
                     radius={[4, 4, 0, 0]}
                     maxBarSize={40}
-                  >
-                    <LabelList dataKey="comparisonValue" position="top" formatter={config.formatter} fontSize={10} fill={theme.palette.text.secondary} />
-                  </Bar>
+                  />
                   <Bar
                     hide={!visibleLines.includes('primary')}
                     dataKey="value"
@@ -475,7 +471,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     radius={[4, 4, 0, 0]}
                     maxBarSize={40}
                   >
-                    <LabelList dataKey="value" position="top" formatter={config.formatter} fontSize={10} fill={theme.palette.text.secondary} />
+                    {viewMode !== 'hourly' && <LabelList dataKey="value" position="top" formatter={config.formatter} fontSize={9} offset={8} fill={theme.palette.text.primary} />}
                   </Bar>
                 </BarChart>
               )}
