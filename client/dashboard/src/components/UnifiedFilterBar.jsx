@@ -237,6 +237,11 @@ export default function UnifiedFilterBar({
     const showBrand = isAuthor || brands.length > 1;
     const showDivision = allowedFilters.salesChannel || allowedFilters.deviceType || allowedFilters.product;
 
+    const isUtmDisabled = useMemo(() => {
+        if (!start || !end) return false;
+        return dayjs(end).diff(dayjs(start), 'day') > 30;
+    }, [start, end]);
+
     return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {/* The Unified Bar */}
@@ -309,83 +314,92 @@ export default function UnifiedFilterBar({
                 {showUtm && (
                     <Collapse in={utmExpanded} orientation="horizontal" unmountOnExit timeout={350}>
                         <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)', whiteSpace: 'nowrap' }}>
-                            {/* ... Source Button ... */}
-                            <Button
-                                onClick={handleUtmSourceClick}
-                                endIcon={<ChevronDown size={14} />}
-                                sx={{
-                                    px: 1.5,
-                                    height: 40,
-                                    color: (utm?.source?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
-                                    textTransform: 'none',
-                                    fontWeight: 500,
-                                    fontSize: '0.85rem',
-                                    borderRadius: 0,
-                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
-                                }}
-                            >
-                                {utmSourceLabel}
-                            </Button>
+                            {isUtmDisabled ? (
+                                <Box sx={{ px: 2, display: 'flex', alignItems: 'center', height: 40 }}>
+                                    <Typography variant="body2" color="warning.main" fontWeight={500}>
+                                        Disabled for date ranges > 30 days
+                                    </Typography>
+                                </Box>
+                            ) : (
+                                <>
+                                    {/* ... Source Button ... */}
+                                    <Button
+                                        onClick={handleUtmSourceClick}
+                                        endIcon={<ChevronDown size={14} />}
+                                        sx={{
+                                            px: 1.5,
+                                            height: 40,
+                                            color: (utm?.source?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
+                                            textTransform: 'none',
+                                            fontWeight: 500,
+                                            fontSize: '0.85rem',
+                                            borderRadius: 0,
+                                            '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                                        }}
+                                    >
+                                        {utmSourceLabel}
+                                    </Button>
 
-                            <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+                                    <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
 
-                            {/* ... Medium Button ... */}
-                            <Button
-                                onClick={handleUtmMediumClick}
-                                endIcon={<ChevronDown size={14} />}
-                                sx={{
-                                    px: 1.5,
-                                    height: 40,
-                                    color: (utm?.medium?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
-                                    textTransform: 'none',
-                                    fontWeight: 500,
-                                    fontSize: '0.85rem',
-                                    borderRadius: 0,
-                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
-                                }}
-                            >
-                                {utmMediumLabel}
-                            </Button>
+                                    {/* ... Medium Button ... */}
+                                    <Button
+                                        onClick={handleUtmMediumClick}
+                                        endIcon={<ChevronDown size={14} />}
+                                        sx={{
+                                            px: 1.5,
+                                            height: 40,
+                                            color: (utm?.medium?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
+                                            textTransform: 'none',
+                                            fontWeight: 500,
+                                            fontSize: '0.85rem',
+                                            borderRadius: 0,
+                                            '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                                        }}
+                                    >
+                                        {utmMediumLabel}
+                                    </Button>
 
-                            <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+                                    <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
 
-                            {/* ... Campaign Button ... */}
-                            <Button
-                                onClick={handleUtmCampaignClick}
-                                endIcon={<ChevronDown size={14} />}
-                                sx={{
-                                    px: 1.5,
-                                    height: 40,
-                                    color: (utm?.campaign?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
-                                    textTransform: 'none',
-                                    fontWeight: 500,
-                                    fontSize: '0.85rem',
-                                    borderRadius: 0,
-                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
-                                }}
-                            >
-                                {utmCampaignLabel}
-                            </Button>
+                                    {/* ... Campaign Button ... */}
+                                    <Button
+                                        onClick={handleUtmCampaignClick}
+                                        endIcon={<ChevronDown size={14} />}
+                                        sx={{
+                                            px: 1.5,
+                                            height: 40,
+                                            color: (utm?.campaign?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
+                                            textTransform: 'none',
+                                            fontWeight: 500,
+                                            fontSize: '0.85rem',
+                                            borderRadius: 0,
+                                            '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                                        }}
+                                    >
+                                        {utmCampaignLabel}
+                                    </Button>
 
-                            <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+                                    <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
 
-                            {/* Clear Button at the end of UTMs */}
-                            <Button
-                                onClick={() => onUtmChange({ source: [], medium: [], campaign: [], term: [], content: [] })}
-                                sx={{
-                                    px: 1.5,
-                                    height: 40,
-                                    color: 'error.main',
-                                    textTransform: 'none',
-                                    fontWeight: 600,
-                                    fontSize: '0.75rem',
-                                    minWidth: 'auto',
-                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }
-                                }}
-                            >
-                                Clear
-                            </Button>
-
+                                    {/* Clear Button at the end of UTMs */}
+                                    <Button
+                                        onClick={() => onUtmChange({ source: [], medium: [], campaign: [], term: [], content: [] })}
+                                        sx={{
+                                            px: 1.5,
+                                            height: 40,
+                                            color: 'error.main',
+                                            textTransform: 'none',
+                                            fontWeight: 600,
+                                            fontSize: '0.75rem',
+                                            minWidth: 'auto',
+                                            '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }
+                                        }}
+                                    >
+                                        Clear
+                                    </Button>
+                                </>
+                            )}
                             <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
                         </Box>
                     </Collapse>

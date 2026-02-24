@@ -502,6 +502,14 @@ export default function App() {
   const handleRangeChange = useCallback((nextRange) => {
     if (!Array.isArray(nextRange)) return;
     dispatch(setRange(nextRange));
+
+    // Clear UTMs if range is > 30 days
+    if (nextRange[0] && nextRange[1]) {
+      const diffDays = dayjs(nextRange[1]).diff(dayjs(nextRange[0]), 'day');
+      if (diffDays > 30) {
+        dispatch(setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }));
+      }
+    }
   }, [dispatch]);
 
   const handleProductChange = useCallback((value) => {
@@ -676,13 +684,12 @@ export default function App() {
       brand: activeBrandKey,
       start: formatDate(start),
       end: formatDate(end),
-      utm: JSON.stringify(utm),
       salesChannel: JSON.stringify(salesChannel),
       deviceType: JSON.stringify(deviceType),
       compare: compareMode,
       product: JSON.stringify(productSelection)
     };
-  }, [activeBrandKey, start, end, utm, salesChannel, deviceType, compareMode, productSelection]);
+  }, [activeBrandKey, start, end, salesChannel, deviceType, compareMode, productSelection]);
 
   useEffect(() => {
     if (!activeBrandKey) return;
@@ -700,9 +707,6 @@ export default function App() {
       start: formatDate(start),
       end: formatDate(end),
       include_utm_options: true,
-      utm_source: utm?.source, // Dependent filtering
-      utm_medium: utm?.medium,
-      utm_campaign: utm?.campaign,
       sales_channel: salesChannel,
       device_type: deviceType,
       compare: compareMode, // Include compare mode for deltas

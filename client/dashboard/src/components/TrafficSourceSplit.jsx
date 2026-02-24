@@ -240,6 +240,11 @@ export default memo(function TrafficSourceSplit({ query }) {
                         left = positionX + (tooltipRect.width / 2);
                     }
 
+                    // Vertical Clamping to prevent bottom cut-off
+                    if (top + tooltipRect.height > chart.height + positionY) {
+                        top = chart.height + positionY - tooltipRect.height;
+                    }
+
                     tooltipEl.style.left = left + 'px';
                     tooltipEl.style.top = top + 'px';
                 }

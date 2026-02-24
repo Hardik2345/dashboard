@@ -116,13 +116,12 @@ export default function MobileFilterDrawer({
             brand: tempBrand,
             start: dateRange?.[0]?.format?.('YYYY-MM-DD'),
             end: dateRange?.[1]?.format?.('YYYY-MM-DD'),
-            utm: JSON.stringify(tempUtm),
             salesChannel: JSON.stringify(tempSalesChannel)
         };
-    }, [open, tempBrand, dateRange, tempUtm, tempSalesChannel]);
+    }, [open, tempBrand, dateRange, tempSalesChannel]);
 
     useEffect(() => {
-        if (propUtmOptions && propUtmOptions.brand_key === tempBrand && propUtmOptions.utm_source) {
+        if (propUtmOptions && propUtmOptions.brand_key === tempBrand && propUtmOptions.utm_tree) {
             setUtmOptions(propUtmOptions);
             return;
         }
@@ -133,7 +132,7 @@ export default function MobileFilterDrawer({
         // Actually, if we depend on lastFetchParams, this effect only runs when they change.
         if (utmOptions && utmOptions.brand_key === tempBrand && !propUtmOptions) {
             // If we have local options for this brand and no updated props, we might still want to refresh
-            // if tempUtm changed. But to avoid loops, let's be conservative.
+            // if we really needed to. But to avoid loops, let's be conservative.
         }
 
         getDashboardSummary({
@@ -141,9 +140,6 @@ export default function MobileFilterDrawer({
             start: lastFetchParams.start,
             end: lastFetchParams.end,
             include_utm_options: true,
-            utm_source: tempUtm?.source, // Still support dependent filtering if needed
-            utm_medium: tempUtm?.medium,
-            utm_campaign: tempUtm?.campaign,
             sales_channel: tempSalesChannel
         }).then(res => {
             if (res.filter_options) {
@@ -281,6 +277,11 @@ export default function MobileFilterDrawer({
             setTempProductTypes([...availableProductTypes]);
         }
     };
+
+    const isUtmDisabled = useMemo(() => {
+        if (!dateRange || !dateRange[0] || !dateRange[1]) return false;
+        return dateRange[1].diff(dateRange[0], 'day') > 30;
+    }, [dateRange]);
 
     return (
         <Drawer
@@ -516,17 +517,26 @@ export default function MobileFilterDrawer({
                             {/* UTM Item */}
                             {showUtmFilter && (
                                 <ListItemButton
-                                    onClick={() => setView('UTM')}
-                                    sx={{ py: 2, justifyContent: 'space-between' }}
+                                    onClick={() => {
+                                        if (!isUtmDisabled) setView('UTM');
+                                    }}
+                                    disabled={isUtmDisabled}
+                                    sx={{
+                                        py: 2,
+                                        justifyContent: 'space-between',
+                                        opacity: isUtmDisabled ? 0.6 : 1
+                                    }}
                                     divider
                                 >
                                     <Box>
-                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>UTM Parameters</Typography>
-                                        <Typography variant="body1" fontSize={14} fontWeight={500}>
-                                            {activeUtmCount > 0 ? `${activeUtmCount} Active` : 'All'}
+                                        <Typography variant="body2" color={isUtmDisabled ? "warning.main" : "text.secondary"} sx={{ fontSize: 12 }}>
+                                            UTM Parameters
+                                        </Typography>
+                                        <Typography variant="body1" fontSize={14} fontWeight={500} color={isUtmDisabled ? "text.secondary" : "text.primary"}>
+                                            {isUtmDisabled ? 'Disabled (>30 days)' : (activeUtmCount > 0 ? `${activeUtmCount} Active` : 'All')}
                                         </Typography>
                                     </Box>
-                                    <ChevronRightIcon color="action" />
+                                    <ChevronRightIcon color={isUtmDisabled ? "disabled" : "action"} />
                                 </ListItemButton>
                             )}
 
