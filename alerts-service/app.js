@@ -30,20 +30,30 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 app.use('/alerts', requireAuthor, buildAlertsRouter({ Alert, AlertChannel, BrandAlertChannel, getNextSeq }));
 
 
-app.post('/qtash/push-notifications', async (req, res) => {
+app.post('/push/receive', async (req, res) => {
   try {
+
     console.log(req.body);
-    // const payload = { ...req.body };
 
-    // // Exclude the email body
-    // delete payload.email_body;
-    // delete payload.emailBody;
-    // delete payload.html;
+    if (!req.headers['x-push-token'] || req.headers['x-push-token'] !== process.env.PUSH_TOKEN) {
+      return res.status(401).json({ error: 'Unauthorized', message: "push token is required" });
+    }
 
-    // const notification = new PushNotification(payload);
-    // await notification.save();
+    const payload = { ...req.body };
+    // Exclude the email body before saving
+    delete payload.email_body;
 
-    // res.status(200).json({ message: 'Push notification logged successfully' });
+    // Store the document in the 'pushnotifications' collection
+    await mongoose.connection.collection('pushnotifications').insertOne({
+      ...payload,
+      stored_at: new Date()
+    });
+
+    res.json({
+      message: 'Push notification received and stored successfully',
+      data: payload
+    });
+
   } catch (err) {
     logger.error('Error logging push notification:', err);
     res.status(500).json({ error: 'Failed to log push notification' });
