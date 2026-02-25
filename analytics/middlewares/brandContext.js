@@ -14,7 +14,7 @@ async function authorizeBrandContext(req, res, next) {
     req.body?.brand_key ||
     req.user?.brandKey ||
     req.apiKey?.brandKey
-  || '').toString().trim().toUpperCase();
+    || '').toString().trim().toUpperCase();
   if (!rawKey) {
     return res.status(400).json({ error: 'brand_key required' });
   }
@@ -30,6 +30,7 @@ async function authorizeBrandContext(req, res, next) {
     req.brandKey = rawKey;
     req.brandDbName = route.dbName;
     req.tenantRoute = route;
+    logger.info(`[brandContext] Querying data for ${rawKey} from DB Host: ${route.host}, Database: ${route.dbName}`);
     req.brandDb = getTenantConnection(route);
   } catch (e) {
     logger.error('[brandContext] tenant connection failed', { brand: rawKey, err: e.message });
