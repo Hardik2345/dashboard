@@ -1,5 +1,5 @@
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
     Box,
     Paper,
@@ -30,6 +30,7 @@ import {
     Filter,
     Search,
     X,
+    AlertTriangle,
 } from 'lucide-react';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { DatePicker } from '@shopify/polaris';
@@ -158,7 +159,33 @@ export default function UnifiedFilterBar({
     const handleUtmCampaignClick = (event) => setUtmCampaignAnchor(event.currentTarget);
     const handleUtmCampaignClose = () => setUtmCampaignAnchor(null);
 
-    const toggleUtmExpanded = () => setUtmExpanded(prev => !prev);
+    // Check if date range exceeds 30 days
+    const isDateRangeOver30Days = useMemo(() => {
+        if (!start || !end) return false;
+        return end.diff(start, 'day') > 30;
+    }, [start, end]);
+
+    // Auto-collapse UTM and clear filters when date range changes to exceed 30 days
+    const prevOver30Ref = useRef(isDateRangeOver30Days);
+    useEffect(() => {
+        // Only act when transitioning from ≤30 to >30 (not on mount)
+        if (isDateRangeOver30Days && !prevOver30Ref.current) {
+            setUtmExpanded(false);
+            if (onUtmChange) {
+                onUtmChange({ source: [], medium: [], campaign: [], term: [], content: [] });
+            }
+        }
+        prevOver30Ref.current = isDateRangeOver30Days;
+    }, [isDateRangeOver30Days]);
+
+    const toggleUtmExpanded = () => {
+        if (isDateRangeOver30Days) {
+            // Still allow toggle so warning is visible
+            setUtmExpanded(prev => !prev);
+            return;
+        }
+        setUtmExpanded(prev => !prev);
+    };
 
     // UTM Nested Options
     const utmSourceOptions = useMemo(() => Object.keys(utmOptions?.utm_tree || {}), [utmOptions]);
@@ -308,86 +335,113 @@ export default function UnifiedFilterBar({
                 {/* 2. UTM Filter Group (Toggled by Icon) */}
                 {showUtm && (
                     <Collapse in={utmExpanded} orientation="horizontal" unmountOnExit timeout={350}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)', whiteSpace: 'nowrap' }}>
-                            {/* ... Source Button ... */}
-                            <Button
-                                onClick={handleUtmSourceClick}
-                                endIcon={<ChevronDown size={14} />}
-                                sx={{
-                                    px: 1.5,
-                                    height: 40,
-                                    color: (utm?.source?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
-                                    textTransform: 'none',
-                                    fontWeight: 500,
-                                    fontSize: '0.85rem',
-                                    borderRadius: 0,
-                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
-                                }}
-                            >
-                                {utmSourceLabel}
-                            </Button>
+                        {isDateRangeOver30Days ? (
+                            /* Warning message when date range > 30 days */
+                            <Box sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 0.75,
+                                px: 2,
+                                height: 40,
+                                whiteSpace: 'nowrap',
+                                bgcolor: isDark ? 'rgba(255, 152, 0, 0.08)' : 'rgba(255, 152, 0, 0.06)',
+                            }}>
+                                <AlertTriangle size={14} style={{ color: '#ed6c02', flexShrink: 0 }} />
+                                <Typography
+                                    variant="caption"
+                                    sx={{
+                                        color: '#ed6c02',
+                                        fontWeight: 600,
+                                        fontSize: '0.75rem',
+                                        letterSpacing: '0.01em',
+                                    }}
+                                >
+                                    UTM filters are unavailable for date ranges over 30 days
+                                </Typography>
+                                <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+                            </Box>
+                        ) : (
+                            <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)', whiteSpace: 'nowrap' }}>
+                                {/* ... Source Button ... */}
+                                <Button
+                                    onClick={handleUtmSourceClick}
+                                    endIcon={<ChevronDown size={14} />}
+                                    sx={{
+                                        px: 1.5,
+                                        height: 40,
+                                        color: (utm?.source?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
+                                        textTransform: 'none',
+                                        fontWeight: 500,
+                                        fontSize: '0.85rem',
+                                        borderRadius: 0,
+                                        '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                                    }}
+                                >
+                                    {utmSourceLabel}
+                                </Button>
 
-                            <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+                                <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
 
-                            {/* ... Medium Button ... */}
-                            <Button
-                                onClick={handleUtmMediumClick}
-                                endIcon={<ChevronDown size={14} />}
-                                sx={{
-                                    px: 1.5,
-                                    height: 40,
-                                    color: (utm?.medium?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
-                                    textTransform: 'none',
-                                    fontWeight: 500,
-                                    fontSize: '0.85rem',
-                                    borderRadius: 0,
-                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
-                                }}
-                            >
-                                {utmMediumLabel}
-                            </Button>
+                                {/* ... Medium Button ... */}
+                                <Button
+                                    onClick={handleUtmMediumClick}
+                                    endIcon={<ChevronDown size={14} />}
+                                    sx={{
+                                        px: 1.5,
+                                        height: 40,
+                                        color: (utm?.medium?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
+                                        textTransform: 'none',
+                                        fontWeight: 500,
+                                        fontSize: '0.85rem',
+                                        borderRadius: 0,
+                                        '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                                    }}
+                                >
+                                    {utmMediumLabel}
+                                </Button>
 
-                            <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+                                <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
 
-                            {/* ... Campaign Button ... */}
-                            <Button
-                                onClick={handleUtmCampaignClick}
-                                endIcon={<ChevronDown size={14} />}
-                                sx={{
-                                    px: 1.5,
-                                    height: 40,
-                                    color: (utm?.campaign?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
-                                    textTransform: 'none',
-                                    fontWeight: 500,
-                                    fontSize: '0.85rem',
-                                    borderRadius: 0,
-                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
-                                }}
-                            >
-                                {utmCampaignLabel}
-                            </Button>
+                                {/* ... Campaign Button ... */}
+                                <Button
+                                    onClick={handleUtmCampaignClick}
+                                    endIcon={<ChevronDown size={14} />}
+                                    sx={{
+                                        px: 1.5,
+                                        height: 40,
+                                        color: (utm?.campaign?.length || 0) > 0 ? 'primary.main' : 'text.secondary',
+                                        textTransform: 'none',
+                                        fontWeight: 500,
+                                        fontSize: '0.85rem',
+                                        borderRadius: 0,
+                                        '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                                    }}
+                                >
+                                    {utmCampaignLabel}
+                                </Button>
 
-                            <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
+                                <Divider orientation="vertical" flexItem sx={{ height: 20, my: 'auto', borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }} />
 
-                            {/* Clear Button at the end of UTMs */}
-                            <Button
-                                onClick={() => onUtmChange({ source: [], medium: [], campaign: [], term: [], content: [] })}
-                                sx={{
-                                    px: 1.5,
-                                    height: 40,
-                                    color: 'error.main',
-                                    textTransform: 'none',
-                                    fontWeight: 600,
-                                    fontSize: '0.75rem',
-                                    minWidth: 'auto',
-                                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }
-                                }}
-                            >
-                                Clear
-                            </Button>
+                                {/* Clear Button at the end of UTMs */}
+                                <Button
+                                    onClick={() => onUtmChange({ source: [], medium: [], campaign: [], term: [], content: [] })}
+                                    sx={{
+                                        px: 1.5,
+                                        height: 40,
+                                        color: 'error.main',
+                                        textTransform: 'none',
+                                        fontWeight: 600,
+                                        fontSize: '0.75rem',
+                                        minWidth: 'auto',
+                                        '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }
+                                    }}
+                                >
+                                    Clear
+                                </Button>
 
-                            <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
-                        </Box>
+                                <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+                            </Box>
+                        )}
                     </Collapse>
                 )}
 

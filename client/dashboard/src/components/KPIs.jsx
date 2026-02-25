@@ -45,6 +45,7 @@ export default function KPIs({
   const [deltaLoading, setDeltaLoading] = useState(true);
   const [data, setData] = useState({});
   const [revenueMode, setRevenueMode] = useState('G'); // 'T' | 'G'
+  const [atcMode, setAtcMode] = useState('S'); // 'S' (Sessions) | 'R' (Rate)
   const start = query?.start;
   const end = query?.end;
   const brandKey = query?.brand_key;
@@ -478,21 +479,71 @@ export default function KPIs({
             </Grid>
             <Grid size={{ xs: 6, sm: 4, md: showWebVitals ? 4 : 6 }}>
               <KPIStat
-                label="ATC Sessions"
-                value={totalAtcSessions}
+                label={atcMode === 'S' ? "ATC Sessions" : "ATC Rate"}
+                action={
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      bgcolor: 'background.default',
+                      borderRadius: 12,
+                      p: 0.5,
+                      cursor: 'pointer',
+                      zIndex: 2,
+                      boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)',
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      transition: 'all 0.3s ease'
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAtcMode(prev => {
+                        const nextMode = prev === 'S' ? 'R' : 'S';
+                        // Auto-update graph if the card is currently selected
+                        if (selectedMetric === 'atc' || selectedMetric === 'atc_rate') {
+                          if (typeof onSelectMetric === 'function') {
+                            onSelectMetric(nextMode === 'S' ? 'atc' : 'atc_rate');
+                          }
+                        }
+                        return nextMode;
+                      });
+                    }}
+                  >
+                    <Box sx={{
+                      px: 1, py: 0.25,
+                      borderRadius: 10,
+                      bgcolor: atcMode === 'S' ? 'primary.main' : 'transparent',
+                      color: atcMode === 'S' ? 'primary.contrastText' : 'text.secondary',
+                      fontSize: '0.65rem', fontWeight: 600,
+                      transition: 'all 0.2s ease',
+                      boxShadow: atcMode === 'S' ? '0 1px 2px rgba(0,0,0,0.2)' : 'none'
+                    }}>S</Box>
+                    <Box sx={{
+                      px: 1, py: 0.25,
+                      borderRadius: 10,
+                      bgcolor: atcMode === 'R' ? '#f59e0b' : 'transparent', // amber-500 for distinction
+                      color: atcMode === 'R' ? '#fff' : 'text.secondary',
+                      fontSize: '0.65rem', fontWeight: 600,
+                      transition: 'all 0.2s ease',
+                      boxShadow: atcMode === 'R' ? '0 1px 2px rgba(0,0,0,0.2)' : 'none'
+                    }}>R</Box>
+                  </Box>
+                }
+                value={atcMode === 'S' ? totalAtcSessions : (totalSessions > 0 ? (totalAtcSessions / totalSessions) : 0)}
                 loading={loading}
                 deltaLoading={deltaLoading}
-                formatter={(v) => nfInt.format(v)}
+                formatter={atcMode === 'S' ? ((v) => nfInt.format(v)) : ((v) => nfPct.format(v))}
                 delta={
-                  data.atcDelta
+                  atcMode === 'S' && data.atcDelta
                     ? {
                       value: data.atcDelta.diff_pct,
                       direction: data.atcDelta.direction,
                     }
-                    : undefined
+                    : undefined // Could add rate delta calculation if we have previous sessions/ATC
                 }
-                onSelect={onSelectMetric ? () => onSelectMetric("atc") : undefined}
-                selected={selectedMetric === "atc"}
+                onSelect={onSelectMetric ? () => onSelectMetric(atcMode === 'S' ? "atc" : "atc_rate") : undefined}
+                selected={selectedMetric === "atc" || selectedMetric === "atc_rate"}
+                activeColor={atcMode === 'S' ? '#10b981' : '#f59e0b'}
               />
             </Grid>
           </>

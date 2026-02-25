@@ -55,6 +55,15 @@ const METRIC_CONFIG = {
     accessor: (metrics) => metrics?.atc ?? 0,
     formatter: (value) => nfInt0.format(value || 0),
   },
+  atc_rate: {
+    label: 'ATC Rate',
+    accessor: (metrics) => {
+      const atc = Number(metrics?.atc || 0);
+      const sessions = Number(metrics?.sessions || 0);
+      return sessions > 0 ? atc / sessions : 0;
+    },
+    formatter: (value) => nfPercent1.format(value || 0),
+  },
 };
 
 const CustomTooltip = ({ active, payload, label, formatter }) => {

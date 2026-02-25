@@ -57,7 +57,7 @@ function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
 }
 
-const TREND_METRICS = new Set(['sales', 'orders', 'sessions', 'cvr', 'atc', 'aov']);
+const TREND_METRICS = new Set(['sales', 'orders', 'sessions', 'cvr', 'atc', 'atc_rate', 'aov']);
 const SESSION_TRACKING_ENABLED = String(import.meta.env.VITE_SESSION_TRACKING || 'false').toLowerCase() === 'true';
 const AUTHOR_BRAND_STORAGE_KEY = 'author_active_brand_v1';
 const THEME_MODE_KEY = 'dashboard_theme_mode';
@@ -93,6 +93,8 @@ export default function App() {
   const globalBrandKey = useAppSelector((state) => state.brand.brand);
   const { user, initialized, loginStatus, loginError } = useAppSelector((state) => state.auth);
   const { range, compareMode, selectedMetric, productSelection, utm, salesChannel, deviceType } = useAppSelector((state) => state.filters);
+  const productTableStart = useAppSelector((state) => state.productConversion?.start);
+  const productTableEnd = useAppSelector((state) => state.productConversion?.end);
   const loggingIn = loginStatus === 'loading';
   // range holds ISO strings; normalize to dayjs for components that expect it
   const [start, end] = useMemo(
@@ -733,6 +735,39 @@ export default function App() {
         handleFunnelData({ stats: null, deltas: null, loading: false });
       });
   }, [lastFetchParams, isAuthor, handleFunnelData]); // Depend on stable memoized params
+
+  // Sync funnel data with product table's Curr date when on Funnels tab
+  useEffect(() => {
+    if (!isAuthor || authorTab !== 'product-conversion') return;
+    if (!activeBrandKey || !productTableStart || !productTableEnd) return;
+
+    // Fetch funnel data using the product table's current date range
+    getDashboardSummary({
+      brand_key: activeBrandKey,
+      start: productTableStart,
+      end: productTableEnd,
+      include_utm_options: false,
+    })
+      .then(res => {
+        if (res.metrics) {
+          const m = res.metrics;
+          const stats = {
+            total_sessions: m.total_sessions?.value ?? 0,
+            total_atc_sessions: m.total_atc_sessions?.value ?? 0,
+            total_orders: m.total_orders?.value ?? 0,
+          };
+          const deltas = {
+            sessions: { diff_pct: m.total_sessions?.diff_pct, direction: m.total_sessions?.direction },
+            atc: { diff_pct: m.total_atc_sessions?.diff_pct, direction: m.total_atc_sessions?.direction },
+            orders: { diff_pct: m.total_orders?.diff_pct, diff_pp: m.total_orders?.diff_pp, direction: m.total_orders?.direction },
+          };
+          handleFunnelData({ stats, deltas, loading: false });
+        }
+      })
+      .catch(() => {
+        // Don't clear funnel data on error — keep previous data
+      });
+  }, [isAuthor, authorTab, activeBrandKey, productTableStart, productTableEnd, handleFunnelData]);
 
   // Check auth on mount
   useEffect(() => {
