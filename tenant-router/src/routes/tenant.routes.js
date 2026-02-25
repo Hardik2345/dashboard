@@ -12,6 +12,11 @@ router.post('/resolve', async (req, res) => {
 
     const tenantMetadata = await tenantRouterService.resolveTenant(brand_id);
 
+    if (tenantMetadata && tenantMetadata.rds_proxy_endpoint) {
+        console.log(`[Tenant Router] Resolving brand ${brand_id} to DB Host: ${tenantMetadata.rds_proxy_endpoint}, Database: ${tenantMetadata.database}`);
+    } else {
+        console.log(`[Tenant Router] Could not resolve DB info for brand ${brand_id}`);
+    }
     res.status(200).json(tenantMetadata);
 });
 

@@ -188,6 +188,20 @@ export default function KPIs({
             direction: m.total_atc_sessions?.direction ?? "flat",
           };
 
+          const currSessions = m.total_sessions?.value ?? 0;
+          const prevSessions = m.total_sessions?.previous ?? 0;
+          const currAtc = m.total_atc_sessions?.value ?? 0;
+          const prevAtc = m.total_atc_sessions?.previous ?? 0;
+          const currAtcRate = currSessions > 0 ? currAtc / currSessions : 0;
+          const prevAtcRate = prevSessions > 0 ? prevAtc / prevSessions : 0;
+          const atcRateDiff = currAtcRate - prevAtcRate;
+          const atcRateDiffPct = prevAtcRate > 0 ? (atcRateDiff / prevAtcRate) * 100 : (currAtcRate > 0 ? 100 : 0);
+
+          const atcRateDelta = {
+            diff_pct: atcRateDiffPct,
+            direction: atcRateDiff > 0.00001 ? 'up' : atcRateDiff < -0.00001 ? 'down' : 'flat',
+          };
+
           setData((prev) => ({
             ...prev,
             orders,
@@ -201,6 +215,7 @@ export default function KPIs({
             cvrDelta,
             sessDelta,
             atcDelta,
+            atcRateDelta,
           }));
           setLoading(false);
           setDeltaLoading(false);
@@ -497,16 +512,14 @@ export default function KPIs({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setAtcMode(prev => {
-                        const nextMode = prev === 'S' ? 'R' : 'S';
-                        // Auto-update graph if the card is currently selected
-                        if (selectedMetric === 'atc' || selectedMetric === 'atc_rate') {
-                          if (typeof onSelectMetric === 'function') {
-                            onSelectMetric(nextMode === 'S' ? 'atc' : 'atc_rate');
-                          }
+                      const nextMode = atcMode === 'S' ? 'R' : 'S';
+                      setAtcMode(nextMode);
+                      // Auto-update graph if the card is currently selected
+                      if (selectedMetric === 'atc' || selectedMetric === 'atc_rate') {
+                        if (typeof onSelectMetric === 'function') {
+                          onSelectMetric(nextMode === 'S' ? 'atc' : 'atc_rate');
                         }
-                        return nextMode;
-                      });
+                      }
                     }}
                   >
                     <Box sx={{
@@ -539,7 +552,12 @@ export default function KPIs({
                       value: data.atcDelta.diff_pct,
                       direction: data.atcDelta.direction,
                     }
-                    : undefined // Could add rate delta calculation if we have previous sessions/ATC
+                    : atcMode === 'R' && data.atcRateDelta
+                      ? {
+                        value: data.atcRateDelta.diff_pct,
+                        direction: data.atcRateDelta.direction,
+                      }
+                      : undefined
                 }
                 onSelect={onSelectMetric ? () => onSelectMetric(atcMode === 'S' ? "atc" : "atc_rate") : undefined}
                 selected={selectedMetric === "atc" || selectedMetric === "atc_rate"}
