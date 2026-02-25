@@ -595,3 +595,16 @@ export async function deleteAlert(id) {
 export async function setAlertActive(id, isActive) {
   return doPost(`/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
 }
+
+// ---- Push Notification APIs -------------------------------------------------
+export async function registerFcmToken(token) {
+  return doPost('/push/register-token', { token, role: 'admin' });
+}
+
+export async function getNotifications(limit = 50) {
+  return doGet('/push/notifications', { limit });
+}
+
+export async function markNotificationsRead(ids = []) {
+  return doPost('/push/notifications/mark-read', { ids });
+}

@@ -9,12 +9,12 @@ importScripts('https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js')
 // your app's Firebase config object.
 // https://firebase.google.com/docs/web/setup#config-object
 firebase.initializeApp({
-  apiKey: "AIzaSyAfDggFGLHrR91uUWpxICSYJu57XkTDSWg",
-  authDomain: "datum-push-test.firebaseapp.com",
-  projectId: "datum-push-test",
-  storageBucket: "datum-push-test.firebasestorage.app",
-  messagingSenderId: "404123337738",
-  appId: "1:404123337738:web:eaf5899b153e9e5a928bf3"
+  apiKey: "AIzaSyCY6hO0f5Y-vukki1C3hbFkFNun-wRJGgM",
+  authDomain: "dashboard-notifications-fde8d.firebaseapp.com",
+  projectId: "dashboard-notifications-fde8d",
+  storageBucket: "dashboard-notifications-fde8d.firebasestorage.app",
+  messagingSenderId: "159691205555",
+  appId: "1:159691205555:web:f5a1951d505ed8395679c6"
 });
 
 const messaging = firebase.messaging();

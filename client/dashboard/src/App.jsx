@@ -29,6 +29,7 @@ import { listAuthorBrands, getTopProducts, getDashboardSummary } from './lib/api
 import { TextField, Button, Paper, Typography } from '@mui/material';
 import Unauthorized from './components/Unauthorized.jsx';
 import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
+import { usePushNotifications } from './hooks/usePushNotifications.jsx';
 import { useAppDispatch, useAppSelector } from './state/hooks.js';
 import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
 import { setBrand } from './state/slices/brandSlice.js';
@@ -205,6 +206,14 @@ export default function App() {
   }, []);
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
+
+  // Push notifications — admins only (no listeners / permission for non-admins)
+  const { requestPermissionAndGetToken } = usePushNotifications(isAuthor);
+  useEffect(() => {
+    if (user && isAuthor) {
+      requestPermissionAndGetToken();
+    }
+  }, [user, isAuthor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeBrandKey = isAuthor
     ? (authorBrandKey || user?.primary_brand_id || '')

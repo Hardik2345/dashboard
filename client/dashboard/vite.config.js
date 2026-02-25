@@ -82,7 +82,15 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
 
-      // 3️⃣ Alerts
+      // 3️⃣ Push Notifications
+      '/api/push': {
+        target: 'http://localhost:8082',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
+      // 4️⃣ Alerts
       '/api/alerts': {
         target: 'http://localhost:8082',
         // target: 'https://api.trytechit.co/main',
@@ -130,6 +138,13 @@ export default defineConfig({
       '/api/auth/': {
         target: 'http://localhost:8082',
         // target: 'https://api.trytechit.co/main',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
+      // Push Notifications via gateway
+      '/api/push': {
+        target: 'http://localhost:8082',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },

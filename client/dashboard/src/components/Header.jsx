@@ -15,6 +15,7 @@ import {
   PanelLeft // Added
 } from 'lucide-react';
 import SkyToggle from './ui/SkyToggle.jsx';
+import NotificationBell from './NotificationBell.jsx';
 
 export default function Header({
   user,
@@ -227,18 +228,7 @@ export default function Header({
             <>
               {/* Notifications - Only for admins */}
               {isAdmin && (
-                <IconButton
-                  size="small"
-                  sx={{
-                    bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                    borderRadius: '10px',
-                    p: 1.2,
-                    color: darkMode ? 'zinc.400' : 'zinc.500',
-                    '&:hover': { bgcolor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }
-                  }}
-                >
-                  <Bell size={20} />
-                </IconButton>
+                <NotificationBell darkMode={darkMode} />
               )}
 
               {/* Theme Toggle */}
