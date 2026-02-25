@@ -10,6 +10,7 @@ client/dashboard/vite.config.js
 api-gateway/node_modules
 tenant-router/node_modules
 client/node_modules
+alerts-service/config/*.json
 
 # Ignore specific scripts exports
 # sessions CSV export and export script in scripts/
