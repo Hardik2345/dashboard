@@ -14,7 +14,7 @@ export default async function handler(req, res) {
 
     const { path, ...query } = req.query || {};
     const cleanedPath = path ? `/${path.replace(/^\/+/, '')}` : '';
-    const passthroughPrefixes = ['/auth', '/alerts', '/tenant'];
+    const passthroughPrefixes = ['/auth', '/alerts', '/tenant', '/push'];
     const shouldPassthrough = passthroughPrefixes.some((prefix) => cleanedPath === prefix || cleanedPath.startsWith(`${prefix}/`));
     const upstreamPath = shouldPassthrough ? cleanedPath : `/analytics${cleanedPath}`;
     const url = new URL(targetBase + upstreamPath);
