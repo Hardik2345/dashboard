@@ -45,7 +45,7 @@ const FunnelChart = React.memo(function FunnelChart({
             const spacer = (100 - conversionPct) / 2;
 
             const firstValue = data[0]?.value || 1;
-            const pctLabel = p.isPadding ? '' : (p.label === data[0].label ? '100%' : `${Math.round((p.val / firstValue) * 100)}%`);
+            const pctLabel = p.isPadding ? '' : (p.label === data[0].label ? '100%' : `${Number(((p.val / firstValue) * 100).toFixed(1))}%`);
 
             return {
                 ...p,
@@ -283,7 +283,7 @@ const FunnelChart = React.memo(function FunnelChart({
                                     const heightPct = Math.max((d.value / maxValue) * 100, 5); // Min 5% height
 
                                     const firstValue = data[0]?.value || 1;
-                                    const pctLabel = (d.label === data[0].label ? '100%' : `${Math.round((d.value / firstValue) * 100)}%`);
+                                    const pctLabel = (d.label === data[0].label ? '100%' : `${Number(((d.value / firstValue) * 100).toFixed(2))}%`);
 
                                     return (
                                         <div key={i} className="flex-1 flex flex-col justify-end items-center h-full">
