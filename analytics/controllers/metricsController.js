@@ -2,7 +2,7 @@ const { QueryTypes } = require('sequelize');
 const redisClient = require('../lib/redis');
 const logger = require('../utils/logger');
 const { RangeSchema, isoDate } = require('../validation/schemas');
-const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta, computeTotalSessions, computeAtcSessions, hasUtmFilters, appendUtmWhere, extractUtmParam, buildDeviceTypeUserAgentClause, computeSessionsFromDeviceColumns } = require('../utils/metricsUtils');
+const { computeAOV, computeCVR, computeCVRForDay, computeTotalSales, computeTotalOrders, computeFunnelStats, deltaForSum, deltaForAOV, computePercentDelta, avgForRange, aovForRange, cvrForRange, rawSum, computeMetricDelta, computeTotalSessions, computeAtcSessions, hasUtmFilters, appendUtmWhere, extractUtmParam, buildDeviceTypeUserAgentClause, computeSessionsFromDeviceColumns, extractFilters } = require('../utils/metricsUtils');
 const { previousWindow, prevDayStr, parseIsoDate, formatIsoDate, shiftDays } = require('../utils/dateUtils');
 const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrands } = require('../config/brands');
@@ -814,12 +814,7 @@ function buildMetricsController() {
         }
 
         const result = await computeAOV({
-          start, end, conn: req.brandDb.sequelize, filters: {
-            utm_source: extractUtmParam(req.query.utm_source),
-            utm_medium: extractUtmParam(req.query.utm_medium),
-            utm_campaign: extractUtmParam(req.query.utm_campaign),
-            sales_channel: extractUtmParam(req.query.sales_channel),
-          }
+          start, end, conn: req.brandDb.sequelize, filters: extractFilters(req)
         });
         logger.debug(`[DB FETCH] AOV for ${req.brandKey} on range ${start} to ${end} | Result: ${JSON.stringify({ total_sales: result.total_sales, total_orders: result.total_orders, aov: result.aov })}`);
         return res.json({ metric: "AOV", range: { start: start || null, end: end || null }, total_sales: result.total_sales, total_orders: result.total_orders, aov: result.aov });
@@ -849,12 +844,7 @@ function buildMetricsController() {
         }
 
         const result = await computeCVR({
-          start, end, conn: req.brandDb.sequelize, filters: {
-            utm_source: extractUtmParam(req.query.utm_source),
-            utm_medium: extractUtmParam(req.query.utm_medium),
-            utm_campaign: extractUtmParam(req.query.utm_campaign),
-            sales_channel: extractUtmParam(req.query.sales_channel),
-          }
+          start, end, conn: req.brandDb.sequelize, filters: extractFilters(req)
         });
         logger.debug(`[DB FETCH] CVR for ${req.brandKey} on range ${start} to ${end} | Result: ${JSON.stringify({ total_orders: result.total_orders, total_sessions: result.total_sessions, cvr: result.cvr })}`);
         return res.json({ metric: "CVR", range: { start: start || null, end: end || null }, total_orders: result.total_orders, total_sessions: result.total_sessions, cvr: result.cvr, cvr_percent: result.cvr_percent });
@@ -869,12 +859,7 @@ function buildMetricsController() {
         const align = (req.query.align || '').toString().toLowerCase();
         const compare = (req.query.compare || '').toString().toLowerCase();
         const result = await calcCvrDelta({
-          start, end, align, compare, conn: req.brandDb.sequelize, filters: {
-            utm_source: extractUtmParam(req.query.utm_source),
-            utm_medium: extractUtmParam(req.query.utm_medium),
-            utm_campaign: extractUtmParam(req.query.utm_campaign),
-            sales_channel: extractUtmParam(req.query.sales_channel),
-          }
+          start, end, align, compare, conn: req.brandDb.sequelize, filters: extractFilters(req)
         });
         return res.json(result);
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
@@ -889,12 +874,7 @@ function buildMetricsController() {
         const compare = (req.query.compare || '').toString().toLowerCase();
 
         const result = await calcTotalOrdersDelta({
-          start, end, align, compare, conn: req.brandDb.sequelize, filters: {
-            utm_source: extractUtmParam(req.query.utm_source),
-            utm_medium: extractUtmParam(req.query.utm_medium),
-            utm_campaign: extractUtmParam(req.query.utm_campaign),
-            sales_channel: extractUtmParam(req.query.sales_channel),
-          }
+          start, end, align, compare, conn: req.brandDb.sequelize, filters: extractFilters(req)
         });
         return res.json(result);
       } catch (err) { console.error(err); return res.status(500).json({ error: "Internal server error" }); }
@@ -910,12 +890,7 @@ function buildMetricsController() {
         const date = end || start || null;
         const align = (req.query.align || '').toString().toLowerCase();
         // Total Sales Delta Handler
-        const filters = {
-          utm_source: extractUtmParam(req.query.utm_source),
-          utm_medium: extractUtmParam(req.query.utm_medium),
-          utm_campaign: extractUtmParam(req.query.utm_campaign),
-          sales_channel: extractUtmParam(req.query.sales_channel),
-        };
+        const filters = extractFilters(req);
         if (align === 'hour') {
           return res.json(await computeMetricDelta({
             metricName: 'TOTAL_SALES_DELTA',
@@ -1073,12 +1048,7 @@ function buildMetricsController() {
         const date = end || start || null;
         const align = (req.query.align || '').toString().toLowerCase();
         // AOV Delta logic
-        const filters = {
-          utm_source: extractUtmParam(req.query.utm_source),
-          utm_medium: extractUtmParam(req.query.utm_medium),
-          utm_campaign: extractUtmParam(req.query.utm_campaign),
-          sales_channel: extractUtmParam(req.query.sales_channel),
-        };
+        const filters = extractFilters(req);
         if (align === 'hour') {
           return res.json(await computeMetricDelta({
             metricName: 'AOV_DELTA',
@@ -1315,12 +1285,7 @@ function buildMetricsController() {
 
 
         const total_sales = await computeTotalSales({
-          start, end, conn: req.brandDb.sequelize, filters: {
-            utm_source: extractUtmParam(req.query.utm_source),
-            utm_medium: extractUtmParam(req.query.utm_medium),
-            utm_campaign: extractUtmParam(req.query.utm_campaign),
-            sales_channel: extractUtmParam(req.query.sales_channel),
-          }
+          start, end, conn: req.brandDb.sequelize, filters: extractFilters(req)
         });
         if (start && end && start === end) {
           const cached = await fetchCachedMetrics(req.brandKey, start);
@@ -1349,12 +1314,7 @@ function buildMetricsController() {
         }
 
         const total_orders = await computeTotalOrders({
-          start, end, conn: req.brandDb.sequelize, filters: {
-            utm_source: extractUtmParam(req.query.utm_source),
-            utm_medium: extractUtmParam(req.query.utm_medium),
-            utm_campaign: extractUtmParam(req.query.utm_campaign),
-            sales_channel: extractUtmParam(req.query.sales_channel),
-          }
+          start, end, conn: req.brandDb.sequelize, filters: extractFilters(req)
         });
         if (start && end && start === end) {
           const cached = await fetchCachedMetrics(req.brandKey, start);
@@ -1375,9 +1335,7 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         const productIdRaw = (req.query.product_id || '').toString().trim();
 
-        const filters = {
-          sales_channel: extractUtmParam(req.query.sales_channel)
-        };
+        const filters = extractFilters(req);
 
         if (!productIdRaw) {
           const stats = await computeFunnelStats({ start, end, conn: req.brandDb.sequelize, filters });
@@ -1432,12 +1390,7 @@ function buildMetricsController() {
         if (!parsed.success) return res.status(400).json({ error: "Invalid date range", details: parsed.error.flatten() });
         const { start, end } = parsed.data;
         const productIdRaw = (req.query.product_id || '').toString().trim();
-        const filters = {
-          utm_source: extractUtmParam(req.query.utm_source),
-          utm_medium: extractUtmParam(req.query.utm_medium),
-          utm_campaign: extractUtmParam(req.query.utm_campaign),
-          sales_channel: extractUtmParam(req.query.sales_channel),
-        };
+        const filters = extractFilters(req);
         const hasUtm = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.sales_channel);
 
         if (productIdRaw || hasUtm) {
@@ -1509,12 +1462,7 @@ function buildMetricsController() {
         if (!parsed.success) return res.status(400).json({ error: 'Invalid date range', details: parsed.error.flatten() });
         const { start, end } = parsed.data;
         const productIdRaw = (req.query.product_id || '').toString().trim();
-        const filters = {
-          utm_source: extractUtmParam(req.query.utm_source),
-          utm_medium: extractUtmParam(req.query.utm_medium),
-          utm_campaign: extractUtmParam(req.query.utm_campaign),
-          sales_channel: extractUtmParam(req.query.sales_channel),
-        };
+        const filters = extractFilters(req);
 
         let whereSql = `WHERE created_at >= ? AND created_at < ?`;
         let replacements = []; // will be set below
@@ -1725,15 +1673,7 @@ function buildMetricsController() {
           return res.status(400).json({ error: 'start must be on or before end' });
         }
 
-        const filters = {
-          product_id: req.query.product_id || null,
-          sales_channel: extractUtmParam(req.query.sales_channel),
-          utm_source: extractUtmParam(req.query.utm_source),
-          utm_medium: extractUtmParam(req.query.utm_medium),
-          utm_campaign: extractUtmParam(req.query.utm_campaign),
-          utm_term: extractUtmParam(req.query.utm_term),
-          utm_content: extractUtmParam(req.query.utm_content),
-        };
+        const filters = extractFilters(req);
 
         const conn = req.brandDb.sequelize;
 
@@ -1830,16 +1770,7 @@ function buildMetricsController() {
         const alignHourRaw = end === todayIst ? currentHourIst : 23;
         const alignHour = Math.max(0, Math.min(23, alignHourRaw));
 
-        const filters = {
-          utm_source: extractUtmParam(req.query.utm_source),
-          utm_medium: extractUtmParam(req.query.utm_medium),
-          utm_campaign: extractUtmParam(req.query.utm_campaign),
-          utm_term: extractUtmParam(req.query.utm_term),
-          utm_content: extractUtmParam(req.query.utm_content),
-          product_id: req.query.product_id || null, // Allow array or string
-          sales_channel: extractUtmParam(req.query.sales_channel),
-          device_type: extractUtmParam(req.query.device_type),
-        };
+        const filters = extractFilters(req);
         const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel || filters.device_type);
 
         let querySql = `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, hour, total_sales, number_of_orders,
@@ -2187,15 +2118,7 @@ function buildMetricsController() {
         for (let ts = sTs; ts <= eTs; ts += DAY_MS) {
           dayList.push(formatIsoDate(new Date(ts)));
         }
-        const filters = {
-          utm_source: extractUtmParam(req.query.utm_source),
-          utm_medium: extractUtmParam(req.query.utm_medium),
-          utm_campaign: extractUtmParam(req.query.utm_campaign),
-          utm_term: extractUtmParam(req.query.utm_term),
-          utm_content: extractUtmParam(req.query.utm_content),
-          product_id: req.query.product_id || null, // Allow array
-          sales_channel: extractUtmParam(req.query.sales_channel),
-        };
+        const filters = extractFilters(req);
         const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel);
 
         let sql = `
@@ -2556,13 +2479,7 @@ function buildMetricsController() {
         const { start, end } = parsed.data;
         if (!start || !end) return res.status(400).json({ error: 'Both start and end dates are required' });
 
-        const filters = {
-          utm_source: extractUtmParam(req.query.utm_source),
-          utm_medium: extractUtmParam(req.query.utm_medium),
-          utm_campaign: extractUtmParam(req.query.utm_campaign),
-          product_id: (req.query.product_id || '').trim() || null,
-          sales_channel: extractUtmParam(req.query.sales_channel),
-        };
+        const filters = extractFilters(req);
         const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.product_id || filters.sales_channel);
 
         let sql = `
@@ -3421,11 +3338,7 @@ function buildMetricsController() {
         const end = (req.query.end || req.query.date || start).toString();
         if (start > end) return res.status(400).json({ error: 'start must be on or before end' });
 
-        const filters = {
-          utm_source: extractUtmParam(req.query.utm_source),
-          utm_medium: extractUtmParam(req.query.utm_medium),
-          utm_campaign: extractUtmParam(req.query.utm_campaign),
-        };
+        const filters = extractFilters(req);
 
         if (!req.brandDb && req.brandConfig) {
           try {
@@ -3526,13 +3439,7 @@ function buildMetricsController() {
 
         if (start > end) return res.status(400).json({ error: 'start must be on or before end' });
 
-        const filters = {
-          utm_source: extractUtmParam(req.query.utm_source),
-          utm_medium: extractUtmParam(req.query.utm_medium),
-          utm_campaign: extractUtmParam(req.query.utm_campaign),
-          sales_channel: extractUtmParam(req.query.sales_channel),
-          device_type: extractUtmParam(req.query.device_type),
-        };
+        const filters = extractFilters(req);
         const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.sales_channel || filters.device_type);
 
         const traceStart = req._reqStart || Date.now();

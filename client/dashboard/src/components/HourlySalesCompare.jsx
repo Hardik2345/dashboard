@@ -12,6 +12,9 @@ const nfCurrency2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 2 });
 
+const nfCompactCurrency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', notation: 'compact', maximumFractionDigits: 1 });
+const nfCompactInt = new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 });
+
 // Design color: Emerald/Greenish for the main line
 // Image 1 shows a green line for current, dotted grey for previous?
 // Actually Image 1 legend says: "Aug 24" (grey square) "Aug 25" (green square).
@@ -29,31 +32,37 @@ const METRIC_CONFIG = {
       return orders > 0 ? sales / orders : 0;
     },
     formatter: (value) => nfCurrency2.format(value || 0),
+    compactFormatter: (value) => nfCompactCurrency.format(value || 0),
   },
   orders: {
     label: 'Total Orders',
     accessor: (metrics) => metrics?.orders ?? 0,
     formatter: (value) => nfInt0.format(value || 0),
+    compactFormatter: (value) => nfCompactInt.format(value || 0),
   },
   sales: {
     label: 'Total Revenue', // Changed to match "Total Revenue" in KPI
     accessor: (metrics) => metrics?.sales ?? 0,
     formatter: (value) => nfCurrency0.format(value || 0),
+    compactFormatter: (value) => nfCompactCurrency.format(value || 0),
   },
   sessions: {
     label: 'Total Sessions',
     accessor: (metrics) => metrics?.sessions ?? 0,
     formatter: (value) => nfInt0.format(value || 0),
+    compactFormatter: (value) => nfCompactInt.format(value || 0),
   },
   cvr: {
     label: 'Conversion Rate',
     accessor: (metrics) => metrics?.cvr_ratio ?? 0,
     formatter: (value) => nfPercent1.format(value || 0),
+    compactFormatter: (value) => nfPercent1.format(value || 0),
   },
   atc: {
     label: 'ATC Sessions',
     accessor: (metrics) => metrics?.atc ?? 0,
     formatter: (value) => nfInt0.format(value || 0),
+    compactFormatter: (value) => nfCompactInt.format(value || 0),
   },
   atc_rate: {
     label: 'ATC Rate',
@@ -63,6 +72,7 @@ const METRIC_CONFIG = {
       return sessions > 0 ? atc / sessions : 0;
     },
     formatter: (value) => nfPercent1.format(value || 0),
+    compactFormatter: (value) => nfPercent1.format(value || 0),
   },
 };
 
@@ -405,7 +415,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     tickLine={false}
                     axisLine={false}
                     tickMargin={8}
-                    tickFormatter={config.formatter}
+                    tickFormatter={config.compactFormatter}
                     tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
                     width={60}
                   />
@@ -437,7 +447,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     activeDot={{ r: 6, fill: MAIN_COLOR, stroke: 'white', strokeWidth: 3 }}
                     dot={{ r: 3, fill: 'white', stroke: MAIN_COLOR, strokeWidth: 1.5 }}
                   >
-                    {viewMode !== 'hourly' && <LabelList dataKey="value" position="top" formatter={config.formatter} fontSize={9} offset={8} fill={theme.palette.text.primary} />}
+                    {viewMode !== 'hourly' && <LabelList dataKey="value" position="top" formatter={config.compactFormatter} fontSize={9} offset={8} fill={theme.palette.text.primary} />}
                   </Area>
                 </AreaChart>
               ) : (
@@ -456,7 +466,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     tickLine={false}
                     axisLine={false}
                     tickMargin={8}
-                    tickFormatter={config.formatter}
+                    tickFormatter={config.compactFormatter}
                     tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
                     width={60}
                   />
@@ -480,7 +490,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     radius={[4, 4, 0, 0]}
                     maxBarSize={40}
                   >
-                    {viewMode !== 'hourly' && <LabelList dataKey="value" position="top" formatter={config.formatter} fontSize={9} offset={8} fill={theme.palette.text.primary} />}
+                    {viewMode !== 'hourly' && <LabelList dataKey="value" position="top" formatter={config.compactFormatter} fontSize={9} offset={8} fill={theme.palette.text.primary} />}
                   </Bar>
                 </BarChart>
               )}
