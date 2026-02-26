@@ -22,6 +22,7 @@ const MOBILE_NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
   { id: 'product-conversion', label: 'Funnels', icon: Filter },
   { id: 'alerts', label: 'Alerts', icon: Bell },
+  { id: 'notifications-log', label: 'Logs', icon: Bell },
   { id: 'access', label: 'Access', icon: ShieldCheck },
   //  { id: 'brands', label: 'Setup', icon: Store },
 ];
@@ -55,6 +56,7 @@ const ProductConversionTable = lazy(() => import('./components/ProductConversion
 const AuthorBrandForm = lazy(() => import('./components/AuthorBrandForm.jsx'));
 const AuthorBrandList = lazy(() => import('./components/AuthorBrandList.jsx'));
 const AlertsAdmin = lazy(() => import('./components/AlertsAdmin.jsx'));
+const NotificationsLog = lazy(() => import('./components/NotificationsLog.jsx'));
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
@@ -213,7 +215,7 @@ export default function App() {
 
   // Push Notification setup
   useEffect(() => {
-    if (user) {
+    if (user && isAuthor) {
       requestForToken()
         .then((token) => {
           if (token) {
@@ -225,9 +227,11 @@ export default function App() {
         })
         .catch(err => console.error('Token request failed:', err));
     }
-  }, [user]);
+  }, [user, isAuthor]);
 
   useEffect(() => {
+    if (!isAuthor) return;
+
     // onMessageListener sometimes returns undefined if permissions aren't granted yet,
     // but our wrapper returns the unsubscribe function when successfully listening.
     let unsubscribe;
@@ -244,7 +248,7 @@ export default function App() {
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe();
     };
-  }, []);
+  }, [isAuthor]);
 
   const activeBrandKey = isAuthor
     ? (authorBrandKey || user?.primary_brand_id || '')
@@ -823,6 +827,12 @@ export default function App() {
     }
 
     dispatch(fetchCurrentUser());
+
+    // Check for brand parameter to select it automatically (Deep Linking)
+    const brandParam = params.get('brand');
+    if (brandParam) {
+      dispatch(setBrand(brandParam.toUpperCase()));
+    }
   }, [dispatch]);
 
   // Session Expiry Notification - DISABLED per user request
@@ -1078,7 +1088,7 @@ export default function App() {
                     </Box>
                   )}
 
-                  {!isMobile && authorTab !== 'dashboard' && authorTab !== 'product-conversion' && authorTab !== 'alerts' && authorTab !== 'access' && (isAuthor || showMultipleBrands) && (
+                  {!isMobile && authorTab !== 'dashboard' && authorTab !== 'product-conversion' && authorTab !== 'alerts' && authorTab !== 'access' && authorTab !== 'notifications-log' && (isAuthor || showMultipleBrands) && (
                     <Box sx={{ mb: 1 }}>
                       <AuthorBrandSelector
                         brands={isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }))}
@@ -1113,7 +1123,7 @@ export default function App() {
                   )}
                 </Box>
                 <MobileFilterDrawer
-                  showBrandFilter={showMultipleBrands}
+                  showBrandFilter={showMultipleBrands && authorTab !== 'notifications-log'}
                   showProductFilter={hasPermission('product_filter')}
                   showUtmFilter={hasPermission('utm_filter')}
                   showSalesChannel={hasPermission('sales_channel_filter')}
@@ -1361,6 +1371,12 @@ export default function App() {
                           </Typography>
                         </Paper>
                       )
+                    )}
+
+                    {authorTab === 'notifications-log' && (
+                      <Suspense fallback={<SectionFallback count={2} />}>
+                        <NotificationsLog darkMode={darkMode === 'dark'} />
+                      </Suspense>
                     )}
                   </motion.div>
                 </AnimatePresence>

@@ -65,7 +65,6 @@ app.post('/push/receive', async (req, res) => {
     }
 
     const payload = { ...req.body };
-    delete payload.email_body;
 
     // Store in pushnotifications collection
     await mongoose.connection.collection('pushnotifications').insertOne({

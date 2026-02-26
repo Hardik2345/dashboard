@@ -20,13 +20,19 @@ export const messaging = getMessaging(app);
 
 export const requestForToken = async () => {
     try {
-        const currentToken = await getToken(messaging, { vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY });
-        if (currentToken) {
-            return currentToken;
-        } else {
-            console.log('No registration token available. Request permission to generate one.');
-            return null;
+        // Explicitly register service worker for background notifications
+        if ('serviceWorker' in navigator) {
+            const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+            const currentToken = await getToken(messaging, {
+                vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+                serviceWorkerRegistration: registration
+            });
+            if (currentToken) {
+                return currentToken;
+            }
         }
+        console.log('No registration token available. Request permission to generate one.');
+        return null;
     } catch (err) {
         console.log('An error occurred while retrieving token. ', err);
         return null;
