@@ -446,6 +446,7 @@ module.exports = {
   extractUtmParam,
   buildDeviceTypeUserAgentClause,
   computeSessionsFromDeviceColumns,
+  extractFilters,
 };
 
 function extractUtmParam(val) {
@@ -457,4 +458,32 @@ function extractUtmParam(val) {
     return trimmed || null;
   }
   return null;
+}
+
+/**
+ * Extracts filters from the request query.
+ * If the date range (start to end) exceeds 30 days, UTM parameters are ignored
+ * to prevent heavy queries from timing out the database.
+ */
+function extractFilters(req) {
+  const { start, end, utm_source, utm_medium, utm_campaign, utm_term, utm_content, sales_channel, device_type, product_id } = req.query;
+
+  let ignoreUtms = false;
+  if (start && end) {
+    const numDays = daysInclusive(start, end);
+    if (numDays > 30) {
+      ignoreUtms = true;
+    }
+  }
+
+  return {
+    utm_source: ignoreUtms ? null : extractUtmParam(utm_source),
+    utm_medium: ignoreUtms ? null : extractUtmParam(utm_medium),
+    utm_campaign: ignoreUtms ? null : extractUtmParam(utm_campaign),
+    utm_term: ignoreUtms ? null : extractUtmParam(utm_term),
+    utm_content: ignoreUtms ? null : extractUtmParam(utm_content),
+    sales_channel: extractUtmParam(sales_channel),
+    device_type: extractUtmParam(device_type),
+    product_id: extractUtmParam(product_id),
+  };
 }

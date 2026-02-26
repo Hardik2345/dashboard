@@ -62,6 +62,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
     const theme = useTheme();
     const isDark = theme.palette.mode === 'dark';
     const [loading, setLoading] = useState(true);
+    const [prevRange, setPrevRange] = useState(null);
     const [data, setData] = useState({
         quantity: [],
         value: [],
@@ -81,13 +82,14 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
         const fetchData = async () => {
             try {
                 const { start, end, ...rest } = query;
-                const prevRange = getPreviousRange(start, end);
+                const prevRangeData = getPreviousRange(start, end);
+                setPrevRange(prevRangeData);
 
                 const [currOrders, currSales, prevOrders, prevSales] = await Promise.all([
                     getOrderSplit({ start, end, ...rest }),
                     getPaymentSalesSplit({ start, end, ...rest }),
-                    prevRange.start ? getOrderSplit({ start: prevRange.start, end: prevRange.end, ...rest }) : Promise.resolve({}),
-                    prevRange.start ? getPaymentSalesSplit({ start: prevRange.start, end: prevRange.end, ...rest }) : Promise.resolve({})
+                    prevRangeData.start ? getOrderSplit({ start: prevRangeData.start, end: prevRangeData.end, ...rest }) : Promise.resolve({}),
+                    prevRangeData.start ? getPaymentSalesSplit({ start: prevRangeData.start, end: prevRangeData.end, ...rest }) : Promise.resolve({})
                 ]);
 
                 if (cancelled) return;
@@ -139,7 +141,9 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                     quantity: qtyData.segments,
                     value: valData.segments,
                     totalQuantity: qtyData.formattedTotal,
-                    totalValue: valData.formattedTotal
+                    totalValue: valData.formattedTotal,
+                    rawTotalQuantity: qtyData.total,
+                    rawTotalValue: valData.total
                 });
 
             } catch (err) {
@@ -154,7 +158,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
         return () => { cancelled = true; };
     }, [query.start, query.end, query.brand_key, query.product_id, query.refreshKey, query.utm_source, query.utm_medium, query.utm_campaign, query.sales_channel]);
 
-    const renderChart = (title, chartData, totalLabel) => (
+    const renderChart = (title, chartData, totalLabel, rawTotal) => (
         <div className="flex flex-col items-center flex-1 min-w-[250px]">
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{title}</Typography>
             <div className="relative w-full h-[200px]">
@@ -181,15 +185,60 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                     <span className="text-2xl font-bold dark:text-white text-gray-900">{totalLabel}</span>
                 </div>
             </div>
+
+            {/* Always visible chips */}
+            <div className="flex flex-col gap-2 w-full mt-6 max-w-[240px]">
+                {chartData.map((entry, index) => {
+                    const pctLabel = entry.percent !== undefined ? Number(entry.percent).toFixed(1) : (rawTotal > 0 ? ((entry.value / rawTotal) * 100).toFixed(1) : '0.0');
+                    return (
+                        <div key={index} className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50 dark:bg-white/[0.04] border border-gray-100 dark:border-white/[0.08] transition-colors">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: entry.color }} />
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{entry.name}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{entry.formattedValue}</span>
+                                <span className="text-[13px] font-semibold text-gray-500 dark:text-gray-400 w-10 text-right">
+                                    {pctLabel}%
+                                </span>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
+
+    const isToday = query?.end ? dayjs(query.end).isSame(dayjs(), 'day') : false;
 
     return (
         <Card elevation={0} sx={{ height: '100%', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
             <CardContent>
-                <Typography variant="h6" component="div" sx={{ mb: 0.5, fontSize: '1rem', fontWeight: 600 }}>
-                    Mode of Payment <span className="text-muted-foreground text-sm font-normal">(excluding cancelled orders)</span>
-                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 1 }}>
+                    <Box sx={{ flex: '1 1 auto', minWidth: '150px' }}>
+                        <Typography variant="h6" component="div" sx={{ mb: 0.5, fontSize: '1rem', fontWeight: 600 }}>
+                            Mode of Payment <span className="text-muted-foreground text-sm font-normal">(excluding cancelled orders)</span>
+                        </Typography>
+                    </Box>
+
+                    {prevRange && query?.start && query?.end && !isToday && (
+                        <Box>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', px: 1, py: 0.4, borderRadius: 1.5, display: 'inline-block', fontSize: '0.7rem' }}>
+                                {(() => {
+                                    const fmt = (s, e) => {
+                                        const start = dayjs(s);
+                                        const end = dayjs(e);
+                                        if (start.isSame(end, 'day')) {
+                                            return start.format('MMM D');
+                                        }
+                                        return `${start.format('MMM D')} - ${end.format('MMM D')}`;
+                                    };
+                                    return `${fmt(query.start, query.end)} vs ${fmt(prevRange.start, prevRange.end)}`;
+                                })()}
+                            </Typography>
+                        </Box>
+                    )}
+                </Box>
 
                 {loading ? (
                     <div className="mt-4">
@@ -201,31 +250,12 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                                 </div>
                             ))}
                         </div>
-                        {/* Legend Skeleton */}
-                        <div className="flex justify-center gap-6 mt-6">
-                            {[1, 2, 3].map((i) => (
-                                <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Skeleton variant="rectangular" width={12} height={12} sx={{ borderRadius: 0.5 }} />
-                                    <Skeleton variant="text" width={60} />
-                                </Box>
-                            ))}
-                        </div>
                     </div>
                 ) : (
                     <div className="mt-4">
                         <div className="flex flex-wrap justify-around gap-8">
-                            {renderChart('By Order count', data.quantity, data.totalQuantity)}
-                            {renderChart('By Sales', data.value, data.totalValue)}
-                        </div>
-
-                        {/* Legend */}
-                        <div className="flex justify-center gap-6 mt-6 flex-wrap">
-                            {Object.entries(COLORS).map(([key, color]) => (
-                                <div key={key} className="flex items-center gap-2">
-                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
-                                    <span className="text-sm text-muted-foreground">{LABELS[key]}</span>
-                                </div>
-                            ))}
+                            {renderChart('By Order count', data.quantity, data.totalQuantity, data.rawTotalQuantity)}
+                            {renderChart('By Sales', data.value, data.totalValue, data.rawTotalValue)}
                         </div>
                     </div>
                 )}

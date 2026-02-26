@@ -87,8 +87,12 @@ export default memo(function TrafficSourceSplit({ query }) {
     const directVal = validData ? getMetricValue(data.direct) : 0;
     const othersVal = validData ? getMetricValue(data.others) : 0;
 
+    const isToday = query?.end && dayjs(query.end).isSame(dayjs(), 'day');
+
     const getDelta = (sourceObj) => {
         if (!sourceObj || !validData) return undefined;
+        if (isToday) return undefined;
+
         const d = metric === 'sessions' ? sourceObj.delta : sourceObj.atc_delta;
         // If atc_delta is missing but we are in atc_sessions mode, it might be 0 or backend not updated
         if (d === undefined || d === null) return 0;
@@ -365,7 +369,7 @@ export default memo(function TrafficSourceSplit({ query }) {
                         </FormControl>
                     </Box>
 
-                    {comparisonRange && query?.start && query?.end && (
+                    {comparisonRange && query?.start && query?.end && !isToday && (
                         <Box>
                             <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', px: 1, py: 0.4, borderRadius: 1.5, display: 'inline-block', fontSize: '0.7rem' }}>
                                 {(() => {
