@@ -34,6 +34,9 @@ import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlic
 import { setBrand } from './state/slices/brandSlice.js';
 import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setCompareMode, setSelectedMetric, setUtm, setSalesChannel, setDeviceType } from './state/slices/filterSlice.js';
 import MobileTopBar from './components/MobileTopBar.jsx';
+import axios from 'axios';
+import { requestForToken, onMessageListener } from './firebase.js';
+
 const MobileFilterDrawer = lazy(() => import('./components/MobileFilterDrawer.jsx'));
 const UnifiedFilterBar = lazy(() => import('./components/UnifiedFilterBar.jsx'));
 const AuthorBrandSelector = lazy(() => import('./components/AuthorBrandSelector.jsx'));
@@ -207,6 +210,41 @@ export default function App() {
   }, []);
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
+
+  // Push Notification setup
+  useEffect(() => {
+    if (user) {
+      requestForToken()
+        .then((token) => {
+          if (token) {
+            axios.post('/api/push/register-token',
+              { token, user_info: { id: user.id || user._id, email: user.email, name: user.name } },
+              { withCredentials: true }
+            ).catch(err => console.error('Failed to register FCM token:', err));
+          }
+        })
+        .catch(err => console.error('Token request failed:', err));
+    }
+  }, [user]);
+
+  useEffect(() => {
+    // onMessageListener sometimes returns undefined if permissions aren't granted yet,
+    // but our wrapper returns the unsubscribe function when successfully listening.
+    let unsubscribe;
+    try {
+      unsubscribe = onMessageListener((payload) => {
+        console.log('FCM Foreground message received:', payload);
+        // We can trigger an event or state to refresh the notifications menu!
+        // To keep it simple, we listen for window events in NotificationsMenu.
+        window.dispatchEvent(new CustomEvent('fcm-foreground-message'));
+      });
+    } catch (err) {
+      console.warn('FCM listen failed:', err);
+    }
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
 
   const activeBrandKey = isAuthor
     ? (authorBrandKey || user?.primary_brand_id || '')
