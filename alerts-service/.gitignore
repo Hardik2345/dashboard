@@ -1,3 +1,5 @@
 node_modules
 .env
 npm-debug.log
+dashboard-notifications-fde8d-firebase-adminsdk-fbsvc-3a481d44d0.json
+firebase-service-account*.json
