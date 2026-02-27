@@ -56,6 +56,7 @@ const NAV_ITEMS = [
     group: 'admin',
     items: [
       { id: 'access', label: 'Access Control', icon: ShieldCheck },
+      { id: 'notifications-log', label: 'Notifications/Alerts', icon: Bell },
       //      { id: 'brands', label: 'Brand Setup', icon: Store },
     ]
   }

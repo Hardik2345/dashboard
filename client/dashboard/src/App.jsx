@@ -41,6 +41,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { id: "product-conversion", label: "Funnels", icon: Filter },
   { id: "alerts", label: "Alerts", icon: Bell },
+  { id: "notifications-log", label: "Logs", icon: Bell },
   { id: "access", label: "Access", icon: ShieldCheck },
   //  { id: 'brands', label: 'Setup', icon: Store },
 ];
@@ -50,6 +51,8 @@ import {
   getDashboardSummary,
 } from "./lib/api.js";
 import { TextField, Button, Paper, Typography, Chip } from "@mui/material";
+import axios from "axios";
+import { requestForToken, onMessageListener } from "./firebase";
 import Unauthorized from "./components/Unauthorized.jsx";
 import useSessionHeartbeat from "./hooks/useSessionHeartbeat.js";
 import { useAppDispatch, useAppSelector } from "./state/hooks.js";
@@ -98,6 +101,9 @@ const HourlySalesCompare = lazy(
 const WebVitals = lazy(() => import("./components/WebVitals.jsx"));
 const AccessControlCard = lazy(
   () => import("./components/AccessControlCard.jsx"),
+);
+const NotificationsLog = lazy(
+  () => import("./components/NotificationsLog.jsx"),
 );
 const ProductConversionTable = lazy(
   () => import("./components/ProductConversionTable.jsx"),
@@ -313,6 +319,77 @@ export default function App() {
   }, []);
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
+
+  // Push Notification setup
+  useEffect(() => {
+    if (!user) return;
+
+    if (isAuthor) {
+      requestForToken()
+        .then((token) => {
+          if (token) {
+            axios
+              .post(
+                "/api/push/register-token",
+                {
+                  token,
+                  user_info: {
+                    id: user.id || user._id,
+                    email: user.email,
+                    name: user.name,
+                  },
+                },
+                { withCredentials: true },
+              )
+              .catch((err) =>
+                console.error("Failed to register FCM token:", err),
+              );
+          }
+        })
+        .catch((err) => console.error("Token request failed:", err));
+    } else if (
+      typeof Notification !== "undefined" &&
+      Notification.permission === "granted"
+    ) {
+      // Non-admin user with existing permission: ensure token is unregistered
+      requestForToken()
+        .then((token) => {
+          if (token) {
+            axios
+              .post(
+                "/api/push/unregister-token",
+                { token },
+                { withCredentials: true },
+              )
+              .catch((err) =>
+                console.error("Failed to unregister FCM token:", err),
+              );
+          }
+        })
+        .catch(() => {}); // Ignore errors when trying to clear
+    }
+  }, [user, isAuthor]);
+
+  useEffect(() => {
+    if (!isAuthor) return;
+
+    // onMessageListener sometimes returns undefined if permissions aren't granted yet,
+    // but our wrapper returns the unsubscribe function when successfully listening.
+    let unsubscribe;
+    try {
+      unsubscribe = onMessageListener((payload) => {
+        console.log("FCM Foreground message received:", payload);
+        // We can trigger an event or state to refresh the notifications menu!
+        // To keep it simple, we listen for window events in NotificationsMenu.
+        window.dispatchEvent(new CustomEvent("fcm-foreground-message"));
+      });
+    } catch (err) {
+      console.warn("FCM listen failed:", err);
+    }
+    return () => {
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
+  }, [isAuthor]);
 
   const activeBrandKey = isAuthor
     ? authorBrandKey || user?.primary_brand_id || ""
@@ -1043,6 +1120,12 @@ export default function App() {
     }
 
     dispatch(fetchCurrentUser());
+
+    // Check for brand parameter to select it automatically (Deep Linking)
+    const brandParam = params.get("brand");
+    if (brandParam) {
+      dispatch(setBrand(brandParam.toUpperCase()));
+    }
   }, [dispatch]);
 
   // Session Expiry Notification - DISABLED per user request
@@ -1078,7 +1161,25 @@ export default function App() {
     }
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    // Attempt to unregister FCM token before logging out
+    try {
+      if (
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      ) {
+        const token = await requestForToken();
+        if (token) {
+          await axios.post(
+            "/api/push/unregister-token",
+            { token },
+            { withCredentials: true },
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("FCM unregister on logout failed:", err);
+    }
     dispatch(logoutUser());
   }
 
@@ -1415,6 +1516,38 @@ export default function App() {
                     authorTab !== "product-conversion" &&
                     authorTab !== "alerts" &&
                     authorTab !== "access" &&
+                    (isAuthor || showMultipleBrands) && (
+                      <Box sx={{ mb: 1 }}>
+                        <AuthorBrandSelector
+                          brands={
+                            isAuthor
+                              ? authorBrands
+                              : viewerBrands.map((key) => ({ key }))
+                          }
+                          value={activeBrandKey}
+                          loading={isAuthor ? authorBrandsLoading : false}
+                          onChange={
+                            isAuthor
+                              ? handleAuthorBrandChange
+                              : (val) =>
+                                  dispatch(
+                                    setBrand(
+                                      (val || "")
+                                        .toString()
+                                        .trim()
+                                        .toUpperCase(),
+                                    ),
+                                  )
+                          }
+                        />
+                      </Box>
+                    )}
+                  {!isMobile &&
+                    authorTab !== "dashboard" &&
+                    authorTab !== "product-conversion" &&
+                    authorTab !== "alerts" &&
+                    authorTab !== "access" &&
+                    authorTab !== "notifications-log" &&
                     (isAuthor || showMultipleBrands) && (
                       <Box sx={{ mb: 1 }}>
                         <AuthorBrandSelector
@@ -1919,6 +2052,12 @@ export default function App() {
                           </Typography>
                         </Paper>
                       ))}
+
+                    {authorTab === "notifications-log" && (
+                      <Suspense fallback={<SectionFallback />}>
+                        <NotificationsLog />
+                      </Suspense>
+                    )}
                   </motion.div>
                 </AnimatePresence>
               </Stack>
