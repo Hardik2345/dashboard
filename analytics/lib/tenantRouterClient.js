@@ -41,7 +41,27 @@ function decryptPassword(enc) {
 }
 
 /**
- * Resolve tenant routing via tenant-router service.
+ * Try to resolve tenant DB credentials from environment variables.
+ * Looks for {BRAND}_DB_HOST, {BRAND}_DB_USER, {BRAND}_DB_PASS, etc.
+ * Returns route object if all required vars are present, null otherwise.
+ */
+function resolveFromEnv(brandKey) {
+  const prefix = brandKey.toUpperCase();
+  const host = process.env[`${prefix}_DB_HOST`];
+  const user = process.env[`${prefix}_DB_USER`];
+  const pass = process.env[`${prefix}_DB_PASS`];
+  const dbName = process.env[`${prefix}_DB_NAME`] || brandKey;
+  const port = Number(process.env[`${prefix}_DB_PORT`] || 3306);
+
+  if (host && user && pass) {
+    return { brandId: brandKey, host, port, user, password: pass, dbName };
+  }
+  return null;
+}
+
+/**
+ * Resolve tenant routing.
+ * Priority: 1) LRU cache  2) Env vars  3) HTTP tenant-router service (MongoDB-backed).
  * Returns {route} or {error: 'not_found'|'suspended'|'unavailable'}.
  */
 async function resolveTenantRoute(brandKey) {
@@ -54,6 +74,15 @@ async function resolveTenantRoute(brandKey) {
     return cached;
   }
 
+  // --- Priority 2: Env-var based resolution (no network call) ---
+  const envRoute = resolveFromEnv(key);
+  if (envRoute) {
+    logger.info('[tenantRouterClient] resolved from ENV vars', { brand: key, host: envRoute.host, db: envRoute.dbName });
+    cache.set(key, envRoute);
+    return envRoute;
+  }
+
+  // --- Priority 3: HTTP call to tenant-router (MongoDB-backed CDS) ---
   const baseUrl = (process.env.TENANT_ROUTER_URL || 'http://localhost:3004').replace(/\/+$/, '');
   const token = process.env.TENANT_ROUTER_TOKEN || '';
 
@@ -80,7 +109,7 @@ async function resolveTenantRoute(brandKey) {
       logger.error('[tenantRouterClient] incomplete route from tenant router', { brand: key });
       return { error: 'routing_unavailable' };
     }
-    logger.info('[tenantRouterClient] resolved route', { brand: key, host: route.host, db: route.dbName });
+    logger.info('[tenantRouterClient] resolved route via HTTP', { brand: key, host: route.host, db: route.dbName });
     cache.set(key, route);
     return route;
   } catch (err) {
