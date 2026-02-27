@@ -23,6 +23,7 @@ import {
   Chip,
   Checkbox, // New Import
 } from '@mui/material';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import CheckIcon from "@mui/icons-material/Check";
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import FilterListIcon from '@mui/icons-material/FilterList';
@@ -278,6 +279,11 @@ export default function MobileTopBar({
     [onChange, compareMode]
   );
 
+  const isDateRangeOver30Days = useMemo(() => {
+    if (!start || !end) return false;
+    return end.diff(start, 'day') > 30;
+  }, [start, end]);
+
   const activeUtmCount = [utm?.source, utm?.medium, utm?.campaign].filter(Boolean).length;
 
   return (
@@ -306,72 +312,93 @@ export default function MobileTopBar({
               <>
                 <Collapse in={showUtmFilters} orientation="horizontal" unmountOnExit>
                   <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 1, alignItems: 'center' }}>
-                    {activeUtmCount > 0 && (
-                      <Button
-                        size="small"
-                        onClick={() => onUtmChange && onUtmChange({ source: '', medium: '', campaign: '' })}
-                        sx={{
-                          fontSize: 12,
-                          textTransform: 'none',
-                          minWidth: 'auto',
-                          whiteSpace: 'nowrap',
-                          color: 'text.secondary',
-                          '&:hover': { color: 'error.main', bgcolor: 'transparent' }
-                        }}
-                      >
-                        Clear all
-                      </Button>
+                    {isDateRangeOver30Days ? (
+                      <Box sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 1, 
+                        px: 1.5, 
+                        py: 0.5, 
+                        borderRadius: 1,
+                        bgcolor: isDark ? 'rgba(255, 152, 0, 0.1)' : 'rgba(255, 152, 0, 0.05)',
+                        border: '1px solid',
+                        borderColor: isDark ? 'rgba(255, 152, 0, 0.2)' : 'rgba(255, 152, 0, 0.1)'
+                      }}>
+                        <WarningAmberIcon sx={{ color: '#ed6c02', fontSize: 18 }} />
+                        <Typography variant="caption" sx={{ color: '#ed6c02', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          UTM filters unavailable for > 30 days
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <>
+                        {activeUtmCount > 0 && (
+                          <Button
+                            size="small"
+                            onClick={() => onUtmChange && onUtmChange({ source: '', medium: '', campaign: '' })}
+                            sx={{
+                              fontSize: 12,
+                              textTransform: 'none',
+                              minWidth: 'auto',
+                              whiteSpace: 'nowrap',
+                              color: 'text.secondary',
+                              '&:hover': { color: 'error.main', bgcolor: 'transparent' }
+                            }}
+                          >
+                            Clear all
+                          </Button>
+                        )}
+                        {showSalesChannel && (
+                          <SearchableSelect
+                            label="Sales Channel"
+                            options={utmOptions?.sales_channel || []}
+                            value={salesChannel}
+                            onChange={onSalesChannelChange}
+                            sx={{ width: 140 }}
+                            labelSx={{
+                              fontSize: 12,
+                              transform: 'translate(14px, 8px) scale(1)',
+                              '&.MuiInputLabel-shrink': { transform: 'translate(14px, -9px) scale(0.75)' }
+                            }}
+                            selectSx={{
+                              fontSize: 12,
+                              height: 32,
+                              '& .MuiSelect-select': { py: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+                            }}
+                          />
+                        )}
+                        {['source', 'medium', 'campaign'].map(field => (
+                          <SearchableSelect
+                            key={field}
+                            label={field.charAt(0).toUpperCase() + field.slice(1)}
+                            multiple
+                            options={utmOptions?.[`utm_${field}`] || []}
+                            value={utm?.[field] || []}
+                            onChange={(newVal) => {
+                              onUtmChange && onUtmChange({ [field]: newVal });
+                            }}
+                            sx={{ width: 140 }}
+                            labelSx={{
+                              fontSize: 12,
+                              textTransform: 'capitalize',
+                              transform: 'translate(14px, 8px) scale(1)',
+                              '&.MuiInputLabel-shrink': {
+                                transform: 'translate(14px, -9px) scale(0.75)'
+                              }
+                            }}
+                            selectSx={{
+                              fontSize: 12,
+                              height: 32,
+                              '& .MuiSelect-select': {
+                                py: 0.5,
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                              }
+                            }}
+                          />
+                        ))}
+                      </>
                     )}
-                    {showSalesChannel && (
-                      <SearchableSelect
-                        label="Sales Channel"
-                        options={utmOptions?.sales_channel || []}
-                        value={salesChannel}
-                        onChange={onSalesChannelChange}
-                        sx={{ width: 140 }}
-                        labelSx={{
-                          fontSize: 12,
-                          transform: 'translate(14px, 8px) scale(1)',
-                          '&.MuiInputLabel-shrink': { transform: 'translate(14px, -9px) scale(0.75)' }
-                        }}
-                        selectSx={{
-                          fontSize: 12,
-                          height: 32,
-                          '& .MuiSelect-select': { py: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
-                        }}
-                      />
-                    )}
-                    {['source', 'medium', 'campaign'].map(field => (
-                      <SearchableSelect
-                        key={field}
-                        label={field.charAt(0).toUpperCase() + field.slice(1)}
-                        multiple
-                        options={utmOptions?.[`utm_${field}`] || []}
-                        value={utm?.[field] || []}
-                        onChange={(newVal) => {
-                          onUtmChange && onUtmChange({ [field]: newVal });
-                        }}
-                        sx={{ width: 140 }}
-                        labelSx={{
-                          fontSize: 12,
-                          textTransform: 'capitalize',
-                          transform: 'translate(14px, 8px) scale(1)',
-                          '&.MuiInputLabel-shrink': {
-                            transform: 'translate(14px, -9px) scale(0.75)'
-                          }
-                        }}
-                        selectSx={{
-                          fontSize: 12,
-                          height: 32,
-                          '& .MuiSelect-select': {
-                            py: 0.5,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
-                          }
-                        }}
-                      />
-                    ))}
                   </Box>
                 </Collapse>
 
