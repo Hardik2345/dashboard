@@ -891,6 +891,21 @@ export default function App() {
     }
   }, [utm]);
 
+  // Centralized UTM clearing for > 30 days
+  useEffect(() => {
+    if (!start || !end) return;
+    const isOver30 = end.diff(start, "day") > 30;
+    const hasUtm = Object.values(utm).some((v) =>
+      Array.isArray(v) ? v.length > 0 : !!v,
+    );
+
+    if (isOver30 && hasUtm) {
+      dispatch(
+        setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }),
+      );
+    }
+  }, [start, end, utm, dispatch]);
+
   // Fetch UTM Options (Lifted from MobileTopBar)
   // Fetch UTM Options (Lifted from MobileTopBar)
   const lastFetchParams = useMemo(() => {
