@@ -7,6 +7,21 @@ local resty_str = require("resty.string")
 local _M = {}
 
 function _M.authenticate()
+    -- 0. Check for Pipeline Key Bypass
+    local pipeline_key = ngx.req.get_headers()["x-pipeline-key"]
+    local secret_pipeline_key = os.getenv("X_PIPELINE_KEY")
+
+    if pipeline_key and pipeline_key ~= "" and secret_pipeline_key and secret_pipeline_key ~= "" then
+        if pipeline_key == secret_pipeline_key then
+            -- Only allow bypass for resolve route
+            if ngx.var.uri:find("^/tenant/resolve") then
+                ngx.req.set_header("x-user-id", "pipeline-service")
+                ngx.req.set_header("x-role", "system")
+                return
+            end
+        end
+    end
+
     -- 1. Extract Bearer Token
     local auth_header = ngx.req.get_headers()["Authorization"]
     if not auth_header then
