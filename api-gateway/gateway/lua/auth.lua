@@ -22,6 +22,7 @@ function _M.authenticate()
         end
     end
 
+
     -- 1. Extract Bearer Token
     local auth_header = ngx.req.get_headers()["Authorization"]
     if not auth_header then
