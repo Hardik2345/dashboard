@@ -42,11 +42,11 @@ router.post("/create", async (req, res) => {
     api_version,
     access_token,
     session_url = "",
+    db_host,
   } = req.body;
 
   // Basic validation
   if (
-    !brand_id ||
     !shard_id ||
     !rds_proxy_endpoint ||
     !database ||
@@ -55,7 +55,8 @@ router.post("/create", async (req, res) => {
     brand_num === undefined ||
     !shop_name ||
     !api_version ||
-    !access_token
+    !access_token ||
+    !db_host
   ) {
     return res.status(400).json({ error: "missing_required_fields" });
   }
@@ -77,6 +78,7 @@ router.post("/create", async (req, res) => {
       api_version,
       access_token,
       session_url,
+      db_host,
     });
 
     return res.status(201).json(created);

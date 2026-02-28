@@ -62,6 +62,10 @@ const tenantSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    db_host: {
+      type: String,
+      required: true,
+    },
     brand_num: {
       type: Number,
       required: true,
