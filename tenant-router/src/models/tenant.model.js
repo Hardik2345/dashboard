@@ -62,9 +62,26 @@ const tenantSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    storage_service: {
+    brand_num: {
+      type: Number,
+      required: true,
+    },
+    shop_name: {
       type: String,
       required: true,
+    },
+    api_version: {
+      type: String,
+      required: true,
+    },
+    access_token: {
+      type: String,
+      required: true,
+    },
+    session_url: {
+      type: String,
+      required: false,
+      default: "",
     },
     status: {
       type: String,
@@ -105,13 +122,25 @@ const tenantSchema = new mongoose.Schema(
   },
 );
 
-// Pre-save: encrypt plain-text password if modified and not already encrypted
+// Pre-save: encrypt plain-text fields if modified and not already encrypted
 tenantSchema.pre("save", async function () {
-  if (!this.isModified("password")) return;
-  if (typeof this.password !== "string") return;
-  // naive check: encrypted values contain ':' separator (iv:encrypted)
-  if (this.password.includes(":")) return;
-  this.password = encryptText(this.password);
+  // Encrypt password
+  if (
+    this.isModified("password") &&
+    this.password &&
+    !this.password.toString().includes(":")
+  ) {
+    this.password = encryptText(this.password.toString());
+  }
+
+  // Encrypt access_token
+  if (
+    this.isModified("access_token") &&
+    this.access_token &&
+    !this.access_token.toString().includes(":")
+  ) {
+    this.access_token = encryptText(this.access_token.toString());
+  }
 });
 
 // Instance method: decrypt using provided key or env var

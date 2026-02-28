@@ -31,13 +31,17 @@ router.post("/create", async (req, res) => {
     shard_id,
     rds_proxy_endpoint,
     database,
-    storage_service,
     user,
     password,
     port,
     status,
     speed_key,
     app_id_mapping = "",
+    brand_num,
+    shop_name,
+    api_version,
+    access_token,
+    session_url = "",
   } = req.body;
 
   // Basic validation
@@ -46,9 +50,12 @@ router.post("/create", async (req, res) => {
     !shard_id ||
     !rds_proxy_endpoint ||
     !database ||
-    !storage_service ||
     !user ||
-    !password
+    !password ||
+    brand_num === undefined ||
+    !shop_name ||
+    !api_version ||
+    !access_token
   ) {
     return res.status(400).json({ error: "missing_required_fields" });
   }
@@ -59,13 +66,17 @@ router.post("/create", async (req, res) => {
       shard_id,
       rds_proxy_endpoint,
       database,
-      storage_service,
       user,
       password,
       port,
       status,
       speed_key,
       app_id_mapping,
+      brand_num,
+      shop_name,
+      api_version,
+      access_token,
+      session_url,
     });
 
     return res.status(201).json(created);
