@@ -34,3 +34,4 @@ api-gateway/logs/
 alerts-service/.env
 analytics/.env
 tenant-router/.env
+alerts-service/firebase-service-account.json
