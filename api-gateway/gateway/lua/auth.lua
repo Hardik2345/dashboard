@@ -13,8 +13,8 @@ function _M.authenticate()
 
     if pipeline_key and pipeline_key ~= "" and secret_pipeline_key and secret_pipeline_key ~= "" then
         if pipeline_key == secret_pipeline_key then
-            -- Only allow bypass for resolve route
-            if ngx.var.uri:find("^/tenant/resolve") then
+            -- Allow bypass for resolve and pipeline routes
+            if ngx.var.uri:find("^/tenant/resolve") or ngx.var.uri:find("^/tenant/pipeline/") then
                 ngx.req.set_header("x-user-id", "pipeline-service")
                 ngx.req.set_header("x-role", "system")
                 return
