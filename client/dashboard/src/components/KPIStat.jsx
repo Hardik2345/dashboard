@@ -3,7 +3,7 @@ import { useTheme, alpha } from '@mui/material/styles';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 
-export default function KPIStat({ label, value, hint, loading, deltaLoading, formatter, delta, onSelect, selected, centerOnMobile = false, action, sx = {}, activeColor = '#10b981' }) {
+export default function KPIStat({ label, value, hint, loading, deltaLoading, formatter, delta, onSelect, selected, centerOnMobile = false, action, sx = {}, activeColor = '#10b981', compareValue, compareFormatter }) {
   const theme = useTheme();
   const clickable = typeof onSelect === 'function';
 
@@ -85,7 +85,12 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
               <Typography variant="h5" sx={{ fontWeight: 700 }}>
                 {formatter ? formatter(value) : value}
               </Typography>
-              {hint && (
+              {compareValue != null && (
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400, fontSize: '0.85em' }}>
+                  vs {compareFormatter ? compareFormatter(compareValue) : (formatter ? formatter(compareValue) : compareValue)}
+                </Typography>
+              )}
+              {hint && !compareValue && (
                 <Typography variant="caption" color="text.secondary">
                   {hint}
                 </Typography>

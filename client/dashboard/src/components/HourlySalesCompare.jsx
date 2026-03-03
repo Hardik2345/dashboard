@@ -174,6 +174,8 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
   const deviceType = query?.device_type;
   const productId = query?.product_id;
   const compare = query?.compare;
+  const compareStart = query?.compare_start;
+  const compareEnd = query?.compare_end;
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -212,8 +214,8 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
       // But we stick to logic: if viewMode is set, use it.
 
       const base = (viewMode === 'daily' || viewMode === 'monthly')
-        ? { start, end, compare, ...utmParams }
-        : { start, end, compare, aggregate: 'avg-by-hour', ...utmParams };
+        ? { start, end, compare, compare_start: compareStart, compare_end: compareEnd, ...utmParams }
+        : { start, end, compare, compare_start: compareStart, compare_end: compareEnd, aggregate: 'avg-by-hour', ...utmParams };
       const params = brandKey ? { ...base, brand_key: brandKey } : base;
 
       try {
@@ -278,7 +280,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
 
     loadData();
     return () => { cancelled = true; };
-  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, productId, compare]);
+  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, productId, compare, compareStart, compareEnd]);
 
   const toggleLine = (line) => {
     setVisibleLines(prev =>
