@@ -4929,6 +4929,83 @@ function buildMetricsController() {
           .toLowerCase();
         const sortDir = (req.query.sort_dir || "desc").toString().toLowerCase();
 
+        const allowedSort = new Map([
+          ["sessions", "sessions"],
+          ["atc", "atc"],
+          ["atc_rate", "atc_rate"],
+          ["orders", "orders"],
+          ["sales", "sales"],
+          ["cvr", "cvr"],
+          ["landing_page_path", "landing_page_path"],
+        ]);
+        const sortCol = allowedSort.get(sortBy) || "sessions";
+        const dir = sortDir === "asc" ? "ASC" : "DESC";
+
+        const validFields = ["sessions", "atc", "atc_rate", "orders", "sales", "cvr"];
+        const validOps = ["gt", "lt"];
+        const filterReplacements = [];
+        const conditions = [];
+
+        // Parse filters
+        let filters = [];
+        try {
+          if (req.query.filters) {
+            filters =
+              typeof req.query.filters === "string"
+                ? JSON.parse(req.query.filters)
+                : req.query.filters;
+          }
+        } catch (e) {
+          filters = [];
+        }
+
+        const singleField = (req.query.filter_field || "").toString().toLowerCase();
+        if (filters.length === 0 && singleField) {
+          filters.push({
+            field: singleField,
+            operator: (req.query.filter_operator || "").toString().toLowerCase(),
+            value: req.query.filter_value,
+          });
+        }
+
+        const search = (req.query.search || "").trim();
+        if (search) {
+          conditions.push(`s.landing_page_path LIKE ?`);
+          filterReplacements.push(`%${search}%`);
+        }
+
+        if (Array.isArray(filters) && filters.length > 0) {
+          for (const f of filters) {
+            const fField = (f.field || "").toString().toLowerCase();
+            const fOp = (f.operator || "").toString().toLowerCase();
+            const fVal = Number(f.value);
+
+            if (
+              validFields.includes(fField) &&
+              validOps.includes(fOp) &&
+              !Number.isNaN(fVal)
+            ) {
+              let fieldExpr = "";
+              switch (fField) {
+                case "sessions": fieldExpr = "s.sessions"; break;
+                case "atc": fieldExpr = "s.atc"; break;
+                case "atc_rate": fieldExpr = "(CASE WHEN s.sessions > 0 THEN s.atc / s.sessions * 100 ELSE 0 END)"; break;
+                case "orders": fieldExpr = "COALESCE(o.orders, 0)"; break;
+                case "sales": fieldExpr = "COALESCE(o.sales, 0)"; break;
+                case "cvr": fieldExpr = "(CASE WHEN s.sessions > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)"; break;
+              }
+              if (fieldExpr) {
+                const operator = fOp === "gt" ? ">" : "<";
+                conditions.push(`${fieldExpr} ${operator} ?`);
+                filterReplacements.push(fVal);
+              }
+            }
+          }
+        }
+
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+        const replacements = [start, end, start, end, ...filterReplacements];
+
         let visibleColumns = req.query.visible_columns;
         if (typeof visibleColumns === "string") {
           try {
