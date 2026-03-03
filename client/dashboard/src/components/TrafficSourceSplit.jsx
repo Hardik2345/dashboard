@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef, memo } from 'react';
-import { Card, CardContent, Typography, Skeleton, Stack, useTheme, Select, MenuItem, FormControl, Box, Grid } from '@mui/material';
+import { Card, CardContent, Typography, Skeleton, Stack, useTheme, Select, MenuItem, FormControl, Box, Grid, Alert } from '@mui/material';
 import { TrendingUp, TrendingDown } from '@mui/icons-material';
 import { Doughnut } from 'react-chartjs-2';
 import {
@@ -55,7 +55,7 @@ function useCountUp(end, duration = 800) {
     return count;
 }
 
-export default memo(function TrafficSourceSplit({ query }) {
+export default memo(function TrafficSourceSplit({ query, compareMode = false }) {
     const theme = useTheme();
     const isDark = theme.palette.mode === 'dark';
     const [loading, setLoading] = useState(true);
@@ -91,12 +91,18 @@ export default memo(function TrafficSourceSplit({ query }) {
 
     const getDelta = (sourceObj) => {
         if (!sourceObj || !validData) return undefined;
+        // In compare mode: show deltas only when curr is NOT today (full-day data available)
+        // Outside compare mode: show deltas only when NOT today (existing behavior)
         if (isToday) return undefined;
 
         const d = metric === 'sessions' ? sourceObj.delta : sourceObj.atc_delta;
-        // If atc_delta is missing but we are in atc_sessions mode, it might be 0 or backend not updated
         if (d === undefined || d === null) return 0;
         return d;
+    };
+
+    const getPrevValue = (sourceObj) => {
+        if (!sourceObj || !validData || isToday) return undefined;
+        return Number(metric === 'sessions' ? sourceObj.prev_sessions : sourceObj.prev_atc_sessions) || 0;
     };
 
 
@@ -184,7 +190,21 @@ export default memo(function TrafficSourceSplit({ query }) {
                         const raw = dataPoint.raw;
                         const totalVal = chart._metasets[datasetIndex].total;
                         const pct = totalVal > 0 ? (raw / totalVal) * 100 : 0;
-                        contentHtml += `<div style="font-size: 12px; margin-bottom: 8px;">${nfCompact.format(raw)} (${nfPct1.format(pct)}%)</div>`;
+                        contentHtml += `<div style="font-size: 12px; margin-bottom: 4px;">${nfCompact.format(raw)} (${nfPct1.format(pct)}%)</div>`;
+
+                        // Previous period comparison value
+                        const catKey = label === 'Meta' ? 'meta' : label === 'Google' ? 'google' : label === 'Direct' ? 'direct' : 'others';
+                        const srcObj = data?.[catKey];
+                        const prevVal = srcObj ? Number(metric === 'sessions' ? srcObj.prev_sessions : srcObj.prev_atc_sessions) : 0;
+                        const showPrev = !isToday && prevVal !== undefined;
+                        if (showPrev) {
+                            const deltaVal = metric === 'sessions' ? srcObj.delta : srcObj.atc_delta;
+                            const dColor = deltaVal > 0 ? '#00C853' : deltaVal < 0 ? '#FF1744' : (isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)');
+                            const dSign = deltaVal > 0 ? '+' : '';
+                            contentHtml += `<div style="font-size: 11px; margin-bottom: 8px; color: ${isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)'};">vs ${nfCompact.format(prevVal)} <span style="color: ${dColor}; font-weight: 600;">${dSign}${Math.round(deltaVal || 0)}%</span></div>`;
+                        } else {
+                            contentHtml += `<div style="margin-bottom: 4px;"></div>`;
+                        }
 
                         // Breakdown logic (Others or Meta)
                         const isOthers = label === 'Others' && data?.others_breakdown?.length > 0;
@@ -273,7 +293,7 @@ export default memo(function TrafficSourceSplit({ query }) {
         return nfCompact.format(Math.round(count));
     };
 
-    const DetailItem = ({ label, value, color, delta }) => {
+    const DetailItem = ({ label, value, color, delta, prevValue }) => {
         // We calculate pct based on current valid total, not animated total to avoid jumpiness
         const pct = getPercent(value);
         const animatedValue = useCountUp(value);
@@ -311,6 +331,11 @@ export default memo(function TrafficSourceSplit({ query }) {
                             <Typography variant="subtitle1" fontWeight={700} sx={{ fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
                                 {nfCompact.format(Math.round(animatedValue))}
                             </Typography>
+                            {prevValue !== undefined && (
+                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', fontWeight: 400, whiteSpace: 'nowrap' }}>
+                                    vs {nfCompact.format(prevValue)}
+                                </Typography>
+                            )}
                             <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                                 ({nfPct1.format(pct)}%)
                             </Typography>
@@ -388,6 +413,12 @@ export default memo(function TrafficSourceSplit({ query }) {
                     )}
                 </Box>
 
+                {compareMode && isToday && (
+                    <Alert severity="info" sx={{ mb: 2, py: 0.25, fontSize: '0.75rem', '& .MuiAlert-message': { py: 0.5 } }}>
+                        Hourly UTM source data is not available — traffic split deltas are hidden in compare mode.
+                    </Alert>
+                )}
+
                 {loading ? (
                     <Skeleton variant="rounded" width="100%" height={240} />
                 ) : empty ? (
@@ -439,16 +470,16 @@ export default memo(function TrafficSourceSplit({ query }) {
                         <Grid item xs={12} md={7}>
                             <Grid container spacing={1.5}> {/* Reduced inner spacing */}
                                 <Grid item xs={6}>
-                                    <DetailItem label="Meta" value={metaVal} color={colors.meta} delta={getDelta(data.meta)} />
+                                    <DetailItem label="Meta" value={metaVal} color={colors.meta} delta={getDelta(data.meta)} prevValue={getPrevValue(data.meta)} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Google" value={googleVal} color={colors.google} delta={getDelta(data.google)} />
+                                    <DetailItem label="Google" value={googleVal} color={colors.google} delta={getDelta(data.google)} prevValue={getPrevValue(data.google)} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Direct" value={directVal} color={colors.direct} delta={getDelta(data.direct)} />
+                                    <DetailItem label="Direct" value={directVal} color={colors.direct} delta={getDelta(data.direct)} prevValue={getPrevValue(data.direct)} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Others" value={othersVal} color={colors.others} delta={getDelta(data.others)} />
+                                    <DetailItem label="Others" value={othersVal} color={colors.others} delta={getDelta(data.others)} prevValue={getPrevValue(data.others)} />
                                 </Grid>
                             </Grid>
                         </Grid>

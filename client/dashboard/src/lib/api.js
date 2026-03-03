@@ -432,7 +432,10 @@ export async function getPaymentSalesSplit(args) {
 }
 
 export async function getTrafficSourceSplit(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const base = { start: args.start, end: args.end };
+  if (args.compare_start) base.compare_start = args.compare_start;
+  if (args.compare_end) base.compare_end = args.compare_end;
+  const params = appendBrandKey(base, args);
   const json = await getJSON('/metrics/traffic-source-split', params);
   return {
     meta: json?.meta || { sessions: 0, atc_sessions: 0 },
@@ -458,7 +461,16 @@ export async function getHourlySalesSummary(args = {}) {
 }
 
 export async function getHourlyTrend(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end, aggregate: args.aggregate, compare: args.compare }, args);
+  const base = { start: args.start, end: args.end, aggregate: args.aggregate, compare: args.compare };
+  if (args.compare_start) base.compare_start = args.compare_start;
+  if (args.compare_end) base.compare_end = args.compare_end;
+  if (args.utm_source) base.utm_source = args.utm_source;
+  if (args.utm_medium) base.utm_medium = args.utm_medium;
+  if (args.utm_campaign) base.utm_campaign = args.utm_campaign;
+  if (args.sales_channel) base.sales_channel = args.sales_channel;
+  if (args.device_type) base.device_type = args.device_type;
+  if (args.product_id) base.product_id = args.product_id;
+  const params = appendBrandKey(base, args);
   const json = await getJSON('/metrics/hourly-trend', params);
   const comparison = json?.comparison;
   return {
@@ -477,7 +489,16 @@ export async function getHourlyTrend(args) {
 }
 
 export async function getDailyTrend(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const base = { start: args.start, end: args.end };
+  if (args.compare_start) base.compare_start = args.compare_start;
+  if (args.compare_end) base.compare_end = args.compare_end;
+  if (args.utm_source) base.utm_source = args.utm_source;
+  if (args.utm_medium) base.utm_medium = args.utm_medium;
+  if (args.utm_campaign) base.utm_campaign = args.utm_campaign;
+  if (args.sales_channel) base.sales_channel = args.sales_channel;
+  if (args.device_type) base.device_type = args.device_type;
+  if (args.product_id) base.product_id = args.product_id;
+  const params = appendBrandKey(base, args);
   const json = await getJSON('/metrics/daily-trend', params);
   return {
     days: Array.isArray(json?.days) ? json.days : [],
@@ -491,7 +512,16 @@ export async function getDailyTrend(args) {
 }
 
 export async function getMonthlyTrend(args) {
-  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const base = { start: args.start, end: args.end };
+  if (args.compare_start) base.compare_start = args.compare_start;
+  if (args.compare_end) base.compare_end = args.compare_end;
+  if (args.utm_source) base.utm_source = args.utm_source;
+  if (args.utm_medium) base.utm_medium = args.utm_medium;
+  if (args.utm_campaign) base.utm_campaign = args.utm_campaign;
+  if (args.sales_channel) base.sales_channel = args.sales_channel;
+  if (args.device_type) base.device_type = args.device_type;
+  if (args.product_id) base.product_id = args.product_id;
+  const params = appendBrandKey(base, args);
   const json = await getJSON('/metrics/monthly-trend', params);
   return {
     points: Array.isArray(json?.points) ? json.points : [],

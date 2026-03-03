@@ -22,6 +22,7 @@ import {
   Badge,
   Chip,
   Checkbox, // New Import
+  Popover as MuiPopover,
 } from '@mui/material';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import CheckIcon from "@mui/icons-material/Check";
@@ -31,7 +32,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { Popover, DatePicker } from "@shopify/polaris";
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
+import { DatePicker } from "@shopify/polaris";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
@@ -109,6 +111,9 @@ export default function MobileTopBar({
   value,
   compareMode,
   onChange,
+  onCompareModeChange,
+  compareDateRange,
+  onCompareDateRangeChange,
   brandKey,
   showProductFilter = true,
   productOptions = [],
@@ -126,9 +131,13 @@ export default function MobileTopBar({
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const [start, end] = value || [];
-  const [popoverActive, setPopoverActive] = useState(false);
+  const [dateAnchorEl, setDateAnchorEl] = useState(null);
+  const [compDateAnchorEl, setCompDateAnchorEl] = useState(null);
+  const popoverActive = Boolean(dateAnchorEl);
   const [month, setMonth] = useState((end || start || dayjs()).month());
   const [year, setYear] = useState((end || start || dayjs()).year());
+  const [compMonth, setCompMonth] = useState(dayjs().month());
+  const [compYear, setCompYear] = useState(dayjs().year());
   const [last, setLast] = useState({ loading: true, ts: null, tz: null });
   const [showUtmFilters, setShowUtmFilters] = useState(false);
 
@@ -218,22 +227,21 @@ export default function MobileTopBar({
     return "Select dates";
   }, [start, end]);
 
-  const togglePopover = useCallback(() => setPopoverActive((p) => !p), []);
-  const handleClose = useCallback(() => setPopoverActive(false), []);
+  const togglePopover = useCallback((e) => {
+    const target = e.currentTarget;
+    setDateAnchorEl((prev) => (prev ? null : target));
+  }, []);
+  const handleClose = useCallback(() => setDateAnchorEl(null), []);
   const handleMonthChange = useCallback((m, y) => {
     setMonth(m);
     setYear(y);
   }, []);
 
-  // Prevent body scroll when the date picker popover is open (especially on mobile)
+  // Remove explicit body scroll locking as MUI Popover handles scroll locking natively
+  // without getting stuck (MUI utilizes Dialog root which handles this gracefully).
   useEffect(() => {
-    if (!popoverActive) return undefined;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [popoverActive]);
+    // Left intentionally blank to replace old broken overflow hiding logic.
+  }, []);
 
   const handlePresetSelect = useCallback(
     (preset) => {
@@ -287,19 +295,45 @@ export default function MobileTopBar({
   const activeUtmCount = [utm?.source, utm?.medium, utm?.campaign].filter(Boolean).length;
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 0.75, pt: 1 }}>
       {/* Mobile: Product filter on its own row (authors only) */}
       {/* Mobile: Product filter removed (moved to global drawer) */}
 
 
 
-      {/* Main row: Updated chip | (desktop: product filter) | Date picker */}
+      {/* Main row: Brand + Compare | Date pickers */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
-        {/* Left: Updated chip and Date Label */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.5 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'block', md: 'none' }, ml: 0.5 }}>
+        {/* Left: Brand label + Compare toggle */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'block', md: 'none' } }}>
             Brand: <b>{brandKey}</b>
           </Typography>
+          <IconButton
+            onClick={() => {
+              if (onCompareModeChange) {
+                const next = !compareMode;
+                onCompareModeChange(next);
+                if (next && start && onCompareDateRangeChange) {
+                  const compEnd = start.subtract(1, 'day');
+                  const diff = end ? end.diff(start, 'day') : 0;
+                  const compStart = compEnd.subtract(diff, 'day');
+                  onCompareDateRangeChange([compStart.toISOString(), compEnd.toISOString()]);
+                }
+              }
+            }}
+            size="small"
+            sx={{
+              width: 26,
+              height: 26,
+              border: '1px solid',
+              borderColor: compareMode ? 'primary.main' : 'divider',
+              borderRadius: '50%',
+              color: compareMode ? 'primary.main' : 'text.secondary',
+              bgcolor: compareMode ? (isDark ? 'rgba(91, 163, 224, 0.15)' : 'rgba(11, 107, 203, 0.08)') : 'transparent',
+            }}
+          >
+            <CompareArrowsIcon sx={{ fontSize: 14 }} />
+          </IconButton>
         </Box>
 
         {/* Right: Product filter (desktop only) + Date picker */}
@@ -326,7 +360,7 @@ export default function MobileTopBar({
                       }}>
                         <WarningAmberIcon sx={{ color: '#ed6c02', fontSize: 18 }} />
                         <Typography variant="caption" sx={{ color: '#ed6c02', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                          UTM filters unavailable for > 30 days
+                          UTM filters unavailable for &gt; 30 days
                         </Typography>
                       </Box>
                     ) : (
@@ -466,15 +500,141 @@ export default function MobileTopBar({
             {/* Mobile Filter Toggle Icon */}
             {/* Mobile Filter Toggle Icon REMOVED */}
 
+            {/* Compare Mode: Two date segments (TO + CURR) */}
+            {compareMode ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                {/* TO date segment */}
+                <Box
+                  onClick={(e) => setCompDateAnchorEl(e.currentTarget)}
+                  sx={{
+                    display: 'flex', alignItems: 'center', cursor: 'pointer',
+                    px: 1, py: 0.5, borderRadius: '6px 0 0 6px',
+                    border: '1px solid', borderColor: 'divider',
+                    bgcolor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                    '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)' },
+                  }}
+                >
+                  <Typography component="span" sx={{ fontSize: '0.6rem', fontWeight: 700, color: 'text.secondary', mr: 0.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>To:</Typography>
+                  <Typography component="span" sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                    {compareDateRange?.[0]
+                      ? (compareDateRange[1] && !dayjs(compareDateRange[0]).isSame(dayjs(compareDateRange[1]), 'day')
+                        ? `${dayjs(compareDateRange[0]).format('DD MMM')} - ${dayjs(compareDateRange[1]).format('DD MMM')}`
+                        : dayjs(compareDateRange[0]).format('DD MMM'))
+                      : '–'}
+                  </Typography>
+                </Box>
+                <MuiPopover
+                  open={Boolean(compDateAnchorEl)}
+                  anchorEl={compDateAnchorEl}
+                  onClose={() => setCompDateAnchorEl(null)}
+                  anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                  transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                  PaperProps={{
+                      sx: {
+                          mt: 1,
+                          borderRadius: 2,
+                          overflow: 'hidden',
+                          backdropFilter: 'blur(12px)',
+                          backgroundColor: isDark ? 'rgba(30, 30, 30, 0.6)' : 'rgba(255, 255, 255, 0.8)',
+                          border: '1px solid',
+                          borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+                          boxShadow: isDark ? '0 8px 32px rgba(0, 0, 0, 0.5)' : '0 8px 32px rgba(0, 0, 0, 0.1)',
+                      }
+                  }}
+                >
+                  <Box sx={{
+                    p: 1,
+                    '& .Polaris-DatePicker': { background: 'transparent !important' },
+                    '& .Polaris-DatePicker__Month': { background: 'transparent !important' },
+                    '& .Polaris-DatePicker__Title': { color: isDark ? '#fff' : 'inherit' },
+                    '& .Polaris-DatePicker__Day': { color: isDark ? '#ddd' : 'inherit', '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.1)' : '' } },
+                    '& .Polaris-DatePicker__Day--today': { color: isDark ? '#fff' : 'inherit', fontWeight: 'bold' },
+                    '& .Polaris-DatePicker__Day--selected': { bgcolor: 'primary.main', color: '#fff' },
+                    '& .Polaris-DatePicker__Day--inRange': { bgcolor: isDark ? 'rgba(91, 163, 224, 0.3)' : 'rgba(11, 107, 203, 0.1)' },
+                  }}>
+                    <DatePicker
+                      month={compMonth}
+                      year={compYear}
+                      onChange={({ start: ns, end: ne }) => {
+                        const s = ns ? dayjs(ns).startOf('day') : null;
+                        const e = ne ? dayjs(ne).startOf('day') : s;
+                        if (s && e && onCompareDateRangeChange) {
+                          onCompareDateRangeChange([s.toISOString(), e.toISOString()]);
+                        }
+                      }}
+                      onMonthChange={(m, y) => { setCompMonth(m); setCompYear(y); }}
+                      selected={compareDateRange?.[0] ? {
+                        start: dayjs(compareDateRange[0]).toDate(),
+                        end: dayjs(compareDateRange[1] || compareDateRange[0]).toDate()
+                      } : undefined}
+                      allowRange
+                    />
+                  </Box>
+                </MuiPopover>
 
-            {/* Date Label (Visible next to icon) */}
-            <Typography variant="subtitle2" sx={{ fontSize: 13, fontWeight: 600, mr: 1, display: 'block', color: 'text.secondary' }}>
-              {dateLabel}
-            </Typography>
+                {/* CURR date segment */}
+                <Box
+                  onClick={togglePopover}
+                  sx={{
+                    display: 'flex', alignItems: 'center', cursor: 'pointer',
+                    px: 1, py: 0.5, borderRadius: '0 6px 6px 0',
+                    border: '1px solid', borderLeft: 'none', borderColor: 'divider',
+                    bgcolor: isDark ? 'rgba(91, 163, 224, 0.08)' : 'rgba(11, 107, 203, 0.04)',
+                    '&:hover': { bgcolor: isDark ? 'rgba(91, 163, 224, 0.15)' : 'rgba(11, 107, 203, 0.08)' },
+                  }}
+                >
+                  <Typography component="span" sx={{ fontSize: '0.6rem', fontWeight: 700, color: '#5ba3e0', mr: 0.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Curr:</Typography>
+                  <Typography component="span" sx={{ fontSize: 11, fontWeight: 600, color: '#5ba3e0', whiteSpace: 'nowrap' }}>
+                    {dateLabel}
+                  </Typography>
+                </Box>
+                <MuiPopover
+                  open={Boolean(dateAnchorEl)}
+                  anchorEl={dateAnchorEl}
+                  onClose={handleClose}
+                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                  transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                  PaperProps={{
+                      sx: {
+                          mt: 1,
+                          borderRadius: 2,
+                          overflow: 'hidden',
+                          backdropFilter: 'blur(12px)',
+                          backgroundColor: isDark ? 'rgba(30, 30, 30, 0.6)' : 'rgba(255, 255, 255, 0.8)',
+                          border: '1px solid',
+                          borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+                          boxShadow: isDark ? '0 8px 32px rgba(0, 0, 0, 0.5)' : '0 8px 32px rgba(0, 0, 0, 0.1)',
+                      }
+                  }}
+                >
+                  <Box sx={{
+                    p: 1,
+                    '& .Polaris-DatePicker': { background: 'transparent !important' },
+                    '& .Polaris-DatePicker__Month': { background: 'transparent !important' },
+                    '& .Polaris-DatePicker__Title': { color: isDark ? '#fff' : 'inherit' },
+                    '& .Polaris-DatePicker__Day': { color: isDark ? '#ddd' : 'inherit', '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.1)' : '' } },
+                    '& .Polaris-DatePicker__Day--today': { color: isDark ? '#fff' : 'inherit', fontWeight: 'bold' },
+                    '& .Polaris-DatePicker__Day--selected': { bgcolor: 'primary.main', color: '#fff' },
+                    '& .Polaris-DatePicker__Day--inRange': { bgcolor: isDark ? 'rgba(91, 163, 224, 0.3)' : 'rgba(11, 107, 203, 0.1)' },
+                  }}>
+                    <DatePicker
+                      month={month}
+                      year={year}
+                      onChange={handleRangeChange}
+                      onMonthChange={handleMonthChange}
+                      selected={selectedRange}
+                      allowRange
+                    />
+                  </Box>
+                </MuiPopover>
+              </Box>
+            ) : (
+              <>
+                {/* Normal mode: single date label + calendar icon */}
+                <Typography variant="subtitle2" sx={{ fontSize: 13, fontWeight: 600, mr: 1, display: 'block', color: 'text.secondary' }}>
+                  {dateLabel}
+                </Typography>
 
-            <Popover
-              active={popoverActive}
-              activator={
                 <IconButton
                   onClick={togglePopover}
                   sx={{
@@ -489,11 +649,25 @@ export default function MobileTopBar({
                 >
                   <CalendarMonthIcon fontSize="small" />
                 </IconButton>
-              }
+
+            <MuiPopover
+              open={Boolean(dateAnchorEl)}
+              anchorEl={dateAnchorEl}
               onClose={handleClose}
-              fullWidth={false}
-              preferInputActivator={false}
-              preferredAlignment="right"
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+              PaperProps={{
+                  sx: {
+                      mt: 1,
+                      borderRadius: 2,
+                      overflow: 'hidden',
+                      backdropFilter: 'blur(12px)',
+                      backgroundColor: isDark ? 'rgba(30, 30, 30, 0.6)' : 'rgba(255, 255, 255, 0.8)',
+                      border: '1px solid',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+                      boxShadow: isDark ? '0 8px 32px rgba(0, 0, 0, 0.5)' : '0 8px 32px rgba(0, 0, 0, 0.1)',
+                  }
+              }}
             >
               <Box
                 sx={{
@@ -503,6 +677,7 @@ export default function MobileTopBar({
                   overflowX: "hidden",
                   overflowY: "auto",
                   borderRadius: 1,
+                  bgcolor: "transparent",
                 }}
               >
                 {/* Presets Panel - Mobile */}
@@ -513,8 +688,8 @@ export default function MobileTopBar({
                     maxHeight: 320,
                     overflowY: "auto",
                     borderRight: "1px solid",
-                    borderColor: "divider",
-                    bgcolor: "background.paper",
+                    borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                    bgcolor: "transparent",
                   }}
                 >
                   <List disablePadding>
@@ -575,8 +750,8 @@ export default function MobileTopBar({
                     maxHeight: 320,
                     overflowY: "auto",
                     borderRight: "1px solid",
-                    borderColor: "divider",
-                    bgcolor: "background.paper",
+                    borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                    bgcolor: "transparent",
                   }}
                 >
                   <List disablePadding>
@@ -595,7 +770,7 @@ export default function MobileTopBar({
                               py: 1,
                               px: 1.5,
                               bgcolor: isSelected
-                                ? (isDark ? 'action.selecte' : 'grey.100')
+                                ? (isDark ? 'action.selected' : 'grey.100')
                                 : 'transparent',
                               '&:hover': {
                                 bgcolor: isDark ? 'black' : 'grey.100',
@@ -633,8 +808,15 @@ export default function MobileTopBar({
                 <Box
                   sx={{
                     p: 1,
-                    bgcolor: "background.paper",
                     minWidth: 200,
+                    bgcolor: "transparent",
+                    '& .Polaris-DatePicker': { background: 'transparent !important' },
+                    '& .Polaris-DatePicker__Month': { background: 'transparent !important' },
+                    '& .Polaris-DatePicker__Title': { color: isDark ? '#fff' : 'inherit' },
+                    '& .Polaris-DatePicker__Day': { color: isDark ? '#ddd' : 'inherit', '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.1)' : '' } },
+                    '& .Polaris-DatePicker__Day--today': { color: isDark ? '#fff' : 'inherit', fontWeight: 'bold' },
+                    '& .Polaris-DatePicker__Day--selected': { bgcolor: 'primary.main', color: '#fff' },
+                    '& .Polaris-DatePicker__Day--inRange': { bgcolor: isDark ? 'rgba(91, 163, 224, 0.3)' : 'rgba(11, 107, 203, 0.1)' },
                   }}
                 >
                   <DatePicker
@@ -647,29 +829,30 @@ export default function MobileTopBar({
                   />
                 </Box>
               </Box>
-            </Popover>
+            </MuiPopover>
+              </>
+            )}
 
-            {/* Mobile Drawer for UTM Filters */}
-
-            {/* Mobile Drawer for UTM Filters Removed (Moved to global MobileFilterDrawer) */}
           </Box>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{
-              display: { xs: 'block', md: 'none' },
-              mr: 0.5,
-              textAlign: 'right',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              maxWidth: '180px'
-            }}
-          >
-            Scope: <b>{Array.isArray(productValue) ? (productValue.length > 1 ? `${productValue.length} Products` : (productValue[0]?.label || 'All products')) : (productValue?.label || 'All products')}</b>
-          </Typography>
         </Box>
 
+      </Box>
+
+      {/* Scope Label - Mobile below the row */}
+      <Box sx={{ display: { xs: 'flex', md: 'none' }, justifyContent: 'flex-end', pr: 0.5 }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{
+            textAlign: 'right',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            maxWidth: '180px'
+          }}
+        >
+          Scope: <b>{Array.isArray(productValue) ? (productValue.length > 1 ? `${productValue.length} Products` : (productValue[0]?.label || 'All products')) : (productValue?.label || 'All products')}</b>
+        </Typography>
       </Box>
 
       {/* Active Filters Chips (Scrolling Marquee) */}

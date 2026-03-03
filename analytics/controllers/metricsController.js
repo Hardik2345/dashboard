@@ -1103,20 +1103,29 @@ function buildMetricsController() {
 
         console.log(`[TrafficSplit] Request for ${start} to ${end}`);
 
-        // Calculate previous directory
-        const startDate = new Date(start);
-        const endDate = new Date(end);
-        const diffTime = Math.abs(endDate - startDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // inclusive days
+        // Explicit compare range from query (compare mode) or auto-calculated
+        const explicitCompStart = req.query.compare_start;
+        const explicitCompEnd = req.query.compare_end;
+        let pStart, pEnd;
 
-        const prevEnd = new Date(startDate);
-        prevEnd.setDate(prevEnd.getDate() - 1);
-        const prevStart = new Date(prevEnd);
-        prevStart.setDate(prevStart.getDate() - diffDays + 1);
+        if (explicitCompStart && explicitCompEnd) {
+          pStart = explicitCompStart;
+          pEnd = explicitCompEnd;
+        } else {
+          const startDate = new Date(start);
+          const endDate = new Date(end);
+          const diffTime = Math.abs(endDate - startDate);
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // inclusive days
 
-        const formatDate = (d) => d.toISOString().split('T')[0];
-        const pStart = formatDate(prevStart);
-        const pEnd = formatDate(prevEnd);
+          const prevEnd = new Date(startDate);
+          prevEnd.setDate(prevEnd.getDate() - 1);
+          const prevStart = new Date(prevEnd);
+          prevStart.setDate(prevStart.getDate() - diffDays + 1);
+
+          const formatDate = (d) => d.toISOString().split('T')[0];
+          pStart = formatDate(prevStart);
+          pEnd = formatDate(prevEnd);
+        }
 
         console.log(`[TrafficSplit] Current: ${start} to ${end}, Previous: ${pStart} to ${pEnd}`);
 
@@ -1231,7 +1240,9 @@ function buildMetricsController() {
         const addDelta = (cat) => ({
           ...current[cat],
           delta: calcDelta(current[cat].sessions, previous[cat].sessions),
-          atc_delta: calcDelta(current[cat].atc_sessions, previous[cat].atc_sessions)
+          atc_delta: calcDelta(current[cat].atc_sessions, previous[cat].atc_sessions),
+          prev_sessions: previous[cat].sessions,
+          prev_atc_sessions: previous[cat].atc_sessions
         });
 
         const meta = addDelta('meta');
@@ -2005,7 +2016,15 @@ function buildMetricsController() {
           });
         }
 
-        const prevWin = previousWindow(start, end);
+        // Explicit compare range from query (compare mode) or auto-calculated
+        const explicitCompStart = req.query.compare_start;
+        const explicitCompEnd = req.query.compare_end;
+        let prevWin;
+        if (explicitCompStart && explicitCompEnd) {
+          prevWin = { prevStart: explicitCompStart, prevEnd: explicitCompEnd };
+        } else {
+          prevWin = previousWindow(start, end);
+        }
         let comparison = null;
         if (prevWin?.prevStart && prevWin?.prevEnd) {
           const comparisonAlignHour = end === todayIst ? alignHour : 23;
@@ -2297,7 +2316,15 @@ function buildMetricsController() {
         });
 
         let comparison = null;
-        const prevWin = previousWindow(start, end);
+        // Explicit compare range from query (compare mode) or auto-calculated
+        const explicitCompStartD = req.query.compare_start;
+        const explicitCompEndD = req.query.compare_end;
+        let prevWin;
+        if (explicitCompStartD && explicitCompEndD) {
+          prevWin = { prevStart: explicitCompStartD, prevEnd: explicitCompEndD };
+        } else {
+          prevWin = previousWindow(start, end);
+        }
         if (prevWin?.prevStart && prevWin?.prevEnd) {
           let compSql = `
             SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, 
@@ -2555,7 +2582,15 @@ function buildMetricsController() {
         });
 
         let comparison = null;
-        const prevWin = previousWindow(start, end);
+        // Explicit compare range from query (compare mode) or auto-calculated
+        const explicitCompStartM = req.query.compare_start;
+        const explicitCompEndM = req.query.compare_end;
+        let prevWin;
+        if (explicitCompStartM && explicitCompEndM) {
+          prevWin = { prevStart: explicitCompStartM, prevEnd: explicitCompEndM };
+        } else {
+          prevWin = previousWindow(start, end);
+        }
         if (prevWin?.prevStart && prevWin?.prevEnd) {
           let compSql = `
             SELECT 
@@ -3439,6 +3474,11 @@ function buildMetricsController() {
 
         if (start > end) return res.status(400).json({ error: 'start must be on or before end' });
 
+        // Explicit compare range from compare mode
+        const explicitCompareStart = req.query.compare_start ? req.query.compare_start.toString() : null;
+        const explicitCompareEnd = req.query.compare_end ? req.query.compare_end.toString() : null;
+        const hasExplicitCompare = !!(explicitCompareStart && explicitCompareEnd);
+
         const filters = extractFilters(req);
         const hasFilters = !!(filters.utm_source || filters.utm_medium || filters.utm_campaign || filters.sales_channel || filters.device_type);
 
@@ -3448,15 +3488,23 @@ function buildMetricsController() {
         mark('params');
 
         const isSingleDay = start === end;
-        const prevWin = previousWindow(start, end);
-        const prevStart = prevWin?.prevStart;
-        const prevEnd = prevWin?.prevEnd;
+        // Use explicit compare range if provided, else auto-calculate previous window
+        let prevStart, prevEnd;
+        if (hasExplicitCompare) {
+          prevStart = explicitCompareStart;
+          prevEnd = explicitCompareEnd;
+        } else {
+          const prevWin = previousWindow(start, end);
+          prevStart = prevWin?.prevStart;
+          prevEnd = prevWin?.prevEnd;
+        }
 
-        logger.debug(`[SUMMARY] Fetching for ${brandQuery} range ${start} to ${end}${prevStart && prevEnd ? ` (prev: ${prevStart} to ${prevEnd})` : ''}`);
+        logger.debug(`[SUMMARY] Fetching for ${brandQuery} range ${start} to ${end}${prevStart && prevEnd ? ` (prev: ${prevStart} to ${prevEnd})` : ''}${hasExplicitCompare ? ' [EXPLICIT COMPARE]' : ''}`);
         const cacheFetchStart = Date.now();
 
         // Batch fetch from cache when single-day so we can reuse existing cache keys.
-        const [cached, cachedPrev] = (isSingleDay && !hasFilters)
+        // Skip cache when explicit compare range is provided since we need custom previous range
+        const [cached, cachedPrev] = (isSingleDay && !hasFilters && !hasExplicitCompare)
           ? await fetchCachedMetricsBatch(brandQuery, [start, prevStart || prevDayStr(start)])
           : [null, null];
         mark('cache_fetch', cacheFetchStart);
@@ -3516,11 +3564,109 @@ function buildMetricsController() {
         const pad2 = (n) => String(n).padStart(2, '0');
         const todayIstStr = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
         const isTodayIst = isSingleDay && start === todayIstStr;
+        // For explicit compare: check if current range includes today (for hourly cutoff)
+        const currentRangeIncludesToday = start <= todayIstStr && end >= todayIstStr;
 
         let total_orders, total_sales, average_order_value, conversion_rate, total_sessions, total_atc_sessions;
         let sources = { current: 'db', previous: 'db' };
 
-        if (isTodayIst) {
+        if (hasExplicitCompare) {
+          // ---- EXPLICIT COMPARE MODE ----
+          // Fetch metrics for both current and compare ranges.
+          // If current range includes today, apply hourly cutoff to both ranges for fair comparison.
+          if (!req.brandDb && req.brandConfig) {
+            try { req.brandDbName = req.brandConfig.dbName || req.brandConfig.key; } catch (e) { }
+          }
+          const conn = req.brandDb ? req.brandDb.sequelize : null;
+          if (!conn) throw new Error("Database connection missing (tenant router required)");
+
+          // Hourly cutoff: seconds since midnight IST
+          const secondsNow = (nowIst.getUTCHours() * 3600) + (nowIst.getUTCMinutes() * 60) + nowIst.getUTCSeconds();
+          const fullDaySeconds = 24 * 3600;
+          // Apply hourly cutoff if current range includes today
+          const needsHourlyCutoff = currentRangeIncludesToday;
+          const cutoffTime = needsHourlyCutoff
+            ? (secondsNow >= fullDaySeconds ? '24:00:00' : `${pad2(Math.floor(secondsNow / 3600))}:${pad2(Math.floor((secondsNow % 3600) / 60))}:${pad2(secondsNow % 60)}`)
+            : '24:00:00';
+
+          // Helper: fetch metrics for a range with optional time cutoff
+          const getMetricsWithCutoff = async (s, e, cutoff) => {
+            // Orders
+            let orderSql = `SELECT COUNT(DISTINCT order_name) AS cnt FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND created_time < ?`;
+            const orderRepl = [s, e, cutoff];
+            if (filters) orderSql = appendUtmWhere(orderSql, orderRepl, filters);
+            const orderRows = await conn.query(orderSql, { type: QueryTypes.SELECT, replacements: orderRepl });
+
+            // Sales
+            let salesSql = `SELECT COALESCE(SUM(total_price),0) AS total FROM shopify_orders WHERE created_date >= ? AND created_date <= ? AND created_time < ?`;
+            const salesRepl = [s, e, cutoff];
+            if (filters) salesSql = appendUtmWhere(salesSql, salesRepl, filters);
+            const salesRows = await conn.query(salesSql, { type: QueryTypes.SELECT, replacements: salesRepl });
+
+            // Sessions (from hourly_sessions_summary_shopify)
+            const hourCutoff = parseInt(cutoff.split(':')[0], 10);
+            let sessSql, atcSql;
+            const hasUtm = hasUtmFilters(filters);
+            if (s === e) {
+              // Single day
+              if (hasUtm) {
+                sessSql = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date = ? AND hour <= ?`;
+                atcSql = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date = ? AND hour <= ?`;
+              } else {
+                sessSql = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date = ? AND hour <= ?`;
+                atcSql = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date = ? AND hour <= ?`;
+              }
+              const sessRows = await conn.query(sessSql, { type: QueryTypes.SELECT, replacements: [s, hourCutoff] });
+              const atcRows = await conn.query(atcSql, { type: QueryTypes.SELECT, replacements: [s, hourCutoff] });
+              const totalOrders = Number(orderRows?.[0]?.cnt || 0);
+              const totalSales = Number(salesRows?.[0]?.total || 0);
+              const totalSessions = Number(sessRows?.[0]?.total || 0);
+              const totalAtcSessions = Number(atcRows?.[0]?.total || 0);
+              return { total_orders: totalOrders, total_sales: totalSales, total_sessions: totalSessions, total_atc_sessions: totalAtcSessions };
+            } else {
+              // Multi-day range
+              sessSql = `SELECT COALESCE(SUM(COALESCE(adjusted_number_of_sessions, number_of_sessions)),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
+              atcSql = `SELECT COALESCE(SUM(number_of_atc_sessions),0) AS total FROM hourly_sessions_summary_shopify WHERE date >= ? AND date <= ? AND hour <= ?`;
+              const sessRows = await conn.query(sessSql, { type: QueryTypes.SELECT, replacements: [s, e, hourCutoff] });
+              const atcRows = await conn.query(atcSql, { type: QueryTypes.SELECT, replacements: [s, e, hourCutoff] });
+              const totalOrders = Number(orderRows?.[0]?.cnt || 0);
+              const totalSales = Number(salesRows?.[0]?.total || 0);
+              const totalSessions = Number(sessRows?.[0]?.total || 0);
+              const totalAtcSessions = Number(atcRows?.[0]?.total || 0);
+              return { total_orders: totalOrders, total_sales: totalSales, total_sessions: totalSessions, total_atc_sessions: totalAtcSessions };
+            }
+          };
+
+          const [currMetrics, prevMetrics] = await Promise.all([
+            getMetricsWithCutoff(start, end, cutoffTime),
+            getMetricsWithCutoff(prevStart, prevEnd, cutoffTime)
+          ]);
+
+          const buildMetric = (currVal, prevVal) => {
+            const diff = currVal - prevVal;
+            const diff_pct = prevVal > 0 ? (diff / prevVal) * 100 : (currVal > 0 ? 100 : 0);
+            const direction = diff > 0.0001 ? 'up' : diff < -0.0001 ? 'down' : 'flat';
+            return { value: currVal, previous: prevVal, diff, diff_pct, direction };
+          };
+
+          total_orders = buildMetric(currMetrics.total_orders, prevMetrics.total_orders);
+          total_sales = buildMetric(currMetrics.total_sales, prevMetrics.total_sales);
+          total_sessions = buildMetric(currMetrics.total_sessions, prevMetrics.total_sessions);
+          total_atc_sessions = buildMetric(currMetrics.total_atc_sessions, prevMetrics.total_atc_sessions);
+
+          // AOV
+          const currAov = currMetrics.total_orders > 0 ? currMetrics.total_sales / currMetrics.total_orders : 0;
+          const prevAov = prevMetrics.total_orders > 0 ? prevMetrics.total_sales / prevMetrics.total_orders : 0;
+          average_order_value = buildMetric(currAov, prevAov);
+
+          // CVR
+          const currCvr = currMetrics.total_sessions > 0 ? (currMetrics.total_orders / currMetrics.total_sessions) * 100 : 0;
+          const prevCvr = prevMetrics.total_sessions > 0 ? (prevMetrics.total_orders / prevMetrics.total_sessions) * 100 : 0;
+          conversion_rate = buildMetric(currCvr, prevCvr);
+
+          sources = { current: 'db', previous: 'db', compare_mode: 'explicit', hourly_cutoff: needsHourlyCutoff ? cutoffTime : null };
+
+        } else if (isTodayIst) {
           // Use time-aligned delta calculation
           if (!req.brandDb && req.brandConfig) {
             try { req.brandDbName = req.brandConfig.dbName || req.brandConfig.key; } catch (e) { }
