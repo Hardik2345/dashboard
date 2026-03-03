@@ -1,10 +1,10 @@
-const axios = require('axios');
-const crypto = require('crypto');
-const { LRUCache } = require('lru-cache');
-const logger = require('../utils/logger');
-const { getBrands } = require('../config/brands');
+const axios = require("axios");
+const crypto = require("crypto");
+const { LRUCache } = require("lru-cache");
+const logger = require("../utils/logger");
+const { getBrands } = require("../config/brands");
 
-const LOCAL_MODE = (process.env.LOCAL_MODE || '').toLowerCase() === 'true';
+const LOCAL_MODE = (process.env.LOCAL_MODE || "").toLowerCase() === "true";
 
 const CACHE_TTL_MS = Number(process.env.TENANT_ROUTER_CACHE_TTL_MS || 300_000); // 5 minutes
 const CACHE_MAX = Number(process.env.TENANT_ROUTER_CACHE_SIZE || 200);
@@ -17,11 +17,13 @@ const cache = new LRUCache({
 /* ── helpers for tenant-router mode ── */
 
 function decryptPassword(enc) {
-  if (!enc) return '';
+  if (!enc) return "";
   const key = process.env.PASSWORD_AES_KEY;
   if (!key) {
-    logger.error('[tenantRouterClient] PASSWORD_AES_KEY not set; cannot decrypt password');
-    return '';
+    logger.error(
+      "[tenantRouterClient] PASSWORD_AES_KEY not set; cannot decrypt password",
+    );
+    return "";
   }
   try {
     let buf = Buffer.from(key);
@@ -32,16 +34,18 @@ function decryptPassword(enc) {
     } else if (buf.length > 32) {
       buf = buf.slice(0, 32);
     }
-    const parts = enc.split(':');
-    if (parts.length !== 2) return '';
-    const iv = Buffer.from(parts[0], 'base64');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', buf, iv);
-    let dec = decipher.update(parts[1], 'base64', 'utf8');
-    dec += decipher.final('utf8');
+    const parts = enc.split(":");
+    if (parts.length !== 2) return "";
+    const iv = Buffer.from(parts[0], "base64");
+    const decipher = crypto.createDecipheriv("aes-256-cbc", buf, iv);
+    let dec = decipher.update(parts[1], "base64", "utf8");
+    dec += decipher.final("utf8");
     return dec;
   } catch (e) {
-    logger.error('[tenantRouterClient] password decrypt failed', { err: e.message });
-    return '';
+    logger.error("[tenantRouterClient] password decrypt failed", {
+      err: e.message,
+    });
+    return "";
   }
 }
 
@@ -69,27 +73,14 @@ function resolveFromEnv(brandKey) {
  * Priority: 1) LRU cache  2) Env vars  3) HTTP tenant-router service (MongoDB-backed).
  * Returns {route} or {error: 'not_found'|'suspended'|'unavailable'}.
  */
-async function resolveTenantRoute(brandKey) {
-  const key = (brandKey || '').toString().trim().toUpperCase();
-  if (!key) return { error: 'missing_brand' };
-
-  const cached = cache.get(key);
-  if (cached) {
-    logger.debug?.('[tenantRouterClient] cache hit', { brand: key, host: cached.host });
-    return cached;
-  }
-
-  // --- Priority 2: Env-var based resolution (no network call) ---
-  const envRoute = resolveFromEnv(key);
-  if (envRoute) {
-    logger.info('[tenantRouterClient] resolved from ENV vars', { brand: key, host: envRoute.host, db: envRoute.dbName });
-    cache.set(key, envRoute);
-    return envRoute;
-  }
+async function resolveFromTenantRouter(brandKey) {
+  const key = brandKey.toUpperCase();
 
   // --- Priority 3: HTTP call to tenant-router (MongoDB-backed CDS) ---
-  const baseUrl = (process.env.TENANT_ROUTER_URL || 'http://localhost:3004').replace(/\/+$/, '');
-  const token = process.env.TENANT_ROUTER_TOKEN || '';
+  const baseUrl = (
+    process.env.TENANT_ROUTER_URL || "http://localhost:3004"
+  ).replace(/\/+$/, "");
+  const token = process.env.TENANT_ROUTER_TOKEN || "";
 
   try {
     const res = await axios.post(
@@ -98,7 +89,7 @@ async function resolveTenantRoute(brandKey) {
       {
         timeout: Number(process.env.TENANT_ROUTER_TIMEOUT_MS || 5000),
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      }
+      },
     );
     const data = res.data || {};
     const password = decryptPassword(data.password);
@@ -107,45 +98,66 @@ async function resolveTenantRoute(brandKey) {
       dbName: data.database || key,
       host: data.rds_proxy_endpoint,
       port: Number(data.port || 3306),
-      user: data.user || '',
+      user: data.user || "",
       password,
     };
     if (!route.host || !route.user || !route.password) {
-      logger.error('[tenantRouterClient] incomplete route from tenant router', { brand: key });
-      return { error: 'routing_unavailable' };
+      logger.error("[tenantRouterClient] incomplete route from tenant router", {
+        brand: key,
+      });
+      return { error: "routing_unavailable" };
     }
-    logger.info('[tenantRouterClient] resolved route via HTTP', { brand: key, host: route.host, db: route.dbName });
-    cache.set(key, route);
+    logger.info("[tenantRouterClient] resolved route via HTTP", {
+      brand: key,
+      host: route.host,
+      db: route.dbName,
+    });
     return route;
   } catch (err) {
     const status = err?.response?.status;
-    if (status === 404) return { error: 'not_found' };
-    if (status === 403) return { error: 'suspended' };
-    logger.error('[tenantRouterClient] resolve failed', { brand: key, err: err.message, status });
-    return { error: 'routing_unavailable' };
+    if (status === 404) return { error: "not_found" };
+    if (status === 403) return { error: "suspended" };
+    logger.error("[tenantRouterClient] resolve failed", {
+      brand: key,
+      err: err.message,
+      status,
+    });
+    return { error: "routing_unavailable" };
   }
 }
 
 /* ── public entry point ── */
 
 async function resolveTenantRoute(brandKey) {
-  const key = (brandKey || '').toString().trim().toUpperCase();
-  if (!key) return { error: 'missing_brand' };
+  const key = (brandKey || "").toString().trim().toUpperCase();
+  if (!key) return { error: "missing_brand" };
 
   const cached = cache.get(key);
   if (cached) {
-    logger.debug?.('[tenantRouterClient] cache hit', { brand: key, host: cached.host });
+    logger.debug?.("[tenantRouterClient] cache hit", {
+      brand: key,
+      host: cached.host,
+    });
     return cached;
   }
 
   const route = LOCAL_MODE
-    ? await resolveFromEnv(key)
+    ? resolveFromEnv(key)
     : await resolveFromTenantRouter(key);
 
-  if (!route.error) cache.set(key, route);
+  if (!route) {
+    return { error: "not_found" };
+  }
+
+  if (!route.error) {
+    cache.set(key, route);
+  }
+
   return route;
 }
 
-logger.info(`[tenantRouterClient] mode=${LOCAL_MODE ? 'LOCAL (env)' : 'REMOTE (tenant-router)'}`);
+logger.info(
+  `[tenantRouterClient] mode=${LOCAL_MODE ? "LOCAL (env)" : "REMOTE (tenant-router)"}`,
+);
 
 module.exports = { resolveTenantRoute };
