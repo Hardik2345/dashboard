@@ -48,7 +48,8 @@ const filterSlice = createSlice({
   name: 'filters',
   initialState: {
     range: loadInitialRange(),
-    compareMode: null,
+    compareMode: false,
+    compareDateRange: [null, null],
     selectedMetric: DEFAULT_TREND_METRIC,
     productSelection: [DEFAULT_PRODUCT_OPTION],
     utm: loadInitialUtm(),
@@ -66,7 +67,20 @@ const filterSlice = createSlice({
       state.range = [toIso(start), toIso(end)];
     },
     setCompareMode(state, action) {
-      state.compareMode = action.payload || null;
+      state.compareMode = !!action.payload;
+      if (!action.payload) {
+        state.compareDateRange = [null, null];
+      }
+    },
+    setCompareDateRange(state, action) {
+      const next = Array.isArray(action.payload) ? action.payload : [];
+      const [start, end] = next;
+      const toIso = (v) => {
+        if (!v) return null;
+        const d = dayjs(v);
+        return d.isValid() ? d.toISOString() : null;
+      };
+      state.compareDateRange = [toIso(start), toIso(end)];
     },
     setSelectedMetric(state, action) {
       state.selectedMetric = action.payload || DEFAULT_TREND_METRIC;
@@ -114,5 +128,5 @@ const filterSlice = createSlice({
   },
 });
 
-export const { setRange, setCompareMode, setSelectedMetric, setProductSelection, setUtm, setSalesChannel, setDeviceType } = filterSlice.actions;
+export const { setRange, setCompareMode, setCompareDateRange, setSelectedMetric, setProductSelection, setUtm, setSalesChannel, setDeviceType } = filterSlice.actions;
 export default filterSlice.reducer;
