@@ -37,6 +37,7 @@ export default function KPIs({
   utmOptions, // Prop from App
   showRow = null, // null for both, 1 for row 1, 2 for row 2
   showWebVitals = true,
+  compareMode = false,
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -57,7 +58,8 @@ export default function KPIs({
   const utmCampaign = query?.utm_campaign;
   const salesChannel = query?.sales_channel;
   const deviceType = query?.device_type;
-  const compare = query?.compare;
+  const compareStart = query?.compare_start;
+  const compareEnd = query?.compare_end;
 
   // Web Vitals Hook
   const webVitalsData = useWebVitals(query, 'Performance');
@@ -130,8 +132,13 @@ export default function KPIs({
         });
     } else {
       const base = brandKey
-        ? { start, end, brand_key: brandKey, align: "hour", utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, device_type: deviceType, compare }
-        : { start, end, align: "hour", utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, device_type: deviceType, compare };
+        ? { start, end, brand_key: brandKey, align: "hour", utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, device_type: deviceType }
+        : { start, end, align: "hour", utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, device_type: deviceType };
+      if (compareStart && compareEnd) {
+        base.compare_start = compareStart;
+        base.compare_end = compareEnd;
+        base._t = Date.now(); // cache-bust for compare mode
+      }
 
       // Fetch summary first for fast value rendering (cache-backed)
       getDashboardSummary(base)
@@ -202,6 +209,16 @@ export default function KPIs({
             direction: atcRateDiff > 0.00001 ? 'up' : atcRateDiff < -0.00001 ? 'down' : 'flat',
           };
 
+          // Extract previous (compare) values when available
+          const cmpOrders = m.total_orders?.previous ?? null;
+          const cmpSales = m.total_sales?.previous ?? null;
+          const cmpAov = m.average_order_value?.previous ?? null;
+          const cmpCvr = m.conversion_rate?.previous ?? null;
+          const cmpSessions = m.total_sessions?.previous ?? null;
+          const cmpAtcSessions = m.total_atc_sessions?.previous ?? null;
+          const cmpAtcRate = (cmpSessions != null && cmpAtcSessions != null && cmpSessions > 0)
+            ? cmpAtcSessions / cmpSessions : null;
+
           setData((prev) => ({
             ...prev,
             orders,
@@ -216,6 +233,14 @@ export default function KPIs({
             sessDelta,
             atcDelta,
             atcRateDelta,
+            // Compare values
+            prevOrders: cmpOrders,
+            prevSales: cmpSales,
+            prevAov: cmpAov,
+            prevCvr: cmpCvr,
+            prevSessions: cmpSessions,
+            prevAtcSessions: cmpAtcSessions,
+            prevAtcRate: cmpAtcRate,
           }));
           setLoading(false);
           setDeltaLoading(false);
@@ -232,7 +257,7 @@ export default function KPIs({
     return () => {
       cancelled = true;
     };
-  }, [start, end, brandKey, refreshKey, isProductScoped, scopedProductId, onLoaded, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, compare]);
+  }, [start, end, brandKey, refreshKey, isProductScoped, scopedProductId, onLoaded, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, compareStart, compareEnd]);
 
   const totalSessions = data.cvr?.total_sessions || data.funnel?.total_sessions || 0;
   const totalAtcSessions = data.funnel?.total_atc_sessions || 0;
@@ -328,6 +353,8 @@ export default function KPIs({
                   onSelectMetric ? () => onSelectMetric("orders") : undefined
                 }
                 selected={selectedMetric === "orders"}
+                compareValue={compareMode && data.prevOrders != null ? data.prevOrders : undefined}
+                compareFormatter={(v) => nfInt.format(v)}
               />
             </Grid>
             <Grid size={{ xs: 6, sm: 6, md: 3 }}>
@@ -390,6 +417,8 @@ export default function KPIs({
                 }
                 selected={selectedMetric === "sales"}
                 activeColor={revenueMode === 'G' ? '#10b981' : '#3b82f6'}
+                compareValue={compareMode && data.prevSales != null ? (revenueMode === 'G' ? data.prevSales : data.prevSales / 1.18) : undefined}
+                compareFormatter={(v) => nfMoney.format(v)}
               />
             </Grid>
             <Grid size={{ xs: 6, sm: 6, md: 3 }}>
@@ -409,6 +438,8 @@ export default function KPIs({
                 }
                 onSelect={onSelectMetric ? () => onSelectMetric("aov") : undefined}
                 selected={selectedMetric === "aov"}
+                compareValue={compareMode && data.prevAov != null ? data.prevAov : undefined}
+                compareFormatter={(v) => nfMoney2.format(v)}
               />
             </Grid>
             <Grid size={{ xs: 6, sm: 6, md: 3 }}>
@@ -427,6 +458,8 @@ export default function KPIs({
                   }
                   onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
                   selected={selectedMetric === "cvr"}
+                  compareValue={compareMode && data.prevCvr != null ? data.prevCvr / 100 : undefined}
+                  compareFormatter={(v) => nfPct.format(v)}
                 />
               ) : (
                 /* New Web Performance position for desktop Row 1 */
@@ -461,6 +494,8 @@ export default function KPIs({
                     }
                     onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
                     selected={selectedMetric === "cvr"}
+                    compareValue={compareMode && data.prevCvr != null ? data.prevCvr / 100 : undefined}
+                    compareFormatter={(v) => nfPct.format(v)}
                   />
                 )
               )}
@@ -490,6 +525,8 @@ export default function KPIs({
                   onSelectMetric ? () => onSelectMetric("sessions") : undefined
                 }
                 selected={selectedMetric === "sessions"}
+                compareValue={compareMode && data.prevSessions != null ? data.prevSessions : undefined}
+                compareFormatter={(v) => nfInt.format(v)}
               />
             </Grid>
             <Grid size={{ xs: 6, sm: 4, md: showWebVitals ? 4 : 6 }}>
@@ -562,6 +599,8 @@ export default function KPIs({
                 onSelect={onSelectMetric ? () => onSelectMetric(atcMode === 'S' ? "atc" : "atc_rate") : undefined}
                 selected={selectedMetric === "atc" || selectedMetric === "atc_rate"}
                 activeColor={atcMode === 'S' ? '#10b981' : '#f59e0b'}
+                compareValue={compareMode ? (atcMode === 'S' && data.prevAtcSessions != null ? data.prevAtcSessions : atcMode === 'R' && data.prevAtcRate != null ? data.prevAtcRate : undefined) : undefined}
+                compareFormatter={atcMode === 'S' ? ((v) => nfInt.format(v)) : ((v) => nfPct.format(v))}
               />
             </Grid>
           </>
@@ -608,6 +647,8 @@ export default function KPIs({
                     }
                     onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
                     selected={selectedMetric === "cvr"}
+                    compareValue={compareMode && data.prevCvr != null ? data.prevCvr / 100 : undefined}
+                    compareFormatter={(v) => nfPct.format(v)}
                   />
                 ) : null
               )}

@@ -65,6 +65,7 @@ import {
   setProductSelection,
   setRange,
   setCompareMode,
+  setCompareDateRange,
   setSelectedMetric,
   setUtm,
   setSalesChannel,
@@ -164,6 +165,7 @@ export default function App() {
   const {
     range,
     compareMode,
+    compareDateRange,
     selectedMetric,
     productSelection,
     utm,
@@ -396,11 +398,19 @@ export default function App() {
       const ids = products.map((p) => p.id).filter(Boolean);
       if (ids.length > 0) base.product_id = ids;
     }
+
+    // Compare mode: pass compare date range
+    if (compareMode && compareDateRange?.[0] && compareDateRange?.[1]) {
+      base.compare_start = formatDate(dayjs(compareDateRange[0]));
+      base.compare_end = formatDate(dayjs(compareDateRange[1]));
+    }
+
     return base;
   }, [
     start,
     end,
     compareMode,
+    compareDateRange,
     activeBrandKey,
     isAuthor,
     authorRefreshKey,
@@ -714,6 +724,24 @@ export default function App() {
   const handleDeviceTypeChange = useCallback(
     (val) => {
       dispatch(setDeviceType(val));
+    },
+    [dispatch],
+  );
+
+  const handleCompareModeChange = useCallback(
+    (enabled) => {
+      dispatch(setCompareMode(enabled));
+      if (!enabled) {
+        dispatch(setCompareDateRange([null, null]));
+      }
+    },
+    [dispatch],
+  );
+
+  const handleCompareDateRangeChange = useCallback(
+    (nextRange) => {
+      if (!Array.isArray(nextRange)) return;
+      dispatch(setCompareDateRange(nextRange));
     },
     [dispatch],
   );
@@ -1402,6 +1430,11 @@ export default function App() {
                                 )
                         }
                         isAuthor={isAuthor}
+                        // Compare Mode Props
+                        compareMode={compareMode}
+                        onCompareModeChange={handleCompareModeChange}
+                        compareDateRange={compareDateRange}
+                        onCompareDateRangeChange={handleCompareDateRangeChange}
                         // Filter Props
                         productOptions={productOptions}
                         productValue={productSelection}
@@ -1463,6 +1496,10 @@ export default function App() {
                       value={normalizedRange}
                       onChange={handleRangeChange}
                       brandKey={activeBrandKey}
+                      compareMode={compareMode}
+                      onCompareModeChange={handleCompareModeChange}
+                      compareDateRange={compareDateRange}
+                      onCompareDateRangeChange={handleCompareDateRangeChange}
                       showProductFilter={hasPermission("product_filter")}
                       productOptions={productOptions}
                       productValue={productSelection}
@@ -1561,6 +1598,7 @@ export default function App() {
                               utmOptions={utmOptions}
                               showRow={1}
                               showWebVitals={hasPermission("web_vitals")}
+                              compareMode={compareMode}
                             />
 
                             <Grid container spacing={2}>
@@ -1592,6 +1630,7 @@ export default function App() {
                                     utmOptions={utmOptions}
                                     showRow={isMobile ? "sessions_atc" : 2}
                                     showWebVitals={hasPermission("web_vitals")}
+                                    compareMode={compareMode}
                                   />
                                   <HourlySalesCompare
                                     query={trendMetricsQuery}
@@ -1755,7 +1794,7 @@ export default function App() {
                               <ModeOfPayment query={generalMetricsQuery} />
                             )}
                             {hasPermission("traffic_split") && (
-                              <TrafficSourceSplit query={generalMetricsQuery} />
+                              <TrafficSourceSplit query={generalMetricsQuery} compareMode={compareMode} />
                             )}
                           </Stack>
                         </Suspense>

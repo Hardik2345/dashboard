@@ -2,6 +2,9 @@ const axios = require('axios');
 const crypto = require('crypto');
 const { LRUCache } = require('lru-cache');
 const logger = require('../utils/logger');
+const { getBrands } = require('../config/brands');
+
+const LOCAL_MODE = (process.env.LOCAL_MODE || '').toLowerCase() === 'true';
 
 const CACHE_TTL_MS = Number(process.env.TENANT_ROUTER_CACHE_TTL_MS || 300_000); // 5 minutes
 const CACHE_MAX = Number(process.env.TENANT_ROUTER_CACHE_SIZE || 200);
@@ -10,6 +13,8 @@ const cache = new LRUCache({
   ttl: CACHE_TTL_MS,
   updateAgeOnGet: true,
 });
+
+/* ── helpers for tenant-router mode ── */
 
 function decryptPassword(enc) {
   if (!enc) return '';
@@ -40,20 +45,37 @@ function decryptPassword(enc) {
   }
 }
 
-/**
- * Resolve tenant routing via tenant-router service.
- * Returns {route} or {error: 'not_found'|'suspended'|'unavailable'}.
- */
-async function resolveTenantRoute(brandKey) {
-  const key = (brandKey || '').toString().trim().toUpperCase();
-  if (!key) return { error: 'missing_brand' };
+/* ── LOCAL_MODE: resolve from .env via config/brands.js ── */
 
-  const cached = cache.get(key);
-  if (cached) {
-    logger.debug?.('[tenantRouterClient] cache hit', { brand: key, host: cached.host });
-    return cached;
+async function resolveFromEnv(key) {
+  const brands = getBrands();
+  const cfg = brands[key];
+  if (!cfg) {
+    logger.error('[tenantRouterClient] brand not found in env config', { brand: key });
+    return { error: 'not_found' };
   }
 
+  if (!cfg.dbHost || !cfg.dbUser || !cfg.dbPass) {
+    logger.error('[tenantRouterClient] incomplete brand config in env', { brand: key });
+    return { error: 'routing_unavailable' };
+  }
+
+  const route = {
+    brandId: key,
+    dbName: cfg.dbName || key,
+    host: cfg.dbHost,
+    port: Number(cfg.dbPort || 3306),
+    user: cfg.dbUser,
+    password: cfg.dbPass,
+  };
+
+  logger.info('[tenantRouterClient] resolved route from env', { brand: key, host: route.host, db: route.dbName });
+  return route;
+}
+
+/* ── Normal mode: resolve via tenant-router HTTP service (MongoDB-backed) ── */
+
+async function resolveFromTenantRouter(key) {
   const baseUrl = (process.env.TENANT_ROUTER_URL || 'http://localhost:3004').replace(/\/+$/, '');
   const token = process.env.TENANT_ROUTER_TOKEN || '';
 
@@ -80,8 +102,7 @@ async function resolveTenantRoute(brandKey) {
       logger.error('[tenantRouterClient] incomplete route from tenant router', { brand: key });
       return { error: 'routing_unavailable' };
     }
-    logger.info('[tenantRouterClient] resolved route', { brand: key, host: route.host, db: route.dbName });
-    cache.set(key, route);
+    logger.info('[tenantRouterClient] resolved route via tenant-router', { brand: key, host: route.host, db: route.dbName });
     return route;
   } catch (err) {
     const status = err?.response?.status;
@@ -91,5 +112,27 @@ async function resolveTenantRoute(brandKey) {
     return { error: 'routing_unavailable' };
   }
 }
+
+/* ── public entry point ── */
+
+async function resolveTenantRoute(brandKey) {
+  const key = (brandKey || '').toString().trim().toUpperCase();
+  if (!key) return { error: 'missing_brand' };
+
+  const cached = cache.get(key);
+  if (cached) {
+    logger.debug?.('[tenantRouterClient] cache hit', { brand: key, host: cached.host });
+    return cached;
+  }
+
+  const route = LOCAL_MODE
+    ? await resolveFromEnv(key)
+    : await resolveFromTenantRouter(key);
+
+  if (!route.error) cache.set(key, route);
+  return route;
+}
+
+logger.info(`[tenantRouterClient] mode=${LOCAL_MODE ? 'LOCAL (env)' : 'REMOTE (tenant-router)'}`);
 
 module.exports = { resolveTenantRoute };

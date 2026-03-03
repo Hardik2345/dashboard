@@ -31,6 +31,7 @@ import {
     Search,
     X,
     AlertTriangle,
+    ArrowLeftRight,
 } from 'lucide-react';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { DatePicker } from '@shopify/polaris';
@@ -56,6 +57,11 @@ export default function UnifiedFilterBar({
     brands = [],
     onBrandChange,
     isAuthor,
+    // Compare Mode Props
+    compareMode = false,
+    onCompareModeChange,
+    compareDateRange,
+    onCompareDateRangeChange,
     // Filter Props
     productOptions = [],
     productValue,
@@ -85,6 +91,7 @@ export default function UnifiedFilterBar({
     const [utmExpanded, setUtmExpanded] = useState(false); // Toggle visibility of UTM settings
     const [expandedAccordion, setExpandedAccordion] = useState('channel'); // Default expanded
     const [productSearch, setProductSearch] = useState('');
+    const [compareToggleAnchor, setCompareToggleAnchor] = useState(null);
 
     const handleAccordionChange = (panel) => (event, isExpanded) => {
         setExpandedAccordion(isExpanded ? panel : false);
@@ -94,6 +101,14 @@ export default function UnifiedFilterBar({
     const [month, setMonth] = useState((end || start || dayjs()).month());
     const [year, setYear] = useState((end || start || dayjs()).year());
 
+    // --- Compare Date Picker State ---
+    const [compDateAnchor, setCompDateAnchor] = useState(null);
+    const [compMonth, setCompMonth] = useState((compareDateRange?.[0] ? dayjs(compareDateRange[0]) : dayjs()).month());
+    const [compYear, setCompYear] = useState((compareDateRange?.[0] ? dayjs(compareDateRange[0]) : dayjs()).year());
+
+    const compStart = compareDateRange?.[0] ? dayjs(compareDateRange[0]) : null;
+    const compEnd = compareDateRange?.[1] ? dayjs(compareDateRange[1]) : null;
+
     // --- Date Logic ---
     useEffect(() => {
         const focus = end || start;
@@ -102,6 +117,14 @@ export default function UnifiedFilterBar({
             setYear(focus.year());
         }
     }, [start, end, dateAnchor]); // Update when opening
+
+    useEffect(() => {
+        const focus = compEnd || compStart;
+        if (focus) {
+            setCompMonth(focus.month());
+            setCompYear(focus.year());
+        }
+    }, [compStart, compEnd, compDateAnchor]);
 
     const handleDateClick = (event) => setDateAnchor(event.currentTarget);
     const handleDateClose = () => setDateAnchor(null);
@@ -119,6 +142,45 @@ export default function UnifiedFilterBar({
     };
 
     const dateLabel = useMemo(() => {
+        if (!start) return "Select dates";
+        if (start && end && start.isSame(end, 'day')) return start.format("MMM DD, YYYY");
+        return `${start.format("MMM DD")} - ${end ? end.format("MMM DD, YYYY") : '...'}`;
+    }, [start, end]);
+
+    // --- Compare Mode Logic ---
+    const handleCompareModeToggle = (enable) => {
+        setCompareToggleAnchor(null);
+        if (enable) {
+            if (onCompareModeChange) onCompareModeChange(true);
+            // Auto-compute compare date: same duration, 7 days back
+            // (yesterday would be identical to the default comparison)
+            if (start && end) {
+                const duration = end.diff(start, 'day');
+                const compEnd = start.subtract(7, 'day');
+                const compStart = compEnd.subtract(duration, 'day');
+                if (onCompareDateRangeChange) onCompareDateRangeChange([compStart, compEnd]);
+            }
+        } else {
+            if (onCompareModeChange) onCompareModeChange(false);
+        }
+    };
+
+    const handleCompDateClick = (event) => setCompDateAnchor(event.currentTarget);
+    const handleCompDateClose = () => setCompDateAnchor(null);
+
+    const handleCompCalendarChange = ({ start: ns, end: ne }) => {
+        const s = ns ? dayjs(ns).startOf("day") : null;
+        const e = ne ? dayjs(ne).startOf("day") : null;
+        if (onCompareDateRangeChange) onCompareDateRangeChange([s, e ?? s ?? null]);
+    };
+
+    const compDateLabel = useMemo(() => {
+        if (!compStart) return "Compare";
+        if (compStart && compEnd && compStart.isSame(compEnd, 'day')) return compStart.format("MMM DD, YYYY");
+        return `${compStart.format("MMM DD")} - ${compEnd ? compEnd.format("MMM DD, YYYY") : '...'}`;
+    }, [compStart, compEnd]);
+
+    const currDateLabel = useMemo(() => {
         if (!start) return "Select dates";
         if (start && end && start.isSame(end, 'day')) return start.format("MMM DD, YYYY");
         return `${start.format("MMM DD")} - ${end ? end.format("MMM DD, YYYY") : '...'}`;
@@ -284,7 +346,8 @@ export default function UnifiedFilterBar({
                 {showUtm && (
                     <Box sx={{ px: 0.75, display: 'flex', alignItems: 'center' }}>
                         <IconButton
-                            onClick={toggleUtmExpanded}
+                            onClick={compareMode ? undefined : toggleUtmExpanded}
+                            disabled={compareMode}
                             size="small"
                             sx={{
                                 width: 32,
@@ -445,23 +508,88 @@ export default function UnifiedFilterBar({
                     </Collapse>
                 )}
 
-                {/* 3. Date Segment */}
+                {/* 3. Compare Toggle */}
                 <Button
-                    onClick={handleDateClick}
-                    startIcon={<CalendarDays size={16} />}
+                    onClick={(e) => setCompareToggleAnchor(e.currentTarget)}
                     endIcon={<ChevronDown size={14} />}
+                    startIcon={<ArrowLeftRight size={14} />}
                     sx={{
-                        px: 2,
+                        px: 1.5,
                         height: '100%',
-                        color: 'text.primary',
+                        color: compareMode ? 'primary.main' : 'text.secondary',
                         textTransform: 'none',
-                        fontWeight: 500,
-                        fontSize: '0.875rem',
+                        fontWeight: 600,
+                        fontSize: '0.8rem',
                         borderRadius: 0,
+                        whiteSpace: 'nowrap',
                         '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
                     }}
                 >
-                    {dateLabel}
+                    {compareMode ? 'Compare' : 'No comparison'}
+                </Button>
+
+                <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+
+                {/* 3b. Compare Date ("To") - Only in compare mode */}
+                {compareMode && (
+                    <>
+                        <Button
+                            onClick={handleCompDateClick}
+                            sx={{
+                                px: 1.5,
+                                height: '100%',
+                                color: 'text.primary',
+                                textTransform: 'none',
+                                fontWeight: 500,
+                                fontSize: '0.8rem',
+                                borderRadius: 0,
+                                whiteSpace: 'nowrap',
+                                bgcolor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                                '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)' }
+                            }}
+                        >
+                            <Box component="span" sx={{
+                                fontSize: '0.65rem',
+                                fontWeight: 700,
+                                color: 'text.secondary',
+                                mr: 0.75,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                            }}>To:</Box>
+                            {compDateLabel}
+                        </Button>
+                        <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+                    </>
+                )}
+
+                {/* 3c. Current Date Segment */}
+                <Button
+                    onClick={handleDateClick}
+                    startIcon={!compareMode ? <CalendarDays size={16} /> : undefined}
+                    endIcon={!compareMode ? <ChevronDown size={14} /> : undefined}
+                    sx={{
+                        px: compareMode ? 1.5 : 2,
+                        height: '100%',
+                        color: compareMode ? '#5ba3e0' : 'text.primary',
+                        textTransform: 'none',
+                        fontWeight: compareMode ? 600 : 500,
+                        fontSize: compareMode ? '0.8rem' : '0.875rem',
+                        borderRadius: 0,
+                        whiteSpace: 'nowrap',
+                        '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                    }}
+                >
+                    {compareMode && (
+                        <Box component="span" sx={{
+                            fontSize: '0.65rem',
+                            fontWeight: 700,
+                            color: '#5ba3e0',
+                            mr: 0.75,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                        }}>Curr:</Box>
+                    )}
+                    {compareMode ? currDateLabel : dateLabel}
                 </Button>
 
                 {(showBrand || showDivision) && <Divider orientation="vertical" flexItem sx={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />}
@@ -497,17 +625,20 @@ export default function UnifiedFilterBar({
                 {/* 5. Division/Filters Segment */}
                 {showDivision && (
                     <Button
-                        onClick={handleFilterClick}
+                        onClick={compareMode ? undefined : handleFilterClick}
+                        disabled={compareMode}
                         endIcon={<ChevronDown size={14} />}
                         sx={{
                             px: 2,
                             height: '100%',
-                            color: 'text.primary',
+                            color: compareMode ? 'text.disabled' : 'text.primary',
                             textTransform: 'none',
                             fontWeight: 500,
                             fontSize: '0.875rem',
                             borderRadius: 0,
-                            '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }
+                            opacity: compareMode ? 0.5 : 1,
+                            cursor: compareMode ? 'not-allowed' : 'pointer',
+                            '&:hover': { bgcolor: compareMode ? 'transparent' : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)') }
                         }}
                     >
                         Division(All)
@@ -578,14 +709,16 @@ export default function UnifiedFilterBar({
                 }}
             >
                 <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' } }}>
-                    {/* Presets */}
-                    <List sx={{ minWidth: 140, bgcolor: 'transparent', borderRight: '1px solid', borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.1)', py: 0 }}>
-                        {DATE_PRESETS.map((p) => (
-                            <ListItemButton key={p.label} onClick={() => handlePresetSelect(p)} dense sx={{ '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' } }}>
-                                <ListItemText primary={p.label} primaryTypographyProps={{ variant: 'body2' }} />
-                            </ListItemButton>
-                        ))}
-                    </List>
+                    {/* Presets - hidden in compare mode */}
+                    {!compareMode && (
+                        <List sx={{ minWidth: 140, bgcolor: 'transparent', borderRight: '1px solid', borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.1)', py: 0 }}>
+                            {DATE_PRESETS.map((p) => (
+                                <ListItemButton key={p.label} onClick={() => handlePresetSelect(p)} dense sx={{ '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' } }}>
+                                    <ListItemText primary={p.label} primaryTypographyProps={{ variant: 'body2' }} />
+                                </ListItemButton>
+                            ))}
+                        </List>
+                    )}
                     {/* Calendar */}
                     <Box sx={{
                         p: 2,
@@ -607,6 +740,87 @@ export default function UnifiedFilterBar({
                             allowRange
                         />
                     </Box>
+                </Box>
+            </Popover>
+
+            {/* Compare Toggle Popover */}
+            <Popover
+                open={Boolean(compareToggleAnchor)}
+                anchorEl={compareToggleAnchor}
+                onClose={() => setCompareToggleAnchor(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                PaperProps={{
+                    sx: {
+                        mt: 0.5,
+                        borderRadius: 2,
+                        minWidth: 160,
+                        backdropFilter: 'blur(12px)',
+                        backgroundColor: isDark ? 'rgba(30, 30, 30, 0.8)' : 'rgba(255, 255, 255, 0.9)',
+                        border: '1px solid',
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+                        boxShadow: isDark ? '0 8px 32px rgba(0, 0, 0, 0.5)' : '0 8px 32px rgba(0, 0, 0, 0.1)',
+                    }
+                }}
+            >
+                <List dense sx={{ py: 0.5 }}>
+                    <ListItemButton
+                        selected={!compareMode}
+                        onClick={() => handleCompareModeToggle(false)}
+                        sx={{ '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' } }}
+                    >
+                        <ListItemText primary="No comparison" primaryTypographyProps={{ variant: 'body2', fontWeight: !compareMode ? 600 : 400 }} />
+                    </ListItemButton>
+                    <ListItemButton
+                        selected={compareMode}
+                        onClick={() => handleCompareModeToggle(true)}
+                        sx={{ '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' } }}
+                    >
+                        <ListItemText primary="Compare" primaryTypographyProps={{ variant: 'body2', fontWeight: compareMode ? 600 : 400 }} />
+                    </ListItemButton>
+                </List>
+            </Popover>
+
+            {/* Compare Date Popover ("To" calendar - no presets) */}
+            <Popover
+                open={Boolean(compDateAnchor)}
+                anchorEl={compDateAnchor}
+                onClose={handleCompDateClose}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                PaperProps={{
+                    sx: {
+                        mt: 1,
+                        borderRadius: 2,
+                        overflow: 'hidden',
+                        maxWidth: 'fit-content',
+                        backdropFilter: 'blur(12px)',
+                        backgroundColor: isDark ? 'rgba(30, 30, 30, 0.6)' : 'rgba(255, 255, 255, 0.8)',
+                        border: '1px solid',
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+                        boxShadow: isDark ? '0 8px 32px rgba(0, 0, 0, 0.5)' : '0 8px 32px rgba(0, 0, 0, 0.1)',
+                    }
+                }}
+            >
+                <Box sx={{
+                    p: 2,
+                    maxWidth: 350,
+                    '& .Polaris-DatePicker': { background: 'transparent !important' },
+                    '& .Polaris-DatePicker__Month': { background: 'transparent !important' },
+                    '& .Polaris-DatePicker__Title': { color: isDark ? '#fff' : 'inherit' },
+                    '& .Polaris-DatePicker__Day': { color: isDark ? '#ddd' : 'inherit', '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.1)' : '' } },
+                    '& .Polaris-DatePicker__Day--today': { color: isDark ? '#fff' : 'inherit', fontWeight: 'bold' },
+                    '& .Polaris-DatePicker__Day--selected': { bgcolor: 'primary.main', color: '#fff' },
+                    '& .Polaris-DatePicker__Day--inRange': { bgcolor: isDark ? 'rgba(91, 163, 224, 0.3)' : 'rgba(11, 107, 203, 0.1)' },
+                }}>
+                    <DatePicker
+                        month={compMonth}
+                        year={compYear}
+                        onChange={handleCompCalendarChange}
+                        onMonthChange={(m, y) => { setCompMonth(m); setCompYear(y); }}
+                        selected={compStart && compEnd ? { start: compStart.toDate(), end: compEnd.toDate() } : undefined}
+                        allowRange
+                    />
                 </Box>
             </Popover>
 
