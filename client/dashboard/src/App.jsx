@@ -1514,6 +1514,7 @@ export default function App() {
                       showUtmFilter={hasPermission("utm_filter")}
                       showSalesChannel={hasPermission("sales_channel_filter")}
                       utmOptions={utmOptions}
+                      isAuthor={isAuthor}
                     />
                   )}
                 </Box>
@@ -1794,7 +1795,10 @@ export default function App() {
                               <ModeOfPayment query={generalMetricsQuery} />
                             )}
                             {hasPermission("traffic_split") && (
-                              <TrafficSourceSplit query={generalMetricsQuery} compareMode={compareMode} />
+                              <TrafficSourceSplit
+                                query={generalMetricsQuery}
+                                compareMode={compareMode}
+                              />
                             )}
                           </Stack>
                         </Suspense>

@@ -706,38 +706,46 @@ export default function UnifiedFilterBar({
           </Collapse>
         )}
 
-        {/* 3. Compare Toggle */}
-        <Button
-          onClick={(e) => setCompareToggleAnchor(e.currentTarget)}
-          endIcon={<ChevronDown size={14} />}
-          startIcon={<ArrowLeftRight size={14} />}
-          sx={{
-            px: 1.5,
-            height: "100%",
-            color: compareMode ? "primary.main" : "text.secondary",
-            textTransform: "none",
-            fontWeight: 600,
-            fontSize: "0.8rem",
-            borderRadius: 0,
-            whiteSpace: "nowrap",
-            "&:hover": {
-              bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)",
-            },
-          }}
-        >
-          {compareMode ? "Compare" : "No comparison"}
-        </Button>
+        {/* 3. Compare Toggle - ONLY FOR ADMINS */}
+        {isAuthor && (
+          <>
+            <Button
+              onClick={(e) => setCompareToggleAnchor(e.currentTarget)}
+              endIcon={<ChevronDown size={14} />}
+              startIcon={<ArrowLeftRight size={14} />}
+              sx={{
+                px: 1.5,
+                height: "100%",
+                color: compareMode ? "primary.main" : "text.secondary",
+                textTransform: "none",
+                fontWeight: 600,
+                fontSize: "0.8rem",
+                borderRadius: 0,
+                whiteSpace: "nowrap",
+                "&:hover": {
+                  bgcolor: isDark
+                    ? "rgba(255,255,255,0.05)"
+                    : "rgba(0,0,0,0.03)",
+                },
+              }}
+            >
+              {compareMode ? "Compare" : "No comparison"}
+            </Button>
 
-        <Divider
-          orientation="vertical"
-          flexItem
-          sx={{
-            borderColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
-          }}
-        />
+            <Divider
+              orientation="vertical"
+              flexItem
+              sx={{
+                borderColor: isDark
+                  ? "rgba(255,255,255,0.1)"
+                  : "rgba(0,0,0,0.1)",
+              }}
+            />
+          </>
+        )}
 
         {/* 3b. Compare Date ("To") - Only in compare mode */}
-        {compareMode && (
+        {isAuthor && compareMode && (
           <>
             <Button
               onClick={handleCompDateClick}
