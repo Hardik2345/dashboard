@@ -21,6 +21,8 @@ const alertSchema = new mongoose.Schema({
   quiet_hours_end: { type: Number },
   last_triggered_at: { type: Date },
   current_state: { type: String, enum: ['NORMAL', 'TRIGGERED', 'CRITICAL'], default: 'NORMAL' },
+  is_dsl_engine_alert: { type: Boolean, default: false },
+  trigger_mode: { type: String, enum: ['alert_system', 'dsl_engine'], default: 'alert_system' },
 }, { collection: 'alerts' });
 
 alertSchema.index({ brand_id: 1, is_active: 1 });

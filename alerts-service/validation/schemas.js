@@ -125,6 +125,26 @@ const AlertSchema = z.object({
     }
     return val;
   }, z.union([z.number().int().min(0).max(1), z.null()])).optional(),
+  is_dsl_engine_alert: z.preprocess((val) => {
+    if (val === undefined) return undefined;
+    if (typeof val === 'boolean') return val;
+    if (typeof val === 'number') return val !== 0;
+    if (typeof val === 'string') {
+      const trimmed = val.trim().toLowerCase();
+      if (['1', 'true', 'yes', 'on'].includes(trimmed)) return true;
+      if (['0', 'false', 'no', 'off'].includes(trimmed)) return false;
+    }
+    return val;
+  }, z.boolean()).optional(),
+  trigger_mode: z.preprocess((val) => {
+    if (val === undefined) return undefined;
+    if (val === null) return undefined;
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      return trimmed.length ? trimmed : undefined;
+    }
+    return val;
+  }, z.enum(['alert_system', 'dsl_engine'])).optional(),
   current_state: z.enum(['NORMAL', 'TRIGGERED', 'CRITICAL']).optional(),
 }).superRefine((data, ctx) => {
   if (data.metric_type === 'derived' && !data.formula) {
