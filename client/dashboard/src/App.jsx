@@ -607,32 +607,57 @@ export default function App() {
     brandsLoaded,
   ]);
 
-  // Viewer Brand Enforcement (Primary > Persisted)
-  const [viewerBrandEnforced, setViewerBrandEnforced] = useState(false);
+  // Brand Enforcement on Load (URL Parameter > Primary Brand > Persisted)
+  const [brandEnforcementDone, setBrandEnforcementDone] = useState(false);
   useEffect(() => {
-    if (isAuthor || !user || viewerBrandEnforced) return;
+    if (!initialized || !user || brandEnforcementDone) return;
 
-    // Logic: If user has a primary brand, and they have access to it,
-    // we should prioritize it on first load over the persisted 'globalBrandKey'
-    // IF the user is a viewer.
-    const primary = (user.primary_brand_id || "")
-      .toString()
-      .trim()
-      .toUpperCase();
+    let enforcedBrand = null;
     const current = (globalBrandKey || "").toString().trim().toUpperCase();
 
-    if (primary && viewerBrands.includes(primary)) {
-      if (current !== primary) {
-        handleAuthorBrandChange(primary);
+    // 1. Check URL parameters
+    const params = new URLSearchParams(window.location.search);
+    const urlBrand = params.get("brand");
+
+    if (urlBrand) {
+      const normalizedUrl = urlBrand.trim().toUpperCase();
+      // For authors, we assume the URL brand is acceptable for now.
+      // It will be strictly validated later when authorBrands loaded.
+      const isValidUrlBrand = isAuthor || viewerBrands.includes(normalizedUrl);
+
+      if (isValidUrlBrand) {
+        enforcedBrand = normalizedUrl;
+        // Clean URL
+        params.delete("brand");
+        const newSearch = params.toString() ? `?${params.toString()}` : "";
+        const newUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}${newSearch}${window.location.hash}`;
+        window.history.replaceState({ path: newUrl }, "", newUrl);
       }
     }
-    setViewerBrandEnforced(true);
+
+    // 2. If no valid URL brand, and user is viewer, check Primary
+    if (!enforcedBrand && !isAuthor) {
+      const primary = (user.primary_brand_id || "")
+        .toString()
+        .trim()
+        .toUpperCase();
+      if (primary && viewerBrands.includes(primary)) {
+        enforcedBrand = primary;
+      }
+    }
+
+    if (enforcedBrand && current !== enforcedBrand) {
+      handleAuthorBrandChange(enforcedBrand);
+    }
+
+    setBrandEnforcementDone(true);
   }, [
-    isAuthor,
+    initialized,
     user,
+    isAuthor,
     viewerBrands,
     globalBrandKey,
-    viewerBrandEnforced,
+    brandEnforcementDone,
     handleAuthorBrandChange,
   ]);
 
