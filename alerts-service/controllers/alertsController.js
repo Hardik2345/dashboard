@@ -3,7 +3,37 @@ const { requireBrandKey } = require('../utils/brandHelpers');
 const { getBrandById } = require('../config/brands');
 const logger = require('../utils/logger');
 
-function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNextSeq }) {
+function buildAlertsController({
+  Alert,
+  AlertChannel,
+  BrandAlertChannel,
+  getNextSeq,
+  alertConfigEventPublisher,
+}) {
+  async function publishConfigEventSafe(req, eventType, alertRow) {
+    if (!alertConfigEventPublisher || typeof alertConfigEventPublisher.publishAlertConfigEvent !== 'function') {
+      return;
+    }
+
+    try {
+      await alertConfigEventPublisher.publishAlertConfigEvent({
+        eventType,
+        alert: alertRow,
+        traceId: req.headers['x-trace-id'],
+        correlationId: req.headers['x-correlation-id'],
+      });
+    } catch (err) {
+      const src = typeof alertRow?.toJSON === 'function' ? alertRow.toJSON() : (alertRow || {});
+      // DB write wins; publish failures are non-blocking and logged.
+      logger.warn('[alerts-events] publish failed after alert write', {
+        eventType,
+        alertId: src.id,
+        brandId: src.brand_id,
+        error: err.message,
+      });
+    }
+  }
+
   function hourToDisplay(value) {
     if (value === null || value === undefined) return '';
     const num = Number(value);
@@ -68,6 +98,9 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
       recipients = Array.isArray(options.channelConfig?.to) ? options.channelConfig.to : [];
     }
 
+    const isDslEngineAlert = src.is_dsl_engine_alert === true;
+    const triggerMode = src.trigger_mode || (isDslEngineAlert ? 'dsl_engine' : 'alert_system');
+
     return {
       id: src.id != null ? src.id : src._id,
       name: src.name || null,
@@ -85,6 +118,8 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
       lookback_end: null,
       lookback_days: src.lookback_days != null ? Number(src.lookback_days) : null,
       have_recipients: src.have_recipients ? 1 : 0,
+      is_dsl_engine_alert: isDslEngineAlert,
+      trigger_mode: triggerMode,
       quiet_hours_start: hourToDisplay(src.quiet_hours_start),
       quiet_hours_end: hourToDisplay(src.quiet_hours_end),
       recipients,
@@ -93,6 +128,30 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
       current_state: src.current_state || 'NORMAL',
       created_at: src.created_at,
       updated_at: src.updated_at || src.created_at,
+    };
+  }
+
+  function resolveTriggerOwnership(payload, existing = null) {
+    const hasTriggerMode = payload.trigger_mode !== undefined;
+    const hasDslFlag = payload.is_dsl_engine_alert !== undefined;
+    const isDslEngineAlert = hasDslFlag
+      ? payload.is_dsl_engine_alert === true
+      : (existing?.is_dsl_engine_alert === true);
+
+    let triggerMode = hasTriggerMode ? payload.trigger_mode : undefined;
+    if (!triggerMode) {
+      if (hasDslFlag) {
+        triggerMode = isDslEngineAlert ? 'dsl_engine' : 'alert_system';
+      } else if (existing?.trigger_mode) {
+        triggerMode = existing.trigger_mode;
+      } else {
+        triggerMode = isDslEngineAlert ? 'dsl_engine' : 'alert_system';
+      }
+    }
+
+    return {
+      is_dsl_engine_alert: isDslEngineAlert,
+      trigger_mode: triggerMode,
     };
   }
 
@@ -112,6 +171,7 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
 
     const quietStart = parseHourInput(payload.quiet_hours_start, existing?.quiet_hours_start ?? null);
     const quietEnd = parseHourInput(payload.quiet_hours_end, existing?.quiet_hours_end ?? null);
+    const triggerOwnership = resolveTriggerOwnership(payload, existing);
 
     return {
       brand_id: brandId,
@@ -126,6 +186,8 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
       cooldown_minutes: cooldown,
       lookback_days: resolvedLookback,
       have_recipients: payload.have_recipients ? 1 : 0,
+      is_dsl_engine_alert: triggerOwnership.is_dsl_engine_alert,
+      trigger_mode: triggerOwnership.trigger_mode,
       quiet_hours_start: quietStart,
       quiet_hours_end: quietEnd,
       is_active: isActive ? 1 : 0,
@@ -242,6 +304,7 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
         }).lean();
       }
 
+      await publishConfigEventSafe(req, 'alert.config.created', created);
       return res.status(201).json({ alert: formatAlertRow(created, { channelConfig: parseChannelConfig(brandChannel?.channel_config), individualChannel }) });
     } catch (err) {
       logger.error('[alerts] create failed', err);
@@ -272,7 +335,7 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
       if (brandInfo.error) return res.status(400).json({ error: brandInfo.error });
       const values = buildAlertValues({ ...data, brand_key: brandInfo.key }, brandInfo.brandId, existing);
 
-      await Alert.updateOne(query, { $set: values });
+      await Alert.updateOne(query, { $set: { ...values, updated_at: new Date() } });
 
       // If we have a numeric ID (either queried or existing), use it for AlertChannel
       const alertId = existing.id;
@@ -311,6 +374,7 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
       }
 
       const updated = await Alert.findOne(query);
+      await publishConfigEventSafe(req, 'alert.config.updated', updated);
       return res.json({ alert: formatAlertRow(updated, { channelConfig: parseChannelConfig(brandChannel?.channel_config), individualChannel }) });
     } catch (err) {
       logger.error('[alerts] update failed', err);
@@ -331,6 +395,7 @@ function buildAlertsController({ Alert, AlertChannel, BrandAlertChannel, getNext
 
       const deleted = await Alert.deleteOne(query);
       if (!deleted.deletedCount) return res.status(404).json({ error: 'Alert not found' });
+      await publishConfigEventSafe(req, 'alert.config.deleted', existing);
       return res.json({ success: true });
     } catch (err) {
       logger.error('[alerts] delete failed', err);
