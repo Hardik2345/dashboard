@@ -10,7 +10,9 @@ const { getBrands } = require("./config/brands");
 const { buildAlertsRouter } = require("./routes/alerts");
 const { requireAuthor } = require("./middlewares/auth");
 const { getNextSeq } = require("./utils/counters");
-const { buildAlertConfigEventPublisher } = require('./services/alertConfigEventPublisher');
+const {
+  buildAlertConfigEventPublisher,
+} = require("./services/alertConfigEventPublisher");
 const Alert = require("./models/alert");
 const AlertChannel = require("./models/alertChannel");
 const BrandAlertChannel = require("./models/brandAlertChannel");
@@ -35,12 +37,12 @@ app.use(
   "/alerts",
   requireAuthor,
   buildAlertsRouter({
-  Alert,
-  AlertChannel,
-  BrandAlertChannel,
-  getNextSeq,
-  alertConfigEventPublisher,
-}),
+    Alert,
+    AlertChannel,
+    BrandAlertChannel,
+    getNextSeq,
+    alertConfigEventPublisher,
+  }),
 );
 const Session = require("./models/session");
 
@@ -94,16 +96,40 @@ app.post("/push/receive", async (req, res) => {
       stored_at: new Date(),
     });
 
+    // Extract hour range from email body (e.g., "0-17h")
+    const emailContent =
+      typeof payload.email_body === "string"
+        ? payload.email_body
+        : payload.email_body?.html || "";
+    const hourMatch = emailContent.match(/(\d+-\d+h)/);
+    const hourRange = hourMatch ? hourMatch[1] : "";
+
     // Build FCM notification headline
     const evt = payload.event || {};
     const delta = Math.abs(evt.delta_percent || 0).toFixed(2);
-    const direction = (evt.delta_percent || 0) < 0 ? "Dropped" : "Rose";
-    const metric = (evt.metric || "metric").replace(/_/g, " ");
-    const state = evt.current_state || "ALERT";
-    const brand = evt.brand || "";
-    const title = `${state}: ${metric} ${direction} by ${delta}% | ${brand}`;
+    const direction = (evt.delta_percent || 0) < 0 ? "Drop" : "Rise";
+    const rawMetric = evt.metric || "metric";
+    const formattedMetric = rawMetric
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+
+    const brand = evt.brand || "System";
+    const currentValue =
+      evt.current_value !== undefined ? evt.current_value.toFixed(2) : "0.00";
+
+    // New Title Format: NEULIFE | Low Speed Alert | 50.00 | 3.85% Drop | 0-17h
+    const titleParts = [
+      brand,
+      formattedMetric,
+      currentValue,
+      `${delta}% ${direction}`,
+    ];
+    if (hourRange) titleParts.push(hourRange);
+    const title = titleParts.join(" | ");
     const body =
-      evt.condition || `${metric} ${direction.toLowerCase()} by ${delta}%`;
+      evt.condition ||
+      `${formattedMetric} ${direction.toLowerCase()} by ${delta}%`;
 
     // Send FCM push to all registered devices (fire-and-forget)
     sendToAll(mongoose.connection, title, body, {
