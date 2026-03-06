@@ -19,6 +19,7 @@ const {
   computeMetricDelta,
   computeTotalSessions,
   computeAtcSessions,
+  computeReturnCounts,
   hasUtmFilters,
   appendUtmWhere,
   extractUtmParam,
@@ -1487,12 +1488,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
 
         // Cache check
@@ -1541,12 +1540,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
 
         // Cache check
@@ -1597,12 +1594,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         const align = (req.query.align || "").toString().toLowerCase();
         const compare = (req.query.compare || "").toString().toLowerCase();
@@ -1628,12 +1623,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         const align = (req.query.align || "").toString().toLowerCase();
         const compare = (req.query.compare || "").toString().toLowerCase();
@@ -1660,12 +1653,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         const date = end || start || null;
         const align = (req.query.align || "").toString().toLowerCase();
@@ -1827,12 +1818,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         const date = end || start || null;
         const align = (req.query.align || "").toString().toLowerCase();
@@ -1899,12 +1888,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         const date = end || start || null;
         const align = (req.query.align || "").toString().toLowerCase();
@@ -1971,12 +1958,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         const date = end || start || null;
         const align = (req.query.align || "").toString().toLowerCase();
@@ -2299,12 +2284,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
 
         // Cache check
@@ -2359,12 +2342,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
 
         // Cache check
@@ -2419,12 +2400,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         const productIdRaw = (req.query.product_id || "").toString().trim();
 
@@ -2513,12 +2492,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         const productIdRaw = (req.query.product_id || "").toString().trim();
         const filters = extractFilters(req);
@@ -2660,12 +2637,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         const productIdRaw = (req.query.product_id || "").toString().trim();
         const filters = extractFilters(req);
@@ -2781,12 +2756,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success) {
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         }
         const { start, end } = parsed.data;
         const rangeStart = start || end;
@@ -2868,12 +2841,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success) {
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         }
         const { start, end } = parsed.data;
         const rangeStart = start || end;
@@ -2944,12 +2915,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success) {
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         }
         const { start, end } = parsed.data;
         const rangeStart = start || end;
@@ -3056,12 +3025,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         if (!start || !end)
           return res
@@ -3631,12 +3598,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         if (!start || !end)
           return res
@@ -4207,12 +4172,10 @@ function buildMetricsController() {
           end: req.query.end,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         if (!start || !end)
           return res
@@ -4443,12 +4406,10 @@ function buildMetricsController() {
           end: req.query.end || todayStr,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         if (start && end && start > end)
           return res
@@ -4906,12 +4867,10 @@ function buildMetricsController() {
           end: req.query.end || todayStr,
         });
         if (!parsed.success)
-          return res
-            .status(400)
-            .json({
-              error: "Invalid date range",
-              details: parsed.error.flatten(),
-            });
+          return res.status(400).json({
+            error: "Invalid date range",
+            details: parsed.error.flatten(),
+          });
         const { start, end } = parsed.data;
         if (start && end && start > end)
           return res
@@ -4941,7 +4900,14 @@ function buildMetricsController() {
         const sortCol = allowedSort.get(sortBy) || "sessions";
         const dir = sortDir === "asc" ? "ASC" : "DESC";
 
-        const validFields = ["sessions", "atc", "atc_rate", "orders", "sales", "cvr"];
+        const validFields = [
+          "sessions",
+          "atc",
+          "atc_rate",
+          "orders",
+          "sales",
+          "cvr",
+        ];
         const validOps = ["gt", "lt"];
         const filterReplacements = [];
         const conditions = [];
@@ -4959,11 +4925,15 @@ function buildMetricsController() {
           filters = [];
         }
 
-        const singleField = (req.query.filter_field || "").toString().toLowerCase();
+        const singleField = (req.query.filter_field || "")
+          .toString()
+          .toLowerCase();
         if (filters.length === 0 && singleField) {
           filters.push({
             field: singleField,
-            operator: (req.query.filter_operator || "").toString().toLowerCase(),
+            operator: (req.query.filter_operator || "")
+              .toString()
+              .toLowerCase(),
             value: req.query.filter_value,
           });
         }
@@ -4987,12 +4957,26 @@ function buildMetricsController() {
             ) {
               let fieldExpr = "";
               switch (fField) {
-                case "sessions": fieldExpr = "s.sessions"; break;
-                case "atc": fieldExpr = "s.atc"; break;
-                case "atc_rate": fieldExpr = "(CASE WHEN s.sessions > 0 THEN s.atc / s.sessions * 100 ELSE 0 END)"; break;
-                case "orders": fieldExpr = "COALESCE(o.orders, 0)"; break;
-                case "sales": fieldExpr = "COALESCE(o.sales, 0)"; break;
-                case "cvr": fieldExpr = "(CASE WHEN s.sessions > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)"; break;
+                case "sessions":
+                  fieldExpr = "s.sessions";
+                  break;
+                case "atc":
+                  fieldExpr = "s.atc";
+                  break;
+                case "atc_rate":
+                  fieldExpr =
+                    "(CASE WHEN s.sessions > 0 THEN s.atc / s.sessions * 100 ELSE 0 END)";
+                  break;
+                case "orders":
+                  fieldExpr = "COALESCE(o.orders, 0)";
+                  break;
+                case "sales":
+                  fieldExpr = "COALESCE(o.sales, 0)";
+                  break;
+                case "cvr":
+                  fieldExpr =
+                    "(CASE WHEN s.sessions > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)";
+                  break;
               }
               if (fieldExpr) {
                 const operator = fOp === "gt" ? ">" : "<";
@@ -5003,7 +4987,8 @@ function buildMetricsController() {
           }
         }
 
-        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+        const whereClause =
+          conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
         const replacements = [start, end, start, end, ...filterReplacements];
 
         let visibleColumns = req.query.visible_columns;
@@ -5605,6 +5590,8 @@ function buildMetricsController() {
               average_order_value: cachedData.average_order_value,
               conversion_rate: cachedData.conversion_rate,
               conversion_rate_percent: cachedData.conversion_rate,
+              cancelled_orders: cachedData.cancelled_orders || 0,
+              refunded_orders: cachedData.refunded_orders || 0,
               source: "cache",
             };
           }
@@ -5626,7 +5613,7 @@ function buildMetricsController() {
               "Database connection missing (tenant router required)",
             );
 
-          const [sales, orders, sessions, atc, cvrObj, aovObj] =
+          const [sales, orders, sessions, atc, cvrObj, aovObj, returnsObj] =
             await Promise.all([
               computeTotalSales({ start: s, end: e, conn, filters }),
               computeTotalOrders({ start: s, end: e, conn, filters }),
@@ -5634,6 +5621,7 @@ function buildMetricsController() {
               computeAtcSessions({ start: s, end: e, conn, filters }),
               computeCVR({ start: s, end: e, conn, filters }),
               aovForRange({ start: s, end: e, conn, filters }),
+              computeReturnCounts({ start: s, end: e, conn, filters }),
             ]);
 
           const aovVal =
@@ -5648,6 +5636,8 @@ function buildMetricsController() {
             average_order_value: aovVal,
             conversion_rate: cvrObj.cvr,
             conversion_rate_percent: cvrObj.cvr_percent,
+            cancelled_orders: returnsObj.cancelled_orders,
+            refunded_orders: returnsObj.refunded_orders,
             source: "db",
           };
         };
@@ -5666,7 +5656,9 @@ function buildMetricsController() {
           average_order_value,
           conversion_rate,
           total_sessions,
-          total_atc_sessions;
+          total_atc_sessions,
+          cancelled_orders,
+          refunded_orders;
         let sources = { current: "db", previous: "db" };
 
         if (hasExplicitCompare) {
@@ -5745,11 +5737,19 @@ function buildMetricsController() {
               const totalSales = Number(salesRows?.[0]?.total || 0);
               const totalSessions = Number(sessRows?.[0]?.total || 0);
               const totalAtcSessions = Number(atcRows?.[0]?.total || 0);
+              const returnCounts = await computeReturnCounts({
+                start: s,
+                end: e,
+                conn,
+                filters,
+              });
               return {
                 total_orders: totalOrders,
                 total_sales: totalSales,
                 total_sessions: totalSessions,
                 total_atc_sessions: totalAtcSessions,
+                cancelled_orders: returnCounts.cancelled_orders,
+                refunded_orders: returnCounts.refunded_orders,
               };
             } else {
               // Multi-day range
@@ -5767,11 +5767,19 @@ function buildMetricsController() {
               const totalSales = Number(salesRows?.[0]?.total || 0);
               const totalSessions = Number(sessRows?.[0]?.total || 0);
               const totalAtcSessions = Number(atcRows?.[0]?.total || 0);
+              const returnCounts = await computeReturnCounts({
+                start: s,
+                end: e,
+                conn,
+                filters,
+              });
               return {
                 total_orders: totalOrders,
                 total_sales: totalSales,
                 total_sessions: totalSessions,
                 total_atc_sessions: totalAtcSessions,
+                cancelled_orders: returnCounts.cancelled_orders,
+                refunded_orders: returnCounts.refunded_orders,
               };
             }
           };
@@ -5811,6 +5819,14 @@ function buildMetricsController() {
           total_atc_sessions = buildMetric(
             currMetrics.total_atc_sessions,
             prevMetrics.total_atc_sessions,
+          );
+          cancelled_orders = buildMetric(
+            currMetrics.cancelled_orders,
+            prevMetrics.cancelled_orders,
+          );
+          refunded_orders = buildMetric(
+            currMetrics.refunded_orders,
+            prevMetrics.refunded_orders,
           );
 
           // AOV
@@ -5854,33 +5870,48 @@ function buildMetricsController() {
               "Database connection missing (tenant router required)",
             );
 
-          const [ordersRes, salesRes, sessionsRes, atcRes, aovRes, cvrRes] =
-            await Promise.all([
-              calcTotalOrdersDelta({
-                start,
-                end,
-                align: "hour",
-                conn,
-                filters,
-              }),
-              calcTotalSalesDelta({ start, end, align: "hour", conn, filters }),
-              calcTotalSessionsDelta({
-                start,
-                end,
-                align: "hour",
-                conn,
-                filters,
-              }),
-              calcAtcSessionsDelta({
-                start,
-                end,
-                align: "hour",
-                conn,
-                filters,
-              }),
-              calcAovDelta({ start, end, align: "hour", conn, filters }),
-              calcCvrDelta({ start, end, align: "hour", conn, filters }),
-            ]);
+          const [
+            ordersRes,
+            salesRes,
+            sessionsRes,
+            atcRes,
+            aovRes,
+            cvrRes,
+            curReturns,
+            prevReturns,
+          ] = await Promise.all([
+            calcTotalOrdersDelta({
+              start,
+              end,
+              align: "hour",
+              conn,
+              filters,
+            }),
+            calcTotalSalesDelta({ start, end, align: "hour", conn, filters }),
+            calcTotalSessionsDelta({
+              start,
+              end,
+              align: "hour",
+              conn,
+              filters,
+            }),
+            calcAtcSessionsDelta({
+              start,
+              end,
+              align: "hour",
+              conn,
+              filters,
+            }),
+            calcAovDelta({ start, end, align: "hour", conn, filters }),
+            calcCvrDelta({ start, end, align: "hour", conn, filters }),
+            computeReturnCounts({ start, end, conn, filters }),
+            computeReturnCounts({
+              start: prevStart,
+              end: prevEnd,
+              conn,
+              filters,
+            }),
+          ]);
 
           let deltaOrdersRes,
             deltaSalesRes,
@@ -5949,6 +5980,48 @@ function buildMetricsController() {
             ]);
           }
 
+          let deltaReturnsRes = null;
+          if (filters.sales_channel) {
+            const { sales_channel, ...filtersWithoutChannel } = filters;
+            const [cRetGlob, pRetGlob] = await Promise.all([
+              computeReturnCounts({
+                start,
+                end,
+                conn,
+                filters: filtersWithoutChannel,
+              }),
+              computeReturnCounts({
+                start: prevStart,
+                end: prevEnd,
+                conn,
+                filters: filtersWithoutChannel,
+              }),
+            ]);
+            // Construct pseudo delta response
+            deltaReturnsRes = {
+              cancelled_orders: {
+                diff_pct: computePercentDelta(
+                  cRetGlob.cancelled_orders,
+                  pRetGlob.cancelled_orders,
+                ).diff_pct,
+                direction: computePercentDelta(
+                  cRetGlob.cancelled_orders,
+                  pRetGlob.cancelled_orders,
+                ).direction,
+              },
+              refunded_orders: {
+                diff_pct: computePercentDelta(
+                  cRetGlob.refunded_orders,
+                  pRetGlob.refunded_orders,
+                ).diff_pct,
+                direction: computePercentDelta(
+                  cRetGlob.refunded_orders,
+                  pRetGlob.refunded_orders,
+                ).direction,
+              },
+            };
+          }
+
           const mkMetric = (res, deltaRes) => {
             // Use current/previous from PRIMARY (Filtered) result for VALUE display
             // But if deltaRes exists, use ITS diff_pct and direction for the DELTA pill.
@@ -5996,6 +6069,41 @@ function buildMetricsController() {
               direction: d.direction,
             };
           }
+
+          cancelled_orders = {
+            value: curReturns.cancelled_orders,
+            previous: prevReturns.cancelled_orders,
+            diff: curReturns.cancelled_orders - prevReturns.cancelled_orders,
+            diff_pct: deltaReturnsRes
+              ? deltaReturnsRes.cancelled_orders.diff_pct
+              : computePercentDelta(
+                  curReturns.cancelled_orders,
+                  prevReturns.cancelled_orders,
+                ).diff_pct,
+            direction: deltaReturnsRes
+              ? deltaReturnsRes.cancelled_orders.direction
+              : computePercentDelta(
+                  curReturns.cancelled_orders,
+                  prevReturns.cancelled_orders,
+                ).direction,
+          };
+          refunded_orders = {
+            value: curReturns.refunded_orders,
+            previous: prevReturns.refunded_orders,
+            diff: curReturns.refunded_orders - prevReturns.refunded_orders,
+            diff_pct: deltaReturnsRes
+              ? deltaReturnsRes.refunded_orders.diff_pct
+              : computePercentDelta(
+                  curReturns.refunded_orders,
+                  prevReturns.refunded_orders,
+                ).diff_pct,
+            direction: deltaReturnsRes
+              ? deltaReturnsRes.refunded_orders.direction
+              : computePercentDelta(
+                  curReturns.refunded_orders,
+                  prevReturns.refunded_orders,
+                ).direction,
+          };
         } else {
           // Standard full-day calculation (existing logic)
           // 1. Fetch filtered metrics (Primary)
@@ -6046,7 +6154,7 @@ function buildMetricsController() {
               if (!s || !e) return null;
               const conn = req.brandDb ? req.brandDb.sequelize : null;
               if (!conn) return null; // Should be connected by now
-              const [sales, orders, sessions, atc, cvrObj, aovObj] =
+              const [sales, orders, sessions, atc, cvrObj, aovObj, returnsObj] =
                 await Promise.all([
                   computeTotalSales({
                     start: s,
@@ -6084,6 +6192,12 @@ function buildMetricsController() {
                     conn,
                     filters: filtersWithoutChannel,
                   }),
+                  computeReturnCounts({
+                    start: s,
+                    end: e,
+                    conn,
+                    filters: filtersWithoutChannel,
+                  }),
                 ]);
               const aovVal =
                 typeof aovObj === "object" && aovObj !== null
@@ -6096,6 +6210,8 @@ function buildMetricsController() {
                 total_atc_sessions: atc,
                 average_order_value: aovVal,
                 conversion_rate_percent: cvrObj.cvr_percent,
+                cancelled_orders: returnsObj.cancelled_orders,
+                refunded_orders: returnsObj.refunded_orders,
               };
             };
 
@@ -6166,6 +6282,20 @@ function buildMetricsController() {
           );
           total_atc_sessions = calcHybrid(
             "total_atc_sessions",
+            current,
+            previous,
+            currentGlobal,
+            previousGlobal,
+          );
+          cancelled_orders = calcHybrid(
+            "cancelled_orders",
+            current,
+            previous,
+            currentGlobal,
+            previousGlobal,
+          );
+          refunded_orders = calcHybrid(
+            "refunded_orders",
             current,
             previous,
             currentGlobal,
@@ -6292,6 +6422,8 @@ function buildMetricsController() {
             conversion_rate,
             total_sessions,
             total_atc_sessions,
+            cancelled_orders,
+            refunded_orders,
           },
           sources,
         };

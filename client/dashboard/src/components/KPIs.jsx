@@ -3,10 +3,7 @@ import Grid from "@mui/material/Grid2";
 import { Stack, Typography, Box, useTheme, useMediaQuery } from "@mui/material";
 import { GlassChip } from "./ui/GlassChip.jsx";
 import KPIStat from "./KPIStat.jsx";
-import {
-  getDashboardSummary,
-  getProductKpis,
-} from "../lib/api.js";
+import { getDashboardSummary, getProductKpis } from "../lib/api.js";
 import useWebVitals from "../hooks/useWebVitals.js";
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
@@ -40,13 +37,14 @@ export default function KPIs({
   compareMode = false,
 }) {
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const isDark = theme.palette.mode === 'dark';
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isDark = theme.palette.mode === "dark";
   const [loading, setLoading] = useState(true);
   const [deltaLoading, setDeltaLoading] = useState(true);
   const [data, setData] = useState({});
-  const [revenueMode, setRevenueMode] = useState('G'); // 'T' | 'G'
-  const [atcMode, setAtcMode] = useState('S'); // 'S' (Sessions) | 'R' (Rate)
+  const [revenueMode, setRevenueMode] = useState("G"); // 'T' | 'G'
+  const [atcMode, setAtcMode] = useState("S"); // 'S' (Sessions) | 'R' (Rate)
+  const [cancellationMode, setCancellationMode] = useState("C"); // 'C' | 'R'
   const start = query?.start;
   const end = query?.end;
   const brandKey = query?.brand_key;
@@ -62,7 +60,7 @@ export default function KPIs({
   const compareEnd = query?.compare_end;
 
   // Web Vitals Hook
-  const webVitalsData = useWebVitals(query, 'Performance');
+  const webVitalsData = useWebVitals(query, "Performance");
 
   const scopeLabel = useMemo(() => {
     if (!isProductScoped) return "All products";
@@ -98,7 +96,8 @@ export default function KPIs({
 
           const orders = { value: resp.total_orders ?? 0 };
           const sales = { value: resp.total_sales ?? 0 };
-          const aovValue = orders.value > 0 ? resp.total_sales / orders.value : 0;
+          const aovValue =
+            orders.value > 0 ? resp.total_sales / orders.value : 0;
 
           const funnel = {
             total_sessions: resp.sessions ?? 0,
@@ -119,7 +118,26 @@ export default function KPIs({
             total_orders: orders.value,
           };
 
-          setData((prev) => ({ ...prev, orders, sales, aov, cvr, funnel }));
+          const returnsData = {
+            cancelled_orders: resp.cancelled_orders ?? 0,
+            refunded_orders: resp.refunded_orders ?? 0,
+            cancelled_rate:
+              orders.value > 0
+                ? (resp.cancelled_orders ?? 0) / orders.value
+                : 0,
+            refunded_rate:
+              orders.value > 0 ? (resp.refunded_orders ?? 0) / orders.value : 0,
+          };
+
+          setData((prev) => ({
+            ...prev,
+            orders,
+            sales,
+            aov,
+            cvr,
+            funnel,
+            returnsData,
+          }));
           setLoading(false);
           setDeltaLoading(false);
           if (typeof onLoaded === "function") {
@@ -132,8 +150,27 @@ export default function KPIs({
         });
     } else {
       const base = brandKey
-        ? { start, end, brand_key: brandKey, align: "hour", utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, device_type: deviceType }
-        : { start, end, align: "hour", utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, device_type: deviceType };
+        ? {
+            start,
+            end,
+            brand_key: brandKey,
+            align: "hour",
+            utm_source: utmSource,
+            utm_medium: utmMedium,
+            utm_campaign: utmCampaign,
+            sales_channel: salesChannel,
+            device_type: deviceType,
+          }
+        : {
+            start,
+            end,
+            align: "hour",
+            utm_source: utmSource,
+            utm_medium: utmMedium,
+            utm_campaign: utmCampaign,
+            sales_channel: salesChannel,
+            device_type: deviceType,
+          };
       if (compareStart && compareEnd) {
         base.compare_start = compareStart;
         base.compare_end = compareEnd;
@@ -156,17 +193,30 @@ export default function KPIs({
           const sessions = m.total_sessions?.value ?? 0;
           const atcSessions = m.total_atc_sessions?.value ?? 0;
 
+          const returnsData = {
+            cancelled_orders: m.cancelled_orders?.value ?? 0,
+            refunded_orders: m.refunded_orders?.value ?? 0,
+            cancelled_rate:
+              orders.value > 0
+                ? (m.cancelled_orders?.value ?? 0) / orders.value
+                : 0,
+            refunded_rate:
+              orders.value > 0
+                ? (m.refunded_orders?.value ?? 0) / orders.value
+                : 0,
+          };
+
           const cvrVal = m.conversion_rate?.value ?? 0;
           const cvr = {
             cvr: cvrVal / 100,
             cvr_percent: cvrVal,
             total_orders: orders.value,
-            total_sessions: sessions
+            total_sessions: sessions,
           };
           const funnel = {
             total_sessions: sessions,
             total_atc_sessions: atcSessions,
-            total_orders: orders.value
+            total_orders: orders.value,
           };
 
           const ordersDelta = {
@@ -194,6 +244,14 @@ export default function KPIs({
             diff_pct: m.total_atc_sessions?.diff_pct ?? 0,
             direction: m.total_atc_sessions?.direction ?? "flat",
           };
+          const cancelledRateDelta = {
+            diff_pct: m.cancelled_orders?.diff_pct ?? 0,
+            direction: m.cancelled_orders?.direction ?? "flat",
+          };
+          const refundedRateDelta = {
+            diff_pct: m.refunded_orders?.diff_pct ?? 0,
+            direction: m.refunded_orders?.direction ?? "flat",
+          };
 
           const currSessions = m.total_sessions?.value ?? 0;
           const prevSessions = m.total_sessions?.previous ?? 0;
@@ -202,11 +260,21 @@ export default function KPIs({
           const currAtcRate = currSessions > 0 ? currAtc / currSessions : 0;
           const prevAtcRate = prevSessions > 0 ? prevAtc / prevSessions : 0;
           const atcRateDiff = currAtcRate - prevAtcRate;
-          const atcRateDiffPct = prevAtcRate > 0 ? (atcRateDiff / prevAtcRate) * 100 : (currAtcRate > 0 ? 100 : 0);
+          const atcRateDiffPct =
+            prevAtcRate > 0
+              ? (atcRateDiff / prevAtcRate) * 100
+              : currAtcRate > 0
+                ? 100
+                : 0;
 
           const atcRateDelta = {
             diff_pct: atcRateDiffPct,
-            direction: atcRateDiff > 0.00001 ? 'up' : atcRateDiff < -0.00001 ? 'down' : 'flat',
+            direction:
+              atcRateDiff > 0.00001
+                ? "up"
+                : atcRateDiff < -0.00001
+                  ? "down"
+                  : "flat",
           };
 
           // Extract previous (compare) values when available
@@ -216,8 +284,18 @@ export default function KPIs({
           const cmpCvr = m.conversion_rate?.previous ?? null;
           const cmpSessions = m.total_sessions?.previous ?? null;
           const cmpAtcSessions = m.total_atc_sessions?.previous ?? null;
-          const cmpAtcRate = (cmpSessions != null && cmpAtcSessions != null && cmpSessions > 0)
-            ? cmpAtcSessions / cmpSessions : null;
+          const cmpAtcRate =
+            cmpSessions != null && cmpAtcSessions != null && cmpSessions > 0
+              ? cmpAtcSessions / cmpSessions
+              : null;
+          const prevCancelledRate =
+            cmpOrders > 0
+              ? (m.cancelled_orders?.previous ?? 0) / cmpOrders
+              : null;
+          const prevRefundedRate =
+            cmpOrders > 0
+              ? (m.refunded_orders?.previous ?? 0) / cmpOrders
+              : null;
 
           setData((prev) => ({
             ...prev,
@@ -226,6 +304,7 @@ export default function KPIs({
             aov,
             cvr,
             funnel,
+            returnsData,
             ordersDelta,
             salesDelta,
             aovDelta,
@@ -233,6 +312,8 @@ export default function KPIs({
             sessDelta,
             atcDelta,
             atcRateDelta,
+            cancelledRateDelta,
+            refundedRateDelta,
             // Compare values
             prevOrders: cmpOrders,
             prevSales: cmpSales,
@@ -241,6 +322,8 @@ export default function KPIs({
             prevSessions: cmpSessions,
             prevAtcSessions: cmpAtcSessions,
             prevAtcRate: cmpAtcRate,
+            prevCancelledRate,
+            prevRefundedRate,
           }));
           setLoading(false);
           setDeltaLoading(false);
@@ -257,12 +340,28 @@ export default function KPIs({
     return () => {
       cancelled = true;
     };
-  }, [start, end, brandKey, refreshKey, isProductScoped, scopedProductId, onLoaded, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, compareStart, compareEnd]);
+  }, [
+    start,
+    end,
+    brandKey,
+    refreshKey,
+    isProductScoped,
+    scopedProductId,
+    onLoaded,
+    utmSource,
+    utmMedium,
+    utmCampaign,
+    salesChannel,
+    deviceType,
+    compareStart,
+    compareEnd,
+  ]);
 
-  const totalSessions = data.cvr?.total_sessions || data.funnel?.total_sessions || 0;
+  const totalSessions =
+    data.cvr?.total_sessions || data.funnel?.total_sessions || 0;
   const totalAtcSessions = data.funnel?.total_atc_sessions || 0;
   const cvrDeltaValue = data.cvrDelta
-    ? data.cvrDelta.diff_pct ?? data.cvrDelta.diff_pp
+    ? (data.cvrDelta.diff_pct ?? data.cvrDelta.diff_pp)
     : undefined;
 
   const formatUTM = (key, val, options) => {
@@ -275,14 +374,23 @@ export default function KPIs({
   };
 
   const activeFilters = [
-    formatUTM('source', utmSource, utmOptions) && { label: formatUTM('source', utmSource, utmOptions), key: 'source' },
-    formatUTM('medium', utmMedium, utmOptions) && { label: formatUTM('medium', utmMedium, utmOptions), key: 'medium' },
-    formatUTM('campaign', utmCampaign, utmOptions) && { label: formatUTM('campaign', utmCampaign, utmOptions), key: 'campaign' }
+    formatUTM("source", utmSource, utmOptions) && {
+      label: formatUTM("source", utmSource, utmOptions),
+      key: "source",
+    },
+    formatUTM("medium", utmMedium, utmOptions) && {
+      label: formatUTM("medium", utmMedium, utmOptions),
+      key: "medium",
+    },
+    formatUTM("campaign", utmCampaign, utmOptions) && {
+      label: formatUTM("campaign", utmCampaign, utmOptions),
+      key: "campaign",
+    },
   ].filter(Boolean);
 
   // Emit funnel data to parent for FunnelChart (avoids redundant API call)
   useEffect(() => {
-    if (typeof onFunnelData !== 'function') return;
+    if (typeof onFunnelData !== "function") return;
     if (!data.funnel) return;
     onFunnelData({
       stats: data.funnel,
@@ -293,7 +401,15 @@ export default function KPIs({
       },
       loading: loading || deltaLoading,
     });
-  }, [data.funnel, data.sessDelta, data.atcDelta, data.ordersDelta, loading, deltaLoading, onFunnelData]);
+  }, [
+    data.funnel,
+    data.sessDelta,
+    data.atcDelta,
+    data.ordersDelta,
+    loading,
+    deltaLoading,
+    onFunnelData,
+  ]);
 
   return (
     <>
@@ -303,14 +419,14 @@ export default function KPIs({
           direction="row"
           alignItems="center"
           justifyContent="space-between"
-          sx={{ mb: 1.5, display: { xs: 'none', md: 'flex' } }}
+          sx={{ mb: 1.5, display: { xs: "none", md: "flex" } }}
         >
           <Typography variant="subtitle2" color="text.secondary">
             Scope: {scopeLabel}
           </Typography>
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {activeFilters.map(f => (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            {activeFilters.map((f) => (
               <GlassChip
                 key={f.key}
                 label={f.label}
@@ -332,9 +448,12 @@ export default function KPIs({
       )}
       <Grid container spacing={2} columns={12}>
         {/* Row 1: Total Orders, Revenue, AOV, CVR (4 items) */}
-        {(showRow === null || showRow === 1) && (
+        {(showRow === null || showRow === 1 || showRow === "mobile_top") && (
           <>
-            <Grid size={{ xs: 6, sm: 6, md: 3 }}>
+            <Grid
+              size={{ xs: 6, sm: 6, md: 3 }}
+              sx={{ order: { xs: 1, md: 0 } }}
+            >
               <KPIStat
                 label="Total Orders"
                 value={data.orders?.value ?? 0}
@@ -344,84 +463,127 @@ export default function KPIs({
                 delta={
                   data.ordersDelta
                     ? {
-                      value: data.ordersDelta.diff_pct,
-                      direction: data.ordersDelta.direction,
-                    }
+                        value: data.ordersDelta.diff_pct,
+                        direction: data.ordersDelta.direction,
+                      }
                     : undefined
                 }
                 onSelect={
                   onSelectMetric ? () => onSelectMetric("orders") : undefined
                 }
                 selected={selectedMetric === "orders"}
-                compareValue={compareMode && data.prevOrders != null ? data.prevOrders : undefined}
+                compareValue={
+                  compareMode && data.prevOrders != null
+                    ? data.prevOrders
+                    : undefined
+                }
                 compareFormatter={(v) => nfInt.format(v)}
               />
             </Grid>
-            <Grid size={{ xs: 6, sm: 6, md: 3 }}>
+            <Grid
+              size={{ xs: 6, sm: 6, md: 3 }}
+              sx={{ order: { xs: 2, md: 0 } }}
+            >
               <KPIStat
-                label={revenueMode === 'G' ? "Gross Revenue" : "Net Revenue"}
+                label={revenueMode === "G" ? "Gross Revenue" : "Net Revenue"}
                 action={
                   <Box
                     sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      bgcolor: 'background.default',
+                      display: "flex",
+                      alignItems: "center",
+                      bgcolor: "background.default",
                       borderRadius: 12,
                       p: 0.5,
-                      cursor: 'pointer',
+                      cursor: "pointer",
                       zIndex: 2,
-                      boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)',
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      transition: 'all 0.3s ease'
+                      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
+                      border: "1px solid",
+                      borderColor: "divider",
+                      transition: "all 0.3s ease",
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setRevenueMode(prev => prev === 'G' ? 'N' : 'G');
+                      setRevenueMode((prev) => (prev === "G" ? "N" : "G"));
                     }}
                   >
-                    <Box sx={{
-                      px: 1, py: 0.25,
-                      borderRadius: 10,
-                      bgcolor: revenueMode === 'G' ? 'primary.main' : 'transparent',
-                      color: revenueMode === 'G' ? 'primary.contrastText' : 'text.secondary',
-                      fontSize: '0.65rem', fontWeight: 600,
-                      transition: 'all 0.2s ease',
-                      boxShadow: revenueMode === 'G' ? '0 1px 2px rgba(0,0,0,0.2)' : 'none'
-                    }}>G</Box>
-                    <Box sx={{
-                      px: 1, py: 0.25,
-                      borderRadius: 10,
-                      bgcolor: revenueMode === 'N' ? '#3b82f6' : 'transparent',
-                      color: revenueMode === 'N' ? '#fff' : 'text.secondary',
-                      fontSize: '0.65rem', fontWeight: 600,
-                      transition: 'all 0.2s ease',
-                      boxShadow: revenueMode === 'N' ? '0 1px 2px rgba(0,0,0,0.2)' : 'none'
-                    }}>N</Box>
+                    <Box
+                      sx={{
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 10,
+                        bgcolor:
+                          revenueMode === "G" ? "primary.main" : "transparent",
+                        color:
+                          revenueMode === "G"
+                            ? "primary.contrastText"
+                            : "text.secondary",
+                        fontSize: "0.65rem",
+                        fontWeight: 600,
+                        transition: "all 0.2s ease",
+                        boxShadow:
+                          revenueMode === "G"
+                            ? "0 1px 2px rgba(0,0,0,0.2)"
+                            : "none",
+                      }}
+                    >
+                      G
+                    </Box>
+                    <Box
+                      sx={{
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 10,
+                        bgcolor:
+                          revenueMode === "N" ? "#3b82f6" : "transparent",
+                        color: revenueMode === "N" ? "#fff" : "text.secondary",
+                        fontSize: "0.65rem",
+                        fontWeight: 600,
+                        transition: "all 0.2s ease",
+                        boxShadow:
+                          revenueMode === "N"
+                            ? "0 1px 2px rgba(0,0,0,0.2)"
+                            : "none",
+                      }}
+                    >
+                      N
+                    </Box>
                   </Box>
                 }
-                value={revenueMode === 'G' ? (data.sales?.value ?? 0) : ((data.sales?.value ?? 0) / 1.18)}
+                value={
+                  revenueMode === "G"
+                    ? (data.sales?.value ?? 0)
+                    : (data.sales?.value ?? 0) / 1.18
+                }
                 loading={loading}
                 deltaLoading={deltaLoading}
                 formatter={(v) => nfMoney.format(v)}
                 delta={
                   data.salesDelta
                     ? {
-                      value: data.salesDelta.diff_pct,
-                      direction: data.salesDelta.direction,
-                    }
+                        value: data.salesDelta.diff_pct,
+                        direction: data.salesDelta.direction,
+                      }
                     : undefined
                 }
                 onSelect={
                   onSelectMetric ? () => onSelectMetric("sales") : undefined
                 }
                 selected={selectedMetric === "sales"}
-                activeColor={revenueMode === 'G' ? '#10b981' : '#3b82f6'}
-                compareValue={compareMode && data.prevSales != null ? (revenueMode === 'G' ? data.prevSales : data.prevSales / 1.18) : undefined}
+                activeColor={revenueMode === "G" ? "#10b981" : "#3b82f6"}
+                compareValue={
+                  compareMode && data.prevSales != null
+                    ? revenueMode === "G"
+                      ? data.prevSales
+                      : data.prevSales / 1.18
+                    : undefined
+                }
                 compareFormatter={(v) => nfMoney.format(v)}
               />
             </Grid>
-            <Grid size={{ xs: 6, sm: 6, md: 3 }}>
+            <Grid
+              size={{ xs: 6, sm: 6, md: 3 }}
+              sx={{ order: { xs: 3, md: 0 } }}
+            >
               <KPIStat
                 label="Average order value"
                 value={data.aov?.aov ?? 0}
@@ -431,82 +593,147 @@ export default function KPIs({
                 delta={
                   data.aovDelta
                     ? {
-                      value: data.aovDelta.diff_pct,
-                      direction: data.aovDelta.direction,
-                    }
+                        value: data.aovDelta.diff_pct,
+                        direction: data.aovDelta.direction,
+                      }
                     : undefined
                 }
-                onSelect={onSelectMetric ? () => onSelectMetric("aov") : undefined}
+                onSelect={
+                  onSelectMetric ? () => onSelectMetric("aov") : undefined
+                }
                 selected={selectedMetric === "aov"}
-                compareValue={compareMode && data.prevAov != null ? data.prevAov : undefined}
+                compareValue={
+                  compareMode && data.prevAov != null ? data.prevAov : undefined
+                }
                 compareFormatter={(v) => nfMoney2.format(v)}
               />
             </Grid>
-            <Grid size={{ xs: 6, sm: 6, md: 3 }}>
-              {isMobile ? (
-                /* Original CVR position for mobile Row 1 */
-                <KPIStat
-                  label="Conversion Rate"
-                  value={data.cvr?.cvr ?? 0}
-                  loading={loading}
-                  deltaLoading={deltaLoading}
-                  formatter={(v) => nfPct.format(v)}
-                  delta={
-                    typeof cvrDeltaValue === "number" && data.cvrDelta
-                      ? { value: cvrDeltaValue, direction: data.cvrDelta.direction }
-                      : undefined
-                  }
-                  onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
-                  selected={selectedMetric === "cvr"}
-                  compareValue={compareMode && data.prevCvr != null ? data.prevCvr / 100 : undefined}
-                  compareFormatter={(v) => nfPct.format(v)}
-                />
-              ) : (
-                /* New Web Performance position for desktop Row 1 */
-                showWebVitals ? (
-                  <KPIStat
-                    label="Web Performance(Avg)"
-                    value={webVitalsData.performanceAvg ?? 0}
-                    loading={webVitalsData.loading}
-                    deltaLoading={webVitalsData.loading}
-                    formatter={(v) => nfFloat.format(v)}
-                    delta={
-                      webVitalsData.performanceChange !== null
-                        ? {
-                          value: webVitalsData.performanceChange,
-                          direction: webVitalsData.performanceChange > 0 ? 'up' : 'down'
+            <Grid
+              size={{ xs: 12, sm: 6, md: 3 }}
+              sx={{ order: { xs: 7, md: 0 } }}
+            >
+              <KPIStat
+                label={
+                  cancellationMode === "C" ? "Cancellation Rate" : "Refund Rate"
+                }
+                centerOnMobile={true}
+                action={
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      bgcolor: "background.default",
+                      borderRadius: 12,
+                      p: 0.5,
+                      cursor: "pointer",
+                      zIndex: 2,
+                      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
+                      border: "1px solid",
+                      borderColor: "divider",
+                      transition: "all 0.3s ease",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCancellationMode((prev) => (prev === "C" ? "R" : "C"));
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 10,
+                        bgcolor:
+                          cancellationMode === "C"
+                            ? "error.main"
+                            : "transparent",
+                        color:
+                          cancellationMode === "C"
+                            ? "error.contrastText"
+                            : "text.secondary",
+                        fontSize: "0.65rem",
+                        fontWeight: 600,
+                        transition: "all 0.2s ease",
+                        boxShadow:
+                          cancellationMode === "C"
+                            ? "0 1px 2px rgba(0,0,0,0.2)"
+                            : "none",
+                      }}
+                    >
+                      C
+                    </Box>
+                    <Box
+                      sx={{
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 10,
+                        bgcolor:
+                          cancellationMode === "R"
+                            ? "warning.main"
+                            : "transparent",
+                        color:
+                          cancellationMode === "R" ? "#fff" : "text.secondary",
+                        fontSize: "0.65rem",
+                        fontWeight: 600,
+                        transition: "all 0.2s ease",
+                        boxShadow:
+                          cancellationMode === "R"
+                            ? "0 1px 2px rgba(0,0,0,0.2)"
+                            : "none",
+                      }}
+                    >
+                      R
+                    </Box>
+                  </Box>
+                }
+                value={
+                  cancellationMode === "C"
+                    ? (data.returnsData?.cancelled_rate ?? 0)
+                    : (data.returnsData?.refunded_rate ?? 0)
+                }
+                loading={loading}
+                deltaLoading={deltaLoading}
+                formatter={(v) => nfPct.format(v)}
+                delta={
+                  cancellationMode === "C" && data.cancelledRateDelta
+                    ? {
+                        value: data.cancelledRateDelta.diff_pct,
+                        direction: data.cancelledRateDelta.direction,
+                      }
+                    : cancellationMode === "R" && data.refundedRateDelta
+                      ? {
+                          value: data.refundedRateDelta.diff_pct,
+                          direction: data.refundedRateDelta.direction,
                         }
+                      : undefined
+                }
+                selected={false}
+                activeColor={cancellationMode === "C" ? "#ef4444" : "#f59e0b"}
+                compareValue={
+                  compareMode
+                    ? cancellationMode === "C" && data.prevCancelledRate != null
+                      ? data.prevCancelledRate
+                      : cancellationMode === "R" &&
+                          data.prevRefundedRate != null
+                        ? data.prevRefundedRate
                         : undefined
-                    }
-                    selected={false}
-                  />
-                ) : (
-                  <KPIStat
-                    label="Conversion Rate"
-                    value={data.cvr?.cvr ?? 0}
-                    loading={loading}
-                    deltaLoading={deltaLoading}
-                    formatter={(v) => nfPct.format(v)}
-                    delta={
-                      typeof cvrDeltaValue === "number" && data.cvrDelta
-                        ? { value: cvrDeltaValue, direction: data.cvrDelta.direction }
-                        : undefined
-                    }
-                    onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
-                    selected={selectedMetric === "cvr"}
-                    compareValue={compareMode && data.prevCvr != null ? data.prevCvr / 100 : undefined}
-                    compareFormatter={(v) => nfPct.format(v)}
-                  />
-                )
-              )}
+                    : undefined
+                }
+                compareFormatter={(v) => nfPct.format(v)}
+              />
             </Grid>
           </>
         )}
 
         {/* Row 2 split: Sessions and ATC */}
-        {(showRow === null || showRow === 2 || showRow === 'sessions_atc') && (
+        {(showRow === null ||
+          showRow === 2 ||
+          showRow === "sessions_atc" ||
+          showRow === "mobile_top") && (
           <>
-            <Grid size={{ xs: 6, sm: 4, md: showWebVitals ? 4 : 6 }}>
+            <Grid
+              size={{ xs: 6, sm: 6, md: showWebVitals ? 3 : 4 }}
+              sx={{ order: { xs: 5, md: 0 } }}
+            >
               <KPIStat
                 label="Total Sessions"
                 value={totalSessions}
@@ -516,145 +743,219 @@ export default function KPIs({
                 delta={
                   data.sessDelta
                     ? {
-                      value: data.sessDelta.diff_pct,
-                      direction: data.sessDelta.direction,
-                    }
+                        value: data.sessDelta.diff_pct,
+                        direction: data.sessDelta.direction,
+                      }
                     : undefined
                 }
                 onSelect={
                   onSelectMetric ? () => onSelectMetric("sessions") : undefined
                 }
                 selected={selectedMetric === "sessions"}
-                compareValue={compareMode && data.prevSessions != null ? data.prevSessions : undefined}
+                compareValue={
+                  compareMode && data.prevSessions != null
+                    ? data.prevSessions
+                    : undefined
+                }
                 compareFormatter={(v) => nfInt.format(v)}
               />
             </Grid>
-            <Grid size={{ xs: 6, sm: 4, md: showWebVitals ? 4 : 6 }}>
+            <Grid
+              size={{ xs: 6, sm: 6, md: showWebVitals ? 3 : 4 }}
+              sx={{ order: { xs: 6, md: 0 } }}
+            >
               <KPIStat
-                label={atcMode === 'S' ? "ATC Sessions" : "ATC Rate"}
+                label={atcMode === "S" ? "ATC Sessions" : "ATC Rate"}
                 action={
                   <Box
                     sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      bgcolor: 'background.default',
+                      display: "flex",
+                      alignItems: "center",
+                      bgcolor: "background.default",
                       borderRadius: 12,
                       p: 0.5,
-                      cursor: 'pointer',
+                      cursor: "pointer",
                       zIndex: 2,
-                      boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)',
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      transition: 'all 0.3s ease'
+                      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
+                      border: "1px solid",
+                      borderColor: "divider",
+                      transition: "all 0.3s ease",
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      const nextMode = atcMode === 'S' ? 'R' : 'S';
+                      const nextMode = atcMode === "S" ? "R" : "S";
                       setAtcMode(nextMode);
                       // Auto-update graph if the card is currently selected
-                      if (selectedMetric === 'atc' || selectedMetric === 'atc_rate') {
-                        if (typeof onSelectMetric === 'function') {
-                          onSelectMetric(nextMode === 'S' ? 'atc' : 'atc_rate');
+                      if (
+                        selectedMetric === "atc" ||
+                        selectedMetric === "atc_rate"
+                      ) {
+                        if (typeof onSelectMetric === "function") {
+                          onSelectMetric(nextMode === "S" ? "atc" : "atc_rate");
                         }
                       }
                     }}
                   >
-                    <Box sx={{
-                      px: 1, py: 0.25,
-                      borderRadius: 10,
-                      bgcolor: atcMode === 'S' ? 'primary.main' : 'transparent',
-                      color: atcMode === 'S' ? 'primary.contrastText' : 'text.secondary',
-                      fontSize: '0.65rem', fontWeight: 600,
-                      transition: 'all 0.2s ease',
-                      boxShadow: atcMode === 'S' ? '0 1px 2px rgba(0,0,0,0.2)' : 'none'
-                    }}>S</Box>
-                    <Box sx={{
-                      px: 1, py: 0.25,
-                      borderRadius: 10,
-                      bgcolor: atcMode === 'R' ? '#f59e0b' : 'transparent', // amber-500 for distinction
-                      color: atcMode === 'R' ? '#fff' : 'text.secondary',
-                      fontSize: '0.65rem', fontWeight: 600,
-                      transition: 'all 0.2s ease',
-                      boxShadow: atcMode === 'R' ? '0 1px 2px rgba(0,0,0,0.2)' : 'none'
-                    }}>R</Box>
+                    <Box
+                      sx={{
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 10,
+                        bgcolor:
+                          atcMode === "S" ? "primary.main" : "transparent",
+                        color:
+                          atcMode === "S"
+                            ? "primary.contrastText"
+                            : "text.secondary",
+                        fontSize: "0.65rem",
+                        fontWeight: 600,
+                        transition: "all 0.2s ease",
+                        boxShadow:
+                          atcMode === "S"
+                            ? "0 1px 2px rgba(0,0,0,0.2)"
+                            : "none",
+                      }}
+                    >
+                      S
+                    </Box>
+                    <Box
+                      sx={{
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 10,
+                        bgcolor: atcMode === "R" ? "#f59e0b" : "transparent", // amber-500 for distinction
+                        color: atcMode === "R" ? "#fff" : "text.secondary",
+                        fontSize: "0.65rem",
+                        fontWeight: 600,
+                        transition: "all 0.2s ease",
+                        boxShadow:
+                          atcMode === "R"
+                            ? "0 1px 2px rgba(0,0,0,0.2)"
+                            : "none",
+                      }}
+                    >
+                      R
+                    </Box>
                   </Box>
                 }
-                value={atcMode === 'S' ? totalAtcSessions : (totalSessions > 0 ? (totalAtcSessions / totalSessions) : 0)}
+                value={
+                  atcMode === "S"
+                    ? totalAtcSessions
+                    : totalSessions > 0
+                      ? totalAtcSessions / totalSessions
+                      : 0
+                }
                 loading={loading}
                 deltaLoading={deltaLoading}
-                formatter={atcMode === 'S' ? ((v) => nfInt.format(v)) : ((v) => nfPct.format(v))}
+                formatter={
+                  atcMode === "S"
+                    ? (v) => nfInt.format(v)
+                    : (v) => nfPct.format(v)
+                }
                 delta={
-                  atcMode === 'S' && data.atcDelta
+                  atcMode === "S" && data.atcDelta
                     ? {
-                      value: data.atcDelta.diff_pct,
-                      direction: data.atcDelta.direction,
-                    }
-                    : atcMode === 'R' && data.atcRateDelta
-                      ? {
-                        value: data.atcRateDelta.diff_pct,
-                        direction: data.atcRateDelta.direction,
+                        value: data.atcDelta.diff_pct,
+                        direction: data.atcDelta.direction,
                       }
+                    : atcMode === "R" && data.atcRateDelta
+                      ? {
+                          value: data.atcRateDelta.diff_pct,
+                          direction: data.atcRateDelta.direction,
+                        }
                       : undefined
                 }
-                onSelect={onSelectMetric ? () => onSelectMetric(atcMode === 'S' ? "atc" : "atc_rate") : undefined}
-                selected={selectedMetric === "atc" || selectedMetric === "atc_rate"}
-                activeColor={atcMode === 'S' ? '#10b981' : '#f59e0b'}
-                compareValue={compareMode ? (atcMode === 'S' && data.prevAtcSessions != null ? data.prevAtcSessions : atcMode === 'R' && data.prevAtcRate != null ? data.prevAtcRate : undefined) : undefined}
-                compareFormatter={atcMode === 'S' ? ((v) => nfInt.format(v)) : ((v) => nfPct.format(v))}
+                onSelect={
+                  onSelectMetric
+                    ? () => onSelectMetric(atcMode === "S" ? "atc" : "atc_rate")
+                    : undefined
+                }
+                selected={
+                  selectedMetric === "atc" || selectedMetric === "atc_rate"
+                }
+                activeColor={atcMode === "S" ? "#10b981" : "#f59e0b"}
+                compareValue={
+                  compareMode
+                    ? atcMode === "S" && data.prevAtcSessions != null
+                      ? data.prevAtcSessions
+                      : atcMode === "R" && data.prevAtcRate != null
+                        ? data.prevAtcRate
+                        : undefined
+                    : undefined
+                }
+                compareFormatter={
+                  atcMode === "S"
+                    ? (v) => nfInt.format(v)
+                    : (v) => nfPct.format(v)
+                }
               />
             </Grid>
           </>
         )}
 
-        {/* Row 2 split: Web Performance (Mobile) or CVR (Desktop) */}
-        {(showRow === null || showRow === 2 || showRow === 'web_perf_cvr') && (showWebVitals || isMobile) && (
-          <>
-            <Grid size={{ xs: 12, sm: 4, md: 4 }}>
-              {isMobile ? (
-                /* Original Web Performance position for mobile Row 2 */
-                showWebVitals ? (
-                  <KPIStat
-                    label="Web Performance(Avg)"
-                    value={webVitalsData.performanceAvg ?? 0}
-                    loading={webVitalsData.loading}
-                    deltaLoading={webVitalsData.loading}
-                    formatter={(v) => nfFloat.format(v)}
-                    delta={
-                      webVitalsData.performanceChange !== null
-                        ? {
-                          value: webVitalsData.performanceChange,
-                          direction: webVitalsData.performanceChange > 0 ? 'up' : 'down'
-                        }
-                        : undefined
+        {/* Row 2 split: Web Performance and CVR */}
+        {(showRow === null ||
+          showRow === 2 ||
+          showRow === "web_perf_cvr" ||
+          showRow === "mobile_top") && (
+          <Grid
+            size={{ xs: 6, sm: 6, md: showWebVitals ? 3 : 4 }}
+            sx={{ order: { xs: 4, md: 0 } }}
+          >
+            <KPIStat
+              label="Conversion Rate"
+              value={data.cvr?.cvr ?? 0}
+              loading={loading}
+              deltaLoading={deltaLoading}
+              formatter={(v) => nfPct.format(v)}
+              delta={
+                typeof cvrDeltaValue === "number" && data.cvrDelta
+                  ? {
+                      value: cvrDeltaValue,
+                      direction: data.cvrDelta.direction,
                     }
-                    selected={false}
-                    centerOnMobile={true}
-                  />
-                ) : null
-              ) : (
-                /* New CVR position for desktop Row 2 */
-                showWebVitals ? (
-                  <KPIStat
-                    label="Conversion Rate"
-                    value={data.cvr?.cvr ?? 0}
-                    loading={loading}
-                    deltaLoading={deltaLoading}
-                    formatter={(v) => nfPct.format(v)}
-                    delta={
-                      typeof cvrDeltaValue === "number" && data.cvrDelta
-                        ? { value: cvrDeltaValue, direction: data.cvrDelta.direction }
-                        : undefined
-                    }
-                    onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
-                    selected={selectedMetric === "cvr"}
-                    compareValue={compareMode && data.prevCvr != null ? data.prevCvr / 100 : undefined}
-                    compareFormatter={(v) => nfPct.format(v)}
-                  />
-                ) : null
-              )}
-            </Grid>
-          </>
+                  : undefined
+              }
+              onSelect={
+                onSelectMetric ? () => onSelectMetric("cvr") : undefined
+              }
+              selected={selectedMetric === "cvr"}
+              compareValue={
+                compareMode && data.prevCvr != null
+                  ? data.prevCvr / 100
+                  : undefined
+              }
+              compareFormatter={(v) => nfPct.format(v)}
+            />
+          </Grid>
         )}
+
+        {(showRow === null ||
+          showRow === 2 ||
+          showRow === "web_perf_cvr" ||
+          showRow === "mobile_bottom") &&
+          showWebVitals && (
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <KPIStat
+                label="Web Performance(Avg)"
+                centerOnMobile={true}
+                value={webVitalsData.performanceAvg ?? 0}
+                loading={webVitalsData.loading}
+                deltaLoading={webVitalsData.loading}
+                formatter={(v) => nfFloat.format(v)}
+                delta={
+                  webVitalsData.performanceChange !== null
+                    ? {
+                        value: webVitalsData.performanceChange,
+                        direction:
+                          webVitalsData.performanceChange > 0 ? "up" : "down",
+                      }
+                    : undefined
+                }
+                selected={false}
+              />
+            </Grid>
+          )}
       </Grid>
     </>
   );

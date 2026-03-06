@@ -1597,19 +1597,14 @@ export default function App() {
                                     : productSelection?.label
                               }
                               utmOptions={utmOptions}
-                              showRow={1}
+                              showRow={isMobile ? "mobile_top" : 1}
                               showWebVitals={hasPermission("web_vitals")}
                               compareMode={compareMode}
                             />
 
                             <Grid container spacing={2}>
                               {/* Left Column: Row 2 KPIs + Trend Graph */}
-                              <Grid
-                                size={{
-                                  xs: 12,
-                                  md: hasPermission("web_vitals") ? 9 : 12,
-                                }}
-                              >
+                              <Grid size={{ xs: 12 }}>
                                 <Stack spacing={{ xs: 1, md: 1 }}>
                                   <KPIs
                                     query={trendMetricsQuery}
@@ -1629,14 +1624,60 @@ export default function App() {
                                           : productSelection?.label
                                     }
                                     utmOptions={utmOptions}
-                                    showRow={isMobile ? "sessions_atc" : 2}
+                                    showRow={isMobile ? "none" : 2}
                                     showWebVitals={hasPermission("web_vitals")}
                                     compareMode={compareMode}
                                   />
-                                  <HourlySalesCompare
-                                    query={trendMetricsQuery}
-                                    metric={selectedMetric}
-                                  />
+                                  <Grid container spacing={2} sx={{ mt: 2 }}>
+                                    <Grid
+                                      size={{
+                                        xs: 12,
+                                        md: hasPermission("web_vitals")
+                                          ? 9
+                                          : 12,
+                                      }}
+                                    >
+                                      <HourlySalesCompare
+                                        query={trendMetricsQuery}
+                                        metric={selectedMetric}
+                                      />
+                                    </Grid>
+                                    {isMobile &&
+                                      hasPermission("web_vitals") && (
+                                        <Grid size={{ xs: 12 }}>
+                                          <KPIs
+                                            query={trendMetricsQuery}
+                                            selectedMetric={selectedMetric}
+                                            onSelectMetric={handleSelectMetric}
+                                            productId={
+                                              Array.isArray(productSelection)
+                                                ? productSelection[0]?.id
+                                                : productSelection?.id
+                                            }
+                                            productLabel={
+                                              Array.isArray(productSelection) &&
+                                              productSelection.length > 1
+                                                ? `${productSelection.length} Products`
+                                                : Array.isArray(
+                                                      productSelection,
+                                                    )
+                                                  ? productSelection[0]?.label
+                                                  : productSelection?.label
+                                            }
+                                            utmOptions={utmOptions}
+                                            showRow="mobile_bottom"
+                                            showWebVitals={true}
+                                          />
+                                        </Grid>
+                                      )}
+                                    {hasPermission("web_vitals") && (
+                                      <Grid size={{ xs: 12, md: 3 }}>
+                                        <WebVitals
+                                          query={generalMetricsQuery}
+                                        />
+                                      </Grid>
+                                    )}
+                                  </Grid>
 
                                   {/* Funnel Chart - Inline for viewers with permission only */}
                                   {!isAuthor &&
@@ -1754,42 +1795,9 @@ export default function App() {
                                         </Suspense>
                                       </Box>
                                     )}
-                                  {isMobile && (
-                                    <KPIs
-                                      query={trendMetricsQuery}
-                                      selectedMetric={selectedMetric}
-                                      onSelectMetric={handleSelectMetric}
-                                      productId={
-                                        Array.isArray(productSelection)
-                                          ? productSelection[0]?.id
-                                          : productSelection?.id
-                                      }
-                                      productLabel={
-                                        Array.isArray(productSelection) &&
-                                        productSelection.length > 1
-                                          ? `${productSelection.length} Products`
-                                          : Array.isArray(productSelection)
-                                            ? productSelection[0]?.label
-                                            : productSelection?.label
-                                      }
-                                      utmOptions={utmOptions}
-                                      showRow="web_perf_cvr"
-                                      showWebVitals={hasPermission(
-                                        "web_vitals",
-                                      )}
-                                    />
-                                  )}
                                 </Stack>
                               </Grid>
-
-                              {/* Right Column: Web Vitals Sidebar */}
-                              {hasPermission("web_vitals") && (
-                                <Grid size={{ xs: 12, md: 3 }}>
-                                  <WebVitals query={generalMetricsQuery} />
-                                </Grid>
-                              )}
                             </Grid>
-
                             {(hasPermission("payment_split_order") ||
                               hasPermission("payment_split_sales")) && (
                               <ModeOfPayment query={generalMetricsQuery} />
