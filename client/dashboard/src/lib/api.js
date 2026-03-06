@@ -132,7 +132,7 @@ async function getJSON(path, params) {
 }
 
 // Generic helpers returning { error, data, status }
-async function doGet(path, params, options = {}) {
+export async function doGet(path, params, options = {}) {
   const url = `${API_BASE}${path}${qs(params || {})}`;
   try {
     const res = await fetchWithAuth(url, { signal: options.signal });
@@ -144,7 +144,7 @@ async function doGet(path, params, options = {}) {
   }
 }
 
-async function doPost(path, body) {
+export async function doPost(path, body) {
   const url = `${API_BASE}${path}`;
   try {
     const res = await fetchWithAuth(url, {
@@ -160,7 +160,7 @@ async function doPost(path, body) {
   }
 }
 
-async function doPut(path, body) {
+export async function doPut(path, body) {
   const url = `${API_BASE}${path}`;
   try {
     const res = await fetchWithAuth(url, {
@@ -176,7 +176,7 @@ async function doPut(path, body) {
   }
 }
 
-async function doDelete(path) {
+export async function doDelete(path) {
   const url = `${API_BASE}${path}`;
   try {
     const res = await fetchWithAuth(url, { method: "DELETE" });
