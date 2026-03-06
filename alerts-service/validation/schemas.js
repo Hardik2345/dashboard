@@ -20,6 +20,7 @@ const BucketSchema = z.object({
 }).refine(d => d.lower_bound_sessions <= d.upper_bound_sessions, { message: 'lower_bound_sessions must be <= upper_bound_sessions' });
 
 const TIME_HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const MINIMUM_VOLUME_KEYS = ['total_orders', 'total_sessions', 'total_atc_sessions', 'total_sales'];
 
 function numberOrNull() {
   return z.preprocess((val) => {
@@ -95,6 +96,22 @@ const AlertSchema = z.object({
     if (val === null || val === '') return null;
     return val;
   }, z.union([z.string().regex(TIME_HH_MM, 'Use HH:MM (24h)'), z.null()])).optional(),
+  minimum_volume: z.preprocess((val) => {
+    if (val === undefined) return undefined;
+    if (val === null || val === '') return null;
+    if (val instanceof Map) return Object.fromEntries(val.entries());
+    return val;
+  }, z.union([
+    z.record(
+      z.string(),
+      z.preprocess((entryVal) => {
+        if (entryVal === undefined || entryVal === null || entryVal === '') return Number.NaN;
+        const num = typeof entryVal === 'number' ? entryVal : Number(entryVal);
+        return Number.isFinite(num) ? num : Number.NaN;
+      }, z.number().int())
+    ),
+    z.null(),
+  ])).optional(),
   have_recipients: z.preprocess((val) => {
     if (val === undefined) return undefined;
     if (val === null || val === '') return 0;
@@ -125,6 +142,26 @@ const AlertSchema = z.object({
     }
     return val;
   }, z.union([z.number().int().min(0).max(1), z.null()])).optional(),
+  is_dsl_engine_alert: z.preprocess((val) => {
+    if (val === undefined) return undefined;
+    if (typeof val === 'boolean') return val;
+    if (typeof val === 'number') return val !== 0;
+    if (typeof val === 'string') {
+      const trimmed = val.trim().toLowerCase();
+      if (['1', 'true', 'yes', 'on'].includes(trimmed)) return true;
+      if (['0', 'false', 'no', 'off'].includes(trimmed)) return false;
+    }
+    return val;
+  }, z.boolean()).optional(),
+  trigger_mode: z.preprocess((val) => {
+    if (val === undefined) return undefined;
+    if (val === null) return undefined;
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      return trimmed.length ? trimmed : undefined;
+    }
+    return val;
+  }, z.enum(['alert_system', 'dsl_engine'])).optional(),
   current_state: z.enum(['NORMAL', 'TRIGGERED', 'CRITICAL']).optional(),
 }).superRefine((data, ctx) => {
   if (data.metric_type === 'derived' && !data.formula) {
@@ -147,6 +184,16 @@ const AlertSchema = z.object({
       message: 'Quiet hours require both start and end',
       path: ['quiet_hours_start'],
     });
+  }
+  if (data.minimum_volume && typeof data.minimum_volume === 'object') {
+    const invalidKey = Object.keys(data.minimum_volume).find((key) => !MINIMUM_VOLUME_KEYS.includes(key));
+    if (invalidKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `minimum_volume keys must be one of: ${MINIMUM_VOLUME_KEYS.join(', ')}`,
+        path: ['minimum_volume'],
+      });
+    }
   }
   if (data.threshold_type === 'less_than' && data.critical_threshold !== undefined && data.critical_threshold !== null) {
     if (data.critical_threshold >= data.threshold_value) {

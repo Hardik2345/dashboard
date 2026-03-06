@@ -10,6 +10,7 @@ const { getBrands } = require("./config/brands");
 const { buildAlertsRouter } = require("./routes/alerts");
 const { requireAuthor } = require("./middlewares/auth");
 const { getNextSeq } = require("./utils/counters");
+const { buildAlertConfigEventPublisher } = require('./services/alertConfigEventPublisher');
 const Alert = require("./models/alert");
 const AlertChannel = require("./models/alertChannel");
 const BrandAlertChannel = require("./models/brandAlertChannel");
@@ -27,11 +28,19 @@ const MONGO_DB = process.env.MONGO_DB || "alerts";
 mongoose.set("strictQuery", true);
 
 // ---- Routes -----------------------------------------------------------------
+const alertConfigEventPublisher = buildAlertConfigEventPublisher();
+
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.use(
   "/alerts",
   requireAuthor,
-  buildAlertsRouter({ Alert, AlertChannel, BrandAlertChannel, getNextSeq }),
+  buildAlertsRouter({
+  Alert,
+  AlertChannel,
+  BrandAlertChannel,
+  getNextSeq,
+  alertConfigEventPublisher,
+}),
 );
 const Session = require("./models/session");
 
