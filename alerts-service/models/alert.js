@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const MINIMUM_VOLUME_KEYS = ['total_orders', 'total_sessions', 'total_atc_sessions', 'total_sales'];
+
 const alertSchema = new mongoose.Schema({
   id: { type: Number, unique: true, required: true },
   brand_id: { type: Number, required: true, index: true },
@@ -23,6 +25,26 @@ const alertSchema = new mongoose.Schema({
   current_state: { type: String, enum: ['NORMAL', 'TRIGGERED', 'CRITICAL'], default: 'NORMAL' },
   is_dsl_engine_alert: { type: Boolean, default: false },
   trigger_mode: { type: String, enum: ['alert_system', 'dsl_engine'], default: 'alert_system' },
+  minimum_volume: {
+    type: Map,
+    of: {
+      type: Number,
+      validate: {
+        validator: Number.isInteger,
+        message: 'minimum_volume values must be integers',
+      },
+    },
+    validate: {
+      validator: (value) => {
+        if (!value) {
+          return true;
+        }
+
+        return [...value.keys()].every((key) => MINIMUM_VOLUME_KEYS.includes(key));
+      },
+      message: `minimum_volume keys must be one of: ${MINIMUM_VOLUME_KEYS.join(', ')}`,
+    },
+  },
 }, { collection: 'alerts' });
 
 alertSchema.index({ brand_id: 1, is_active: 1 });

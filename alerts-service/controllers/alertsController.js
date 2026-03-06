@@ -85,6 +85,48 @@ function buildAlertsController({
     return { key: brandCheck.key, brandId };
   }
 
+  function normalizeMinimumVolume(raw) {
+    if (raw == null) return null;
+
+    let entries = [];
+    if (raw instanceof Map) {
+      entries = [...raw.entries()];
+    } else if (Array.isArray(raw)) {
+      entries = raw
+        .map((item) => {
+          if (Array.isArray(item) && item.length >= 2) return [item[0], item[1]];
+          if (item && typeof item === 'object' && 'key' in item) return [item.key, item.value];
+          return null;
+        })
+        .filter(Boolean);
+    } else if (typeof raw === 'object') {
+      entries = Object.entries(raw);
+    }
+
+    const out = {};
+    for (const [key, value] of entries) {
+      if (typeof key !== 'string' || !key) continue;
+      let num = value;
+      if (num && typeof num === 'object') {
+        if (typeof num.toNumber === 'function') {
+          num = num.toNumber();
+        } else if ('$numberInt' in num) {
+          num = Number(num.$numberInt);
+        } else if ('$numberLong' in num) {
+          num = Number(num.$numberLong);
+        } else if (typeof num.valueOf === 'function') {
+          num = num.valueOf();
+        }
+      }
+      const asNumber = Number(num);
+      if (Number.isInteger(asNumber)) {
+        out[key] = asNumber;
+      }
+    }
+
+    return Object.keys(out).length ? out : null;
+  }
+
   function formatAlertRow(row, options = {}) {
     const src = typeof row.toJSON === 'function' ? row.toJSON() : row;
     const brandMeta = getBrandById(src.brand_id);
@@ -100,6 +142,7 @@ function buildAlertsController({
 
     const isDslEngineAlert = src.is_dsl_engine_alert === true;
     const triggerMode = src.trigger_mode || (isDslEngineAlert ? 'dsl_engine' : 'alert_system');
+    const minimumVolume = normalizeMinimumVolume(src.minimum_volume);
 
     return {
       id: src.id != null ? src.id : src._id,
@@ -122,6 +165,7 @@ function buildAlertsController({
       trigger_mode: triggerMode,
       quiet_hours_start: hourToDisplay(src.quiet_hours_start),
       quiet_hours_end: hourToDisplay(src.quiet_hours_end),
+      minimum_volume: minimumVolume,
       recipients,
       is_active: src.is_active ? 1 : 0,
       last_triggered_at: null,
@@ -134,7 +178,7 @@ function buildAlertsController({
   function resolveTriggerOwnership(payload, existing = null) {
     const hasTriggerMode = payload.trigger_mode !== undefined;
     const hasDslFlag = payload.is_dsl_engine_alert !== undefined;
-    const isDslEngineAlert = hasDslFlag
+    let isDslEngineAlert = hasDslFlag
       ? payload.is_dsl_engine_alert === true
       : (existing?.is_dsl_engine_alert === true);
 
@@ -147,6 +191,12 @@ function buildAlertsController({
       } else {
         triggerMode = isDslEngineAlert ? 'dsl_engine' : 'alert_system';
       }
+    }
+
+    if (triggerMode === 'dsl_engine') {
+      isDslEngineAlert = true;
+    } else if (triggerMode === 'alert_system') {
+      isDslEngineAlert = false;
     }
 
     return {
@@ -172,6 +222,12 @@ function buildAlertsController({
     const quietStart = parseHourInput(payload.quiet_hours_start, existing?.quiet_hours_start ?? null);
     const quietEnd = parseHourInput(payload.quiet_hours_end, existing?.quiet_hours_end ?? null);
     const triggerOwnership = resolveTriggerOwnership(payload, existing);
+    const minimumVolumeInput = payload.minimum_volume === undefined
+      ? existing?.minimum_volume
+      : payload.minimum_volume;
+    const minimumVolume = minimumVolumeInput === null
+      ? null
+      : normalizeMinimumVolume(minimumVolumeInput);
 
     return {
       brand_id: brandId,
@@ -190,6 +246,7 @@ function buildAlertsController({
       trigger_mode: triggerOwnership.trigger_mode,
       quiet_hours_start: quietStart,
       quiet_hours_end: quietEnd,
+      minimum_volume: minimumVolume,
       is_active: isActive ? 1 : 0,
       current_state: payload.current_state || (existing?.current_state ?? 'NORMAL'),
     };
