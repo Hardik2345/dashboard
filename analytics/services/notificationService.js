@@ -1,16 +1,19 @@
-const admin = require('firebase-admin');
-const logger = require('../utils/logger');
+const admin = require("firebase-admin");
+const logger = require("../utils/logger");
 
 // Initialize Firebase Admin SDK
 // Assumes GOOGLE_APPLICATION_CREDENTIALS is set or default auth is available.
-// If user has a specific config, they should provide it. 
+// If user has a specific config, they should provide it.
 // For now, initializing without arguments attempts to use ADC (Application Default Credentials).
 try {
   if (!admin.apps.length) {
     admin.initializeApp();
   }
 } catch (error) {
-  logger.error('[NotificationService] Firebase admin initialization failed:', error);
+  logger.error(
+    "[NotificationService] Firebase admin initialization failed:",
+    error,
+  );
 }
 
 /**
@@ -24,19 +27,38 @@ async function sendPushNotification(tokens, title, body, data = {}) {
   if (!tokens || tokens.length === 0) return;
 
   const message = {
-    notification: {
+    data: {
       title,
       body,
+      ...data,
     },
-    data,
+    webpush: {
+      headers: {
+        Urgency: "high",
+      },
+      fcm_options: {
+        link: data?.brand ? `/?brand=${encodeURIComponent(data.brand)}` : "/",
+      },
+      notification: {
+        icon: "/favicon.png",
+        tag: "analytics-notification",
+        renotify: true,
+      },
+    },
     tokens: tokens,
   };
 
   try {
     const response = await admin.messaging().sendEachForMulticast(message);
-    logger.info('[NotificationService] Sent success count:', response.successCount);
-    logger.info('[NotificationService] Sent failure count:', response.failureCount);
-    
+    logger.info(
+      "[NotificationService] Sent success count:",
+      response.successCount,
+    );
+    logger.info(
+      "[NotificationService] Sent failure count:",
+      response.failureCount,
+    );
+
     // Log failed tokens if needed
     if (response.failureCount > 0) {
       const failedTokens = [];
@@ -45,44 +67,52 @@ async function sendPushNotification(tokens, title, body, data = {}) {
           failedTokens.push(tokens[idx]);
         }
       });
-      logger.warn('[NotificationService] Failed tokens:', failedTokens);
+      logger.warn("[NotificationService] Failed tokens:", failedTokens);
     }
-    
+
     return response;
   } catch (error) {
-    logger.error('[NotificationService] Error sending message:', error);
+    logger.error("[NotificationService] Error sending message:", error);
     throw error;
   }
 }
 
 /**
  * Send to a single topic
- * @param {string} topic 
- * @param {string} title 
- * @param {string} body 
- * @param {object} data 
+ * @param {string} topic
+ * @param {string} title
+ * @param {string} body
+ * @param {object} data
  */
 async function sendTopicNotification(topic, title, body, data = {}) {
   const message = {
-    notification: {
+    data: {
       title,
       body,
+      ...data,
     },
-    data,
     topic,
+    webpush: {
+      headers: {
+        Urgency: "high",
+      },
+    },
   };
 
   try {
     const response = await admin.messaging().send(message);
-    logger.info('[NotificationService] Successfully sent message to topic:', response);
+    logger.info(
+      "[NotificationService] Successfully sent message to topic:",
+      response,
+    );
     return response;
   } catch (error) {
-    logger.error('[NotificationService] Error sending to topic:', error);
+    logger.error("[NotificationService] Error sending to topic:", error);
     throw error;
   }
 }
 
 module.exports = {
   sendPushNotification,
-  sendTopicNotification
+  sendTopicNotification,
 };

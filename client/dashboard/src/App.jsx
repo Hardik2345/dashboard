@@ -49,6 +49,8 @@ import {
   listAuthorBrands,
   getTopProducts,
   getDashboardSummary,
+  doPost,
+  doDelete,
 } from "./lib/api.js";
 import { TextField, Button, Paper, Typography, Chip } from "@mui/material";
 import axios from "axios";
@@ -330,22 +332,20 @@ export default function App() {
       requestForToken()
         .then((token) => {
           if (token) {
-            axios
-              .post(
-                "/api/push/register-token",
-                {
-                  token,
-                  user_info: {
-                    id: user.id || user._id,
-                    email: user.email,
-                    name: user.name,
-                  },
-                },
-                { withCredentials: true },
-              )
-              .catch((err) =>
-                console.error("Failed to register FCM token:", err),
-              );
+            doPost("/push/register-token", {
+              token,
+              user_info: {
+                id: user.id || user._id,
+                email: user.email,
+                name: user.name,
+              },
+            }).then((res) => {
+              if (res.error) {
+                console.error("Failed to register FCM token:", res.status);
+              } else {
+                console.log("FCM token registered successfully");
+              }
+            });
           }
         })
         .catch((err) => console.error("Token request failed:", err));
@@ -357,15 +357,7 @@ export default function App() {
       requestForToken()
         .then((token) => {
           if (token) {
-            axios
-              .post(
-                "/api/push/unregister-token",
-                { token },
-                { withCredentials: true },
-              )
-              .catch((err) =>
-                console.error("Failed to unregister FCM token:", err),
-              );
+            doPost("/push/unregister-token", { token });
           }
         })
         .catch(() => {}); // Ignore errors when trying to clear

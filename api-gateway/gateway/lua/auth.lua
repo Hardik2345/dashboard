@@ -7,7 +7,22 @@ local resty_str = require("resty.string")
 local _M = {}
 
 function _M.authenticate()
-    -- 0. Check for Pipeline Key Bypass
+    -- 0. Check for Push Token Bypass (for notification receiver)
+    local push_token = ngx.req.get_headers()["x-push-token"]
+    local secret_push_token = os.getenv("PUSH_TOKEN") or "push@notify321"
+
+    if push_token and push_token ~= "" and secret_push_token and secret_push_token ~= "" then
+        if push_token == secret_push_token then
+             -- Only allow bypass for the receive endpoint
+             if ngx.var.uri == "/push/receive" then
+                ngx.req.set_header("x-user-id", "notification-service")
+                ngx.req.set_header("x-role", "system")
+                return
+             end
+        end
+    end
+
+    -- 0.1 Check for Pipeline Key Bypass
     local pipeline_key = ngx.req.get_headers()["x-pipeline-key"]
     local secret_pipeline_key = os.getenv("X_PIPELINE_KEY")
 
