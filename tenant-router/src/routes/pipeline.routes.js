@@ -93,4 +93,37 @@ router.get("/brands/:id", async (req, res) => {
   }
 });
 
+// PUT /pipeline/credentials/:id
+router.put("/credentials/:id", async (req, res) => {
+  const { id } = req.params;
+  const updateData = req.body;
+
+  // Basic validation to ensure the ID is a valid 24-char hex string (Mongoose ObjectId format)
+  if (!id || !/^[0-9a-fA-F]{24}$/.test(id)) {
+    return res.status(400).json({ error: "invalid_id_format" });
+  }
+
+  // Ensure object isn't completely empty before trying to update
+  if (!updateData || Object.keys(updateData).length === 0) {
+    return res.status(400).json({ error: "empty_update_payload" });
+  }
+
+  try {
+    const updated = await pipelineService.updatePipelineCredsById(
+      id,
+      updateData,
+    );
+    if (!updated) {
+      return res.status(404).json({ error: "credential_not_found" });
+    }
+    return res.status(200).json(updated);
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({ error: "duplicate_brand_id_or_database" });
+    }
+    console.error("[PipelineRoutes] Error updating pipeline creds:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
 module.exports = router;
