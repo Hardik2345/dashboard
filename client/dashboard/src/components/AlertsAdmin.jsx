@@ -85,6 +85,18 @@ const SEVERITY_OPTIONS = [
   { value: 'high', label: 'High' },
 ];
 
+const TRIGGER_MODE_OPTIONS = [
+  { value: 'alert_system', label: 'Alert System' },
+  { value: 'dsl_engine', label: 'DSL Engine' },
+];
+
+const MINIMUM_VOLUME_OPTIONS = [
+  { value: 'total_orders', label: 'Total Orders' },
+  { value: 'total_sessions', label: 'Total Sessions' },
+  { value: 'total_atc_sessions', label: 'Total ATC Sessions' },
+  { value: 'total_sales', label: 'Total Sales' },
+];
+
 const HOURS = Array.from({ length: 24 }, (_, idx) => String(idx).padStart(2, '0'));
 const MINUTES = Array.from({ length: 60 }, (_, idx) => String(idx).padStart(2, '0'));
 
@@ -102,9 +114,14 @@ function buildInitialForm(defaultBrand = '') {
     severity: 'low',
     cooldown_minutes: '30',
     lookback_days: '1',
+    is_dsl_engine_alert: false,
+    trigger_mode: 'alert_system',
     have_recipients: 0,
     quiet_hours_start: '00:00',
     quiet_hours_end: '00:00',
+    minimum_volume: {},
+    minimum_volume_key: '',
+    minimum_volume_value: '',
     recipients: '',
     is_active: true,
   };
@@ -133,6 +150,35 @@ function parseRecipients(input) {
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function normalizeMinimumVolume(raw) {
+  if (!raw) return {};
+
+  let entries = [];
+  if (raw instanceof Map) {
+    entries = [...raw.entries()];
+  } else if (Array.isArray(raw)) {
+    entries = raw
+      .map((item) => {
+        if (Array.isArray(item) && item.length >= 2) return [item[0], item[1]];
+        if (item && typeof item === 'object' && 'key' in item) return [item.key, item.value];
+        return null;
+      })
+      .filter(Boolean);
+  } else if (typeof raw === 'object') {
+    entries = Object.entries(raw);
+  }
+
+  const out = {};
+  for (const [key, value] of entries) {
+    if (typeof key !== 'string' || !key) continue;
+    const asNumber = Number(value);
+    if (Number.isInteger(asNumber)) {
+      out[key] = asNumber;
+    }
+  }
+  return out;
 }
 
 function formatCondition(type, value) {
@@ -242,7 +288,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
   }, [fetchAlerts]);
 
   const handleInputChange = (field) => (event) => {
-    const value = event.target.type === 'number' ? event.target.value : event.target.value;
+    const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
 
     // Logic for restricting metric type
     if (field === 'metric_name') {
@@ -281,6 +327,18 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
         }
         return next;
       });
+    } else if (field === 'trigger_mode') {
+      setForm((prev) => ({
+        ...prev,
+        trigger_mode: value,
+        is_dsl_engine_alert: value === 'dsl_engine',
+      }));
+    } else if (field === 'is_dsl_engine_alert') {
+      setForm((prev) => ({
+        ...prev,
+        is_dsl_engine_alert: Boolean(value),
+        trigger_mode: value ? 'dsl_engine' : 'alert_system',
+      }));
     } else {
       setForm((prev) => ({ ...prev, [field]: value }));
     }
@@ -342,8 +400,13 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
       severity: alert.severity || 'low',
       cooldown_minutes: String(alert.cooldown_minutes ?? 30),
       lookback_days: String(deriveLookbackDays() ?? ''),
+      is_dsl_engine_alert: alert.is_dsl_engine_alert === true,
+      trigger_mode: alert.trigger_mode || (alert.is_dsl_engine_alert ? 'dsl_engine' : 'alert_system'),
       quiet_hours_start: formatTimeValue(alert.quiet_hours_start),
       quiet_hours_end: formatTimeValue(alert.quiet_hours_end),
+      minimum_volume: normalizeMinimumVolume(alert.minimum_volume),
+      minimum_volume_key: '',
+      minimum_volume_value: '',
       have_recipients: alert.have_recipients ? 1 : 0,
       recipients: Array.isArray(alert.recipients) ? alert.recipients.join(', ') : '',
       is_active: Boolean(alert.is_active ?? true),
@@ -354,6 +417,10 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
 
   const buildPayload = () => {
     const lookbackDays = form.lookback_days === '' ? null : Number(form.lookback_days);
+    const minimumVolumeEntries = Object.entries(form.minimum_volume || {})
+      .filter(([, value]) => Number.isInteger(Number(value)))
+      .map(([key, value]) => [key, Number(value)]);
+    const minimumVolume = minimumVolumeEntries.length ? Object.fromEntries(minimumVolumeEntries) : null;
 
     const payload = {
       name: form.name?.trim() || null,
@@ -369,8 +436,11 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
       lookback_start: null,
       lookback_end: null,
       lookback_days: form.metric_name === 'performance' ? null : lookbackDays,
+      is_dsl_engine_alert: Boolean(form.is_dsl_engine_alert),
+      trigger_mode: form.trigger_mode || (form.is_dsl_engine_alert ? 'dsl_engine' : 'alert_system'),
       quiet_hours_start: form.quiet_hours_start || null,
       quiet_hours_end: form.quiet_hours_end || null,
+      minimum_volume: minimumVolume,
       have_recipients: form.have_recipients,
       recipients: form.have_recipients === 1 ? parseRecipients(form.recipients) : [],
       is_active: form.is_active ? 1 : 0,
@@ -393,6 +463,10 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
       if (Number(form.critical_threshold) >= Number(form.threshold_value)) {
         errors.critical_threshold = "Critical threshold must be less than warning threshold";
       }
+    }
+    const invalidMinimumVolumeEntry = Object.entries(form.minimum_volume || {}).find(([, value]) => !Number.isInteger(Number(value)));
+    if (invalidMinimumVolumeEntry) {
+      errors.minimum_volume = 'Minimum volume values must be integers';
     }
     if (Number(form.have_recipients) === 1 && (!form.recipients || (Array.isArray(form.recipients) && form.recipients.length === 0))) {
       errors.recipients = "At least one recipient is required for custom recipients";
@@ -438,6 +512,40 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
   const handleDelete = (alert) => {
     setAlertToDelete(alert);
     setDeleteDialogOpen(true);
+  };
+
+  const addMinimumVolume = () => {
+    const selectedKey = form.minimum_volume_key;
+    const selectedValue = form.minimum_volume_value;
+
+    if (!selectedKey) {
+      setValidationErrors((prev) => ({ ...prev, minimum_volume: 'Select a minimum volume metric' }));
+      return;
+    }
+
+    if (selectedValue === '' || !Number.isInteger(Number(selectedValue))) {
+      setValidationErrors((prev) => ({ ...prev, minimum_volume: 'Minimum volume value must be an integer' }));
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      minimum_volume: {
+        ...(prev.minimum_volume || {}),
+        [selectedKey]: Number(selectedValue),
+      },
+      minimum_volume_key: '',
+      minimum_volume_value: '',
+    }));
+    setValidationErrors((prev) => ({ ...prev, minimum_volume: undefined }));
+  };
+
+  const removeMinimumVolume = (key) => {
+    setForm((prev) => {
+      const next = { ...(prev.minimum_volume || {}) };
+      delete next[key];
+      return { ...prev, minimum_volume: next };
+    });
   };
 
   const confirmDelete = async () => {
@@ -551,6 +659,32 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 </Select>
                 {validationErrors.brand_key && <FormHelperText>{validationErrors.brand_key}</FormHelperText>}
               </FormControl>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Trigger Mode</InputLabel>
+                <Select
+                  value={form.trigger_mode}
+                  onChange={handleInputChange('trigger_mode')}
+                  label="Trigger Mode"
+                >
+                  {TRIGGER_MODE_OPTIONS.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={Boolean(form.is_dsl_engine_alert)}
+                    onChange={handleInputChange('is_dsl_engine_alert')}
+                    color="primary"
+                  />
+                }
+                label="DSL Engine Alert"
+              />
             </Grid>
 
             {/* --- Metric Logic --- */}
@@ -705,6 +839,81 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 disabled={form.metric_name === 'performance'}
               />
             </Grid>
+
+            <Grid item xs={12}>
+              <FormHelperText error={!!validationErrors.minimum_volume} sx={{ mb: 1 }}>
+                {validationErrors.minimum_volume || 'Minimum Volume (optional): add one or more metric thresholds'}
+              </FormHelperText>
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'center' }}>
+                <FormControl size="small" sx={{ minWidth: 240 }}>
+                  <InputLabel>Minimum Volume Metric</InputLabel>
+                  <Select
+                    value={form.minimum_volume_key}
+                    onChange={handleInputChange('minimum_volume_key')}
+                    label="Minimum Volume Metric"
+                  >
+                    {MINIMUM_VOLUME_OPTIONS.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <TextField
+                  type="number"
+                  size="small"
+                  label="Minimum Volume Value"
+                  value={form.minimum_volume_value}
+                  onChange={handleInputChange('minimum_volume_value')}
+                  inputProps={{ step: 1 }}
+                  sx={{ minWidth: 220 }}
+                />
+                <Button variant="outlined" onClick={addMinimumVolume}>Add</Button>
+              </Stack>
+
+              {!!Object.keys(form.minimum_volume || {}).length && (
+                <Stack spacing={1.5} sx={{ mt: 2 }}>
+                  {Object.entries(form.minimum_volume).map(([key, value]) => (
+                    <Stack
+                      key={key}
+                      direction={{ xs: 'column', sm: 'row' }}
+                      spacing={1}
+                      alignItems={{ xs: 'stretch', sm: 'center' }}
+                    >
+                      <TextField
+                        size="small"
+                        label="Metric"
+                        value={MINIMUM_VOLUME_OPTIONS.find((opt) => opt.value === key)?.label || key}
+                        disabled
+                        sx={{ minWidth: 240 }}
+                      />
+                      <TextField
+                        size="small"
+                        type="number"
+                        label="Value"
+                        value={value}
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          setForm((prev) => ({
+                            ...prev,
+                            minimum_volume: {
+                              ...(prev.minimum_volume || {}),
+                              [key]: nextValue === '' ? '' : Number(nextValue),
+                            },
+                          }));
+                        }}
+                        inputProps={{ step: 1 }}
+                        sx={{ minWidth: 180 }}
+                      />
+                      <Button color="error" onClick={() => removeMinimumVolume(key)}>
+                        Remove
+                      </Button>
+                    </Stack>
+                  ))}
+                </Stack>
+              )}
+            </Grid>
+
             <Grid item xs={12} md={6}>
               <Box>
                 <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
