@@ -1,6 +1,17 @@
-import { AppBar, Toolbar, Box, Button, IconButton, useTheme, useMediaQuery, Tooltip, Typography, Card } from '@mui/material';
-import { useEffect, useState } from 'react';
-import dayjs from 'dayjs';
+import {
+  AppBar,
+  Toolbar,
+  Box,
+  Button,
+  IconButton,
+  useTheme,
+  useMediaQuery,
+  Tooltip,
+  Typography,
+  Card,
+} from "@mui/material";
+import { useEffect, useState } from "react";
+import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import bridge from "dayjs/plugin/utc"; // Using a different name to avoid collision if needed, but 'utc' is standard
 import customParseFormat from "dayjs/plugin/customParseFormat";
@@ -12,10 +23,10 @@ import {
   LayoutGrid,
   SlidersHorizontal,
   LogOut,
-  PanelLeft // Added
-} from 'lucide-react';
-import SkyToggle from './ui/SkyToggle.jsx';
-import NotificationsMenu from './NotificationsMenu.jsx';
+  PanelLeft, // Added
+} from "lucide-react";
+import SkyToggle from "./ui/SkyToggle.jsx";
+import NotificationsMenu from "./NotificationsMenu.jsx";
 
 export default function Header({
   user,
@@ -25,16 +36,17 @@ export default function Header({
   darkMode = false,
   onToggleDarkMode,
   onFilterClick,
+  onTabChange, // Added
   showFilterButton = false,
   isAdmin = false,
-  brandKey = ''
+  brandKey = "",
 }) {
   dayjs.extend(relativeTime);
   dayjs.extend(customParseFormat);
 
   const theme = useTheme();
-  const isDark = theme.palette.mode === 'dark';
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isDark = theme.palette.mode === "dark";
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const [last, setLast] = useState({ loading: true, ts: null, tz: null });
 
@@ -94,7 +106,9 @@ export default function Header({
   }, [brandKey]);
 
   // Extract first name for the greeting
-  const firstName = user?.name ? user.name.split(' ')[0] : (user?.email?.split('@')[0] || 'User');
+  const firstName = user?.name
+    ? user.name.split(" ")[0]
+    : user?.email?.split("@")[0] || "User";
 
   return (
     <AppBar
@@ -102,17 +116,26 @@ export default function Header({
       color="transparent"
       elevation={0}
       sx={{
-        bgcolor: 'transparent',
-        borderBottom: isMobile ? '1px solid' : 'none',
-        borderBottomColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+        bgcolor: "transparent",
+        borderBottom: isMobile ? "1px solid" : "none",
+        borderBottomColor: darkMode
+          ? "rgba(255,255,255,0.1)"
+          : "rgba(0,0,0,0.1)",
         px: { xs: 1, md: 4 },
-        py: { xs: 0, md: 1 }
+        py: { xs: 0, md: 1 },
       }}
     >
-      <Toolbar sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: { xs: 56, md: 72 }, p: 0 }}>
-
+      <Toolbar
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          minHeight: { xs: 56, md: 72 },
+          p: 0,
+        }}
+      >
         {/* Left: Greeting (Desktop) or Logo (Mobile) */}
-        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ display: "flex", flexDirection: "column" }}>
           {isMobile ? (
             <Box
               component="img"
@@ -120,15 +143,26 @@ export default function Header({
               alt="Brand"
               sx={{
                 height: 50,
-                width: 'auto',
-                filter: darkMode ? 'invert(1) hue-rotate(180deg) brightness(1.2)' : 'none'
+                width: "auto",
+                filter: darkMode
+                  ? "invert(1) hue-rotate(180deg) brightness(1.2)"
+                  : "none",
               }}
             />
           ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-              <Typography variant="h5" sx={{ fontWeight: 700, color: darkMode ? '#fff' : '#111', display: 'flex', alignItems: 'center', gap: 2 }}>
-                Welcome, {firstName} <span style={{ fontSize: '1.2rem' }}>👋</span>
-
+            <Box sx={{ display: "flex", flexDirection: "column" }}>
+              <Typography
+                variant="h5"
+                sx={{
+                  fontWeight: 700,
+                  color: darkMode ? "#fff" : "#111",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 2,
+                }}
+              >
+                Welcome, {firstName}{" "}
+                <span style={{ fontSize: "1.2rem" }}>👋</span>
                 {!isMobile && (
                   <>
                     {last.loading ? (
@@ -139,12 +173,16 @@ export default function Header({
                           height: 28,
                           display: "flex",
                           alignItems: "center",
-                          bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                          bgcolor: darkMode
+                            ? "rgba(255,255,255,0.05)"
+                            : "rgba(0,0,0,0.03)",
                           fontSize: 11,
-                          color: 'text.secondary',
-                          borderRadius: '6px',
-                          border: '1px solid',
-                          borderColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'
+                          color: "text.secondary",
+                          borderRadius: "6px",
+                          border: "1px solid",
+                          borderColor: darkMode
+                            ? "rgba(255,255,255,0.1)"
+                            : "rgba(0,0,0,0.08)",
                         }}
                       >
                         Updating…
@@ -163,11 +201,15 @@ export default function Header({
                             alignItems: "center",
                             fontSize: 11,
                             fontWeight: 600,
-                            color: 'text.secondary',
-                            bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                            borderRadius: '6px',
-                            border: '1px solid',
-                            borderColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'
+                            color: "text.secondary",
+                            bgcolor: darkMode
+                              ? "rgba(255,255,255,0.05)"
+                              : "rgba(0,0,0,0.03)",
+                            borderRadius: "6px",
+                            border: "1px solid",
+                            borderColor: darkMode
+                              ? "rgba(255,255,255,0.1)"
+                              : "rgba(0,0,0,0.08)",
                           }}
                         >
                           Updated {last.ts.fromNow()}
@@ -182,11 +224,15 @@ export default function Header({
                           display: "flex",
                           alignItems: "center",
                           fontSize: 11,
-                          color: 'text.secondary',
-                          bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                          borderRadius: '6px',
-                          border: '1px solid',
-                          borderColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'
+                          color: "text.secondary",
+                          bgcolor: darkMode
+                            ? "rgba(255,255,255,0.05)"
+                            : "rgba(0,0,0,0.03)",
+                          borderRadius: "6px",
+                          border: "1px solid",
+                          borderColor: darkMode
+                            ? "rgba(255,255,255,0.1)"
+                            : "rgba(0,0,0,0.08)",
                         }}
                       >
                         Updated: unavailable
@@ -195,7 +241,10 @@ export default function Header({
                   </>
                 )}
               </Typography>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+              <Typography
+                variant="caption"
+                sx={{ color: "text.secondary", fontWeight: 500 }}
+              >
                 Your store at a glance
               </Typography>
             </Box>
@@ -203,20 +252,29 @@ export default function Header({
         </Box>
 
         {/* Right: Actions */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 1.5 } }}>
-
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: { xs: 1, md: 1.5 },
+          }}
+        >
           {/* Mobile Filter Button */}
           {showFilterButton && isMobile && (
             <IconButton
               onClick={onFilterClick}
               size="small"
               sx={{
-                color: darkMode ? '#f0f0f0' : 'inherit',
-                bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                border: '1px solid',
-                borderColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                borderRadius: '8px',
-                p: 0.8
+                color: darkMode ? "#f0f0f0" : "inherit",
+                bgcolor: darkMode
+                  ? "rgba(255,255,255,0.05)"
+                  : "rgba(0,0,0,0.05)",
+                border: "1px solid",
+                borderColor: darkMode
+                  ? "rgba(255,255,255,0.1)"
+                  : "rgba(0,0,0,0.1)",
+                borderRadius: "8px",
+                p: 0.8,
               }}
             >
               <SlidersHorizontal size={18} />
@@ -228,7 +286,10 @@ export default function Header({
             <>
               {/* Notifications - Only for admins */}
               {isAdmin && (
-                <NotificationsMenu darkMode={darkMode} />
+                <NotificationsMenu
+                  darkMode={darkMode}
+                  onTabChange={onTabChange}
+                />
               )}
 
               {/* Theme Toggle */}
@@ -241,11 +302,17 @@ export default function Header({
                     onClick={onLogout}
                     size="small"
                     sx={{
-                      bgcolor: darkMode ? 'rgba(211, 47, 47, 0.1)' : 'rgba(211, 47, 47, 0.05)',
-                      borderRadius: '10px',
+                      bgcolor: darkMode
+                        ? "rgba(211, 47, 47, 0.1)"
+                        : "rgba(211, 47, 47, 0.05)",
+                      borderRadius: "10px",
                       p: 1.2,
-                      color: '#d32f2f', // Red color
-                      '&:hover': { bgcolor: darkMode ? 'rgba(211, 47, 47, 0.2)' : 'rgba(211, 47, 47, 0.1)' }
+                      color: "#d32f2f", // Red color
+                      "&:hover": {
+                        bgcolor: darkMode
+                          ? "rgba(211, 47, 47, 0.2)"
+                          : "rgba(211, 47, 47, 0.1)",
+                      },
                     }}
                   >
                     <LogOut size={20} />
@@ -279,11 +346,13 @@ export default function Header({
                     src="/brand-logo.jpg"
                     alt="TechIt"
                     style={{
-                      height: '36px',
-                      width: 'auto',
-                      objectFit: 'contain',
+                      height: "36px",
+                      width: "auto",
+                      objectFit: "contain",
                       opacity: 0.9,
-                      filter: darkMode ? 'invert(1) hue-rotate(180deg) brightness(1.5)' : 'none'
+                      filter: darkMode
+                        ? "invert(1) hue-rotate(180deg) brightness(1.5)"
+                        : "none",
                     }}
                   />
                 </Box>
@@ -293,9 +362,13 @@ export default function Header({
 
           {/* Mobile Theme & Logout (Fallthrough) */}
           {isMobile && (
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
               <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
-              <IconButton onClick={onLogout} size="small" sx={{ color: '#d32f2f' }}>
+              <IconButton
+                onClick={onLogout}
+                size="small"
+                sx={{ color: "#d32f2f" }}
+              >
                 <LogOut size={20} />
               </IconButton>
             </Box>

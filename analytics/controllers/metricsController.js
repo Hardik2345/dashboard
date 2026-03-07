@@ -4497,9 +4497,32 @@ function buildMetricsController() {
           }
         }
 
+        let pageTypes = req.query.page_types;
+        if (typeof pageTypes === "string") {
+          try {
+            pageTypes = JSON.parse(pageTypes);
+          } catch (e) {
+            pageTypes = [];
+          }
+        }
+
         if (Array.isArray(productTypes) && productTypes.length > 0) {
           // If filtering by product types, we want to show ALL products in that type, even if 0 sessions.
           // Condition moved to WHERE clause of main query, but we also flag to switch base table.
+        }
+
+        if (Array.isArray(pageTypes) && pageTypes.length > 0) {
+          const typeConditions = [];
+          for (const type of pageTypes) {
+            if (type === "Product") {
+              typeConditions.push(`s.landing_page_path LIKE '%products/%'`);
+            } else if (type === "Collection") {
+              typeConditions.push(`s.landing_page_path LIKE '%collections/%'`);
+            }
+          }
+          if (typeConditions.length > 0) {
+            conditions.push(`(${typeConditions.join(" OR ")})`);
+          }
         }
 
         if (Array.isArray(filters) && filters.length > 0) {

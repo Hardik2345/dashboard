@@ -32,6 +32,7 @@ import {
   Popover as MuiPopover,
   InputAdornment,
   Grow,
+  Tooltip,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import DownloadIcon from "@mui/icons-material/Download";
@@ -63,6 +64,7 @@ import {
   clearFilters,
   setSearch,
   setProductTypes,
+  setPageTypes,
 } from "../state/slices/productConversionSlice.js";
 
 import { exportProductConversionCsv, getProductTypes } from "../lib/api.js";
@@ -553,7 +555,6 @@ function DeltaBadge({ current, previous, isPercent }) {
 import {
   Collapse,
   IconButton,
-  Tooltip,
   Checkbox,
   ListItem,
   ListItemIcon,
@@ -584,6 +585,8 @@ function DetailedFilterPanel({
   availableProductTypes = [],
   loadingTypes = false,
   onProductTypeChange,
+  pageTypes = [],
+  onPageTypeChange,
   expanded,
   onExpandedChange,
 }) {
@@ -628,6 +631,17 @@ function DetailedFilterPanel({
   const isIndeterminateTypes =
     productTypes.length > 0 &&
     productTypes.length < availableProductTypes.length;
+
+  const handleTogglePageType = (type) => {
+    const current = pageTypes || [];
+    if (current.includes(type)) {
+      onPageTypeChange(current.filter((t) => t !== type));
+    } else {
+      onPageTypeChange([...current, type]);
+    }
+  };
+
+  const PAGE_TYPES = ["Product", "Collection"];
 
   // State for new filter creation
   const [showAddForm, setShowAddForm] = useState(false);
@@ -828,7 +842,70 @@ function DetailedFilterPanel({
           </AccordionDetails>
         </Accordion>
 
-        {/* 2. Product Types Section */}
+        {/* 2. Page Type Section */}
+        <Accordion
+          expanded={expanded === "page-type"}
+          onChange={handleAccordionChange("page-type")}
+          disableGutters
+          elevation={0}
+          sx={{
+            bgcolor: "transparent",
+            "&:before": { display: "none" },
+            borderBottom: "1px solid",
+            borderColor: "divider",
+          }}
+        >
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography
+              variant="subtitle2"
+              color="text.primary"
+              sx={{
+                textTransform: "uppercase",
+                fontSize: "0.75rem",
+                fontWeight: 700,
+                letterSpacing: 0.5,
+              }}
+            >
+              Page Type
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails sx={{ p: 0, pb: 2 }}>
+            <List dense disablePadding>
+              {PAGE_TYPES.map((type) => {
+                const isChecked = pageTypes.includes(type);
+                return (
+                  <ListItem
+                    key={type}
+                    dense
+                    divider
+                    button
+                    onClick={() => handleTogglePageType(type)}
+                  >
+                    <ListItemIcon sx={{ minWidth: 36 }}>
+                      <Checkbox
+                        edge="start"
+                        checked={isChecked}
+                        tabIndex={-1}
+                        disableRipple
+                        size="small"
+                      />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={type}
+                      primaryTypographyProps={{
+                        fontSize: "0.8125rem",
+                        fontWeight: isChecked ? 600 : 400,
+                        color: isChecked ? "primary.main" : "text.secondary",
+                      }}
+                    />
+                  </ListItem>
+                );
+              })}
+            </List>
+          </AccordionDetails>
+        </Accordion>
+
+        {/* 3. Product Types Section */}
         <Accordion
           expanded={expanded === "productTypes"}
           onChange={handleAccordionChange("productTypes")}
@@ -1237,16 +1314,28 @@ const MemoizedTable = memo(
     end,
     compareStart,
     compareEnd,
+    columnWidths,
+    handleMouseDown,
   }) => {
     return (
-      <Table size="small">
+      <Table size="small" sx={{ tableLayout: "fixed", minWidth: "100%" }}>
         <TableHead>
           <TableRow sx={{ bgcolor: "rgba(255,255,255,0.08)" }}>
             {columns.map((col) => (
               <TableCell
                 key={col.id}
                 align={col.align}
-                sx={{ fontWeight: 600, whiteSpace: "nowrap" }}
+                sx={{
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  position: "relative",
+                  width: columnWidths[col.id] || "auto",
+                  minWidth: columnWidths[col.id] || "auto",
+                  maxWidth: columnWidths[col.id] || "auto",
+                  "&:hover .resize-handle": {
+                    opacity: 1,
+                  },
+                }}
               >
                 <TableSortLabel
                   active={sortBy === col.id}
@@ -1255,6 +1344,22 @@ const MemoizedTable = memo(
                 >
                   {col.label}
                 </TableSortLabel>
+                <Box
+                  className="resize-handle"
+                  onMouseDown={(e) => handleMouseDown(e, col.id)}
+                  sx={{
+                    position: "absolute",
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: "4px",
+                    cursor: "col-resize",
+                    bgcolor: "primary.main",
+                    opacity: 0,
+                    transition: "opacity 0.2s",
+                    zIndex: 1,
+                  }}
+                />
               </TableCell>
             ))}
           </TableRow>
@@ -1306,58 +1411,74 @@ const MemoizedTable = memo(
                       : formatNumber(prevRaw)
                     : null;
 
+                const cellContent = (
+                  <Box
+                    sx={{
+                      position: "relative",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems:
+                        col.align === "right" ? "flex-end" : "flex-start",
+                      pr: compareMode && col.align === "right" ? "70px" : 0,
+                      width: "100%",
+                    }}
+                  >
+                    <span
+                      style={{
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        display: "block",
+                        width: "100%",
+                      }}
+                    >
+                      {display}
+                    </span>
+                    {prevDisplay && (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ fontSize: "0.70rem", lineHeight: 1.2 }}
+                      >
+                        {prevDisplay}
+                      </Typography>
+                    )}
+                    {delta && (
+                      <Box
+                        sx={{
+                          position: "absolute",
+                          right: col.align === "right" ? 0 : "auto",
+                          left: col.align === "right" ? "auto" : "100%",
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          ml: col.align === "right" ? 0 : 1,
+                        }}
+                      >
+                        {delta}
+                      </Box>
+                    )}
+                  </Box>
+                );
+
                 return (
                   <TableCell
                     key={col.id}
                     align={col.align}
                     sx={{
                       verticalAlign: "middle",
-                      ...(col.id === "landing_page_path"
-                        ? {
-                            maxWidth: 320,
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }
-                        : {}),
+                      width: columnWidths[col.id] || "auto",
+                      minWidth: columnWidths[col.id] || "auto",
+                      maxWidth: columnWidths[col.id] || "auto",
+                      overflow: "hidden",
                     }}
                   >
-                    <Box
-                      sx={{
-                        position: "relative",
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems:
-                          col.align === "right" ? "flex-end" : "flex-start",
-                        pr: compareMode && col.align === "right" ? "70px" : 0,
-                      }}
-                    >
-                      <span>{display}</span>
-                      {prevDisplay && (
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{ fontSize: "0.70rem", lineHeight: 1.2 }}
-                        >
-                          {prevDisplay}
-                        </Typography>
-                      )}
-                      {delta && (
-                        <Box
-                          sx={{
-                            position: "absolute",
-                            right: 0,
-                            top: "50%",
-                            transform: "translateY(-50%)",
-                            width: "64px",
-                            display: "flex",
-                            justifyContent: "flex-start",
-                          }}
-                        >
-                          {delta}
-                        </Box>
-                      )}
-                    </Box>
+                    {col.id === "landing_page_path" ? (
+                      <Tooltip title={row.landing_page_path || ""} arrow>
+                        {cellContent}
+                      </Tooltip>
+                    ) : (
+                      cellContent
+                    )}
                   </TableCell>
                 );
               })}
@@ -1398,6 +1519,7 @@ export default function ProductConversionTable({
     compareStart,
     compareEnd,
     productTypes,
+    pageTypes,
   } = productState;
   const [exporting, setExporting] = useState(false);
   const [localSearch, setLocalSearch] = useState(productState.search || "");
@@ -1469,9 +1591,49 @@ export default function ProductConversionTable({
   const [visibleColumnIds, setVisibleColumnIds] = useState([
     "landing_page_path",
     "sessions",
-    "atc",
+    "orders",
     "cvr",
   ]);
+
+  // Column Resizing Logic
+  const [columnWidths, setColumnWidths] = useState({
+    landing_page_path: 320,
+    sessions: 120,
+    orders: 120,
+    cvr: 100,
+    atc: 120,
+    atc_rate: 120,
+    sales: 120,
+  });
+
+  const resizingColumn = useRef(null);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+
+  const handleMouseDown = (e, colId) => {
+    resizingColumn.current = colId;
+    startX.current = e.pageX;
+    startWidth.current = columnWidths[colId];
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    e.preventDefault();
+  };
+
+  const handleMouseMove = useCallback((e) => {
+    if (!resizingColumn.current) return;
+    const diff = e.pageX - startX.current;
+    const newWidth = Math.max(80, startWidth.current + diff);
+    setColumnWidths((prev) => ({
+      ...prev,
+      [resizingColumn.current]: newWidth,
+    }));
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    resizingColumn.current = null;
+    document.removeEventListener("mousemove", handleMouseMove);
+    document.removeEventListener("mouseup", handleMouseUp);
+  }, [handleMouseMove]);
 
   // Effect to enforce compareMode = false if showCompareMode is false
   useEffect(() => {
@@ -1489,7 +1651,8 @@ export default function ProductConversionTable({
   const handleClearFilters = () => {
     dispatch(clearFilters());
     dispatch(setProductTypes([]));
-    triggerFetch({ filters: [], productTypes: [] });
+    dispatch(setPageTypes([]));
+    triggerFetch({ filters: [], productTypes: [], pageTypes: [] });
   };
 
   const handleProductTypeChange = (types) => {
@@ -1501,6 +1664,17 @@ export default function ProductConversionTable({
     const newTypes = (productTypes || []).filter((t) => t !== typeToRemove);
     dispatch(setProductTypes(newTypes));
     triggerFetch({ productTypes: newTypes, page: 1 });
+  };
+
+  const handlePageTypeChange = (types) => {
+    dispatch(setPageTypes(types));
+    triggerFetch({ pageTypes: types, page: 1 });
+  };
+
+  const handleRemovePageType = (typeToRemove) => {
+    const newTypes = (pageTypes || []).filter((t) => t !== typeToRemove);
+    dispatch(setPageTypes(newTypes));
+    triggerFetch({ pageTypes: newTypes, page: 1 });
   };
 
   // const isDark = theme.palette.mode === 'dark'; // Handled in DateRangePicker
@@ -1519,6 +1693,7 @@ export default function ProductConversionTable({
     filters: productState.filters,
     search: productState.search,
     productTypes: productState.productTypes,
+    pageTypes: productState.pageTypes,
   });
 
   // Effects for paramsRef and fetch cancellation
@@ -1543,6 +1718,7 @@ export default function ProductConversionTable({
       filters: productState.filters,
       search: productState.search,
       productTypes: productState.productTypes,
+      pageTypes: productState.pageTypes,
     };
   }, [
     start,
@@ -1557,6 +1733,7 @@ export default function ProductConversionTable({
     productState.filters,
     productState.search,
     productState.productTypes,
+    productState.pageTypes,
   ]);
 
   const runFetch = useCallback(
@@ -2135,7 +2312,8 @@ export default function ProductConversionTable({
       {/* Filter Summary / Active Chips (optional display if panel is closed) */}
       {/* Filter Summary / Active Chips (Scrollable Row) */}
       {((productState.filters && productState.filters.length > 0) ||
-        (productTypes && productTypes.length > 0)) && (
+        (productTypes && productTypes.length > 0) ||
+        (pageTypes && pageTypes.length > 0)) && (
         <Box
           sx={{
             display: "flex",
@@ -2147,6 +2325,21 @@ export default function ProductConversionTable({
             "&::-webkit-scrollbar": { display: "none" },
           }}
         >
+          {/* Page Types (Product/Collection) */}
+          {(pageTypes || []).map((type) => (
+            <Grow key={`page-type-${type}`} in={true}>
+              <div>
+                <GlassChip
+                  label={`Page: ${type}`}
+                  onDelete={() => handleRemovePageType(type)}
+                  size="small"
+                  isDark={theme.palette.mode === "dark"}
+                  sx={{ borderRadius: "9999px", whiteSpace: "nowrap" }}
+                />
+              </div>
+            </Grow>
+          ))}
+
           {/* Product Types */}
           {(productTypes || []).map((type) => (
             <Grow key={`type-${type}`} in={true}>
@@ -2221,7 +2414,7 @@ export default function ProductConversionTable({
                 flexDirection: "column",
               }}
             >
-              <TableContainer sx={{ flex: 1, overflowY: "auto" }}>
+              <TableContainer sx={{ flex: 1, overflow: "auto" }}>
                 <MemoizedTable
                   columns={visibleColumns}
                   rows={rows}
@@ -2234,6 +2427,8 @@ export default function ProductConversionTable({
                   end={end}
                   compareStart={compareStart}
                   compareEnd={compareEnd}
+                  columnWidths={columnWidths}
+                  handleMouseDown={handleMouseDown}
                   onOpenFilter={() => setShowFilterPanel(true)}
                   hasActiveFilters={
                     productState.filters?.length > 0 ||
@@ -2349,6 +2544,8 @@ export default function ProductConversionTable({
               availableProductTypes={availableProductTypes}
               loadingTypes={loadingTypes}
               onProductTypeChange={handleProductTypeChange}
+              pageTypes={pageTypes}
+              onPageTypeChange={handlePageTypeChange}
               expanded={expanded}
               onExpandedChange={setExpanded}
             />
@@ -2396,6 +2593,8 @@ export default function ProductConversionTable({
               availableProductTypes={availableProductTypes}
               loadingTypes={loadingTypes}
               onProductTypeChange={handleProductTypeChange}
+              pageTypes={pageTypes}
+              onPageTypeChange={handlePageTypeChange}
               expanded={expanded}
               onExpandedChange={setExpanded}
             />

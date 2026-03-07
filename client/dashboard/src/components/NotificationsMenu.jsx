@@ -27,7 +27,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 
 dayjs.extend(relativeTime);
 
-export default function NotificationsMenu({ darkMode }) {
+export default function NotificationsMenu({ darkMode, onTabChange }) {
   const theme = useTheme();
   const [anchorEl, setAnchorEl] = useState(null);
   const [notifications, setNotifications] = useState([]);
@@ -177,22 +177,59 @@ export default function NotificationsMenu({ darkMode }) {
               </Typography>
             </Box>
           ) : (
-            notifications.map((notif, index) => {
+            notifications.slice(0, 5).map((notif, index) => {
               const evt = notif.event || {};
               const metricName = (evt.metric || "Metric").replace(/_/g, " ");
               const delta = Math.abs(evt.delta_percent || 0).toFixed(2);
               const direction =
                 (evt.delta_percent || 0) < 0 ? "Dropped" : "Rose";
               const state = evt.current_state || "ALERT";
-              const brand = evt.brand || "";
-              const isAlert =
-                state.includes("ALERT") || state.includes("TRIGGERED");
+              const brand = evt.brand || "System";
+
+              // State-based icons and colors
+              let StatusIcon = AlertCircle;
+              let iconColor = "#ef4444"; // Red for Alert/Critical
+              let bgColor = darkMode
+                ? "rgba(239, 68, 68, 0.1)"
+                : "rgba(239, 68, 68, 0.05)";
+
+              if (state === "NORMAL") {
+                StatusIcon = CheckCircle;
+                iconColor = "#10b981"; // Green
+                bgColor = darkMode
+                  ? "rgba(16, 185, 129, 0.1)"
+                  : "rgba(16, 185, 129, 0.05)";
+              } else if (state === "TRIGGERED") {
+                StatusIcon = AlertCircle;
+                iconColor = "#f59e0b"; // Yellow/Amber
+                bgColor = darkMode
+                  ? "rgba(245, 158, 11, 0.1)"
+                  : "rgba(245, 158, 11, 0.05)";
+              } else if (state === "CRITICAL") {
+                StatusIcon = XCircle;
+                iconColor = "#ef4444"; // Red
+                bgColor = darkMode
+                  ? "rgba(239, 68, 68, 0.1)"
+                  : "rgba(239, 68, 68, 0.05)";
+              }
+
               const isTrendUp = (evt.delta_percent || 0) > 0;
               const isTrendDown = (evt.delta_percent || 0) < 0;
+
+              const handleItemClick = () => {
+                /* Navigation disabled while panel is hidden
+                if (notif._id) {
+                  localStorage.setItem("selected_notification_id", notif._id);
+                }
+                if (onTabChange) onTabChange("notifications-log");
+                handleClose();
+                */
+              };
 
               return (
                 <div key={notif._id || index}>
                   <ListItem
+                    onClick={handleItemClick}
                     sx={{
                       px: 2,
                       py: 1.5,
@@ -204,34 +241,19 @@ export default function NotificationsMenu({ darkMode }) {
                         : darkMode
                           ? "rgba(255,255,255,0.03)"
                           : "rgba(0,0,0,0.02)",
-                      "&:hover": {
-                        bgcolor: darkMode
-                          ? "rgba(255,255,255,0.05)"
-                          : "rgba(0,0,0,0.04)",
-                      },
                       transition: "background-color 0.2s",
                     }}
                   >
                     <Avatar
                       sx={{
-                        bgcolor: isAlert
-                          ? darkMode
-                            ? "rgba(239, 68, 68, 0.1)"
-                            : "rgba(239, 68, 68, 0.05)"
-                          : darkMode
-                            ? "rgba(255, 255, 255, 0.05)"
-                            : "rgba(0, 0, 0, 0.03)",
-                        color: isAlert
-                          ? "#ef4444"
-                          : darkMode
-                            ? "#a1a1aa"
-                            : "#71717a",
+                        bgcolor: bgColor,
+                        color: iconColor,
                         width: 40,
                         height: 40,
                         borderRadius: "10px",
                       }}
                     >
-                      {isAlert ? <AlertCircle size={20} /> : <Bell size={20} />}
+                      <StatusIcon size={20} />
                     </Avatar>
 
                     <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -246,15 +268,17 @@ export default function NotificationsMenu({ darkMode }) {
                         <Typography
                           variant="subtitle2"
                           sx={{
-                            fontWeight: notif.read ? 600 : 800,
+                            fontWeight: 800,
                             color: "text.primary",
-                            fontSize: "0.875rem",
+                            fontSize: "0.85rem",
+                            letterSpacing: "0.02em",
+                            textTransform: "uppercase",
                             whiteSpace: "nowrap",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                           }}
                         >
-                          {state}
+                          {brand}
                         </Typography>
                         <Typography
                           variant="caption"
@@ -276,6 +300,7 @@ export default function NotificationsMenu({ darkMode }) {
                           color: "text.secondary",
                           lineHeight: 1.4,
                           mb: 0.5,
+                          fontSize: "0.825rem",
                         }}
                       >
                         {metricName} {direction} by{" "}
@@ -288,7 +313,17 @@ export default function NotificationsMenu({ darkMode }) {
                         >
                           {delta}%
                         </Box>{" "}
-                        | {brand}
+                        | current state:{" "}
+                        <Box
+                          component="span"
+                          sx={{
+                            fontWeight: 600,
+                            color: iconColor,
+                            fontSize: "0.75rem",
+                          }}
+                        >
+                          {state}
+                        </Box>
                       </Typography>
 
                       <Box
@@ -326,12 +361,35 @@ export default function NotificationsMenu({ darkMode }) {
                       />
                     )}
                   </ListItem>
-                  {index < notifications.length - 1 && <Divider />}
+                  {index < 4 && index < notifications.length - 1 && <Divider />}
                 </div>
               );
             })
           )}
         </List>
+        {notifications.length > 5 && (
+          <Box
+            sx={{
+              p: 1.5,
+              borderTop: "1px solid",
+              borderColor: "divider",
+              textAlign: "center",
+            }}
+          >
+            <Typography
+              variant="button"
+              sx={{
+                fontSize: "0.75rem",
+                fontWeight: 700,
+                color: "text.disabled",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
+              Recent Notifications
+            </Typography>
+          </Box>
+        )}
       </Popover>
     </>
   );

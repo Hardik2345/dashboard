@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Box,
   Drawer,
@@ -7,7 +7,7 @@ import {
   useTheme,
   useMediaQuery,
   Avatar,
-} from '@mui/material';
+} from "@mui/material";
 import {
   LayoutGrid,
   ShieldCheck,
@@ -16,8 +16,8 @@ import {
   Bell,
   LogOut,
   Filter,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,13 +28,26 @@ import {
 const DRAWER_WIDTH = 260;
 
 const AVATAR_COLORS = [
-  '#F44336', '#E91E63', '#9C27B0', '#673AB7', '#3F51B5',
-  '#2196F3', '#03A9F4', '#00BCD4', '#009688', '#4CAF50',
-  '#8BC34A', '#CDDC39', '#FFEB3B', '#FFC107', '#FF9800', '#FF5722'
+  "#F44336",
+  "#E91E63",
+  "#9C27B0",
+  "#673AB7",
+  "#3F51B5",
+  "#2196F3",
+  "#03A9F4",
+  "#00BCD4",
+  "#009688",
+  "#4CAF50",
+  "#8BC34A",
+  "#CDDC39",
+  "#FFEB3B",
+  "#FFC107",
+  "#FF9800",
+  "#FF5722",
 ];
 
 const getInitials = (name, email) => {
-  const str = name || email || 'U';
+  const str = name || email || "U";
   return str.charAt(0).toUpperCase();
 };
 
@@ -45,21 +58,21 @@ const getAvatarColor = (initial) => {
 
 const NAV_ITEMS = [
   {
-    group: 'main',
+    group: "main",
     items: [
-      { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
-      { id: 'product-conversion', label: 'Funnels', icon: Filter },
-      { id: 'alerts', label: 'Alerts', icon: Bell },
-    ]
+      { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
+      { id: "product-conversion", label: "Funnels", icon: Filter },
+      { id: "alerts", label: "Alerts", icon: Bell },
+    ],
   },
   {
-    group: 'admin',
+    group: "admin",
     items: [
-      { id: 'access', label: 'Access Control', icon: ShieldCheck },
-      { id: 'notifications-log', label: 'Notifications/Alerts', icon: Bell },
+      { id: "access", label: "Access Control", icon: ShieldCheck },
+      //      { id: 'notifications-log', label: 'Notifications/Alerts', icon: Bell },
       //      { id: 'brands', label: 'Brand Setup', icon: Store },
-    ]
-  }
+    ],
+  },
 ];
 
 export default function Sidebar({
@@ -73,24 +86,26 @@ export default function Sidebar({
   allowedTabs, // Array of tab IDs. If provided, specific filtering is applied.
 }) {
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const initials = getInitials(user?.name, user?.email);
   const avatarColor = getAvatarColor(initials);
 
   const filteredNavItems = useMemo(() => {
     if (!allowedTabs) return NAV_ITEMS;
     const set = new Set(allowedTabs);
-    return NAV_ITEMS.map(group => ({
+    return NAV_ITEMS.map((group) => ({
       ...group,
-      items: group.items.filter(item => set.has(item.id))
-    })).filter(group => group.items.length > 0);
+      items: group.items.filter((item) => set.has(item.id)),
+    })).filter((group) => group.items.length > 0);
   }, [allowedTabs]);
 
   const NavContent = () => (
-    <div className={cn(
-      "flex flex-col h-full bg-white dark:bg-zinc-950",
-      !isMobile && "border-r border-zinc-200 dark:border-zinc-800"
-    )}>
+    <div
+      className={cn(
+        "flex flex-col h-full bg-white dark:bg-zinc-950",
+        !isMobile && "border-r border-zinc-200 dark:border-zinc-800",
+      )}
+    >
       <div className="px-6 py-6 flex items-center justify-between">
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
@@ -99,7 +114,7 @@ export default function Sidebar({
               alt="Datum"
               className={cn(
                 "h-20 w-30",
-                darkMode && "invert hue-rotate-180 brightness-1.2"
+                darkMode && "invert hue-rotate-180 brightness-1.2",
               )}
             />
           </div>
@@ -110,7 +125,9 @@ export default function Sidebar({
       <nav className="flex-1 px-4 space-y-6 overflow-y-auto">
         {filteredNavItems.map((section, sIdx) => (
           <div key={section.group} className="space-y-1">
-            {sIdx > 0 && <div className="my-4 border-t border-zinc-100 dark:border-zinc-800" />}
+            {sIdx > 0 && (
+              <div className="my-4 border-t border-zinc-100 dark:border-zinc-800" />
+            )}
             {section.items.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -126,10 +143,15 @@ export default function Sidebar({
                     "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium",
                     isActive
                       ? "bg-black text-white dark:bg-white dark:text-black shadow-sm"
-                      : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                      : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-900",
                   )}
                 >
-                  <Icon size={18} className={isActive ? "text-white dark:text-black" : "text-zinc-400"} />
+                  <Icon
+                    size={18}
+                    className={
+                      isActive ? "text-white dark:text-black" : "text-zinc-400"
+                    }
+                  />
                   {item.label}
                 </button>
               );
@@ -147,21 +169,21 @@ export default function Sidebar({
             sx={{
               width: 40,
               height: 40,
-              borderRadius: '10px',
+              borderRadius: "10px",
               bgcolor: avatarColor,
-              color: '#fff',
-              fontSize: '1rem',
-              fontWeight: 'bold'
+              color: "#fff",
+              fontSize: "1rem",
+              fontWeight: "bold",
             }}
           >
             {!user?.avatar_url && !user?.picture && initials}
           </Avatar>
           <div className="flex flex-col items-start text-left min-w-0">
             <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate w-full uppercase">
-              {user?.name || user?.email?.split('@')[0] || 'User'}
+              {user?.name || user?.email?.split("@")[0] || "User"}
             </span>
             <span className="text-xs text-zinc-500 dark:text-zinc-400 capitalize">
-              {user?.role || (user?.isAuthor ? 'Admin' : 'Viewer')}
+              {user?.role || (user?.isAuthor ? "Admin" : "Viewer")}
             </span>
           </div>
         </div>
@@ -198,10 +220,10 @@ export default function Sidebar({
         onClose={onClose}
         ModalProps={{ keepMounted: true }}
         sx={{
-          '& .MuiDrawer-paper': {
+          "& .MuiDrawer-paper": {
             width: DRAWER_WIDTH,
-            boxSizing: 'border-box',
-            borderRight: 'none',
+            boxSizing: "border-box",
+            borderRight: "none",
           },
         }}
       >
@@ -220,12 +242,12 @@ export default function Sidebar({
           transition={{
             type: "spring",
             stiffness: 260,
-            damping: 30
+            damping: 30,
           }}
           style={{
             width: DRAWER_WIDTH,
-            height: '100vh',
-            position: 'fixed',
+            height: "100vh",
+            position: "fixed",
             left: 0,
             top: 0,
             zIndex: 1200,
@@ -234,8 +256,8 @@ export default function Sidebar({
           <Box
             component="nav"
             sx={{
-              width: '100%',
-              height: '100%',
+              width: "100%",
+              height: "100%",
             }}
           >
             <NavContent />
