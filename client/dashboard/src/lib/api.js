@@ -359,10 +359,14 @@ export async function getProductConversion(args, options = {}) {
       compare_end: args.compareEnd,
       search: args.search,
       filters: args.filters,
-      // Add product_types support
+      // Add product_types and page_types support
       product_types:
         args.productTypes || args.product_types
           ? JSON.stringify(args.productTypes || args.product_types)
+          : undefined,
+      page_types:
+        args.pageTypes || args.page_types
+          ? JSON.stringify(args.pageTypes || args.page_types)
           : undefined,
     },
     args,
@@ -419,6 +423,10 @@ export async function exportProductConversionCsv(args) {
       product_types:
         args.productTypes || args.product_types
           ? JSON.stringify(args.productTypes || args.product_types)
+          : undefined,
+      page_types:
+        args.pageTypes || args.page_types
+          ? JSON.stringify(args.pageTypes || args.page_types)
           : undefined,
     },
     args,

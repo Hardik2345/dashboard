@@ -41,7 +41,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { id: "product-conversion", label: "Funnels", icon: Filter },
   { id: "alerts", label: "Alerts", icon: Bell },
-  { id: "notifications-log", label: "Logs", icon: Bell },
+  //  { id: "notifications-log", label: "Logs", icon: Bell },
   { id: "access", label: "Access", icon: ShieldCheck },
   //  { id: 'brands', label: 'Setup', icon: Store },
 ];
@@ -1485,6 +1485,7 @@ export default function App() {
                 onLogout={handleLogout}
                 onMenuClick={showSidebar ? handleSidebarOpen : undefined}
                 showMenuButton={showSidebar}
+                onTabChange={handleSidebarTabChange}
                 isAdmin={isAuthor}
                 darkMode={darkMode === "dark"}
                 onToggleDarkMode={handleToggleDarkMode}
@@ -1576,37 +1577,6 @@ export default function App() {
                     </Box>
                   )}
 
-                  {!isMobile &&
-                    authorTab !== "dashboard" &&
-                    authorTab !== "product-conversion" &&
-                    authorTab !== "alerts" &&
-                    authorTab !== "access" &&
-                    (isAuthor || showMultipleBrands) && (
-                      <Box sx={{ mb: 1 }}>
-                        <AuthorBrandSelector
-                          brands={
-                            isAuthor
-                              ? authorBrands
-                              : viewerBrands.map((key) => ({ key }))
-                          }
-                          value={activeBrandKey}
-                          loading={isAuthor ? authorBrandsLoading : false}
-                          onChange={
-                            isAuthor
-                              ? handleAuthorBrandChange
-                              : (val) =>
-                                  dispatch(
-                                    setBrand(
-                                      (val || "")
-                                        .toString()
-                                        .trim()
-                                        .toUpperCase(),
-                                    ),
-                                  )
-                          }
-                        />
-                      </Box>
-                    )}
                   {!isMobile &&
                     authorTab !== "dashboard" &&
                     authorTab !== "product-conversion" &&
@@ -1723,6 +1693,19 @@ export default function App() {
                     exit="exit"
                     style={{ width: "100%" }}
                   >
+                    {authorTab === "notifications-log" && (
+                      <motion.div
+                        key="notifications-log"
+                        custom={direction}
+                        variants={pageVariants}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        style={{ width: "100%", height: "100%" }}
+                      >
+                        <NotificationsLog darkMode={darkMode === "dark"} />
+                      </motion.div>
+                    )}
                     {authorTab === "dashboard" &&
                       (hasBrand ? (
                         <Suspense fallback={<SectionFallback count={5} />}>
@@ -2138,7 +2121,7 @@ export default function App() {
 
                     {authorTab === "notifications-log" && (
                       <Suspense fallback={<SectionFallback />}>
-                        <NotificationsLog />
+                        <NotificationsLog darkMode={darkMode === "dark"} />
                       </Suspense>
                     )}
                   </motion.div>

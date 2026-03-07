@@ -78,6 +78,7 @@ app.post("/track", async (req, res) => {
 
 app.post("/push/receive", async (req, res) => {
   try {
+    logger.info("[push/receive] Received push notification:", req.body);
     if (
       !req.headers["x-push-token"] ||
       req.headers["x-push-token"] !== process.env.PUSH_TOKEN
