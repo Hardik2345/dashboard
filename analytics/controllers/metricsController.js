@@ -3459,8 +3459,13 @@ function buildMetricsController() {
                   WHERE created_date >= ? AND created_date <= ?`;
             compSql = appendUtmWhere(compSql, compReplacements, filters);
             if (filters.product_id) {
-              compSql += ` AND product_id = ?`;
-              compReplacements.push(filters.product_id);
+              if (Array.isArray(filters.product_id)) {
+                compSql += ` AND product_id IN (?)`;
+                compReplacements.push(filters.product_id);
+              } else {
+                compSql += ` AND product_id = ?`;
+                compReplacements.push(filters.product_id);
+              }
             }
             compSql += ` GROUP BY date, hour`;
           }

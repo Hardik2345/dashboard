@@ -708,6 +708,7 @@ export default function KPIs({
                 }
                 selected={false}
                 activeColor={cancellationMode === "C" ? "#ef4444" : "#f59e0b"}
+                invertDeltaColor={true}
                 compareValue={
                   compareMode
                     ? cancellationMode === "C" && data.prevCancelledRate != null

@@ -259,26 +259,48 @@ export default function Header({
             gap: { xs: 1, md: 1.5 },
           }}
         >
-          {/* Mobile Filter Button */}
-          {showFilterButton && isMobile && (
-            <IconButton
-              onClick={onFilterClick}
-              size="small"
-              sx={{
-                color: darkMode ? "#f0f0f0" : "inherit",
-                bgcolor: darkMode
-                  ? "rgba(255,255,255,0.05)"
-                  : "rgba(0,0,0,0.05)",
-                border: "1px solid",
-                borderColor: darkMode
-                  ? "rgba(255,255,255,0.1)"
-                  : "rgba(0,0,0,0.1)",
-                borderRadius: "8px",
-                p: 0.8,
-              }}
-            >
-              <SlidersHorizontal size={18} />
-            </IconButton>
+          {/* Mobile Actions */}
+          {isMobile && (
+            <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+              {/* Notifications - Only for admins */}
+              {isAdmin && (
+                <NotificationsMenu
+                  darkMode={darkMode}
+                  onTabChange={onTabChange}
+                />
+              )}
+
+              {/* Mobile Filter Button */}
+              {showFilterButton && (
+                <IconButton
+                  onClick={onFilterClick}
+                  size="small"
+                  sx={{
+                    color: darkMode ? "#f0f0f0" : "inherit",
+                    bgcolor: darkMode
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(0,0,0,0.05)",
+                    border: "1px solid",
+                    borderColor: darkMode
+                      ? "rgba(255,255,255,0.1)"
+                      : "rgba(0,0,0,0.1)",
+                    borderRadius: "8px",
+                    p: 0.8,
+                  }}
+                >
+                  <SlidersHorizontal size={18} />
+                </IconButton>
+              )}
+
+              <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
+              <IconButton
+                onClick={onLogout}
+                size="small"
+                sx={{ color: "#d32f2f" }}
+              >
+                <LogOut size={20} />
+              </IconButton>
+            </Box>
           )}
 
           {/* Desktop Actions */}
@@ -323,25 +345,6 @@ export default function Header({
               {/* Customize Widget Button - Only for admins */}
               {isAdmin && (
                 <Box sx={{ ml: 1 }}>
-                  {/*
-                  <Button
-                    variant="contained"
-                    startIcon={<LayoutGrid size={18} />}
-                    sx={{
-                      bgcolor: '#37B29B',
-                      color: '#fff',
-                      textTransform: 'none',
-                      fontWeight: 600,
-                      borderRadius: '10px',
-                      px: 2,
-                      py: 1,
-                      '&:hover': { bgcolor: '#2D9381' },
-                      boxShadow: 'none'
-                    }}
-                  >
-                    Customize Widget
-                  </Button>
-                  */}
                   <img
                     src="/brand-logo.jpg"
                     alt="TechIt"
@@ -358,20 +361,6 @@ export default function Header({
                 </Box>
               )}
             </>
-          )}
-
-          {/* Mobile Theme & Logout (Fallthrough) */}
-          {isMobile && (
-            <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-              <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
-              <IconButton
-                onClick={onLogout}
-                size="small"
-                sx={{ color: "#d32f2f" }}
-              >
-                <LogOut size={20} />
-              </IconButton>
-            </Box>
           )}
         </Box>
       </Toolbar>

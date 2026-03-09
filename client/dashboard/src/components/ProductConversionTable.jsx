@@ -1352,9 +1352,9 @@ const MemoizedTable = memo(
                     right: 0,
                     top: 0,
                     bottom: 0,
-                    width: "4px",
+                    width: "1px",
                     cursor: "col-resize",
-                    bgcolor: "primary.main",
+                    bgcolor: "#10b981",
                     opacity: 0,
                     transition: "opacity 0.2s",
                     zIndex: 1,
@@ -1591,6 +1591,7 @@ export default function ProductConversionTable({
   const [visibleColumnIds, setVisibleColumnIds] = useState([
     "landing_page_path",
     "sessions",
+    "atc_rate",
     "orders",
     "cvr",
   ]);
