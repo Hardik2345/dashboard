@@ -37,6 +37,9 @@ const {
 const { requireBrandKey } = require("../utils/brandHelpers");
 const { getBrands } = require("../config/brands");
 const { getBrandConnection } = require("../lib/brandConnectionManager");
+const {
+  queryHourlyProductSessions,
+} = require("../services/duckdbQueryService");
 
 const SHOP_DOMAIN_CACHE = new Map();
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -5118,6 +5121,97 @@ function buildMetricsController() {
         return res.send(lines.join("\n"));
       } catch (e) {
         console.error("[product-conversion-csv] failed", e);
+        return res.status(500).json({ error: "Internal server error" });
+      }
+    },
+
+    hourlyProductSessionsExport: async (req, res) => {
+      try {
+        const todayStr = formatIsoDate(new Date());
+        const parsed = RangeSchema.safeParse({
+          start: req.query.start || todayStr,
+          end: req.query.end || todayStr,
+        });
+        if (!parsed.success)
+          return res
+            .status(400)
+            .json({ error: "Invalid date range", details: parsed.error.flatten() });
+        const { start, end } = parsed.data;
+        if (start && end && start > end)
+          return res.status(400).json({ error: "start must be on or before end" });
+
+        // Enforce max 90-day export window
+        const startD = new Date(start);
+        const endD = new Date(end);
+        const diffDays = Math.round((endD - startD) / 86400000);
+        if (diffDays > 90)
+          return res.status(400).json({ error: "Export range cannot exceed 90 days" });
+
+        const conn = req.brandDb?.sequelize;
+        if (!conn)
+          return res.status(500).json({ error: "Brand DB connection unavailable" });
+
+        const brandKey = (req.brandKey || "").toString().trim().toUpperCase();
+
+        const filters = {};
+        const filterKeys = [
+          "product_id", "landing_page_path",
+          "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+          "referrer_name",
+        ];
+        for (const key of filterKeys) {
+          if (req.query[key]) filters[key] = req.query[key];
+        }
+        if (req.query.hour !== undefined) filters.hour = req.query.hour;
+
+        const rows = await queryHourlyProductSessions({
+          brandKey,
+          conn,
+          startDate: start,
+          endDate: end,
+          filters,
+        });
+
+        const dateTag = start === end ? start : `${start}_to_${end}`;
+        const filename = `hourly_product_sessions_${brandKey || "all"}_${dateTag}.csv`;
+
+        res.setHeader("Content-Type", "text/csv");
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+        const headers = [
+          "date", "hour", "landing_page_type", "landing_page_path",
+          "product_id", "product_title",
+          "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+          "referrer_name", "sessions", "sessions_with_cart_additions",
+        ];
+
+        const escapeCsv = (val) => {
+          if (val === null || val === undefined) return "";
+          const str = String(val);
+          if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
+          return str;
+        };
+
+        const lines = [headers.join(",")];
+        for (const r of rows) {
+          const rowVals = headers.map((h) => {
+            if (h === "date") {
+              const d = r.date;
+              if (d instanceof Date) {
+                return d.toISOString().slice(0, 10);
+              }
+              return escapeCsv(d);
+            }
+            if (h === "sessions" || h === "sessions_with_cart_additions" || h === "hour") {
+              return Number(r[h] || 0);
+            }
+            return escapeCsv(r[h]);
+          });
+          lines.push(rowVals.join(","));
+        }
+        return res.send(lines.join("\n"));
+      } catch (e) {
+        console.error("[hourly-product-sessions-export] failed", e);
         return res.status(500).json({ error: "Internal server error" });
       }
     },
