@@ -161,10 +161,49 @@ function buildInclusiveDateRangeYMD(startYmd, endYmd) {
 }
 
 // ---------- API / Decryption helpers ----------
-const GET_BRANDS_API = process.env.GET_BRANDS_API;
-const PIPELINE_AUTH_HEADER = process.env.PIPELINE_AUTH_HEADER;
+const GET_BRANDS_API = String(process.env.GET_BRANDS_API || "").trim();
+const PIPELINE_AUTH_HEADER = String(process.env.PIPELINE_AUTH_HEADER || "").trim();
 const PASSWORD_AES_KEY = process.env.PASSWORD_AES_KEY;
 const API_HEADERS = { "x-pipeline-key": PIPELINE_AUTH_HEADER };
+
+function validateBrandApiEnv() {
+  if (!GET_BRANDS_API) return;
+  try {
+    const u = new URL(GET_BRANDS_API);
+    const p = u.pathname || "";
+    if (!p.startsWith("/tenant/pipeline/")) {
+      console.warn(
+        `[INIT] GET_BRANDS_API pathname is '${p}'. Expected '/tenant/pipeline/...'.`,
+      );
+    }
+    if (!p.endsWith("/brands")) {
+      console.warn(
+        `[INIT] GET_BRANDS_API pathname is '${p}'. Expected it to end with '/brands'.`,
+      );
+    }
+  } catch {
+    console.warn(
+      "[INIT] GET_BRANDS_API is set but is not a valid absolute URL.",
+    );
+  }
+
+  if (
+    (process.env.PIPELINE_AUTH_HEADER || "").length !==
+    String(process.env.PIPELINE_AUTH_HEADER || "").trim().length
+  ) {
+    console.warn(
+      "[INIT] PIPELINE_AUTH_HEADER has leading/trailing whitespace; trimming will be applied.",
+    );
+  }
+  if (
+    (PIPELINE_AUTH_HEADER.startsWith("\"") && PIPELINE_AUTH_HEADER.endsWith("\"")) ||
+    (PIPELINE_AUTH_HEADER.startsWith("'") && PIPELINE_AUTH_HEADER.endsWith("'"))
+  ) {
+    console.warn(
+      "[INIT] PIPELINE_AUTH_HEADER looks quoted; store the raw key without quotes.",
+    );
+  }
+}
 
 function normalizeKey(rawKey) {
   let buf = Buffer.from(rawKey, "utf8");
@@ -206,6 +245,8 @@ async function loadBrands() {
     );
     process.exit(1);
   }
+
+  validateBrandApiEnv();
 
   console.log(`[INIT] Fetching brands from ${GET_BRANDS_API}...`);
   let brandDict = {};
