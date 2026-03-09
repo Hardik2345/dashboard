@@ -28,7 +28,7 @@ jobs:
 
       - name: Archive expired data to S3
         env:
-          # Optional: API-based brand loading (preferred). If set, scripts will ignore TOTAL_CONFIG_COUNT/DB_*_i.
+          # Required: API-based brand loading (scripts are API-only).
           GET_BRANDS_API: ${{ secrets.GET_BRANDS_API }}
           PIPELINE_AUTH_HEADER: ${{ secrets.PIPELINE_AUTH_HEADER }}
           PASSWORD_AES_KEY: ${{ secrets.PASSWORD_AES_KEY }}
@@ -58,7 +58,7 @@ jobs:
 
       - name: Purge archived data from MySQL
         env:
-          # Optional: API-based brand loading (preferred). If set, scripts will ignore TOTAL_CONFIG_COUNT/DB_*_i.
+          # Required: API-based brand loading (scripts are API-only).
           GET_BRANDS_API: ${{ secrets.GET_BRANDS_API }}
           PIPELINE_AUTH_HEADER: ${{ secrets.PIPELINE_AUTH_HEADER }}
           PASSWORD_AES_KEY: ${{ secrets.PASSWORD_AES_KEY }}

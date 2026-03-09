@@ -7,11 +7,9 @@
  *   node scripts/purge-hourly-product-sessions.js
  *
  * Env (Brand source):
- *   Option A (recommended, same as product_sessions_pipeline.js):
+ *   API-only:
  *     GET_BRANDS_API, PIPELINE_AUTH_HEADER, PASSWORD_AES_KEY
  *     (brand DB creds are fetched from the API and db_password is decrypted)
- *   Option B (fallback):
- *     TOTAL_CONFIG_COUNT, BRAND_TAG_i, DB_HOST_i, DB_USER_i, DB_PASSWORD_i, DB_DATABASE_i
  *
  * Env (S3):
  *   AWS_REGION, AWS_ACCESS_KEY_ID (or AWS_ACCESS_KEY), AWS_SECRET_ACCESS_KEY (or AWS_SECRET)
