@@ -63,6 +63,7 @@ function buildMetricsRouter(sequelize) {
   router.get('/monthly-trend', ...protectedBrand, controller.monthlyTrend);
   router.get('/product-conversion', requireAuthor, brandContext, controller.productConversion);
   router.get('/product-conversion/export', requireAuthor, brandContext, controller.productConversionCsv);
+  router.get('/hourly-product-sessions/export', requireAuthor, brandContext, controller.hourlyProductSessionsExport);
   router.get('/product-types', authOrApiKey, ensureBrandDb, controller.productTypes);
 
   router.get('/hourly-sales-compare', ...protectedBrand, controller.hourlySalesCompare);
