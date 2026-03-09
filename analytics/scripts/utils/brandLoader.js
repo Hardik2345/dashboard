@@ -122,9 +122,12 @@ async function loadBrandsFromApi() {
   }
 
   const urlPath = brandsUrl.pathname || "";
-  if (!urlPath.startsWith("/tenant/pipeline/")) {
+  const isPipelinePath =
+    urlPath.startsWith("/tenant/pipeline/") ||
+    urlPath.startsWith("/staging/tenant/pipeline/");
+  if (!isPipelinePath) {
     console.warn(
-      `[BRAND LOADER] GET_BRANDS_API pathname is '${urlPath}'. For the gateway pipeline bypass to work, it should be under '/tenant/pipeline/'.`,
+      `[BRAND LOADER] GET_BRANDS_API pathname is '${urlPath}'. For the gateway pipeline bypass to work, it should be under '/tenant/pipeline/' (or '/staging/tenant/pipeline/' if your gateway is stage-prefixed).`,
     );
   }
   if (!urlPath.endsWith("/brands")) {
@@ -167,10 +170,15 @@ async function loadBrandsFromApi() {
         typeof resp.data === "string"
           ? resp.data.slice(0, 200)
           : (resp.data && (resp.data.message || resp.data.error)) || null;
-      const hint =
-        resp.status === 401
-          ? " (401 Unauthorized: check x-pipeline-key matches gateway X_PIPELINE_KEY and URL is under /tenant/pipeline/)"
-          : "";
+      let hint = "";
+      if (resp.status === 401) {
+        const bypassDidNotApply =
+          typeof bodyHint === "string" &&
+          bodyHint.toLowerCase().includes("missing authorization header");
+        hint = bypassDidNotApply
+          ? " (401 Unauthorized: gateway did not apply pipeline bypass — verify GET_BRANDS_API path is /tenant/pipeline/* (or /staging/tenant/pipeline/*), and x-pipeline-key matches gateway X_PIPELINE_KEY)"
+          : " (401 Unauthorized: check x-pipeline-key matches gateway X_PIPELINE_KEY and URL is under /tenant/pipeline/ (or stage-prefixed equivalent))";
+      }
       throw new Error(
         `[BRAND LOADER] Brand API request failed: HTTP ${resp.status}${hint} | path: ${JSON.stringify(urlPath)}${bodyHint ? ` | body: ${JSON.stringify(bodyHint)}` : ""}`,
       );
