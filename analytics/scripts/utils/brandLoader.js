@@ -118,7 +118,22 @@ async function loadBrandsFromApi() {
 
   let brandDict = {};
   try {
-    const resp = await axios.get(GET_BRANDS_API, { headers: API_HEADERS, timeout: 30_000 });
+    const resp = await axios.get(GET_BRANDS_API, {
+      headers: API_HEADERS,
+      timeout: 30_000,
+      validateStatus: () => true,
+    });
+
+    if (resp.status !== 200) {
+      const hint =
+        resp.status === 401
+          ? " (401 Unauthorized: check PIPELINE_AUTH_HEADER / x-pipeline-key secret)"
+          : "";
+      throw new Error(
+        `[BRAND LOADER] Brand API request failed: HTTP ${resp.status}${hint}`,
+      );
+    }
+
     brandDict = resp.data || {};
   } catch (err) {
     throw new Error(`[BRAND LOADER] Failed to fetch brand list: ${err.message}`);
@@ -140,7 +155,21 @@ async function loadBrandsFromApi() {
     const brandUrl = `${GET_BRANDS_API.replace(/\/+$/, "")}/${id}`;
     let brandData;
     try {
-      const resp = await axios.get(brandUrl, { headers: API_HEADERS, timeout: 30_000 });
+      const resp = await axios.get(brandUrl, {
+        headers: API_HEADERS,
+        timeout: 30_000,
+        validateStatus: () => true,
+      });
+      if (resp.status !== 200) {
+        const hint =
+          resp.status === 401
+            ? " (401 Unauthorized: check PIPELINE_AUTH_HEADER / x-pipeline-key secret)"
+            : "";
+        console.warn(
+          `[BRAND LOADER] Failed to fetch credentials for brand ID ${id}: HTTP ${resp.status}${hint}`,
+        );
+        continue;
+      }
       brandData = resp.data || {};
     } catch (err) {
       console.warn(`[BRAND LOADER] Failed to fetch credentials for brand ID ${id}: ${err.message}`);
@@ -191,16 +220,19 @@ export async function loadBrandsForScripts() {
     !!process.env.PIPELINE_AUTH_HEADER &&
     !!process.env.PASSWORD_AES_KEY;
 
-  if (hasApiMode) {
-    const apiBrands = await loadBrandsFromApi();
-    if (Array.isArray(apiBrands) && apiBrands.length > 0) {
-      console.log(`[BRAND LOADER] Loaded ${apiBrands.length} brand(s) from API`);
-      return apiBrands;
-    }
-    console.warn("[BRAND LOADER] API mode enabled but returned no brands; falling back to indexed env config.");
+  if (!hasApiMode) {
+    throw new Error(
+      "[BRAND LOADER] API mode is required for scripts. Missing one of: GET_BRANDS_API, PIPELINE_AUTH_HEADER, PASSWORD_AES_KEY",
+    );
   }
 
-  const envBrands = loadBrandsFromIndexedEnv();
-  console.log(`[BRAND LOADER] Loaded ${envBrands.length} brand(s) from indexed env config`);
-  return envBrands;
+  const apiBrands = await loadBrandsFromApi();
+  if (Array.isArray(apiBrands) && apiBrands.length > 0) {
+    console.log(`[BRAND LOADER] Loaded ${apiBrands.length} brand(s) from API`);
+    return apiBrands;
+  }
+
+  throw new Error(
+    "[BRAND LOADER] API mode succeeded but returned 0 brands. Check GET_BRANDS_API response.",
+  );
 }

@@ -32,34 +32,24 @@ jobs:
           GET_BRANDS_API: ${{ secrets.GET_BRANDS_API }}
           PIPELINE_AUTH_HEADER: ${{ secrets.PIPELINE_AUTH_HEADER }}
           PASSWORD_AES_KEY: ${{ secrets.PASSWORD_AES_KEY }}
-
-          TOTAL_CONFIG_COUNT: ${{ secrets.TOTAL_CONFIG_COUNT }}
-          BRAND_TAG_0: ${{ secrets.BRAND_TAG_0 }}
-          DB_HOST_0: ${{ secrets.DB_HOST_0 }}
-          DB_USER_0: ${{ secrets.DB_USER_0 }}
-          DB_PASSWORD_0: ${{ secrets.DB_PASSWORD_0 }}
-          DB_DATABASE_0: ${{ secrets.DB_DATABASE_0 }}
-          BRAND_TAG_1: ${{ secrets.BRAND_TAG_1 }}
-          DB_HOST_1: ${{ secrets.DB_HOST_1 }}
-          DB_USER_1: ${{ secrets.DB_USER_1 }}
-          DB_PASSWORD_1: ${{ secrets.DB_PASSWORD_1 }}
-          DB_DATABASE_1: ${{ secrets.DB_DATABASE_1 }}
-          BRAND_TAG_2: ${{ secrets.BRAND_TAG_2 }}
-          DB_HOST_2: ${{ secrets.DB_HOST_2 }}
-          DB_USER_2: ${{ secrets.DB_USER_2 }}
-          DB_PASSWORD_2: ${{ secrets.DB_PASSWORD_2 }}
-          DB_DATABASE_2: ${{ secrets.DB_DATABASE_2 }}
-          BRAND_TAG_3: ${{ secrets.BRAND_TAG_3 }}
-          DB_HOST_3: ${{ secrets.DB_HOST_3 }}
-          DB_USER_3: ${{ secrets.DB_USER_3 }}
-          DB_PASSWORD_3: ${{ secrets.DB_PASSWORD_3 }}
-          DB_DATABASE_3: ${{ secrets.DB_DATABASE_3 }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
           AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
           HOURLY_PRODUCT_SESSIONS_RETENTION_DAYS: ${{ vars.HOURLY_PRODUCT_SESSIONS_RETENTION_DAYS || '7' }}
         run: |
+          if [ -z "$GET_BRANDS_API" ]; then
+            echo "Missing required secret: GET_BRANDS_API"
+            exit 1
+          fi
+          if [ -z "$PIPELINE_AUTH_HEADER" ]; then
+            echo "Missing required secret: PIPELINE_AUTH_HEADER"
+            exit 1
+          fi
+          if [ -z "$PASSWORD_AES_KEY" ]; then
+            echo "Missing required secret: PASSWORD_AES_KEY"
+            exit 1
+          fi
           if [ -z "$AWS_S3_BUCKET" ]; then
             echo "Missing required secret: AWS_S3_BUCKET"
             exit 1
@@ -72,31 +62,26 @@ jobs:
           GET_BRANDS_API: ${{ secrets.GET_BRANDS_API }}
           PIPELINE_AUTH_HEADER: ${{ secrets.PIPELINE_AUTH_HEADER }}
           PASSWORD_AES_KEY: ${{ secrets.PASSWORD_AES_KEY }}
-
-          TOTAL_CONFIG_COUNT: ${{ secrets.TOTAL_CONFIG_COUNT }}
-          BRAND_TAG_0: ${{ secrets.BRAND_TAG_0 }}
-          DB_HOST_0: ${{ secrets.DB_HOST_0 }}
-          DB_USER_0: ${{ secrets.DB_USER_0 }}
-          DB_PASSWORD_0: ${{ secrets.DB_PASSWORD_0 }}
-          DB_DATABASE_0: ${{ secrets.DB_DATABASE_0 }}
-          BRAND_TAG_1: ${{ secrets.BRAND_TAG_1 }}
-          DB_HOST_1: ${{ secrets.DB_HOST_1 }}
-          DB_USER_1: ${{ secrets.DB_USER_1 }}
-          DB_PASSWORD_1: ${{ secrets.DB_PASSWORD_1 }}
-          DB_DATABASE_1: ${{ secrets.DB_DATABASE_1 }}
-          BRAND_TAG_2: ${{ secrets.BRAND_TAG_2 }}
-          DB_HOST_2: ${{ secrets.DB_HOST_2 }}
-          DB_USER_2: ${{ secrets.DB_USER_2 }}
-          DB_PASSWORD_2: ${{ secrets.DB_PASSWORD_2 }}
-          DB_DATABASE_2: ${{ secrets.DB_DATABASE_2 }}
-          BRAND_TAG_3: ${{ secrets.BRAND_TAG_3 }}
-          DB_HOST_3: ${{ secrets.DB_HOST_3 }}
-          DB_USER_3: ${{ secrets.DB_USER_3 }}
-          DB_PASSWORD_3: ${{ secrets.DB_PASSWORD_3 }}
-          DB_DATABASE_3: ${{ secrets.DB_DATABASE_3 }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
           AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
           HOURLY_PRODUCT_SESSIONS_RETENTION_DAYS: ${{ vars.HOURLY_PRODUCT_SESSIONS_RETENTION_DAYS || '7' }}
-        run: node scripts/purge-hourly-product-sessions.js
+        run: |
+          if [ -z "$GET_BRANDS_API" ]; then
+            echo "Missing required secret: GET_BRANDS_API"
+            exit 1
+          fi
+          if [ -z "$PIPELINE_AUTH_HEADER" ]; then
+            echo "Missing required secret: PIPELINE_AUTH_HEADER"
+            exit 1
+          fi
+          if [ -z "$PASSWORD_AES_KEY" ]; then
+            echo "Missing required secret: PASSWORD_AES_KEY"
+            exit 1
+          fi
+          if [ -z "$AWS_S3_BUCKET" ]; then
+            echo "Missing required secret: AWS_S3_BUCKET"
+            exit 1
+          fi
+          node scripts/purge-hourly-product-sessions.js
