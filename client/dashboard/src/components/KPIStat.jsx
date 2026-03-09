@@ -18,7 +18,7 @@ export default function KPIStat({
   sx = {},
   activeColor = "#10b981",
   compareValue,
-  compareFormatter,
+  invertDeltaColor = false,
 }) {
   const theme = useTheme();
   const clickable = typeof onSelect === "function";
@@ -30,6 +30,9 @@ export default function KPIStat({
       onSelect();
     }
   };
+
+  const goodColor = "#10b981"; // Green
+  const badColor = "#ef4444"; // Red
 
   return (
     <Card
@@ -166,9 +169,19 @@ export default function KPIStat({
               ) : delta && typeof delta.value === "number" ? (
                 <>
                   {delta.direction === "up" ? (
-                    <TrendingUpIcon sx={{ fontSize: 16, color: "#10b981" }} />
+                    <TrendingUpIcon
+                      sx={{
+                        fontSize: 16,
+                        color: invertDeltaColor ? badColor : goodColor,
+                      }}
+                    />
                   ) : delta.direction === "down" ? (
-                    <TrendingDownIcon sx={{ fontSize: 16, color: "#ef4444" }} />
+                    <TrendingDownIcon
+                      sx={{
+                        fontSize: 16,
+                        color: invertDeltaColor ? goodColor : badColor,
+                      }}
+                    />
                   ) : (
                     <Box sx={{ width: 0, height: 0 }} />
                   )}
@@ -177,9 +190,13 @@ export default function KPIStat({
                     sx={{
                       color:
                         delta.direction === "up"
-                          ? "#10b981"
+                          ? invertDeltaColor
+                            ? badColor
+                            : goodColor
                           : delta.direction === "down"
-                            ? "#ef4444"
+                            ? invertDeltaColor
+                              ? goodColor
+                              : badColor
                             : "text.secondary",
                       fontWeight: 600,
                       ml: 0.5,

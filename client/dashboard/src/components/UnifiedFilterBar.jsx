@@ -939,25 +939,27 @@ export default function UnifiedFilterBar({
         )}
       </Paper>
 
-      {/* Download Button (Separate) */}
-      <IconButton
-        onClick={onDownload}
-        sx={{
-          border: "1px solid",
-          borderColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
-          borderRadius: "10px",
-          bgcolor: isDark ? "rgba(255,255,255,0.05)" : "#fff",
-          height: 40,
-          width: 40,
-          color: "text.secondary",
-          "&:hover": {
-            bgcolor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
-            color: "text.primary",
-          },
-        }}
-      >
-        <Download size={18} />
-      </IconButton>
+      {/* Download Button (Separate) - ONLY FOR ADMINS */}
+      {isAuthor && (
+        <IconButton
+          onClick={onDownload}
+          sx={{
+            border: "1px solid",
+            borderColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
+            borderRadius: "10px",
+            bgcolor: isDark ? "rgba(255,255,255,0.05)" : "#fff",
+            height: 40,
+            width: 40,
+            color: "text.secondary",
+            "&:hover": {
+              bgcolor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
+              color: "text.primary",
+            },
+          }}
+        >
+          <Download size={18} />
+        </IconButton>
+      )}
 
       {/* --- Popovers --- */}
 

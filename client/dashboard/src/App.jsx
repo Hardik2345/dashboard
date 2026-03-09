@@ -429,6 +429,29 @@ export default function App() {
     return MOBILE_NAV_ITEMS.filter((item) => accessibleTabs?.includes(item.id));
   }, [isAuthor, accessibleTabs]);
 
+  // Derived arrays/labels for product multi-select used directly by child components
+  const selectedProductIds = useMemo(() => {
+    if (!productSelection) return "";
+    if (Array.isArray(productSelection)) {
+      return productSelection
+        .map((p) => p.id)
+        .filter(Boolean)
+        .join(",");
+    }
+    return productSelection.id || "";
+  }, [productSelection]);
+
+  const selectedProductLabel = useMemo(() => {
+    if (!productSelection) return "";
+    if (Array.isArray(productSelection)) {
+      if (productSelection.length > 1) {
+        return `${productSelection.length} Products`;
+      }
+      return productSelection[0]?.label || "";
+    }
+    return productSelection.label || "";
+  }, [productSelection]);
+
   useEffect(() => {
     if (!isAuthor && viewerBrands.length) {
       const current = (globalBrandKey || "").toString().trim().toUpperCase();
@@ -1716,19 +1739,8 @@ export default function App() {
                               selectedMetric={selectedMetric}
                               onSelectMetric={handleSelectMetric}
                               onFunnelData={handleFunnelData}
-                              productId={
-                                Array.isArray(productSelection)
-                                  ? productSelection[0]?.id
-                                  : productSelection?.id
-                              }
-                              productLabel={
-                                Array.isArray(productSelection) &&
-                                productSelection.length > 1
-                                  ? `${productSelection.length} Products`
-                                  : Array.isArray(productSelection)
-                                    ? productSelection[0]?.label
-                                    : productSelection?.label
-                              }
+                              productId={selectedProductIds}
+                              productLabel={selectedProductLabel}
                               utmOptions={utmOptions}
                               showRow={isMobile ? "mobile_top" : 1}
                               showWebVitals={hasPermission("web_vitals")}
@@ -1743,19 +1755,8 @@ export default function App() {
                                     query={trendMetricsQuery}
                                     selectedMetric={selectedMetric}
                                     onSelectMetric={handleSelectMetric}
-                                    productId={
-                                      Array.isArray(productSelection)
-                                        ? productSelection[0]?.id
-                                        : productSelection?.id
-                                    }
-                                    productLabel={
-                                      Array.isArray(productSelection) &&
-                                      productSelection.length > 1
-                                        ? `${productSelection.length} Products`
-                                        : Array.isArray(productSelection)
-                                          ? productSelection[0]?.label
-                                          : productSelection?.label
-                                    }
+                                    productId={selectedProductIds}
+                                    productLabel={selectedProductLabel}
                                     utmOptions={utmOptions}
                                     showRow={isMobile ? "none" : 2}
                                     showWebVitals={hasPermission("web_vitals")}
@@ -1782,21 +1783,8 @@ export default function App() {
                                             query={trendMetricsQuery}
                                             selectedMetric={selectedMetric}
                                             onSelectMetric={handleSelectMetric}
-                                            productId={
-                                              Array.isArray(productSelection)
-                                                ? productSelection[0]?.id
-                                                : productSelection?.id
-                                            }
-                                            productLabel={
-                                              Array.isArray(productSelection) &&
-                                              productSelection.length > 1
-                                                ? `${productSelection.length} Products`
-                                                : Array.isArray(
-                                                      productSelection,
-                                                    )
-                                                  ? productSelection[0]?.label
-                                                  : productSelection?.label
-                                            }
+                                            productId={selectedProductIds}
+                                            productLabel={selectedProductLabel}
                                             utmOptions={utmOptions}
                                             showRow="mobile_bottom"
                                             showWebVitals={true}
