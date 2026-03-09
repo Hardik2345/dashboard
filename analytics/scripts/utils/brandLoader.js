@@ -104,53 +104,12 @@ function loadBrandsFromIndexedEnv() {
 }
 
 async function loadBrandsFromApi() {
-  const GET_BRANDS_API = String(process.env.GET_BRANDS_API || "").trim();
-  const PIPELINE_AUTH_HEADER = String(process.env.PIPELINE_AUTH_HEADER || "").trim();
+  const GET_BRANDS_API = process.env.GET_BRANDS_API;
+  const PIPELINE_AUTH_HEADER = process.env.PIPELINE_AUTH_HEADER;
   const PASSWORD_AES_KEY = process.env.PASSWORD_AES_KEY;
 
   if (!GET_BRANDS_API || !PIPELINE_AUTH_HEADER || !PASSWORD_AES_KEY) {
     return null;
-  }
-
-  let brandsUrl;
-  try {
-    brandsUrl = new URL(GET_BRANDS_API);
-  } catch {
-    throw new Error(
-      "[BRAND LOADER] GET_BRANDS_API must be a valid absolute URL (e.g. https://<gateway>/tenant/pipeline/brands)",
-    );
-  }
-
-  const urlPath = brandsUrl.pathname || "";
-  const isPipelinePath =
-    urlPath.startsWith("/tenant/pipeline/") ||
-    urlPath.startsWith("/staging/tenant/pipeline/");
-  if (!isPipelinePath) {
-    console.warn(
-      `[BRAND LOADER] GET_BRANDS_API pathname is '${urlPath}'. For the gateway pipeline bypass to work, it should be under '/tenant/pipeline/' (or '/staging/tenant/pipeline/' if your gateway is stage-prefixed).`,
-    );
-  }
-  if (!urlPath.endsWith("/brands")) {
-    console.warn(
-      `[BRAND LOADER] GET_BRANDS_API pathname is '${urlPath}'. Expected it to end with '/brands' (tenant-router pipeline brands endpoint).`,
-    );
-  }
-
-  if (
-    (process.env.PIPELINE_AUTH_HEADER || "").length !==
-    String(process.env.PIPELINE_AUTH_HEADER || "").trim().length
-  ) {
-    console.warn(
-      "[BRAND LOADER] PIPELINE_AUTH_HEADER has leading/trailing whitespace in the env value; trimming will be applied, but verify the secret has no extra spaces/newlines.",
-    );
-  }
-  if (
-    (PIPELINE_AUTH_HEADER.startsWith("\"") && PIPELINE_AUTH_HEADER.endsWith("\"")) ||
-    (PIPELINE_AUTH_HEADER.startsWith("'") && PIPELINE_AUTH_HEADER.endsWith("'"))
-  ) {
-    console.warn(
-      "[BRAND LOADER] PIPELINE_AUTH_HEADER looks like it includes surrounding quotes. Store the raw key in the secret without quotes.",
-    );
   }
 
   const API_HEADERS = { "x-pipeline-key": PIPELINE_AUTH_HEADER };
@@ -166,21 +125,12 @@ async function loadBrandsFromApi() {
     });
 
     if (resp.status !== 200) {
-      const bodyHint =
-        typeof resp.data === "string"
-          ? resp.data.slice(0, 200)
-          : (resp.data && (resp.data.message || resp.data.error)) || null;
-      let hint = "";
-      if (resp.status === 401) {
-        const bypassDidNotApply =
-          typeof bodyHint === "string" &&
-          bodyHint.toLowerCase().includes("missing authorization header");
-        hint = bypassDidNotApply
-          ? " (401 Unauthorized: gateway did not apply pipeline bypass — verify GET_BRANDS_API path is /tenant/pipeline/* (or /staging/tenant/pipeline/*), and x-pipeline-key matches gateway X_PIPELINE_KEY)"
-          : " (401 Unauthorized: check x-pipeline-key matches gateway X_PIPELINE_KEY and URL is under /tenant/pipeline/ (or stage-prefixed equivalent))";
-      }
+      const hint =
+        resp.status === 401
+          ? " (401 Unauthorized: check PIPELINE_AUTH_HEADER / x-pipeline-key secret)"
+          : "";
       throw new Error(
-        `[BRAND LOADER] Brand API request failed: HTTP ${resp.status}${hint} | path: ${JSON.stringify(urlPath)}${bodyHint ? ` | body: ${JSON.stringify(bodyHint)}` : ""}`,
+        `[BRAND LOADER] Brand API request failed: HTTP ${resp.status}${hint}`,
       );
     }
 
@@ -211,16 +161,12 @@ async function loadBrandsFromApi() {
         validateStatus: () => true,
       });
       if (resp.status !== 200) {
-        const bodyHint =
-          typeof resp.data === "string"
-            ? resp.data.slice(0, 200)
-            : (resp.data && (resp.data.message || resp.data.error)) || null;
         const hint =
           resp.status === 401
             ? " (401 Unauthorized: check PIPELINE_AUTH_HEADER / x-pipeline-key secret)"
             : "";
         console.warn(
-          `[BRAND LOADER] Failed to fetch credentials for brand ID ${id}: HTTP ${resp.status}${hint}${bodyHint ? ` | body: ${JSON.stringify(bodyHint)}` : ""}`,
+          `[BRAND LOADER] Failed to fetch credentials for brand ID ${id}: HTTP ${resp.status}${hint}`,
         );
         continue;
       }
