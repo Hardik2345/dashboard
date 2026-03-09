@@ -171,9 +171,11 @@ function validateBrandApiEnv() {
   try {
     const u = new URL(GET_BRANDS_API);
     const p = u.pathname || "";
-    if (!p.startsWith("/tenant/pipeline/")) {
+    const isPipelinePath =
+      p.startsWith("/tenant/pipeline/") || p.startsWith("/staging/tenant/pipeline/");
+    if (!isPipelinePath) {
       console.warn(
-        `[INIT] GET_BRANDS_API pathname is '${p}'. Expected '/tenant/pipeline/...'.`,
+        `[INIT] GET_BRANDS_API pathname is '${p}'. Expected '/tenant/pipeline/...' (or '/staging/tenant/pipeline/...' if stage-prefixed).`,
       );
     }
     if (!p.endsWith("/brands")) {
