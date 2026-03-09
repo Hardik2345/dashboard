@@ -18,6 +18,7 @@ export default function KPIStat({
   sx = {},
   activeColor = "#10b981",
   compareValue,
+  compareFormatter,
   invertDeltaColor = false,
 }) {
   const theme = useTheme();
