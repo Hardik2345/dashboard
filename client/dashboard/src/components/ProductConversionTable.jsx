@@ -1853,46 +1853,19 @@ export default function ProductConversionTable({
   const handleCompareModeChange = (e) => {
     const isCompare = e.target.value === "compare";
 
-    let currentStart = dayjs(start);
-    let currentEnd = dayjs(end);
-    let datesChanged = false;
-
-    // 1. If enabling compare, clamp dates to yesterday
-    if (isCompare) {
-      const yesterday = dayjs().subtract(1, "day").startOf("day");
-      // If end is after yesterday (e.g. today or future)
-      if (currentEnd.isAfter(yesterday)) {
-        currentEnd = yesterday;
-        datesChanged = true;
-      }
-      // If start is after the new end (e.g. start was today)
-      if (currentStart.isAfter(currentEnd)) {
-        currentStart = currentEnd;
-        datesChanged = true;
-      }
-    }
-
-    // Update main date range if clamped
-    if (datesChanged) {
-      dispatch(
-        setDateRange({
-          start: currentStart.toISOString(),
-          end: currentEnd.toISOString(),
-        }),
-      );
-    }
+    const currentStart = dayjs(start);
+    const currentEnd = dayjs(end);
 
     dispatch(setCompareMode(isCompare));
 
-    if (isCompare && (datesChanged || !compareStart)) {
-      // Default to same duration previous to the (potentially new) start date
+    if (isCompare && !compareStart) {
+      // Default to same duration previous to the current start date.
       const s = currentStart;
       const e = currentEnd;
       const duration = e.diff(s, "day");
       const prevEnd = s.subtract(1, "day");
       const prevStart = prevEnd.subtract(duration, "day");
 
-      // We manually dispatch and trigger here to avoid double-fetching if we just called applyDateChange
       const startStr = currentStart.format("YYYY-MM-DD");
       const endStr = currentEnd.format("YYYY-MM-DD");
       const compStartStr = prevStart.format("YYYY-MM-DD");
@@ -1907,7 +1880,6 @@ export default function ProductConversionTable({
         compareEnd: compEndStr,
       });
     } else {
-      // Just toggle mode, possibly with new clamped dates
       triggerFetch({
         start: currentStart.format("YYYY-MM-DD"),
         end: currentEnd.format("YYYY-MM-DD"),
@@ -2084,7 +2056,7 @@ export default function ProductConversionTable({
                 label="Compare"
                 labelPrefix="Compare:"
                 activePresetLabel={activeCompPreset}
-                disableDatesAfter={dayjs().subtract(1, "day").toDate()}
+                disableDatesAfter={dayjs().toDate()}
                 sx={{
                   width: "100%",
                   minWidth: 0,
@@ -2242,7 +2214,7 @@ export default function ProductConversionTable({
                 labelPrefix="Comp:"
                 activePresetLabel={activeCompPreset}
                 disabled={!compareMode}
-                disableDatesAfter={dayjs().subtract(1, "day").toDate()}
+                disableDatesAfter={dayjs().toDate()}
                 sx={{
                   ...glassStyle,
                   minWidth: 150,
@@ -2260,9 +2232,7 @@ export default function ProductConversionTable({
               variant="primary"
               labelPrefix="Curr:"
               activePresetLabel={activePreset}
-              disableDatesAfter={
-                compareMode ? dayjs().subtract(1, "day").toDate() : null
-              }
+              disableDatesAfter={dayjs().toDate()}
               sx={{
                 ...glassStyle,
                 minWidth: 150,

@@ -360,6 +360,16 @@ async function getBrands() {
   return _BRANDS;
 }
 
+async function ensureIndex(conn, tableName, indexName, addIndexSql) {
+  const [rows] = await conn.query(`SHOW INDEX FROM ?? WHERE Key_name = ?`, [
+    tableName,
+    indexName,
+  ]);
+  if (!rows.length) {
+    await conn.query(addIndexSql);
+  }
+}
+
 // ---------- DB Setup ----------
 async function ensureTablesForBrand(brand) {
   if (brand._tablesEnsured) return;
@@ -570,6 +580,37 @@ async function ensureTablesForBrand(brand) {
         KEY idx_date_path (date, landing_page_path(200))
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS hourly_product_performance_rollup (
+        date DATE NOT NULL,
+        hour TINYINT UNSIGNED NOT NULL,
+        product_id VARCHAR(50) NOT NULL,
+        product_title VARCHAR(255) DEFAULT NULL,
+        sessions INT UNSIGNED NOT NULL DEFAULT 0,
+        sessions_with_cart_additions INT UNSIGNED NOT NULL DEFAULT 0,
+        orders INT UNSIGNED NOT NULL DEFAULT 0,
+        units_sold INT UNSIGNED NOT NULL DEFAULT 0,
+        total_sales DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+        add_to_cart_rate DECIMAL(8,4) NOT NULL DEFAULT 0.0000,
+        cvr DECIMAL(8,4) NOT NULL DEFAULT 0.0000,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (date, hour, product_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    await ensureIndex(
+      conn,
+      "hourly_product_performance_rollup",
+      "idx_hpr_product_date_hour",
+      "ALTER TABLE hourly_product_performance_rollup ADD INDEX idx_hpr_product_date_hour (product_id, date, hour)",
+    );
+    await ensureIndex(
+      conn,
+      "hourly_product_performance_rollup",
+      "idx_hpr_date_product",
+      "ALTER TABLE hourly_product_performance_rollup ADD INDEX idx_hpr_date_product (date, product_id)",
+    );
 
     brand._tablesEnsured = true;
   } finally {
@@ -1654,6 +1695,129 @@ async function upsertHourlyProductSessions(brand, rows, targetYmd) {
   }
 }
 
+async function upsertHourlyProductPerformanceRollup(brand, targetYmd) {
+  const conn = await brand.pool.getConnection();
+  try {
+    await conn.query(
+      `DELETE FROM hourly_product_performance_rollup WHERE date = ?`,
+      [targetYmd],
+    );
+
+    const [result] = await conn.query(
+      `
+      INSERT INTO hourly_product_performance_rollup
+      (
+        date,
+        hour,
+        product_id,
+        product_title,
+        sessions,
+        sessions_with_cart_additions,
+        orders,
+        units_sold,
+        total_sales,
+        add_to_cart_rate,
+        cvr
+      )
+      SELECT
+        k.date,
+        k.hour,
+        k.product_id,
+        COALESCE(s.product_title, o.product_title, 'Unknown') AS product_title,
+        COALESCE(s.sessions, 0) AS sessions,
+        COALESCE(s.sessions_with_cart_additions, 0) AS sessions_with_cart_additions,
+        COALESCE(o.orders, 0) AS orders,
+        COALESCE(o.units_sold, 0) AS units_sold,
+        COALESCE(o.total_sales, 0.00) AS total_sales,
+        ROUND(
+          (COALESCE(s.sessions_with_cart_additions, 0) / NULLIF(COALESCE(s.sessions, 0), 0)) * 100,
+          4
+        ) AS add_to_cart_rate,
+        ROUND(
+          (COALESCE(o.orders, 0) / NULLIF(COALESCE(s.sessions, 0), 0)) * 100,
+          4
+        ) AS cvr
+      FROM (
+        SELECT date, hour, product_id
+        FROM (
+          SELECT
+            h.date,
+            h.hour,
+            h.product_id
+          FROM hourly_product_sessions h
+          WHERE h.date = ?
+            AND h.product_id IS NOT NULL
+            AND h.product_id <> ''
+          GROUP BY h.date, h.hour, h.product_id
+
+          UNION
+
+          SELECT
+            o.created_dt AS date,
+            o.created_hr AS hour,
+            o.product_id
+          FROM shopify_orders o
+          WHERE o.created_dt = ?
+            AND o.order_id IS NOT NULL
+            AND o.product_id IS NOT NULL
+            AND o.product_id <> ''
+          GROUP BY o.created_dt, o.created_hr, o.product_id
+        ) keys_union
+      ) k
+      LEFT JOIN (
+        SELECT
+          h.date,
+          h.hour,
+          h.product_id,
+          MAX(h.product_title) AS product_title,
+          SUM(h.sessions) AS sessions,
+          SUM(h.sessions_with_cart_additions) AS sessions_with_cart_additions
+        FROM hourly_product_sessions h
+        WHERE h.date = ?
+          AND h.product_id IS NOT NULL
+          AND h.product_id <> ''
+        GROUP BY h.date, h.hour, h.product_id
+      ) s
+        ON s.date = k.date
+       AND s.hour = k.hour
+       AND s.product_id = k.product_id
+      LEFT JOIN (
+        SELECT
+          o.created_dt AS date,
+          o.created_hr AS hour,
+          o.product_id,
+          MAX(o.line_item) AS product_title,
+          COUNT(DISTINCT o.order_id) AS orders,
+          SUM(GREATEST(COALESCE(o.line_item_quantity, 0), 0)) AS units_sold,
+          ROUND(
+            SUM(
+              (COALESCE(o.line_item_price, 0) * GREATEST(COALESCE(o.line_item_quantity, 0), 0))
+              - COALESCE(o.line_item_total_discount, 0)
+            ),
+            2
+          ) AS total_sales
+        FROM shopify_orders o
+        WHERE o.created_dt = ?
+          AND o.order_id IS NOT NULL
+          AND o.product_id IS NOT NULL
+          AND o.product_id <> ''
+        GROUP BY o.created_dt, o.created_hr, o.product_id
+      ) o
+        ON o.date = k.date
+       AND o.hour = k.hour
+       AND o.product_id = k.product_id
+      `,
+      [targetYmd, targetYmd, targetYmd, targetYmd],
+    );
+
+    console.log(
+      `[${brand.name}] Product performance rollup refreshed for ${targetYmd}. Rows: ${result.affectedRows || 0}`,
+    );
+  } finally {
+    conn.release();
+  }
+}
+
 // ---------- Pipeline per brand (date-aware) ----------
 async function processBrand(brand, targetYmd) {
   const startTotal = Date.now();
@@ -1690,6 +1854,7 @@ async function processBrand(brand, targetYmd) {
   ) {
     const hourlyDim = await fetchHourlyDimensionSessions(brand, targetYmd);
     await upsertHourlyProductSessions(brand, hourlyDim, targetYmd);
+    await upsertHourlyProductPerformanceRollup(brand, targetYmd);
   }
 
   console.log(
