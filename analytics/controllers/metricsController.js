@@ -1458,6 +1458,32 @@ function isToday(dateStr) {
   return dateStr === today;
 }
 
+function getIstCutoffContext(start, end) {
+  const nowUtc = new Date();
+  const nowIst = new Date(nowUtc.getTime() + IST_OFFSET_MIN * 60 * 1000);
+  const todayIst = `${nowIst.getUTCFullYear()}-${pad2(nowIst.getUTCMonth() + 1)}-${pad2(nowIst.getUTCDate())}`;
+  const rangeStart = start || end;
+  const rangeEnd = end || start;
+  const currentRangeIncludesToday =
+    !!rangeStart &&
+    !!rangeEnd &&
+    rangeStart <= todayIst &&
+    rangeEnd >= todayIst;
+  const secondsNow =
+    nowIst.getUTCHours() * 3600 +
+    nowIst.getUTCMinutes() * 60 +
+    nowIst.getUTCSeconds();
+  const cutoffTime = currentRangeIncludesToday
+    ? `${pad2(Math.floor(secondsNow / 3600))}:${pad2(Math.floor((secondsNow % 3600) / 60))}:${pad2(secondsNow % 60)}`
+    : "24:00:00";
+
+  return {
+    currentRangeIncludesToday,
+    cutoffTime,
+    cutoffHour: currentRangeIncludesToday ? nowIst.getUTCHours() : 23,
+  };
+}
+
 function resolveShopSubdomain(brandKey) {
   if (!brandKey) return null;
   const upper = brandKey.toString().trim().toUpperCase();
@@ -4729,6 +4755,8 @@ function buildMetricsController() {
           const paths = [
             ...new Set(rows.map((r) => r.landing_page_path).filter(Boolean)),
           ];
+          const { currentRangeIncludesToday, cutoffTime, cutoffHour } =
+            getIstCutoffContext(start, end);
 
           if (productIds.length > 0 || paths.length > 0) {
             try {
@@ -4742,12 +4770,15 @@ function buildMetricsController() {
                     SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity) AS sales
                   FROM shopify_orders
                   WHERE created_date >= ? AND created_date <= ?
+                    ${currentRangeIncludesToday ? "AND created_time < ?" : ""}
                     AND product_id IN (?)
                   GROUP BY product_id
                 `;
                 const ordersRows = await conn.query(ordersSql, {
                   type: QueryTypes.SELECT,
-                  replacements: [compareStart, compareEnd, productIds],
+                  replacements: currentRangeIncludesToday
+                    ? [compareStart, compareEnd, cutoffTime, productIds]
+                    : [compareStart, compareEnd, productIds],
                 });
                 ordersRows.forEach((r) =>
                   prevOrdersMap.set(r.product_id, {
@@ -4773,14 +4804,21 @@ function buildMetricsController() {
                     landing_page_path,
                     SUM(sessions) AS sessions,
                     SUM(sessions_with_cart_additions) AS atc
-                  FROM mv_product_sessions_by_path_daily
+                  FROM ${
+                    currentRangeIncludesToday
+                      ? "hourly_product_sessions"
+                      : "mv_product_sessions_by_path_daily"
+                  }
                   WHERE date >= ? AND date <= ?
+                    ${currentRangeIncludesToday ? "AND hour <= ?" : ""}
                     AND landing_page_path IN (?)
                   GROUP BY landing_page_path
                 `;
                 const sessionsRows = await conn.query(sessionsSql, {
                   type: QueryTypes.SELECT,
-                  replacements: [compareStart, compareEnd, paths],
+                  replacements: currentRangeIncludesToday
+                    ? [compareStart, compareEnd, cutoffHour, paths]
+                    : [compareStart, compareEnd, paths],
                 });
                 console.log(
                   "[DEBUG] Comparison sessions rows found:",
