@@ -1469,18 +1469,16 @@ function getIstCutoffContext(start, end) {
     !!rangeEnd &&
     rangeStart <= todayIst &&
     rangeEnd >= todayIst;
-  const secondsNow =
-    nowIst.getUTCHours() * 3600 +
-    nowIst.getUTCMinutes() * 60 +
-    nowIst.getUTCSeconds();
+  const currentHour = nowIst.getUTCHours();
+  const cutoffHour = currentRangeIncludesToday ? currentHour - 1 : 23;
   const cutoffTime = currentRangeIncludesToday
-    ? `${pad2(Math.floor(secondsNow / 3600))}:${pad2(Math.floor((secondsNow % 3600) / 60))}:${pad2(secondsNow % 60)}`
+    ? `${pad2(currentHour)}:00:00`
     : "24:00:00";
 
   return {
     currentRangeIncludesToday,
     cutoffTime,
-    cutoffHour: currentRangeIncludesToday ? nowIst.getUTCHours() : 23,
+    cutoffHour,
   };
 }
 
