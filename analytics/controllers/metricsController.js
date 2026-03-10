@@ -1470,15 +1470,17 @@ function getIstCutoffContext(start, end) {
     rangeStart <= todayIst &&
     rangeEnd >= todayIst;
   const currentHour = nowIst.getUTCHours();
+  const currentMinute = nowIst.getUTCMinutes();
+  const currentSecond = nowIst.getUTCSeconds();
   const cutoffHour = currentRangeIncludesToday ? currentHour - 1 : 23;
-  const cutoffTime = currentRangeIncludesToday
-    ? `${pad2(currentHour)}:00:00`
+  const orderCutoffTime = currentRangeIncludesToday
+    ? `${pad2(currentHour)}:${pad2(currentMinute)}:${pad2(currentSecond)}`
     : "24:00:00";
 
   return {
     currentRangeIncludesToday,
-    cutoffTime,
     cutoffHour,
+    orderCutoffTime,
   };
 }
 
@@ -4753,7 +4755,7 @@ function buildMetricsController() {
           const paths = [
             ...new Set(rows.map((r) => r.landing_page_path).filter(Boolean)),
           ];
-          const { currentRangeIncludesToday, cutoffTime, cutoffHour } =
+          const { currentRangeIncludesToday, orderCutoffTime, cutoffHour } =
             getIstCutoffContext(start, end);
 
           if (productIds.length > 0 || paths.length > 0) {
@@ -4775,7 +4777,7 @@ function buildMetricsController() {
                 const ordersRows = await conn.query(ordersSql, {
                   type: QueryTypes.SELECT,
                   replacements: currentRangeIncludesToday
-                    ? [compareStart, compareEnd, cutoffTime, productIds]
+                    ? [compareStart, compareEnd, orderCutoffTime, productIds]
                     : [compareStart, compareEnd, productIds],
                 });
                 ordersRows.forEach((r) =>
