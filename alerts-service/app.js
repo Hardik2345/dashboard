@@ -89,6 +89,17 @@ app.post("/push/receive", async (req, res) => {
     }
 
     const payload = { ...req.body };
+    const evt = payload.event || {};
+
+    // --- Performance Alert Guard (Comment out to restore) ---
+    if (evt.metric === "performance") {
+      logger.info("[push/receive] Skipping performance alert as requested.");
+      return res.json({
+        message: "Performance alert skipped",
+        data: payload,
+      });
+    }
+    // --------------------------------------------------------
 
     // Store in pushnotifications collection
     await mongoose.connection.collection("pushnotifications").insertOne({
@@ -106,7 +117,6 @@ app.post("/push/receive", async (req, res) => {
     const hourRange = hourMatch ? hourMatch[1] : "";
 
     // Build FCM notification headline
-    const evt = payload.event || {};
     const delta = Math.abs(evt.delta_percent || 0).toFixed(2);
     const direction = (evt.delta_percent || 0) < 0 ? "Drop" : "Rise";
     const rawMetric = evt.metric || "metric";
@@ -128,9 +138,13 @@ app.post("/push/receive", async (req, res) => {
     ];
     if (hourRange) titleParts.push(hourRange);
     const title = titleParts.join(" | ");
+    
+    // Updated body to show current value if available
     const body =
-      evt.condition ||
-      `${formattedMetric} ${direction.toLowerCase()} by ${delta}%`;
+      evt.current_value !== undefined
+        ? `current value: ${evt.current_value.toFixed(2)}`
+        : evt.condition ||
+          `${formattedMetric} ${direction.toLowerCase()} by ${delta}%`;
 
     // Send FCM push to all registered devices (fire-and-forget)
     sendToAll(mongoose.connection, title, body, {
