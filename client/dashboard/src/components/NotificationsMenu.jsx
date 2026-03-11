@@ -20,6 +20,7 @@ import {
   Info,
   CheckCircle,
   XCircle,
+  Target,
 } from "lucide-react";
 import { doGet, doPut } from "../lib/api";
 import dayjs from "dayjs";
@@ -177,7 +178,14 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
               </Typography>
             </Box>
           ) : (
-            notifications.slice(0, 5).map((notif, index) => {
+            notifications
+              .filter((notif) => {
+                // Hide performance alerts from the bell icon window
+                // if (notif.event?.metric === "performance") return false;
+                return notif.event?.metric !== "performance";
+              })
+              .slice(0, 5)
+              .map((notif, index) => {
               const evt = notif.event || {};
               const metricName = (evt.metric || "Metric").replace(/_/g, " ");
               const delta = Math.abs(evt.delta_percent || 0).toFixed(2);
@@ -308,7 +316,7 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                           component="span"
                           sx={{
                             fontWeight: 700,
-                            color: isTrendDown ? "#ef4444" : "#10b981",
+                            color: iconColor,
                           }}
                         >
                           {delta}%
@@ -329,14 +337,7 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                       <Box
                         sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
                       >
-                        {isTrendUp ? (
-                          <TrendingUp size={14} style={{ color: "#10b981" }} />
-                        ) : isTrendDown ? (
-                          <TrendingDown
-                            size={14}
-                            style={{ color: "#ef4444" }}
-                          />
-                        ) : null}
+                        <Target size={12} style={{ color: iconColor }} />
                         <Typography
                           variant="caption"
                           sx={{
@@ -345,7 +346,9 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                             alignItems: "center",
                           }}
                         >
-                          {evt.condition || "Value changed significantly."}
+                          {evt.current_value !== undefined
+                            ? `current value: ${Number(evt.current_value).toFixed(2)}`
+                            : evt.condition || "Value changed significantly."}
                         </Typography>
                       </Box>
                     </Box>
