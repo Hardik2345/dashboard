@@ -146,6 +146,11 @@ app.post("/push/receive", async (req, res) => {
         : evt.condition ||
           `${formattedMetric} ${direction.toLowerCase()} by ${delta}%`;
 
+    // Update evt.condition in the payload before storage so frontend shows correct text
+    if (evt.current_value !== undefined) {
+      evt.condition = `current value: ${evt.current_value.toFixed(2)}`;
+    }
+
     // Send FCM push to all registered devices (fire-and-forget)
     sendToAll(mongoose.connection, title, body, {
       event_id: evt.event_id || "",
