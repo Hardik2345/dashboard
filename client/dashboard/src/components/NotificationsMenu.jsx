@@ -189,8 +189,14 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
               const evt = notif.event || {};
               const metricName = (evt.metric || "Metric").replace(/_/g, " ");
               const delta = Math.abs(evt.delta_percent || 0).toFixed(2);
-              const direction =
-                (evt.delta_percent || 0) < 0 ? "Dropped" : "Rose";
+              const thresholdType = String(evt.threshold_type || "").toLowerCase();
+              const direction = thresholdType.includes("rise")
+                ? "Rose"
+                : thresholdType.includes("drop") || thresholdType.includes("less_than")
+                  ? "Dropped"
+                  : (evt.delta_percent || 0) < 0
+                    ? "Dropped"
+                    : "Rose";
               const state = evt.current_state || "ALERT";
               const brand = evt.brand || "System";
 
@@ -220,9 +226,6 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                   ? "rgba(239, 68, 68, 0.1)"
                   : "rgba(239, 68, 68, 0.05)";
               }
-
-              const isTrendUp = (evt.delta_percent || 0) > 0;
-              const isTrendDown = (evt.delta_percent || 0) < 0;
 
               const handleItemClick = () => {
                 /* Navigation disabled while panel is hidden
