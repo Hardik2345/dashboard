@@ -51,10 +51,19 @@ const StatBox = ({ children, sx = {} }) => {
   );
 };
 
-const WebVitals = ({ query }) => {
+const WebVitals = ({ query, metric: metricProp = "FCP", onMetricChange }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
-  const [metric, setMetric] = useState("FCP");
+  const [localMetric, setLocalMetric] = useState(metricProp);
+  const metric = typeof onMetricChange === "function" ? metricProp : localMetric;
+  const handleMetricChange = (event) => {
+    const nextMetric = event.target.value;
+    if (typeof onMetricChange === "function") {
+      onMetricChange(nextMetric);
+      return;
+    }
+    setLocalMetric(nextMetric);
+  };
   const { topPages, loading } = useWebVitals(query, metric);
 
   return (
@@ -85,7 +94,7 @@ const WebVitals = ({ query }) => {
         <FormControl size="small">
           <Select
             value={metric}
-            onChange={(e) => setMetric(e.target.value)}
+            onChange={handleMetricChange}
             sx={{
               height: 30,
               fontSize: "12px",

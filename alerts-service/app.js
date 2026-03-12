@@ -118,7 +118,14 @@ app.post("/push/receive", async (req, res) => {
 
     // Build FCM notification headline
     const delta = Math.abs(evt.delta_percent || 0).toFixed(2);
-    const direction = (evt.delta_percent || 0) < 0 ? "Drop" : "Rise";
+    const thresholdType = String(evt.threshold_type || "").toLowerCase();
+    const direction = thresholdType.includes("rise")
+      ? "Rise"
+      : thresholdType.includes("drop") || thresholdType.includes("less_than")
+        ? "Drop"
+        : (evt.delta_percent || 0) < 0
+          ? "Drop"
+          : "Rise";
     const rawMetric = evt.metric || "metric";
     const formattedMetric = rawMetric
       .split("_")
@@ -138,17 +145,15 @@ app.post("/push/receive", async (req, res) => {
     ];
     if (hourRange) titleParts.push(hourRange);
     const title = titleParts.join(" | ");
-    
-    // Updated body to show current value if available
-    const body =
-      evt.current_value !== undefined
-        ? `current value: ${evt.current_value.toFixed(2)}`
-        : evt.condition ||
-          `${formattedMetric} ${direction.toLowerCase()} by ${delta}%`;
 
-    // Update evt.condition in the payload before storage so frontend shows correct text
+    // Updated body to show current value if available
+    let body;
     if (evt.current_value !== undefined) {
-      evt.condition = `current value: ${evt.current_value.toFixed(2)}`;
+      body = `current value: ${evt.current_value.toFixed(2)}`;
+      evt.condition = body;
+    } else {
+      body = evt.condition || `${formattedMetric} ${direction.toLowerCase()} by ${delta}%`;
+      evt.condition = `${formattedMetric} ${direction.toLowerCase()} by ${delta}%`;
     }
 
     // Send FCM push to all registered devices (fire-and-forget)

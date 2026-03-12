@@ -49,6 +49,10 @@ import {
   listAuthorBrands,
   getTopProducts,
   getDashboardSummary,
+  getHourlyTrend,
+  getOrderSplit,
+  getPaymentSalesSplit,
+  getTrafficSourceSplit,
   doPost,
   doDelete,
 } from "./lib/api.js";
@@ -128,6 +132,13 @@ const TREND_METRICS = new Set([
   "atc_rate",
   "aov",
 ]);
+const WEB_VITAL_METRIC_KEYS = {
+  FCP: "fcp",
+  LCP: "lcp",
+  TTFB: "ttfb",
+  SESSIONS: "sessions",
+  PERFORMANCE: "performance",
+};
 const SESSION_TRACKING_ENABLED =
   String(import.meta.env.VITE_SESSION_TRACKING || "false").toLowerCase() ===
   "true";
@@ -253,6 +264,7 @@ export default function App() {
     loading: true,
   });
   const [utmOptions, setUtmOptions] = useState(null);
+  const [webVitalsMetric, setWebVitalsMetric] = useState("FCP");
 
   // Track navigation direction for transitions
   const [direction, setDirection] = useState(0);
@@ -529,6 +541,587 @@ export default function App() {
 
     return base;
   }, [trendMetricsQuery]);
+
+  const escapeCsvCell = useCallback((value) => {
+    const str = value == null ? "" : String(value);
+    if (str.includes('"') || str.includes(",") || str.includes("\n")) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  }, []);
+
+  const exportStartDate =
+    generalMetricsQuery?.start || generalMetricsQuery?.end || "";
+  const exportEndDate =
+    generalMetricsQuery?.end || generalMetricsQuery?.start || exportStartDate;
+
+  const asExcelTextDate = useCallback((value) => {
+    return value ? `'${value}` : "";
+  }, []);
+
+  const buildBaseRow = useCallback((overrides = {}) => ({
+    section: "",
+    subsection: "",
+    item_type: "",
+    item_key: "",
+    item_name: "",
+    hour: "",
+    rank: "",
+    category: "",
+    source_name: "",
+    page_name: "",
+    payment_mode: "",
+    metric: "",
+    value: "",
+    previous_value: "",
+    change_percent: "",
+    unit: "",
+    start_date: asExcelTextDate(exportStartDate),
+    end_date: asExcelTextDate(exportEndDate),
+    brand_key: activeBrandKey || "",
+    selected_web_vitals_metric: "",
+    generated_at: "",
+    ...overrides,
+  }), [activeBrandKey, asExcelTextDate, exportEndDate, exportStartDate]);
+
+  const toBrandNameForPagespeed = useCallback((brandKey) => {
+    switch ((brandKey || "").toUpperCase()) {
+      case "TMC":
+        return "TMC";
+      case "BBB":
+        return "BlaBliBluLife";
+      case "PTS":
+        return "SkincarePersonalTouch";
+      default:
+        return (brandKey || "").toUpperCase();
+    }
+  }, []);
+
+  const getPreviousDateWindow = useCallback((startDate, endDate) => {
+    if (!startDate || !endDate) return { prevStart: null, prevEnd: null };
+    const s = dayjs(startDate);
+    const e = dayjs(endDate);
+    const dayCount = e.diff(s, "day") + 1;
+    const prevEnd = s.subtract(1, "day");
+    const prevStart = prevEnd.subtract(dayCount - 1, "day");
+    return {
+      prevStart: prevStart.format("YYYY-MM-DD"),
+      prevEnd: prevEnd.format("YYYY-MM-DD"),
+    };
+  }, []);
+
+  const fetchPagespeedResults = useCallback(async (brandName, startDate, endDate) => {
+    if (!brandName || !startDate || !endDate) return [];
+    const params = new URLSearchParams({
+      brand_key: brandName,
+      start_date: startDate,
+      end_date: endDate,
+    });
+    const response = await fetch(`/api/external-pagespeed/pagespeed?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error(`pagespeed request failed: ${response.status}`);
+    }
+    const json = await response.json();
+    return Array.isArray(json?.results) ? json.results : [];
+  }, []);
+
+  const buildWebVitalsSnapshot = useCallback(
+    async (query, selectedMetric) => {
+      const metricKey = WEB_VITAL_METRIC_KEYS[selectedMetric] || "fcp";
+      const brandName = toBrandNameForPagespeed(query?.brand_key || activeBrandKey);
+      const currentStart = query?.start;
+      const currentEnd = query?.end;
+      if (!brandName || !currentStart || !currentEnd) {
+        return {
+          selected_metric: selectedMetric,
+          performance: {
+            current_avg: null,
+            previous_avg: null,
+            change_percent: null,
+          },
+          top_pages: [],
+        };
+      }
+
+      const { prevStart, prevEnd } = getPreviousDateWindow(currentStart, currentEnd);
+      const [currentResults, previousResults] = await Promise.all([
+        fetchPagespeedResults(brandName, currentStart, currentEnd),
+        prevStart && prevEnd
+          ? fetchPagespeedResults(brandName, prevStart, prevEnd)
+          : Promise.resolve([]),
+      ]);
+
+      const performanceCurrent =
+        currentResults.reduce((sum, row) => sum + Number(row?.performance || 0), 0) /
+        (currentResults.length || 1);
+      const performancePrevious =
+        previousResults.reduce((sum, row) => sum + Number(row?.performance || 0), 0) /
+        (previousResults.length || 1);
+      const performanceChange =
+        performancePrevious > 0
+          ? ((performanceCurrent - performancePrevious) / performancePrevious) * 100
+          : null;
+
+      const reduceByUrl = (results) => {
+        const grouped = {};
+        for (const row of results) {
+          const url = String(row?.url || "");
+          if (!url) continue;
+          if (!grouped[url]) grouped[url] = [];
+          grouped[url].push(Number(row?.[metricKey] || 0));
+        }
+        return Object.entries(grouped).map(([url, values]) => {
+          const sum = values.reduce((a, b) => a + b, 0);
+          const isSumMetric = metricKey === "sessions";
+          return {
+            url,
+            value: isSumMetric ? sum : sum / values.length,
+          };
+        });
+      };
+
+      const currentPages = reduceByUrl(currentResults);
+      const previousPages = reduceByUrl(previousResults);
+      const topPages = currentPages
+        .map((page) => {
+          const previous = previousPages.find((p) => p.url === page.url);
+          const previousValue = previous?.value ?? null;
+          const changePercent =
+            previousValue && previousValue > 0
+              ? ((page.value - previousValue) / previousValue) * 100
+              : null;
+          return {
+            page_name: page.url,
+            value: Number(page.value || 0),
+            previous_value: previousValue,
+            change_percent: changePercent,
+          };
+        })
+        .sort((a, b) => {
+          const descending = selectedMetric === "SESSIONS" || selectedMetric === "PERFORMANCE";
+          return descending ? b.value - a.value : a.value - b.value;
+        })
+        .slice(0, 5);
+
+      return {
+        selected_metric: selectedMetric,
+        performance: {
+          current_avg: Number.isFinite(performanceCurrent) ? performanceCurrent : null,
+          previous_avg: Number.isFinite(performancePrevious) ? performancePrevious : null,
+          change_percent: Number.isFinite(performanceChange)
+            ? performanceChange
+            : null,
+        },
+        top_pages: topPages,
+      };
+    },
+    [activeBrandKey, fetchPagespeedResults, getPreviousDateWindow, toBrandNameForPagespeed],
+  );
+
+  const handleDownloadSnapshot = useCallback(async () => {
+    try {
+      const summaryBase = {
+        ...trendMetricsQuery,
+        align: "hour",
+      };
+
+      const [summary, hourlyTrend, orderSplit, salesSplit, trafficSplit, webVitals] =
+        await Promise.all([
+          getDashboardSummary(summaryBase),
+          getHourlyTrend({ ...trendMetricsQuery, aggregate: "avg-by-hour" }),
+          getOrderSplit(generalMetricsQuery),
+          getPaymentSalesSplit(generalMetricsQuery),
+          getTrafficSourceSplit(generalMetricsQuery),
+          buildWebVitalsSnapshot(generalMetricsQuery, webVitalsMetric),
+        ]);
+
+      const metrics = summary?.metrics || {};
+      const totalOrders = Number(metrics?.total_orders?.value || 0);
+      const cancelledOrders = Number(metrics?.cancelled_orders?.value || 0);
+      const refundedOrders = Number(metrics?.refunded_orders?.value || 0);
+
+      const kpis = [
+        { name: "Total Orders", key: "orders", value: totalOrders },
+        { name: "Gross Revenue", key: "sales", value: Number(metrics?.total_sales?.value || 0) },
+        {
+          name: "Average Order Value",
+          key: "aov",
+          value: Number(metrics?.average_order_value?.value || 0),
+        },
+        {
+          name: "Conversion Rate",
+          key: "cvr",
+          value: Number(metrics?.conversion_rate?.value || 0),
+        },
+        {
+          name: "Total Sessions",
+          key: "sessions",
+          value: Number(metrics?.total_sessions?.value || 0),
+        },
+        {
+          name: "ATC Sessions",
+          key: "atc",
+          value: Number(metrics?.total_atc_sessions?.value || 0),
+        },
+        {
+          name: "Cancellation Rate",
+          key: "cancellation_rate",
+          value: totalOrders > 0 ? (cancelledOrders / totalOrders) * 100 : 0,
+        },
+        {
+          name: "Refund Rate",
+          key: "refund_rate",
+          value: totalOrders > 0 ? (refundedOrders / totalOrders) * 100 : 0,
+        },
+        {
+          name: "Web Performance(Avg)",
+          key: "web_performance_avg",
+          value: Number(webVitals?.performance?.current_avg || 0),
+        },
+      ];
+
+      const hourlyPoints = Array.isArray(hourlyTrend?.points) ? hourlyTrend.points : [];
+      const mapHourlySeries = (key, name, getter) => ({
+        key,
+        name,
+        points: hourlyPoints.map((point) => ({
+          hour: point?.hour,
+          value: getter(point?.metrics || {}),
+        })),
+      });
+
+      const hourlyTrends = [
+        mapHourlySeries("orders", "Total Orders", (m) => Number(m?.orders || 0)),
+        mapHourlySeries("sales", "Gross Revenue", (m) => Number(m?.sales || 0)),
+        mapHourlySeries("aov", "Average Order Value", (m) => {
+          const sales = Number(m?.sales || 0);
+          const orders = Number(m?.orders || 0);
+          return orders > 0 ? sales / orders : 0;
+        }),
+        mapHourlySeries("cvr", "Conversion Rate", (m) => Number(m?.cvr_ratio || 0) * 100),
+        mapHourlySeries("sessions", "Total Sessions", (m) => Number(m?.sessions || 0)),
+        mapHourlySeries("atc", "ATC Sessions", (m) => Number(m?.atc || 0)),
+      ];
+
+      const trafficCategories = [
+        {
+          category: "meta",
+          label: "Meta",
+          sessions: Number(trafficSplit?.meta?.sessions || 0),
+          atc_sessions: Number(trafficSplit?.meta?.atc_sessions || 0),
+          delta_percent: trafficSplit?.meta?.delta ?? null,
+          atc_delta_percent: trafficSplit?.meta?.atc_delta ?? null,
+          sources: Array.isArray(trafficSplit?.meta_breakdown)
+            ? trafficSplit.meta_breakdown.map((src) => ({
+                source_name: src?.name || "",
+                sessions: Number(src?.sessions || 0),
+                atc_sessions: Number(src?.atc_sessions || 0),
+              }))
+            : [],
+        },
+        {
+          category: "google",
+          label: "Google",
+          sessions: Number(trafficSplit?.google?.sessions || 0),
+          atc_sessions: Number(trafficSplit?.google?.atc_sessions || 0),
+          delta_percent: trafficSplit?.google?.delta ?? null,
+          atc_delta_percent: trafficSplit?.google?.atc_delta ?? null,
+          sources: [],
+        },
+        {
+          category: "direct",
+          label: "Direct",
+          sessions: Number(trafficSplit?.direct?.sessions || 0),
+          atc_sessions: Number(trafficSplit?.direct?.atc_sessions || 0),
+          delta_percent: trafficSplit?.direct?.delta ?? null,
+          atc_delta_percent: trafficSplit?.direct?.atc_delta ?? null,
+          sources: [],
+        },
+        {
+          category: "others",
+          label: "Others",
+          sessions: Number(trafficSplit?.others?.sessions || 0),
+          atc_sessions: Number(trafficSplit?.others?.atc_sessions || 0),
+          delta_percent: trafficSplit?.others?.delta ?? null,
+          atc_delta_percent: trafficSplit?.others?.atc_delta ?? null,
+          sources: Array.isArray(trafficSplit?.others_breakdown)
+            ? trafficSplit.others_breakdown.map((src) => ({
+                source_name: src?.name || "",
+                sessions: Number(src?.sessions || 0),
+                atc_sessions: Number(src?.atc_sessions || 0),
+              }))
+            : [],
+        },
+      ];
+
+      const generatedAt = new Date().toISOString();
+      const rows = [];
+
+      rows.push(
+        buildBaseRow({
+          section: "meta",
+          subsection: "snapshot",
+          item_type: "generated",
+          item_name: "generated_at",
+          metric: "generated_at",
+          value: generatedAt,
+          generated_at: generatedAt,
+        }),
+      );
+
+      rows.push(
+        buildBaseRow({
+          section: "filters",
+          subsection: "applied",
+          item_type: "flag",
+          item_name: "compare_mode",
+          metric: "compare_mode",
+          value: compareMode ? "true" : "false",
+          generated_at: generatedAt,
+        }),
+      );
+
+      const filterRows = [
+        ["compare_start", generalMetricsQuery?.compare_start || ""],
+        ["compare_end", generalMetricsQuery?.compare_end || ""],
+        ["product_id", Array.isArray(generalMetricsQuery?.product_id)
+          ? generalMetricsQuery.product_id.join("|")
+          : (generalMetricsQuery?.product_id || "")],
+        ["utm_source", Array.isArray(generalMetricsQuery?.utm_source)
+          ? generalMetricsQuery.utm_source.join("|")
+          : (generalMetricsQuery?.utm_source || "")],
+        ["utm_medium", Array.isArray(generalMetricsQuery?.utm_medium)
+          ? generalMetricsQuery.utm_medium.join("|")
+          : (generalMetricsQuery?.utm_medium || "")],
+        ["utm_campaign", Array.isArray(generalMetricsQuery?.utm_campaign)
+          ? generalMetricsQuery.utm_campaign.join("|")
+          : (generalMetricsQuery?.utm_campaign || "")],
+        ["sales_channel", Array.isArray(generalMetricsQuery?.sales_channel)
+          ? generalMetricsQuery.sales_channel.join("|")
+          : (generalMetricsQuery?.sales_channel || "")],
+        ["device_type", Array.isArray(generalMetricsQuery?.device_type)
+          ? generalMetricsQuery.device_type.join("|")
+          : (generalMetricsQuery?.device_type || "")],
+      ];
+
+      for (const [name, value] of filterRows) {
+        rows.push(
+          buildBaseRow({
+            section: "filters",
+            subsection: "applied",
+            item_type: "filter",
+            item_name: name,
+            metric: name,
+            value,
+            generated_at: generatedAt,
+          }),
+        );
+      }
+
+      for (const kpi of kpis) {
+        rows.push(
+          buildBaseRow({
+            section: "kpis",
+            subsection: "summary",
+            item_type: "kpi",
+            item_key: kpi.key,
+            item_name: kpi.name,
+            metric: kpi.key,
+            value: kpi.value,
+            unit: kpi.key.includes("rate") || kpi.key === "cvr" ? "percent" : "value",
+            generated_at: generatedAt,
+          }),
+        );
+      }
+
+      for (const trend of hourlyTrends) {
+        for (const point of trend.points) {
+          rows.push(
+            buildBaseRow({
+              section: "hourly_trends",
+              subsection: trend.key,
+              item_type: "hourly_point",
+              item_key: trend.key,
+              item_name: trend.name,
+              hour: point.hour,
+              metric: trend.key,
+              value: point.value,
+              unit: trend.key.includes("rate") || trend.key === "cvr" ? "percent" : "value",
+              generated_at: generatedAt,
+            }),
+          );
+        }
+      }
+
+      rows.push(
+        buildBaseRow({
+          section: "web_vitals",
+          subsection: "performance",
+          item_type: "summary",
+          item_key: "web_performance_avg",
+          item_name: "Web Performance(Avg)",
+          metric: "performance_avg",
+          value: webVitals?.performance?.current_avg ?? "",
+          previous_value: webVitals?.performance?.previous_avg ?? "",
+          change_percent: webVitals?.performance?.change_percent ?? "",
+          generated_at: generatedAt,
+        }),
+      );
+
+      (webVitals?.top_pages || []).forEach((page, index) => {
+        rows.push(
+          buildBaseRow({
+            section: "web_vitals",
+            subsection: "top_pages",
+            item_type: "top_page",
+            item_name: `Top Page ${index + 1}`,
+            rank: index + 1,
+            page_name: page.page_name || "",
+            metric: webVitals?.selected_metric || webVitalsMetric,
+            value: page.value ?? "",
+            previous_value: page.previous_value ?? "",
+            change_percent: page.change_percent ?? "",
+            selected_web_vitals_metric:
+              webVitals?.selected_metric || webVitalsMetric || "",
+            generated_at: generatedAt,
+          }),
+        );
+      });
+
+      [
+        { subsection: "by_order_count", items: [
+          { payment_mode: "Prepaid", value: Number(orderSplit?.prepaid_orders || 0) },
+          { payment_mode: "COD", value: Number(orderSplit?.cod_orders || 0) },
+          { payment_mode: "Partially paid", value: Number(orderSplit?.partially_paid_orders || 0) },
+        ] },
+        { subsection: "by_sales", items: [
+          { payment_mode: "Prepaid", value: Number(salesSplit?.prepaid_sales || 0) },
+          { payment_mode: "COD", value: Number(salesSplit?.cod_sales || 0) },
+          { payment_mode: "Partial", value: Number(salesSplit?.partial_sales || 0) },
+        ] },
+      ].forEach((split) => {
+        split.items.forEach((item) => {
+          rows.push(
+            buildBaseRow({
+              section: "payment_splits",
+              subsection: split.subsection,
+              item_type: "payment_mode",
+              payment_mode: item.payment_mode,
+              metric: split.subsection,
+              value: item.value,
+              generated_at: generatedAt,
+            }),
+          );
+        });
+      });
+
+      for (const category of trafficCategories) {
+        rows.push(
+          buildBaseRow({
+            section: "traffic_split",
+            subsection: "category_summary",
+            item_type: "traffic_category",
+            category: category.label,
+            metric: "sessions",
+            value: category.sessions,
+            change_percent: category.delta_percent ?? "",
+            generated_at: generatedAt,
+          }),
+        );
+        rows.push(
+          buildBaseRow({
+            section: "traffic_split",
+            subsection: "category_summary",
+            item_type: "traffic_category",
+            category: category.label,
+            metric: "atc_sessions",
+            value: category.atc_sessions,
+            change_percent: category.atc_delta_percent ?? "",
+            generated_at: generatedAt,
+          }),
+        );
+
+        for (const src of category.sources || []) {
+          rows.push(
+            buildBaseRow({
+              section: "traffic_split",
+              subsection: "source_breakdown",
+              item_type: "traffic_source",
+              category: category.label,
+              source_name: src.source_name,
+              metric: "sessions",
+              value: src.sessions,
+              generated_at: generatedAt,
+            }),
+          );
+          rows.push(
+            buildBaseRow({
+              section: "traffic_split",
+              subsection: "source_breakdown",
+              item_type: "traffic_source",
+              category: category.label,
+              source_name: src.source_name,
+              metric: "atc_sessions",
+              value: src.atc_sessions,
+              generated_at: generatedAt,
+            }),
+          );
+        }
+      }
+
+      const csvHeader = [
+        "section",
+        "subsection",
+        "item_type",
+        "item_key",
+        "item_name",
+        "hour",
+        "rank",
+        "category",
+        "source_name",
+        "page_name",
+        "payment_mode",
+        "metric",
+        "value",
+        "previous_value",
+        "change_percent",
+        "unit",
+        "start_date",
+        "end_date",
+        "brand_key",
+        "selected_web_vitals_metric",
+        "generated_at",
+      ];
+      const csvLines = [
+        csvHeader.join(","),
+        ...rows.map((row) => csvHeader.map((col) => escapeCsvCell(row[col])).join(",")),
+      ];
+      const csvText = `${csvLines.join("\n")}\n`;
+
+      const filename = `datum_snapshot_${generalMetricsQuery?.start || "start"}_${generalMetricsQuery?.end || "end"}.csv`;
+      const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to build dashboard snapshot:", error);
+      window.alert("Failed to download dashboard snapshot. Please try again.");
+    }
+  }, [
+    activeBrandKey,
+    buildWebVitalsSnapshot,
+    buildBaseRow,
+    compareMode,
+    escapeCsvCell,
+    generalMetricsQuery,
+    trendMetricsQuery,
+    webVitalsMetric,
+  ]);
 
   const handleAuthorBrandChange = useCallback(
     (nextKeyRaw) => {
@@ -1595,7 +2188,7 @@ export default function App() {
                           deviceType: hasPermission("device_type_filter"),
                         }}
                         utmOptions={utmOptions}
-                        onDownload={() => console.log("Download triggered")}
+                        onDownload={handleDownloadSnapshot}
                       />
                     </Box>
                   )}
@@ -1795,6 +2388,8 @@ export default function App() {
                                       <Grid size={{ xs: 12, md: 3 }}>
                                         <WebVitals
                                           query={generalMetricsQuery}
+                                          metric={webVitalsMetric}
+                                          onMetricChange={setWebVitalsMetric}
                                         />
                                       </Grid>
                                     )}
