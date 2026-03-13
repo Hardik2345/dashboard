@@ -188,15 +188,33 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
               .map((notif, index) => {
               const evt = notif.event || {};
               const metricName = (evt.metric || "Metric").replace(/_/g, " ");
-              const delta = Math.abs(evt.delta_percent || 0).toFixed(2);
+              const deltaValue = Number(evt.delta_percent || 0);
+              const delta = Math.abs(deltaValue).toFixed(2);
               const thresholdType = String(evt.threshold_type || "").toLowerCase();
-              const direction = thresholdType.includes("rise")
-                ? "Rose"
-                : thresholdType.includes("drop") || thresholdType.includes("less_than")
-                  ? "Dropped"
-                  : (evt.delta_percent || 0) < 0
-                    ? "Dropped"
-                    : "Rose";
+              const eventDirection = String(evt.direction || "").toLowerCase();
+              const conditionText = String(evt.condition || "").toLowerCase();
+              const direction =
+                eventDirection.includes("below") ||
+                eventDirection.includes("drop") ||
+                eventDirection.includes("down") ||
+                eventDirection.includes("decrease") ||
+                conditionText.includes("drop") ||
+                conditionText.includes("below") ||
+                thresholdType.includes("drop") ||
+                thresholdType.includes("less_than")
+                  ? "dropped"
+                  : eventDirection.includes("above") ||
+                      eventDirection.includes("rise") ||
+                      eventDirection.includes("up") ||
+                      eventDirection.includes("increase") ||
+                      conditionText.includes("rise") ||
+                      conditionText.includes("above") ||
+                      thresholdType.includes("rise") ||
+                      thresholdType.includes("greater_than")
+                    ? "rose"
+                    : deltaValue < 0
+                      ? "dropped"
+                      : "rose";
               const state = evt.current_state || "ALERT";
               const brand = evt.brand || "System";
 
@@ -314,27 +332,35 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                           fontSize: "0.825rem",
                         }}
                       >
-                        {metricName} {direction} by{" "}
-                        <Box
-                          component="span"
-                          sx={{
-                            fontWeight: 700,
-                            color: iconColor,
-                          }}
-                        >
-                          {delta}%
-                        </Box>{" "}
-                        | current state:{" "}
-                        <Box
-                          component="span"
-                          sx={{
-                            fontWeight: 600,
-                            color: iconColor,
-                            fontSize: "0.75rem",
-                          }}
-                        >
-                          {state}
-                        </Box>
+                        {state === "NORMAL" ? (
+                          <>
+                            {metricName} came back to normal value
+                          </>
+                        ) : (
+                          <>
+                            {metricName} {direction} by{" "}
+                            <Box
+                              component="span"
+                              sx={{
+                                fontWeight: 700,
+                                color: iconColor,
+                              }}
+                            >
+                              {delta}%
+                            </Box>{" "}
+                            | current state:{" "}
+                            <Box
+                              component="span"
+                              sx={{
+                                fontWeight: 600,
+                                color: iconColor,
+                                fontSize: "0.75rem",
+                              }}
+                            >
+                              {state}
+                            </Box>
+                          </>
+                        )}
                       </Typography>
 
                       <Box
