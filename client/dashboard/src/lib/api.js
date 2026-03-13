@@ -515,21 +515,208 @@ export async function getPaymentSalesSplit(args) {
 }
 
 export async function getTrafficSourceSplit(args) {
+  const toDateString = (value) => {
+    if (!value) return '';
+    if (typeof value === 'string') {
+      if (value.includes('T')) {
+        const parsed = new Date(value);
+        if (!Number.isNaN(parsed.getTime())) {
+          const adjusted = new Date(parsed.getTime() + 12 * 60 * 60 * 1000);
+          return adjusted.toISOString().split('T')[0];
+        }
+      }
+      return value.split('T')[0];
+    }
+    if (value instanceof Date) {
+      const adjusted = new Date(value.getTime() + 12 * 60 * 60 * 1000);
+      return adjusted.toISOString().split('T')[0];
+    }
+    return String(value);
+  };
+
+  const normalizeName = (name) => String(name || '').trim();
+
+  const toTokens = (name) =>
+    normalizeName(name)
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean);
+
+  const normalizeRule = (rule) => {
+    const type = String(rule?.matchType || rule?.type || '')
+      .toLowerCase()
+      .trim();
+    const value = String(rule?.value || rule?.pattern || '')
+      .toLowerCase()
+      .trim();
+    const bucket = String(rule?.bucket || rule?.category || '')
+      .toLowerCase()
+      .trim();
+    if (!type || !value || !bucket) return null;
+    if (!['equals', 'starts_with', 'contains'].includes(type)) return null;
+    if (!['meta', 'google', 'direct', 'others'].includes(bucket)) return null;
+    return { type, value, bucket };
+  };
+
+  const rulePriority = { equals: 1, starts_with: 2, contains: 3 };
+
+  const matchesRule = (sourceLower, rule) => {
+    if (rule.type === 'equals') return sourceLower === rule.value;
+    if (rule.type === 'starts_with') return sourceLower.startsWith(rule.value);
+    if (rule.type === 'contains') return sourceLower.includes(rule.value);
+    return false;
+  };
+
+  const getCategory = (name, customRules = []) => {
+    const lower = normalizeName(name).toLowerCase();
+    const tokens = toTokens(name);
+
+    for (const rule of customRules) {
+      if (matchesRule(lower, rule)) return rule.bucket;
+    }
+
+    if (
+      lower.includes('instagram') ||
+      lower.includes('facebook') ||
+      lower.includes('meta') ||
+      tokens.includes('ig') ||
+      tokens.includes('insta') ||
+      tokens.includes('fb')
+    ) {
+      return 'meta';
+    }
+    if (lower.includes('google')) return 'google';
+    if (lower.includes('direct')) return 'direct';
+    return 'others';
+  };
+
+  const parseUtmSourceArray = (value) => {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  };
+
+  const calcDelta = (curr, prev) => {
+    if (prev === 0) return curr > 0 ? 100 : 0;
+    return ((curr - prev) / prev) * 100;
+  };
+
   const base = { start: args.start, end: args.end };
   if (args.compare_start) base.compare_start = args.compare_start;
   if (args.compare_end) base.compare_end = args.compare_end;
   const params = appendBrandKey(base, args);
   const json = await getJSON("/metrics/traffic-source-split", params);
+
+  const rows = Array.isArray(json?.rows) ? json.rows : [];
+  const customRulesRaw = Array.isArray(args?.mappingRules)
+    ? args.mappingRules
+    : Array.isArray(args?.mapping_rules)
+      ? args.mapping_rules
+      : [];
+  const customRules = customRulesRaw
+    .map(normalizeRule)
+    .filter(Boolean)
+    .sort((a, b) => rulePriority[a.type] - rulePriority[b.type]);
+  const currentStart = toDateString(args.start);
+  const currentEnd = toDateString(args.end);
+
+  const prevRange = json?.prev_range || null;
+  const prevStart = toDateString(prevRange?.start);
+  const prevEnd = toDateString(prevRange?.end);
+
+  const initStats = () => ({ sessions: 0, atc_sessions: 0 });
+  const current = {
+    meta: initStats(),
+    google: initStats(),
+    direct: initStats(),
+    others: initStats(),
+  };
+  const previous = {
+    meta: initStats(),
+    google: initStats(),
+    direct: initStats(),
+    others: initStats(),
+  };
+
+  const othersMap = new Map();
+  const metaMap = new Map();
+
+  for (const row of rows) {
+    const rowDate = toDateString(row?.date);
+    const isCurrent =
+      !!rowDate && !!currentStart && !!currentEnd && rowDate >= currentStart && rowDate <= currentEnd;
+    const isPrevious =
+      !!rowDate && !!prevStart && !!prevEnd && rowDate >= prevStart && rowDate <= prevEnd;
+
+    if (!isCurrent && !isPrevious) continue;
+
+    const entries = parseUtmSourceArray(row?.utm_source);
+    for (const entry of entries) {
+      const sourceName = normalizeName(entry?.utm_name || 'Unknown') || 'Unknown';
+      const category = getCategory(sourceName, customRules);
+      const sessions = Number(entry?.sessions || 0);
+      const atcSessions = Number(entry?.atc_sessions || 0);
+
+      const target = isCurrent ? current : previous;
+      target[category].sessions += sessions;
+      target[category].atc_sessions += atcSessions;
+
+      if (isCurrent && (category === 'meta' || category === 'others')) {
+        const targetMap = category === 'meta' ? metaMap : othersMap;
+        if (!targetMap.has(sourceName)) {
+          targetMap.set(sourceName, { sessions: 0, atc_sessions: 0 });
+        }
+        const existing = targetMap.get(sourceName);
+        existing.sessions += sessions;
+        existing.atc_sessions += atcSessions;
+      }
+    }
+  }
+
+  const addDelta = (cat) => ({
+    ...current[cat],
+    delta: calcDelta(current[cat].sessions, previous[cat].sessions),
+    atc_delta: calcDelta(current[cat].atc_sessions, previous[cat].atc_sessions),
+    prev_sessions: previous[cat].sessions,
+    prev_atc_sessions: previous[cat].atc_sessions,
+  });
+
+  const meta = addDelta('meta');
+  const google = addDelta('google');
+  const direct = addDelta('direct');
+  const others = addDelta('others');
+
+  const toBreakdown = (mapObj) =>
+    Array.from(mapObj.entries())
+      .map(([name, stats]) => ({
+        name,
+        sessions: Number(stats?.sessions || 0),
+        atc_sessions: Number(stats?.atc_sessions || 0),
+      }))
+      .sort((a, b) => b.sessions - a.sessions)
+      .slice(0, 15);
+
+  const total_sessions = meta.sessions + google.sessions + direct.sessions + others.sessions;
+  const total_atc_sessions =
+    meta.atc_sessions + google.atc_sessions + direct.atc_sessions + others.atc_sessions;
+
   return {
-    meta: json?.meta || { sessions: 0, atc_sessions: 0 },
-    meta_breakdown: json?.meta_breakdown || [],
-    google: json?.google || { sessions: 0, atc_sessions: 0 },
-    direct: json?.direct || { sessions: 0, atc_sessions: 0 },
-    others: json?.others || { sessions: 0, atc_sessions: 0 },
-    others_breakdown: json?.others_breakdown || [],
-    total_sessions: Number(json?.total_sessions || 0),
-    total_atc_sessions: Number(json?.total_atc_sessions || 0),
-    prev_range: json?.prev_range || null,
+    meta,
+    meta_breakdown: toBreakdown(metaMap),
+    google,
+    direct,
+    others,
+    others_breakdown: toBreakdown(othersMap),
+    total_sessions: Number(total_sessions || 0),
+    total_atc_sessions: Number(total_atc_sessions || 0),
+    prev_range: prevRange,
     error: json?.__error,
   };
 }

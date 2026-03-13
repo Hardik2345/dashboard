@@ -43,6 +43,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "alerts", label: "Alerts", icon: Bell },
   //  { id: "notifications-log", label: "Logs", icon: Bell },
   { id: "access", label: "Access", icon: ShieldCheck },
+  { id: "traffic-split-config", label: "Traffic Config", icon: Table2 },
   //  { id: 'brands', label: 'Setup', icon: Store },
 ];
 import {
@@ -102,6 +103,9 @@ const PaymentSalesSplit = lazy(
 const TrafficSourceSplit = lazy(
   () => import("./components/TrafficSourceSplit.jsx"),
 );
+const TrafficSplitConfigPanel = lazy(
+  () => import("./components/TrafficSplitConfigPanel.jsx"),
+);
 const HourlySalesCompare = lazy(
   () => import("./components/HourlySalesCompare.jsx"),
 );
@@ -144,6 +148,7 @@ const SESSION_TRACKING_ENABLED =
   "true";
 const AUTHOR_BRAND_STORAGE_KEY = "author_active_brand_v1";
 const THEME_MODE_KEY = "dashboard_theme_mode";
+const TRAFFIC_SPLIT_RULES_STORAGE_PREFIX = "traffic_split_rules_v1";
 const DRAWER_WIDTH = 260;
 
 function SectionFallback({ count = 1, height = 180 }) {
@@ -265,6 +270,7 @@ export default function App() {
   });
   const [utmOptions, setUtmOptions] = useState(null);
   const [webVitalsMetric, setWebVitalsMetric] = useState("FCP");
+  const [trafficSplitRules, setTrafficSplitRules] = useState([]);
 
   // Track navigation direction for transitions
   const [direction, setDirection] = useState(0);
@@ -404,6 +410,36 @@ export default function App() {
       (user?.brandKey || "").toString().trim().toUpperCase() ||
       viewerBrands[0] ||
       "";
+
+  const trafficSplitRulesStorageKey = useMemo(() => {
+    const brand = (activeBrandKey || "GLOBAL").toString().trim().toUpperCase();
+    return `${TRAFFIC_SPLIT_RULES_STORAGE_PREFIX}_${brand}`;
+  }, [activeBrandKey]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(trafficSplitRulesStorageKey);
+      if (!raw) {
+        setTrafficSplitRules([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      setTrafficSplitRules(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setTrafficSplitRules([]);
+    }
+  }, [trafficSplitRulesStorageKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        trafficSplitRulesStorageKey,
+        JSON.stringify(trafficSplitRules || []),
+      );
+    } catch {
+      // Ignore storage write issues
+    }
+  }, [trafficSplitRulesStorageKey, trafficSplitRules]);
 
   const viewerPermissions = useMemo(() => {
     if (isAuthor) return ["all"];
@@ -731,7 +767,10 @@ export default function App() {
           getHourlyTrend({ ...trendMetricsQuery, aggregate: "avg-by-hour" }),
           getOrderSplit(generalMetricsQuery),
           getPaymentSalesSplit(generalMetricsQuery),
-          getTrafficSourceSplit(generalMetricsQuery),
+          getTrafficSourceSplit({
+            ...generalMetricsQuery,
+            mappingRules: trafficSplitRules,
+          }),
           buildWebVitalsSnapshot(generalMetricsQuery, webVitalsMetric),
         ]);
 
@@ -1113,12 +1152,12 @@ export default function App() {
       window.alert("Failed to download dashboard snapshot. Please try again.");
     }
   }, [
-    activeBrandKey,
     buildWebVitalsSnapshot,
     buildBaseRow,
     compareMode,
     escapeCsvCell,
     generalMetricsQuery,
+    trafficSplitRules,
     trendMetricsQuery,
     webVitalsMetric,
   ]);
@@ -2522,6 +2561,7 @@ export default function App() {
                               <TrafficSourceSplit
                                 query={generalMetricsQuery}
                                 compareMode={compareMode}
+                                mappingRules={trafficSplitRules}
                               />
                             )}
                           </Stack>
@@ -2670,6 +2710,36 @@ export default function App() {
                           <AccessControlCard />
                         </Stack>
                       </Suspense>
+                    )}
+
+                    {isAuthor && authorTab === "traffic-split-config" && (
+                      hasBrand ? (
+                        <Suspense fallback={<SectionFallback count={1} height={220} />}>
+                          <Stack spacing={{ xs: 2, md: 3 }}>
+                            <TrafficSplitConfigPanel
+                              rules={trafficSplitRules}
+                              onAddRule={(rule) =>
+                                setTrafficSplitRules((prev) => [...prev, rule])
+                              }
+                              onRemoveRule={(id) =>
+                                setTrafficSplitRules((prev) =>
+                                  prev.filter((r) => r.id !== id),
+                                )
+                              }
+                              onClearRules={() => setTrafficSplitRules([])}
+                            />
+                          </Stack>
+                        </Suspense>
+                      ) : (
+                        <Paper
+                          variant="outlined"
+                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to configure traffic split mapping.
+                          </Typography>
+                        </Paper>
+                      )
                     )}
 
                     {/*

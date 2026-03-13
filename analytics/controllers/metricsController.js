@@ -2120,13 +2120,8 @@ function buildMetricsController() {
         );
 
         const sql = `
-          SELECT 
-            utm_source, 
-            utm_source_sessions as sessions, 
-            utm_source_atc_sessions as atc_sessions,
-            utm_names,
-            date
-          FROM overall_utm_summary
+          SELECT date, utm_source
+          FROM overall_traffic_split
           WHERE (date >= ? AND date <= ?) OR (date >= ? AND date <= ?)
         `;
 
@@ -2135,172 +2130,16 @@ function buildMetricsController() {
           replacements: [start, end, pStart, pEnd],
         });
         console.log(`[TrafficSplit] Rows found: ${rows.length}`);
-
-        // Normalize and aggregate
-        const initStats = () => ({ sessions: 0, atc_sessions: 0 });
-
-        let current = {
-          meta: initStats(),
-          google: initStats(),
-          direct: initStats(),
-          others: initStats(),
-        };
-        let previous = {
-          meta: initStats(),
-          google: initStats(),
-          direct: initStats(),
-          others: initStats(),
-        };
-
-        // Detailed breakdown for Others (Current Period Only)
-        const othersMap = new Map(); // name -> { sessions, atc }
-        const metaMap = new Map();
-
-        rows.forEach((r, idx) => {
-          let rowDate = r.date;
-          if (rowDate instanceof Date) {
-            // Add 12 hours to safely cross timezone boundaries (e.g. 18:30 prev day -> 06:30 current day)
-            const adjustedDate = new Date(
-              rowDate.getTime() + 12 * 60 * 60 * 1000,
-            );
-            rowDate = adjustedDate.toISOString().split("T")[0];
-          }
-
-          const isCurrent = rowDate >= start && rowDate <= end;
-          const targetBucket = isCurrent ? current : previous;
-
-          const source = (r.utm_source || "").toLowerCase().trim();
-          const sess = Number(r.sessions || 0);
-          const atc = Number(r.atc_sessions || 0);
-
-          let category = "others";
-          let isOthers = false;
-          let isMeta = false;
-
-          if (
-            source === "meta" ||
-            source.includes("facebook") ||
-            source.includes("instagram")
-          ) {
-            category = "meta";
-            isMeta = true;
-          } else if (source === "google" || source.includes("google")) {
-            category = "google";
-          } else if (
-            source === "direct" ||
-            source === "(direct)" ||
-            source === "(none)"
-          ) {
-            category = "direct";
-          } else {
-            isOthers = true;
-          }
-
-          targetBucket[category].sessions += sess;
-          targetBucket[category].atc_sessions += atc;
-
-          // Process breakdown ONLY for current period
-          if (isCurrent && (isOthers || isMeta) && r.utm_names) {
-            try {
-              const details =
-                typeof r.utm_names === "string"
-                  ? JSON.parse(r.utm_names)
-                  : r.utm_names;
-              if (Array.isArray(details)) {
-                details.forEach((d) => {
-                  const name = (d.utm_name || "Unknown").trim();
-                  const dSess = Number(d.sessions || 0);
-                  const dAtc = Number(d.atc_sessions || 0);
-
-                  const targetMap = isOthers ? othersMap : metaMap;
-
-                  if (!targetMap.has(name)) {
-                    targetMap.set(name, { sessions: 0, atc: 0 });
-                  }
-                  const entry = targetMap.get(name);
-                  entry.sessions += dSess;
-                  entry.atc += dAtc;
-                });
-              }
-            } catch (err) {
-              // ignore parse error
-            }
-          }
-        });
-
-        // Convert Map to sorted array
-        const othersBreakdown = Array.from(othersMap.entries())
-          .map(([name, stats]) => ({
-            name,
-            sessions: stats.sessions,
-            atc_sessions: stats.atc,
-          }))
-          .sort((a, b) => b.sessions - a.sessions)
-          .slice(0, 15); // Top 15
-
-        const metaBreakdown = Array.from(metaMap.entries())
-          .map(([name, stats]) => ({
-            name,
-            sessions: stats.sessions,
-            atc_sessions: stats.atc,
-          }))
-          .sort((a, b) => b.sessions - a.sessions)
-          .slice(0, 15); // Top 15
-
-        // Calculate Deltas
-        const calcDelta = (curr, prev) => {
-          if (prev === 0) return curr > 0 ? 100 : 0; // If prev is 0 and curr > 0, treat as 100% growth (or just 100 to show positive)
-          return ((curr - prev) / prev) * 100;
-        };
-
-        console.log(
-          `[TrafficSplit] Meta ATCs (Curr/Prev): ${current.meta.atc_sessions} / ${previous.meta.atc_sessions}`,
-        );
-        const addDelta = (cat) => ({
-          ...current[cat],
-          delta: calcDelta(current[cat].sessions, previous[cat].sessions),
-          atc_delta: calcDelta(
-            current[cat].atc_sessions,
-            previous[cat].atc_sessions,
-          ),
-          prev_sessions: previous[cat].sessions,
-          prev_atc_sessions: previous[cat].atc_sessions,
-        });
-
-        const meta = addDelta("meta");
-        const google = addDelta("google");
-        const direct = addDelta("direct");
-        const others = addDelta("others");
-
-        const total_sessions =
-          meta.sessions + google.sessions + direct.sessions + others.sessions;
-        const total_atc =
-          meta.atc_sessions +
-          google.atc_sessions +
-          direct.atc_sessions +
-          others.atc_sessions;
-
         res.json({
-          meta,
-          google,
-          direct,
-          others,
-          others_breakdown: othersBreakdown,
-          meta_breakdown: metaBreakdown,
-          total_sessions,
-          total_atc_sessions: total_atc,
+          rows,
           prev_range: { start: pStart, end: pEnd },
         });
       } catch (e) {
         console.error("Traffic Source Split error", e);
         // Fallback to empty if table doesn't exist or other error
         res.json({
-          meta: { sessions: 0, atc_sessions: 0 },
-          google: { sessions: 0, atc_sessions: 0 },
-          direct: { sessions: 0, atc_sessions: 0 },
-          others: { sessions: 0, atc_sessions: 0 },
-          total_sessions: 0,
-          total_atc_sessions: 0,
+          rows: [],
+          prev_range: null,
           error: true,
         });
       }

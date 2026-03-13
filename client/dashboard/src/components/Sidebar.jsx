@@ -11,6 +11,7 @@ import {
 import {
   LayoutGrid,
   ShieldCheck,
+  SlidersHorizontal,
   Store,
   Table2,
   Bell,
@@ -69,6 +70,11 @@ const NAV_ITEMS = [
     group: "admin",
     items: [
       { id: "access", label: "Access Control", icon: ShieldCheck },
+      {
+        id: "traffic-split-config",
+        label: "Traffic Split Config",
+        icon: SlidersHorizontal,
+      },
       //      { id: 'notifications-log', label: 'Notifications/Alerts', icon: Bell },
       //      { id: 'brands', label: 'Brand Setup', icon: Store },
     ],
