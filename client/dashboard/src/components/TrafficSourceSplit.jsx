@@ -55,12 +55,14 @@ function useCountUp(end, duration = 800) {
     return count;
 }
 
-export default memo(function TrafficSourceSplit({ query, compareMode = false }) {
+export default memo(function TrafficSourceSplit({ query, compareMode = false, mappingRules = [] }) {
     const theme = useTheme();
     const isDark = theme.palette.mode === 'dark';
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
     const [metric, setMetric] = useState('sessions'); // 'sessions' or 'atc_sessions'
+
+    const rulesSignature = useMemo(() => JSON.stringify(mappingRules || []), [mappingRules]);
 
     useEffect(() => {
         let cancelled = false;
@@ -71,13 +73,13 @@ export default memo(function TrafficSourceSplit({ query, compareMode = false }) 
         }
         setLoading(true);
 
-        getTrafficSourceSplit(query)
+        getTrafficSourceSplit({ ...query, mappingRules })
             .then(res => {
                 if (!cancelled) { setData(res); setLoading(false); }
             })
             .catch(() => setLoading(false));
         return () => { cancelled = true; };
-    }, [query]);
+    }, [query, rulesSignature]);
 
     const getMetricValue = (sourceObj) => sourceObj ? Number(sourceObj[metric] || 0) : 0;
 
@@ -156,6 +158,10 @@ export default memo(function TrafficSourceSplit({ query, compareMode = false }) 
     const options = useMemo(() => ({
         responsive: true,
         maintainAspectRatio: false,
+        interaction: {
+            mode: 'nearest',
+            intersect: false,
+        },
         plugins: {
             legend: { display: false },
             tooltip: {
@@ -264,6 +270,15 @@ export default memo(function TrafficSourceSplit({ query, compareMode = false }) 
                         left = positionX + (tooltipRect.width / 2);
                     }
 
+                    // Vertical clamping to keep full tooltip visible inside chart bounds.
+                    const minTop = positionY + 4;
+                    const maxTop = positionY + chart.height - tooltipRect.height - 4;
+                    if (maxTop >= minTop) {
+                        top = Math.max(minTop, Math.min(top, maxTop));
+                    } else {
+                        top = minTop;
+                    }
+
                     tooltipEl.style.left = left + 'px';
                     tooltipEl.style.top = top + 'px';
                 }
@@ -364,8 +379,8 @@ export default memo(function TrafficSourceSplit({ query, compareMode = false }) 
     };
 
     return (
-        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', height: '100%' }}>
-            <CardContent sx={{ p: 2.5 }}> {/* Reduced main padding */}
+        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', height: '100%', overflow: 'visible' }}>
+            <CardContent sx={{ p: 2.5, overflow: 'visible' }}> {/* Reduced main padding */}
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 3 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 1 }}>
                         <Box sx={{ flex: '1 1 auto', minWidth: '150px' }}>
@@ -428,7 +443,7 @@ export default memo(function TrafficSourceSplit({ query, compareMode = false }) 
                 ) : (
                     <Grid container spacing={2} alignItems="center"> {/* Reduced spacing */}
                         <Grid item xs={12} md={5}>
-                            <Box sx={{ position: 'relative', height: 180, width: '100%', display: 'flex', justifyContent: 'center' }}> {/* Reduced height */}
+                            <Box sx={{ position: 'relative', height: 180, width: '100%', display: 'flex', justifyContent: 'center', overflow: 'visible' }}> {/* Reduced height */}
                                 <Doughnut data={chartData} options={options} />
                                 <div
                                     ref={tooltipRef}
