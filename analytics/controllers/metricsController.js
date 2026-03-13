@@ -5581,6 +5581,35 @@ function buildMetricsController() {
         const getMetricsForRange = async (s, e, cachedData) => {
           if (!s || !e) return null;
           if (isSingleDay && cachedData) {
+            let cancelledOrders = Number(cachedData.cancelled_orders || 0);
+            let refundedOrders = Number(cachedData.refunded_orders || 0);
+            let source = "cache";
+
+            // Keep cached headline metrics, but refresh return counts from DB to avoid
+            // stale/missing cancelled/refunded values in single-day cache payloads.
+            try {
+              if (!req.brandDb && req.brandConfig) {
+                req.brandDb = await getBrandConnection(req.brandConfig);
+                req.brandDbName = req.brandConfig.dbName || req.brandConfig.key;
+              }
+              const conn = req.brandDb ? req.brandDb.sequelize : null;
+              if (conn) {
+                const returnCounts = await computeReturnCounts({
+                  start: s,
+                  end: e,
+                  conn,
+                  filters,
+                });
+                cancelledOrders = Number(returnCounts.cancelled_orders || 0);
+                refundedOrders = Number(returnCounts.refunded_orders || 0);
+                source = "cache+db_returns";
+              }
+            } catch (refreshErr) {
+              logger.warn(
+                `[SUMMARY] Return count refresh failed for ${brandQuery} ${s}..${e}: ${refreshErr.message}`,
+              );
+            }
+
             return {
               total_orders: cachedData.total_orders,
               total_sales: cachedData.total_sales,
@@ -5589,9 +5618,9 @@ function buildMetricsController() {
               average_order_value: cachedData.average_order_value,
               conversion_rate: cachedData.conversion_rate,
               conversion_rate_percent: cachedData.conversion_rate,
-              cancelled_orders: cachedData.cancelled_orders || 0,
-              refunded_orders: cachedData.refunded_orders || 0,
-              source: "cache",
+              cancelled_orders: cancelledOrders,
+              refunded_orders: refundedOrders,
+              source,
             };
           }
 
