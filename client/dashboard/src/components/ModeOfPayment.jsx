@@ -58,6 +58,22 @@ function getPreviousRange(start, end) {
     };
 }
 
+function getHourlyCutoffForTodayRange(start, end) {
+    if (!start || !end) return null;
+
+    const IST_OFFSET_MIN = 330;
+    const nowIst = new Date(Date.now() + IST_OFFSET_MIN * 60 * 1000);
+    const todayIst = `${nowIst.getUTCFullYear()}-${String(nowIst.getUTCMonth() + 1).padStart(2, '0')}-${String(nowIst.getUTCDate()).padStart(2, '0')}`;
+    const rangeStart = start;
+    const rangeEnd = end;
+    const includesToday = rangeStart <= todayIst && rangeEnd >= todayIst;
+
+    if (!includesToday) return null;
+
+    // Compare completed hours only to avoid partial-hour noise.
+    return Math.max(0, nowIst.getUTCHours() - 1);
+}
+
 const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
     const theme = useTheme();
     const isDark = theme.palette.mode === 'dark';
@@ -85,11 +101,16 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                 const prevRangeData = getPreviousRange(start, end);
                 setPrevRange(prevRangeData);
 
+                const hourLte = getHourlyCutoffForTodayRange(start, end);
+                const sharedArgs = Number.isInteger(hourLte)
+                    ? { ...rest, hour_lte: hourLte }
+                    : rest;
+
                 const [currOrders, currSales, prevOrders, prevSales] = await Promise.all([
-                    getOrderSplit({ start, end, ...rest }),
-                    getPaymentSalesSplit({ start, end, ...rest }),
-                    prevRangeData.start ? getOrderSplit({ start: prevRangeData.start, end: prevRangeData.end, ...rest }) : Promise.resolve({}),
-                    prevRangeData.start ? getPaymentSalesSplit({ start: prevRangeData.start, end: prevRangeData.end, ...rest }) : Promise.resolve({})
+                    getOrderSplit({ start, end, ...sharedArgs }),
+                    getPaymentSalesSplit({ start, end, ...sharedArgs }),
+                    prevRangeData.start ? getOrderSplit({ start: prevRangeData.start, end: prevRangeData.end, ...sharedArgs }) : Promise.resolve({}),
+                    prevRangeData.start ? getPaymentSalesSplit({ start: prevRangeData.start, end: prevRangeData.end, ...sharedArgs }) : Promise.resolve({})
                 ]);
 
                 if (cancelled) return;

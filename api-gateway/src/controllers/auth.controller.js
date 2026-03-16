@@ -92,7 +92,8 @@ exports.signup = async (req, res) => {
 exports.refresh = async (req, res) => {
     try {
         logger.info('AuthController', 'Refresh request received', { ip: req.ip });
-        const refreshToken = req.cookies.refresh_token || req.body.refresh_token || req.headers['x-refresh-token'];
+        // Prefer explicit token from body/header for PWA clients where cookie updates can be unreliable.
+        const refreshToken = req.body.refresh_token || req.headers['x-refresh-token'] || req.cookies.refresh_token;
 
         if (!refreshToken) {
             logger.warn('AuthController', 'Refresh failed - No refresh_token found in cookies, body, or headers', {
@@ -131,7 +132,7 @@ exports.refresh = async (req, res) => {
 exports.logout = async (req, res) => {
     try {
         logger.info('AuthController', 'Logout request received');
-        const refreshToken = req.cookies.refresh_token || req.body.refresh_token || req.headers['x-refresh-token'];
+        const refreshToken = req.body.refresh_token || req.headers['x-refresh-token'] || req.cookies.refresh_token;
         if (refreshToken) {
             await AuthService.logout(refreshToken);
         }

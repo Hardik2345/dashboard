@@ -43,7 +43,7 @@ export default function KPIs({
   const [deltaLoading, setDeltaLoading] = useState(true);
   const [data, setData] = useState({});
   const [revenueMode, setRevenueMode] = useState("G"); // 'T' | 'G'
-  const [atcMode, setAtcMode] = useState("S"); // 'S' (Sessions) | 'R' (Rate)
+  const [atcMode, setAtcMode] = useState("R"); // 'R' (Rate) | 'S' (Sessions)
   const [cancellationMode, setCancellationMode] = useState("C"); // 'C' | 'R'
   const start = query?.start;
   const end = query?.end;
@@ -766,7 +766,7 @@ export default function KPIs({
               sx={{ order: { xs: 6, md: 0 } }}
             >
               <KPIStat
-                label={atcMode === "S" ? "ATC Sessions" : "ATC Rate"}
+                label={atcMode === "R" ? "ATC Rate" : "ATC Sessions"}
                 action={
                   <Box
                     sx={{
@@ -784,7 +784,7 @@ export default function KPIs({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      const nextMode = atcMode === "S" ? "R" : "S";
+                      const nextMode = atcMode === "R" ? "S" : "R";
                       setAtcMode(nextMode);
                       // Auto-update graph if the card is currently selected
                       if (
@@ -792,7 +792,7 @@ export default function KPIs({
                         selectedMetric === "atc_rate"
                       ) {
                         if (typeof onSelectMetric === "function") {
-                          onSelectMetric(nextMode === "S" ? "atc" : "atc_rate");
+                          onSelectMetric(nextMode === "R" ? "atc_rate" : "atc");
                         }
                       }
                     }}
@@ -803,29 +803,11 @@ export default function KPIs({
                         py: 0.25,
                         borderRadius: 10,
                         bgcolor:
-                          atcMode === "S" ? "primary.main" : "transparent",
+                          atcMode === "R" ? "#f59e0b" : "transparent",
                         color:
-                          atcMode === "S"
-                            ? "primary.contrastText"
+                          atcMode === "R"
+                            ? "#fff"
                             : "text.secondary",
-                        fontSize: "0.65rem",
-                        fontWeight: 600,
-                        transition: "all 0.2s ease",
-                        boxShadow:
-                          atcMode === "S"
-                            ? "0 1px 2px rgba(0,0,0,0.2)"
-                            : "none",
-                      }}
-                    >
-                      S
-                    </Box>
-                    <Box
-                      sx={{
-                        px: 1,
-                        py: 0.25,
-                        borderRadius: 10,
-                        bgcolor: atcMode === "R" ? "#f59e0b" : "transparent", // amber-500 for distinction
-                        color: atcMode === "R" ? "#fff" : "text.secondary",
                         fontSize: "0.65rem",
                         fontWeight: 600,
                         transition: "all 0.2s ease",
@@ -837,57 +819,75 @@ export default function KPIs({
                     >
                       R
                     </Box>
+                    <Box
+                      sx={{
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 10,
+                        bgcolor: atcMode === "S" ? "primary.main" : "transparent",
+                        color: atcMode === "S" ? "primary.contrastText" : "text.secondary",
+                        fontSize: "0.65rem",
+                        fontWeight: 600,
+                        transition: "all 0.2s ease",
+                        boxShadow:
+                          atcMode === "S"
+                            ? "0 1px 2px rgba(0,0,0,0.2)"
+                            : "none",
+                      }}
+                    >
+                      S
+                    </Box>
                   </Box>
                 }
                 value={
-                  atcMode === "S"
-                    ? totalAtcSessions
-                    : totalSessions > 0
+                  atcMode === "R"
+                    ? totalSessions > 0
                       ? totalAtcSessions / totalSessions
                       : 0
+                    : totalAtcSessions
                 }
                 loading={loading}
                 deltaLoading={deltaLoading}
                 formatter={
-                  atcMode === "S"
-                    ? (v) => nfInt.format(v)
-                    : (v) => nfPct.format(v)
+                  atcMode === "R"
+                    ? (v) => nfPct.format(v)
+                    : (v) => nfInt.format(v)
                 }
                 delta={
-                  atcMode === "S" && data.atcDelta
+                  atcMode === "R" && data.atcRateDelta
                     ? {
-                        value: data.atcDelta.diff_pct,
-                        direction: data.atcDelta.direction,
+                        value: data.atcRateDelta.diff_pct,
+                        direction: data.atcRateDelta.direction,
                       }
-                    : atcMode === "R" && data.atcRateDelta
+                    : atcMode === "S" && data.atcDelta
                       ? {
-                          value: data.atcRateDelta.diff_pct,
-                          direction: data.atcRateDelta.direction,
+                          value: data.atcDelta.diff_pct,
+                          direction: data.atcDelta.direction,
                         }
                       : undefined
                 }
                 onSelect={
                   onSelectMetric
-                    ? () => onSelectMetric(atcMode === "S" ? "atc" : "atc_rate")
+                    ? () => onSelectMetric(atcMode === "R" ? "atc_rate" : "atc")
                     : undefined
                 }
                 selected={
                   selectedMetric === "atc" || selectedMetric === "atc_rate"
                 }
-                activeColor={atcMode === "S" ? "#10b981" : "#f59e0b"}
+                activeColor={atcMode === "S" ? "#f59e0b" : "#10b981"}
                 compareValue={
                   compareMode
-                    ? atcMode === "S" && data.prevAtcSessions != null
-                      ? data.prevAtcSessions
-                      : atcMode === "R" && data.prevAtcRate != null
-                        ? data.prevAtcRate
+                    ? atcMode === "R" && data.prevAtcRate != null
+                      ? data.prevAtcRate
+                      : atcMode === "S" && data.prevAtcSessions != null
+                        ? data.prevAtcSessions
                         : undefined
                     : undefined
                 }
                 compareFormatter={
-                  atcMode === "S"
-                    ? (v) => nfInt.format(v)
-                    : (v) => nfPct.format(v)
+                  atcMode === "R"
+                    ? (v) => nfPct.format(v)
+                    : (v) => nfInt.format(v)
                 }
               />
             </Grid>
