@@ -72,7 +72,10 @@ async function refreshAccessToken() {
     const refreshToken = window.localStorage.getItem("gateway_refresh_token");
     const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(refreshToken ? { "x-refresh-token": refreshToken } : {}),
+      },
       credentials: "include",
       body: JSON.stringify({ refresh_token: refreshToken }), // Send in body as fallback
     });
@@ -455,7 +458,12 @@ export async function exportProductConversionCsv(args) {
 
 export async function getOrderSplit(args) {
   const params = appendBrandKey(
-    { start: args.start, end: args.end, product_id: args.product_id },
+    {
+      start: args.start,
+      end: args.end,
+      product_id: args.product_id,
+      hour_lte: args.hour_lte,
+    },
     args,
   );
   const json = await getJSON("/metrics/order-split", params);
@@ -486,7 +494,12 @@ export async function getOrderSplit(args) {
 
 export async function getPaymentSalesSplit(args) {
   const params = appendBrandKey(
-    { start: args.start, end: args.end, product_id: args.product_id },
+    {
+      start: args.start,
+      end: args.end,
+      product_id: args.product_id,
+      hour_lte: args.hour_lte,
+    },
     args,
   );
   const json = await getJSON("/metrics/payment-sales-split", params);

@@ -2365,6 +2365,18 @@ function buildMetricsController() {
             details: parsed.error.flatten(),
           });
         const { start, end } = parsed.data;
+        const hourLteRaw = req.query.hour_lte;
+        const hasHourLte =
+          hourLteRaw !== undefined && `${hourLteRaw}`.trim() !== "";
+        let hourLte = null;
+        if (hasHourLte) {
+          hourLte = Number.parseInt(`${hourLteRaw}`.trim(), 10);
+          if (!Number.isInteger(hourLte) || hourLte < 0 || hourLte > 23) {
+            return res.status(400).json({
+              error: "Invalid hour_lte. Expected an integer between 0 and 23.",
+            });
+          }
+        }
         const productIdRaw = (req.query.product_id || "").toString().trim();
         const filters = extractFilters(req);
         const hasUtm = !!(
@@ -2373,8 +2385,9 @@ function buildMetricsController() {
           filters.utm_campaign ||
           filters.sales_channel
         );
+        const useHourlyCutoff = Number.isInteger(hourLte);
 
-        if (productIdRaw || hasUtm) {
+        if (productIdRaw || hasUtm || useHourlyCutoff) {
           if (!start && !end) {
             return res.json({
               metric: "ORDER_SPLIT",
@@ -2392,7 +2405,11 @@ function buildMetricsController() {
           const effectiveEnd = end || start;
           const startTs = `${effectiveStart} 00:00:00`;
           const endTsExclusive = new Date(`${effectiveEnd}T00:00:00Z`);
-          endTsExclusive.setUTCDate(endTsExclusive.getUTCDate() + 1);
+          if (useHourlyCutoff) {
+            endTsExclusive.setUTCHours(hourLte + 1, 0, 0, 0);
+          } else {
+            endTsExclusive.setUTCDate(endTsExclusive.getUTCDate() + 1);
+          }
           const endTs = endTsExclusive
             .toISOString()
             .slice(0, 19)
@@ -2448,6 +2465,7 @@ function buildMetricsController() {
             range: {
               start: effectiveStart,
               end: effectiveEnd,
+              hour_lte: useHourlyCutoff ? hourLte : null,
               product_id: productIdRaw,
               ...filters,
             },
@@ -2483,7 +2501,11 @@ function buildMetricsController() {
           total > 0 ? (partially_paid_orders / total) * 100 : 0;
         return res.json({
           metric: "ORDER_SPLIT",
-          range: { start: start || null, end: end || null },
+          range: {
+            start: start || null,
+            end: end || null,
+            hour_lte: useHourlyCutoff ? hourLte : null,
+          },
           cod_orders,
           prepaid_orders,
           partially_paid_orders,
@@ -2510,6 +2532,19 @@ function buildMetricsController() {
             details: parsed.error.flatten(),
           });
         const { start, end } = parsed.data;
+        const hourLteRaw = req.query.hour_lte;
+        const hasHourLte =
+          hourLteRaw !== undefined && `${hourLteRaw}`.trim() !== "";
+        let hourLte = null;
+        if (hasHourLte) {
+          hourLte = Number.parseInt(`${hourLteRaw}`.trim(), 10);
+          if (!Number.isInteger(hourLte) || hourLte < 0 || hourLte > 23) {
+            return res.status(400).json({
+              error: "Invalid hour_lte. Expected an integer between 0 and 23.",
+            });
+          }
+        }
+        const useHourlyCutoff = Number.isInteger(hourLte);
         const productIdRaw = (req.query.product_id || "").toString().trim();
         const filters = extractFilters(req);
 
@@ -2535,7 +2570,11 @@ function buildMetricsController() {
         const effectiveEnd = end || start;
         const startTs = `${effectiveStart} 00:00:00`;
         const endTsExclusive = new Date(`${effectiveEnd}T00:00:00Z`);
-        endTsExclusive.setUTCDate(endTsExclusive.getUTCDate() + 1);
+        if (useHourlyCutoff) {
+          endTsExclusive.setUTCHours(hourLte + 1, 0, 0, 0);
+        } else {
+          endTsExclusive.setUTCDate(endTsExclusive.getUTCDate() + 1);
+        }
         const endTs = endTsExclusive
           .toISOString()
           .slice(0, 19)
@@ -2572,7 +2611,11 @@ function buildMetricsController() {
           console.error("[payment-sales-split] query failed", e.message);
           return res.json({
             metric: "PAYMENT_SPLIT_SALES",
-            range: { start: effectiveStart, end: effectiveEnd },
+            range: {
+              start: effectiveStart,
+              end: effectiveEnd,
+              hour_lte: useHourlyCutoff ? hourLte : null,
+            },
             cod_sales: 0,
             prepaid_sales: 0,
             partial_sales: 0,
@@ -2601,7 +2644,11 @@ function buildMetricsController() {
 
         return res.json({
           metric: "PAYMENT_SPLIT_SALES",
-          range: { start: effectiveStart, end: effectiveEnd },
+          range: {
+            start: effectiveStart,
+            end: effectiveEnd,
+            hour_lte: useHourlyCutoff ? hourLte : null,
+          },
           cod_sales,
           prepaid_sales,
           partial_sales,
