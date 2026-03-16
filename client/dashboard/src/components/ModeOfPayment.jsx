@@ -129,8 +129,13 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                         const currVal = curr[valKey] || 0;
                         const prevVal = prev[valKey] || 0;
                         const currPct = total > 0 ? (currVal / total) * 100 : 0;
-                        // Delta calculation on the raw value
-                        const delta = prevVal > 0 ? ((currVal - prevVal) / prevVal) * 100 : 0;
+                        const prevPct = prevTotal > 0 ? (prevVal / prevTotal) * 100 : 0;
+                        // Delta is based on contribution share, not raw count/sales.
+                        const delta = prevPct > 0
+                            ? ((currPct - prevPct) / prevPct) * 100
+                            : currPct > 0
+                                ? 100
+                                : 0;
 
                         return {
                             name: LABELS[key],
