@@ -22,7 +22,8 @@ export const requestForToken = async () => {
     try {
         // Explicitly register service worker for background notifications
         if ('serviceWorker' in navigator) {
-            const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+            const swPath = import.meta.env.PROD ? '/sw.js' : '/firebase-messaging-sw.js';
+            const registration = await navigator.serviceWorker.register(swPath);
             const currentToken = await getToken(messaging, {
                 vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
                 serviceWorkerRegistration: registration
