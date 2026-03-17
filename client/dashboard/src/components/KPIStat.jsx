@@ -108,7 +108,8 @@ export default function KPIStat({
           <Box
             sx={{
               position: "absolute",
-              top: { xs: 10, md: 12 },
+              top: { xs: "auto", md: 12 },
+              bottom: { xs: 10, md: "auto" },
               right: { xs: 10, md: 12 },
               zIndex: 10,
             }}
