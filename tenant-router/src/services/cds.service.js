@@ -78,6 +78,20 @@ const deleteMapping = async (brandId) => {
   return CdsMapping.deleteOne({ brand_id: brandId });
 };
 
+/**
+ * Get all tenants for brand mapping.
+ * @returns {Promise<Array>}
+ */
+const getAllTenants = async () => {
+  try {
+    const tenants = await Tenant.find({}, { brand_id: 1, brand_num: 1, _id: 0 }).lean();
+    return tenants;
+  } catch (error) {
+    console.error("[CDS] Error getting all tenants:", error.stack || error.message);
+    throw error;
+  }
+};
+
 module.exports = {
   resolveFromCDS,
   createTenant,
@@ -85,4 +99,5 @@ module.exports = {
   upsertMapping,
   getMapping,
   deleteMapping,
+  getAllTenants,
 };

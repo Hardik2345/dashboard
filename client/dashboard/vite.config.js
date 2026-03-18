@@ -104,10 +104,17 @@ export default defineConfig({
       // 4️⃣ Author (analytics sub-route)
       '/api/author': {
         target: 'http://localhost:8081',
-        // target: 'https://api.trytechit.co/main',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, '/analytics'),
+      },
+
+      // Tenant router direct mapping
+      '/api/tenant': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
       },
 
       // 5️⃣ Catch-all analytics (MUST BE LAST)
@@ -163,9 +170,16 @@ export default defineConfig({
       // Author via analytics prefix
       '/api/author': {
         target: 'http://localhost:8081',
-        // target: 'https://api.trytechit.co/main',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '/analytics'),
+      },
+
+      // Tenant router direct mapping
+      '/api/tenant': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
       },
 
       // Catch-all analytics

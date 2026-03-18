@@ -24,6 +24,23 @@ router.post("/resolve", async (req, res) => {
   res.status(200).json(tenantMetadata);
 });
 
+// GET all brands mapped by brand_num
+router.get("/brands", async (req, res) => {
+  try {
+    const tenants = await cdsService.getAllTenants();
+    const response = {};
+    tenants.forEach((t) => {
+      if (t.brand_num != null) {
+        response[t.brand_num] = t.brand_id;
+      }
+    });
+    res.status(200).json(response);
+  } catch (err) {
+    console.error("[Routes] Error getting brands list:", err.stack || err.message);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
 // Create a new tenant
 router.post("/create", async (req, res) => {
   const {
@@ -46,19 +63,25 @@ router.post("/create", async (req, res) => {
   } = req.body;
 
   // Basic validation
-  if (
-    !shard_id ||
-    !rds_proxy_endpoint ||
-    !database ||
-    !user ||
-    !password ||
-    brand_num === undefined ||
-    !shop_name ||
-    !api_version ||
-    !access_token ||
-    !db_host
-  ) {
-    return res.status(400).json({ error: "missing_required_fields" });
+  // Better validation giving missing fields breakdown
+  const required = {
+    shard_id, rds_proxy_endpoint, database, user, password,
+    shop_name, api_version, access_token, db_host
+  };
+  const missing = [];
+  
+  for (const [k, v] of Object.entries(required)) {
+    if (!v) missing.push(k);
+  }
+  if (brand_num === undefined) {
+    missing.push("brand_num");
+  }
+
+  if (missing.length > 0) {
+    return res.status(400).json({ 
+      error: "missing_required_fields", 
+      missing: missing 
+    });
   }
 
   try {

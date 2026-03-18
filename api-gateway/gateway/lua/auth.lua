@@ -25,15 +25,29 @@ function _M.authenticate()
     -- 0.1 Check for Pipeline Key Bypass
     local pipeline_key = ngx.req.get_headers()["x-pipeline-key"]
     local secret_pipeline_key = os.getenv("X_PIPELINE_KEY")
+    local auth_header_env = os.getenv("PIPELINE_AUTH_HEADER")
 
-    if pipeline_key and pipeline_key ~= "" and secret_pipeline_key and secret_pipeline_key ~= "" then
-        if pipeline_key == secret_pipeline_key then
-            -- Allow bypass for resolve and pipeline routes
-            if ngx.var.uri:find("^/tenant/resolve") or ngx.var.uri:find("^/tenant/pipeline/") then
-                ngx.req.set_header("x-user-id", "pipeline-service")
-                ngx.req.set_header("x-role", "system")
-                return
-            end
+    local is_pipeline_call = false
+    if pipeline_key and pipeline_key ~= "" then
+        if secret_pipeline_key and secret_pipeline_key ~= "" and pipeline_key == secret_pipeline_key then
+            is_pipeline_call = true
+        end
+        if auth_header_env and auth_header_env ~= "" and pipeline_key == auth_header_env then
+            is_pipeline_call = true
+        end
+    end
+
+    if is_pipeline_call then
+        -- Allow bypass for resolve and pipeline routes, /tenant/create, /tenant/brands, and /analytics/admin/api-keys
+        if ngx.var.uri:find("^/tenant/resolve") or 
+           ngx.var.uri:find("^/tenant/pipeline/") or 
+           ngx.var.uri:find("^/tenant/create") or 
+           ngx.var.uri:find("^/tenant/brands") or 
+           ngx.var.uri:find("^/analytics/admin/api%-keys") or 
+           ngx.var.uri:find("^/analytics/api%-keys") then
+            ngx.req.set_header("x-user-id", "pipeline-service")
+            ngx.req.set_header("x-role", "system")
+            return
         end
     end
 
