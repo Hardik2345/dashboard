@@ -1207,13 +1207,11 @@ export default function App() {
         }
         const payload = json.data ?? json;
         const arr = Array.isArray(payload.brands)
-          ? payload.brands
-              .map((b) => ({
-                key: (b.key || "").toString().trim().toUpperCase(),
-                host: b.host,
-                db: b.db,
-              }))
-              .filter((b) => b.key !== "MILA")
+          ? payload.brands.map((b) => ({
+              key: (b.key || "").toString().trim().toUpperCase(),
+              host: b.host,
+              db: b.db,
+            }))
           : []; // EXPLICIT REMOVAL
         setAuthorBrands(arr);
       })

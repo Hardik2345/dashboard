@@ -6,14 +6,38 @@
 //   e.g. [{"key":"PTS","dbHost":"...","dbPort":3306,"dbUser":"...","dbPass":"...","dbName":"PTS"}]
 
 const REQUIRED_SUFFIXES = ['DB_HOST', 'DB_USER', 'DB_PASS'];
-const DEFAULT_BRAND_IDS = Object.freeze({
+const axios = require('axios');
+
+let DEFAULT_BRAND_IDS = {
   PTS: 1,
   BBB: 2,
   TMC: 3,
   AJMAL: 4,
   NEULIFE: 5,
   VAMA: 6,
-});
+};
+
+const fetchBrandIds = async () => {
+  try {
+    const baseUrl = process.env.TENANT_ROUTER_URL || "http://tenant-router-main:3004";
+    const res = await axios.get(`${baseUrl}/tenant/brands`, { timeout: 5000 });
+    const data = res.data; // Expected { "1": "PTS", "2": "BBB", ... }
+    const output = {};
+    for (const [num, id] of Object.entries(data)) {
+      if (id && num) {
+        output[id.toString().toUpperCase()] = Number(num);
+      }
+    }
+    if (Object.keys(output).length > 0) {
+      DEFAULT_BRAND_IDS = Object.freeze(output);
+      // Reload in-memory brands to apply new IDs
+      brands = loadBrands();
+      console.log('[Brands Config] Dynamic brand IDs loaded:', DEFAULT_BRAND_IDS);
+    }
+  } catch (e) {
+    console.error('[Brands Config] Failed to fetch dynamic brand ids:', e.message);
+  }
+};
 
 function normalizeDomain(d) {
   return String(d || '').trim().toLowerCase();
@@ -144,4 +168,4 @@ function resolveBrandFromEmail(email) {
   return brands[key] || null;
 }
 
-module.exports = { brands, resolveBrandFromEmail, addBrandRuntime, getBrands, getBrandById };
+module.exports = { brands, resolveBrandFromEmail, addBrandRuntime, getBrands, getBrandById, fetchBrandIds };

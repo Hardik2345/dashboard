@@ -488,6 +488,14 @@ app.use('/notifications', buildNotificationsRouter()); // [NEW]
 // ---- Init -------------------------------------------------------------------
 async function init() {
   await sequelize.authenticate();
+  
+  // Load dynamic brand IDs from tenant-router
+  try {
+    await require('./config/brands').fetchBrandIds();
+  } catch (err) {
+    logger.warn('Failed to load dynamic brand IDs on init', { error: err.message });
+  }
+
   if (sessionStore && typeof sessionStore.sync === 'function') {
     await sessionStore.sync();
   }

@@ -925,7 +925,13 @@ export async function getLastUpdatedPTS(arg = undefined) {
 
 // Author brands helper (list)
 export async function listAuthorBrands() {
-  return doGet("/author/brands");
+  const res = await doGet("/tenant/brands");
+  if (res.error) return res;
+  // data is { "1": "PTS", "2": "BBB" }
+  const brands = Object.entries(res.data || {}).map(([num, id]) => ({
+    key: id.toString().toUpperCase()
+  }));
+  return { error: false, data: { brands } };
 }
 
 // ---------------- Author: Alerts admin ----------------

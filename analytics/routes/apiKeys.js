@@ -12,6 +12,22 @@ function buildApiKeysRouter(sequelize) {
   const router = express.Router();
   const apiKeyService = new ApiKeyService(sequelize);
 
+  // Custom middleware to bypass auth with PIPELINE_AUTH_HEADER
+  const requireAuthorOrPipeline = (req, res, next) => {
+    const pipelineKey = req.headers['x-pipeline-key'];
+    const expectedKey = process.env.PIPELINE_AUTH_HEADER;
+    
+    if (pipelineKey && expectedKey && pipelineKey === expectedKey) {
+      // Bypass auth
+      req.user = { id: 'pipeline-service', role: 'admin', isAuthor: true };
+      req.isAuthenticated = () => true;
+      return next();
+    }
+    // Otherwise fallback to standard requireAuthor
+    return requireAuthor(req, res, next);
+  };
+
+
   /**
    * POST /admin/api-keys
    * Create a new API key for a brand
@@ -30,7 +46,7 @@ function buildApiKeysRouter(sequelize) {
    *     "api_key": { id, name, brand_key, permissions, created_at, expires_at, is_active }
    *   }
    */
-  router.post('/admin/api-keys', requireAuthor, async (req, res) => {
+  router.post('/admin/api-keys', requireAuthorOrPipeline, async (req, res) => {
     try {
       const { brand_key, name, permissions } = req.body;
 
@@ -77,7 +93,7 @@ function buildApiKeysRouter(sequelize) {
    *     ]
    *   }
    */
-  router.get('/admin/api-keys', requireAuthor, async (req, res) => {
+  router.get('/admin/api-keys', requireAuthorOrPipeline, async (req, res) => {
     try {
       const { brand_key } = req.query;
 
@@ -105,7 +121,7 @@ function buildApiKeysRouter(sequelize) {
    * Response:
    *   { "success": true, "message": "API key revoked" }
    */
-  router.post('/admin/api-keys/:id/revoke', requireAuthor, async (req, res) => {
+  router.post('/admin/api-keys/:id/revoke', requireAuthorOrPipeline, async (req, res) => {
     try {
       const { id } = req.params;
 
@@ -133,7 +149,7 @@ function buildApiKeysRouter(sequelize) {
    *     "api_key": { ... }
    *   }
    */
-  router.post('/admin/api-keys/:id/rotate', requireAuthor, async (req, res) => {
+  router.post('/admin/api-keys/:id/rotate', requireAuthorOrPipeline, async (req, res) => {
     try {
       const { id } = req.params;
 
