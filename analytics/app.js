@@ -488,14 +488,6 @@ app.use('/notifications', buildNotificationsRouter()); // [NEW]
 // ---- Init -------------------------------------------------------------------
 async function init() {
   await sequelize.authenticate();
-  
-  // Load dynamic brand IDs from tenant-router
-  try {
-    await require('./config/brands').fetchBrandIds();
-  } catch (err) {
-    logger.warn('Failed to load dynamic brand IDs on init', { error: err.message });
-  }
-
   if (sessionStore && typeof sessionStore.sync === 'function') {
     await sessionStore.sync();
   }
@@ -517,7 +509,13 @@ async function init() {
     }
   }
   const port = process.env.PORT || 3000;
-  const server = app.listen(port, () => logger.info(`Metrics API running on :${port}`));
+  const server = app.listen(port, () => {
+    logger.info(`Metrics API running on :${port}`);
+    // Load dynamic brand IDs from tenant-router asynchronously to non-block healthcare healthchecks startup
+    require('./config/brands').fetchBrandIds().catch(err => {
+      logger.warn('Failed to load dynamic brand IDs on startup', { error: err.message });
+    });
+  });
   return server;
 }
 
