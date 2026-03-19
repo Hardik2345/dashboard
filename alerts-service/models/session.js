@@ -5,13 +5,14 @@ const sessionSchema = new mongoose.Schema({
     idempotency_key: { type: String, unique: true, required: true },
     event_type: {
         type: String,
-        enum: ['add_to_cart', 'checkout_initiated', 'buy_now'],
+        enum: ['add_to_cart', 'checkout_initiated', 'buy_now', 'page_viewed'],
         required: true
     },
     session_id: { type: String, required: true },
     cart_token: { type: String },
     checkout_token: { type: String },
-    user_agent: { type: String }
+    user_agent: { type: String },
+    url: { type: String }
 }, {
     timestamps: true,
     collection: 'sessions'
