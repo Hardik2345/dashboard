@@ -12,12 +12,16 @@ function buildApiKeysRouter(sequelize) {
   const router = express.Router();
   const apiKeyService = new ApiKeyService(sequelize);
 
-  // Custom middleware to bypass auth with PIPELINE_AUTH_HEADER
+  // Custom middleware to bypass auth with PIPELINE_AUTH_HEADER or X_PIPELINE_KEY fallback
   const requireAuthorOrPipeline = (req, res, next) => {
     const pipelineKey = req.headers['x-pipeline-key'];
     const expectedKey = process.env.PIPELINE_AUTH_HEADER;
+    const backupKey = process.env.X_PIPELINE_KEY;
     
-    if (pipelineKey && expectedKey && pipelineKey === expectedKey) {
+    const isValid = (expectedKey && pipelineKey === expectedKey) || 
+                    (backupKey && pipelineKey === backupKey);
+
+    if (pipelineKey && isValid) {
       // Bypass auth
       req.user = { id: 'pipeline-service', role: 'admin', isAuthor: true };
       req.isAuthenticated = () => true;
