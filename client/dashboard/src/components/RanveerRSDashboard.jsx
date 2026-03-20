@@ -224,25 +224,10 @@ export default function RanveerRSDashboard({ dateRange }) {
         justifyContent="space-between"
       >
         <Box>
-          <Typography variant="h6" sx={{ fontWeight: 700 }}>
-            Ranveer RS
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Demo KPI funnel for QR to purchase conversion.
+          <Typography variant="h6" sx={{ fontWeight: 700 }} color="text.primary">
+            Ranveer RS Campaign
           </Typography>
         </Box>
-        <Chip
-          label="Demo Data"
-          size="small"
-          sx={{
-            height: 26,
-            fontWeight: 600,
-            bgcolor: alpha(theme.palette.primary.main, 0.08),
-            color: "text.primary",
-            border: "1px solid",
-            borderColor: alpha(theme.palette.primary.main, 0.18),
-          }}
-        />
       </Stack>
 
       <Grid container spacing={2}>
@@ -253,20 +238,13 @@ export default function RanveerRSDashboard({ dateRange }) {
               label={item.label}
               value={item.value}
               loading={(item.id === "qr-scans" || item.id === "otp-landing-page" || item.id === "otp-verified" || item.id === "add-to-cart" || item.id === "purchase") && loading}
-
-
-
-
               formatter={(value) => value.toLocaleString("en-IN")}
               hint={`${item.percent}% of QR scans`}
-
               centerOnMobile
-              sx={{
-                borderRadius: { xs: 2, md: 3 },
-                background: `linear-gradient(180deg, ${alpha(item.color, 0.16)} 0%, ${alpha(theme.palette.background.paper, 0.96)} 72%)`,
-              }}
-              activeColor={item.color}
+              activeColor={theme.palette.primary.main}
             />
+
+
           </Grid>
         ))}
       </Grid>
@@ -307,9 +285,9 @@ export default function RanveerRSDashboard({ dateRange }) {
                   tickLine={false}
                   axisLine={false}
                   interval={0}
-                  angle={-42}
-                  textAnchor="end"
-                  height={72}
+                  angle={0}
+                  height={30}
+
                   tick={{ fill: theme.palette.text.primary, fontSize: 12 }}
                 />
                 <YAxis
@@ -328,7 +306,8 @@ export default function RanveerRSDashboard({ dateRange }) {
                     backgroundColor: alpha(theme.palette.background.paper, 0.96),
                   }}
                 />
-                <Bar dataKey="value" radius={[10, 10, 0, 0]} maxBarSize={90}>
+                <Bar dataKey="value" fill="#10b981" radius={[10, 10, 0, 0]} maxBarSize={90}>
+
                   <LabelList
                     dataKey="percentLabel"
                     position="top"
@@ -338,10 +317,8 @@ export default function RanveerRSDashboard({ dateRange }) {
                       fontWeight: 600,
                     }}
                   />
-                  {chartData.map((entry) => (
-                    <Cell key={entry.id} fill={entry.color} />
-                  ))}
                 </Bar>
+
               </BarChart>
             </ResponsiveContainer>
           </Box>

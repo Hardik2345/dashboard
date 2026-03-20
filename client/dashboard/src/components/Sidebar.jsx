@@ -64,7 +64,7 @@ const NAV_ITEMS = [
     items: [
       { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
       { id: "product-conversion", label: "Funnels", icon: Filter },
-      { id: "ranveer-rs", label: "Ranveer RS", icon: ScanLine },
+      { id: "ranveer-rs", label: "Ranveer RS Campaign", icon: ScanLine },
       { id: "alerts", label: "Alerts", icon: Bell },
     ],
   },

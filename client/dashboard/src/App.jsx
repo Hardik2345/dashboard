@@ -41,7 +41,7 @@ import {
 const MOBILE_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { id: "product-conversion", label: "Funnels", icon: Filter },
-  { id: "ranveer-rs", label: "Ranveer RS", icon: ScanLine },
+  { id: "ranveer-rs", label: "Ranveer RS Campaign", icon: ScanLine },
   { id: "alerts", label: "Alerts", icon: Bell },
   //  { id: "notifications-log", label: "Logs", icon: Bell },
   { id: "access", label: "Access", icon: ShieldCheck },
@@ -1332,9 +1332,10 @@ export default function App() {
   // Persist tab state only for authors
   useEffect(() => {
     // Wait until initialized to decide if we should reset tab
-    if (initialized && !isAuthor) {
+    if (initialized && !isAuthor && (!accessibleTabs || !accessibleTabs.includes(authorTab))) {
       setAuthorTab("dashboard");
     }
+
     // Guard against legacy tab state that no longer exists
     if (initialized && authorTab === "adjustments") {
       setAuthorTab("dashboard");
@@ -2207,7 +2208,7 @@ export default function App() {
                   }}
                 >
                   {/* Unified Filter Bar - Desktop Only (Dashboard Tab) */}
-                  {!isMobile && (authorTab === "dashboard" || authorTab === "ranveer-rs") && hasBrand && (
+                  {(!isMobile || authorTab === "ranveer-rs") && (authorTab === "dashboard" || authorTab === "ranveer-rs") && hasBrand && (
                     <Box sx={{ mb: { xs: 1, md: 0 } }}>
 
                       <UnifiedFilterBar
