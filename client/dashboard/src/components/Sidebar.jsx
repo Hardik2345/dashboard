@@ -17,6 +17,7 @@ import {
   Bell,
   LogOut,
   Filter,
+  ScanLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -63,6 +64,7 @@ const NAV_ITEMS = [
     items: [
       { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
       { id: "product-conversion", label: "Funnels", icon: Filter },
+      { id: "ranveer-rs", label: "Ranveer RS", icon: ScanLine },
       { id: "alerts", label: "Alerts", icon: Bell },
     ],
   },

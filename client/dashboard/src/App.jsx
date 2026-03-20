@@ -35,11 +35,13 @@ import {
   ShieldCheck,
   Store,
   Filter,
+  ScanLine,
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { id: "product-conversion", label: "Funnels", icon: Filter },
+  { id: "ranveer-rs", label: "Ranveer RS", icon: ScanLine },
   { id: "alerts", label: "Alerts", icon: Bell },
   //  { id: "notifications-log", label: "Logs", icon: Bell },
   { id: "access", label: "Access", icon: ShieldCheck },
@@ -122,6 +124,9 @@ const ProductConversionTable = lazy(
 const AuthorBrandForm = lazy(() => import("./components/AuthorBrandForm.jsx"));
 const AuthorBrandList = lazy(() => import("./components/AuthorBrandList.jsx"));
 const AlertsAdmin = lazy(() => import("./components/AlertsAdmin.jsx"));
+const RanveerRSDashboard = lazy(
+  () => import("./components/RanveerRSDashboard.jsx"),
+);
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format("YYYY-MM-DD") : undefined;
@@ -463,12 +468,18 @@ export default function App() {
     [isAuthor, viewerPermissions],
   );
 
+  const canAccessRanveerRs = useMemo(() => {
+    if (isAuthor) return true;
+    return viewerBrands.includes("AJMAL");
+  }, [isAuthor, viewerBrands]);
+
   const accessibleTabs = useMemo(() => {
     if (isAuthor) return null;
     const tabs = ["dashboard"];
+    if (canAccessRanveerRs) tabs.push("ranveer-rs");
     // Keep viewers on dashboard tab only, even if they have funnel permission (since it's inline now)
     return tabs;
-  }, [isAuthor]);
+  }, [canAccessRanveerRs, isAuthor]);
 
   const showSidebar = isAuthor || (accessibleTabs && accessibleTabs.length > 1);
 
@@ -476,6 +487,18 @@ export default function App() {
     if (isAuthor) return MOBILE_NAV_ITEMS;
     return MOBILE_NAV_ITEMS.filter((item) => accessibleTabs?.includes(item.id));
   }, [isAuthor, accessibleTabs]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    if (authorTab === "ranveer-rs" && !canAccessRanveerRs) {
+      setAuthorTab("dashboard");
+      try {
+        localStorage.setItem("author_active_tab_v1", "dashboard");
+      } catch {
+        // Ignore storage write errors
+      }
+    }
+  }, [authorTab, canAccessRanveerRs, initialized]);
 
   // Derived arrays/labels for product multi-select used directly by child components
   const selectedProductIds = useMemo(() => {
@@ -2233,6 +2256,7 @@ export default function App() {
                   {!isMobile &&
                     authorTab !== "dashboard" &&
                     authorTab !== "product-conversion" &&
+                    authorTab !== "ranveer-rs" &&
                     authorTab !== "alerts" &&
                     authorTab !== "access" &&
                     authorTab !== "notifications-log" &&
@@ -2701,6 +2725,12 @@ export default function App() {
                           </Typography>
                         </Paper>
                       ))}
+
+                    {canAccessRanveerRs && authorTab === "ranveer-rs" && (
+                      <Suspense fallback={<SectionFallback count={2} height={220} />}>
+                        <RanveerRSDashboard />
+                      </Suspense>
+                    )}
 
                     {isAuthor && authorTab === "access" && (
                       <Suspense fallback={<SectionFallback count={2} />}>

@@ -214,6 +214,132 @@ async function loadBrandsFromApi() {
   return brands;
 }
 
+async function loadPipelineBrandsFromApi() {
+  const GET_BRANDS_API = process.env.GET_BRANDS_API;
+  const PIPELINE_AUTH_HEADER = process.env.PIPELINE_AUTH_HEADER;
+  const PASSWORD_AES_KEY = process.env.PASSWORD_AES_KEY;
+
+  if (!GET_BRANDS_API || !PIPELINE_AUTH_HEADER || !PASSWORD_AES_KEY) {
+    return null;
+  }
+
+  const API_HEADERS = { "x-pipeline-key": PIPELINE_AUTH_HEADER };
+
+  console.log(`[BRAND LOADER] Fetching pipeline brands from GET_BRANDS_API=${GET_BRANDS_API}`);
+
+  let brandDict = {};
+  try {
+    const resp = await axios.get(GET_BRANDS_API, {
+      headers: API_HEADERS,
+      timeout: 30_000,
+      validateStatus: () => true,
+    });
+
+    if (resp.status !== 200) {
+      const hint =
+        resp.status === 401
+          ? " (401 Unauthorized: check PIPELINE_AUTH_HEADER / x-pipeline-key secret)"
+          : "";
+      throw new Error(
+        `[BRAND LOADER] Pipeline brand API request failed: HTTP ${resp.status}${hint}`,
+      );
+    }
+
+    brandDict = resp.data || {};
+  } catch (err) {
+    throw new Error(`[BRAND LOADER] Failed to fetch pipeline brand list: ${err.message}`);
+  }
+
+  const brandIds = Object.keys(brandDict);
+  if (brandIds.length === 0) {
+    console.warn("[BRAND LOADER] No pipeline brands returned by GET_BRANDS_API");
+    return [];
+  }
+
+  const brands = [];
+  let index = 0;
+
+  for (const strId of brandIds) {
+    const id = parseInt(strId, 10);
+    if (!Number.isFinite(id)) continue;
+
+    const brandUrl = `${GET_BRANDS_API.replace(/\/+$/, "")}/${id}`;
+    let brandData;
+    try {
+      const resp = await axios.get(brandUrl, {
+        headers: API_HEADERS,
+        timeout: 30_000,
+        validateStatus: () => true,
+      });
+      if (resp.status !== 200) {
+        const hint =
+          resp.status === 401
+            ? " (401 Unauthorized: check PIPELINE_AUTH_HEADER / x-pipeline-key secret)"
+            : "";
+        console.warn(
+          `[BRAND LOADER] Failed to fetch pipeline credentials for brand ID ${id}: HTTP ${resp.status}${hint}`,
+        );
+        continue;
+      }
+      brandData = resp.data || {};
+    } catch (err) {
+      console.warn(`[BRAND LOADER] Failed to fetch pipeline credentials for brand ID ${id}: ${err.message}`);
+      continue;
+    }
+
+    const shopName = brandData.shop_name;
+    const apiVersion = brandData.api_version;
+    const dbHost = brandData.db_host;
+    const dbUser = brandData.db_user;
+    const dbDatabase = brandData.db_database;
+    const brandTag = brandData.brand_tag || `brand_${index}`;
+    const brandName = brandData.brand_name || brandTag.toUpperCase();
+
+    let accessToken;
+    let dbPassword;
+    try {
+      accessToken = decryptAES(brandData.access_token, PASSWORD_AES_KEY);
+      dbPassword = decryptAES(brandData.db_password, PASSWORD_AES_KEY);
+    } catch (err) {
+      console.warn(`[BRAND LOADER] Skipping ${brandTag} – failed to decrypt credentials.`);
+      continue;
+    }
+
+    if (!shopName || !apiVersion || !accessToken || !dbHost || !dbUser || !dbDatabase) {
+      console.warn(`[BRAND LOADER] Skipping ${brandTag} – missing required pipeline fields.`);
+      continue;
+    }
+
+    const { ssl, testMode } = buildSslOptions({ dbHost });
+
+    const pool = mysql.createPool({
+      host: dbHost,
+      user: dbUser,
+      password: dbPassword,
+      database: dbDatabase,
+      waitForConnections: true,
+      connectionLimit: 3,
+      queueLimit: 0,
+      ...(ssl && !testMode ? { ssl } : {}),
+    });
+
+    brands.push({
+      index,
+      id,
+      tag: brandTag,
+      name: brandName,
+      shopName,
+      apiVersion,
+      accessToken,
+      dbDatabase,
+      pool,
+    });
+    index++;
+  }
+
+  return brands;
+}
+
 export async function loadBrandsForScripts() {
   const hasApiMode =
     !!process.env.GET_BRANDS_API &&
@@ -234,5 +360,28 @@ export async function loadBrandsForScripts() {
 
   throw new Error(
     "[BRAND LOADER] API mode succeeded but returned 0 brands. Check GET_BRANDS_API response.",
+  );
+}
+
+export async function loadPipelineBrandsForScripts() {
+  const hasApiMode =
+    !!process.env.GET_BRANDS_API &&
+    !!process.env.PIPELINE_AUTH_HEADER &&
+    !!process.env.PASSWORD_AES_KEY;
+
+  if (!hasApiMode) {
+    throw new Error(
+      "[BRAND LOADER] API mode is required for pipeline scripts. Missing one of: GET_BRANDS_API, PIPELINE_AUTH_HEADER, PASSWORD_AES_KEY",
+    );
+  }
+
+  const apiBrands = await loadPipelineBrandsFromApi();
+  if (Array.isArray(apiBrands) && apiBrands.length > 0) {
+    console.log(`[BRAND LOADER] Loaded ${apiBrands.length} pipeline brand(s) from API`);
+    return apiBrands;
+  }
+
+  throw new Error(
+    "[BRAND LOADER] Pipeline API mode succeeded but returned 0 brands. Check GET_BRANDS_API response.",
   );
 }
