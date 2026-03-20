@@ -1,6 +1,12 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { getQrScans, getLandingPageSessions, getMongoEventCount, getMongoCollectionCount } from "../lib/api.js";
+
+
+
+
 import Grid from "@mui/material/Grid2";
 import {
+
   Box,
   Card,
   CardContent,
@@ -22,65 +28,192 @@ import {
 } from "recharts";
 import KPIStat from "./KPIStat.jsx";
 
-const DEMO_FUNNEL_DATA = [
-  {
-    id: "qr-scans",
-    label: "QR Scans",
-    shortLabel: "QR Scans",
-    value: 10,
-    percent: 100,
-    color: "#4FB6D3",
-  },
-  {
-    id: "otp-landing-page",
-    label: "OTP Landing Page",
-    shortLabel: "OTP Landing",
-    value: 8,
-    percent: 80,
-    color: "#69D6DA",
-  },
-  {
-    id: "otp-verified",
-    label: "OTP Verified",
-    shortLabel: "OTP Verified",
-    value: 6,
-    percent: 60,
-    color: "#3E8FBE",
-  },
-  {
-    id: "add-to-cart",
-    label: "Add to Cart",
-    shortLabel: "ATC",
-    value: 4,
-    percent: 40,
-    color: "#3B6AA4",
-  },
-  {
-    id: "purchase",
-    label: "Purchase",
-    shortLabel: "Purchase",
-    value: 2,
-    percent: 20,
-    color: "#854AA1",
-  },
-];
+
+
 
 const tooltipFormatter = (value, _name, payload) => {
   const pct = payload?.payload?.percent;
   return [`${value}`, pct != null ? `${pct}% of QR scans` : "Count"];
 };
 
-export default function RanveerRSDashboard() {
+// Helper: Convert dateStr or dayjs to Unix Timestamp (Seconds)
+const toUnixTimestamp = (dateValue, isEnd = false) => {
+  if (!dateValue) return null;
+  let str = dateValue;
+  if (dateValue.format) {
+    str = dateValue.format("YYYY-MM-DD");
+  }
+  const date = new Date(`${str}T00:00:00Z`); // UTC
+  if (isEnd) {
+    date.setUTCHours(23, 59, 59, 999);
+  }
+  return Math.floor(date.getTime() / 1000);
+};
+
+
+export default function RanveerRSDashboard({ dateRange }) {
+  const [loading, setLoading] = useState(false);
+  const [qrScansCount, setQrScansCount] = useState(null);
+  const [landingPageSessions, setLandingPageSessions] = useState(null);
+  const [addToCartCount, setAddToCartCount] = useState(null);
+  const [otpVerifiedCount, setOtpVerifiedCount] = useState(null);
+  const [purchaseCount, setPurchaseCount] = useState(null);
+
+  const [error, setError] = useState(null);
+
   const theme = useTheme();
+
+  const FUNNEL_DATA = useMemo(() => [
+    {
+      id: "qr-scans",
+      label: "QR Scans",
+      shortLabel: "QR Scans",
+      value: 0,
+      percent: 100,
+      color: theme.palette.primary.main,
+    },
+    {
+      id: "otp-landing-page",
+      label: "OTP Landing Page",
+      shortLabel: "OTP Landing",
+      value: 0,
+      percent: 0,
+      color: theme.palette.info.main,
+    },
+    {
+      id: "otp-verified",
+      label: "OTP Verified",
+      shortLabel: "OTP Verified",
+      value: 0,
+      percent: 0,
+      color: theme.palette.warning.main,
+    },
+    {
+      id: "add-to-cart",
+      label: "Add to Cart",
+      shortLabel: "ATC",
+      value: 0,
+      percent: 0,
+      color: theme.palette.success.main,
+    },
+    {
+      id: "purchase",
+      label: "Purchase",
+      shortLabel: "Purchase",
+      value: 0,
+      percent: 0,
+      color: theme.palette.secondary.main,
+    },
+  ], [theme]);
+
+
+  const startStr = dateRange?.[0] || dateRange?.start;
+  const endStr = dateRange?.[1] || dateRange?.end;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!startStr || !endStr) return;
+
+    const loadData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const fromUnix = toUnixTimestamp(startStr);
+        const toUnix = toUnixTimestamp(endStr, true);
+        const fromStr = startStr.format ? startStr.format("YYYY-MM-DD") : startStr;
+        const toStr = endStr.format ? endStr.format("YYYY-MM-DD") : endStr;
+        
+        const [qrRes, lpRes, otpRes, otpVerifyRes, purchaseRes] = await Promise.all([
+          getQrScans(fromUnix, toUnix),
+          getLandingPageSessions(fromStr, toStr),
+          getMongoEventCount(fromStr, toStr, 'add_to_cart_rs'),
+          getMongoCollectionCount(fromStr, toStr, 'ajrs_otpverified'),
+          getMongoCollectionCount(fromStr, toStr, 'ajrsPurchase')
+        ]);
+
+
+        if (cancelled) return;
+
+        let hasError = false;
+        if (!qrRes.error && qrRes.data?.success) {
+          setQrScansCount(qrRes.data.count);
+        } else {
+          hasError = true;
+        }
+
+        if (!lpRes.error && lpRes.data?.success) {
+          setLandingPageSessions(lpRes.data.count);
+        } else {
+          hasError = true;
+        }
+
+        if (!otpRes.error && otpRes.data?.success) {
+          setAddToCartCount(otpRes.data.count);
+        } else {
+          hasError = true;
+        }
+
+        if (!otpVerifyRes.error && otpVerifyRes.data?.success) {
+          setOtpVerifiedCount(otpVerifyRes.data.count);
+        } else {
+          hasError = true;
+        }
+
+        if (!purchaseRes.error && purchaseRes.data?.success) {
+          setPurchaseCount(purchaseRes.data.count);
+        } else {
+          hasError = true;
+        }
+
+
+        if (hasError) {
+          // Optional: handle partial error or show message
+        }
+      } catch (e) {
+        if (!cancelled) setError('Error loading metrics');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadData();
+    return () => { cancelled = true; };
+  }, [startStr, endStr]);
+
+  const liveFunnelData = useMemo(() => {
+    const qrVal = qrScansCount !== null ? qrScansCount : FUNNEL_DATA[0].value;
+    
+    return FUNNEL_DATA.map((item) => {
+      let val = item.value;
+      if (item.id === "qr-scans" && qrScansCount !== null) val = qrScansCount;
+      if (item.id === "otp-landing-page" && landingPageSessions !== null) val = landingPageSessions;
+      if (item.id === "otp-verified" && otpVerifiedCount !== null) val = otpVerifiedCount;
+      if (item.id === "add-to-cart" && addToCartCount !== null) val = addToCartCount;
+      if (item.id === "purchase" && purchaseCount !== null) val = purchaseCount;
+
+      const percent = qrVal > 0 ? (val / qrVal) * 100 : 0;
+      return {
+        ...item,
+        value: val,
+        percent: Math.round(percent)
+      };
+    });
+  }, [qrScansCount, landingPageSessions, addToCartCount, otpVerifiedCount, purchaseCount, FUNNEL_DATA]);
+
+
+
+
+
 
   const chartData = useMemo(
     () =>
-      DEMO_FUNNEL_DATA.map((item) => ({
+      liveFunnelData.map((item) => ({
         ...item,
         percentLabel: `${item.percent}%`,
       })),
-    [],
+    [liveFunnelData],
   );
+
 
   return (
     <Stack spacing={{ xs: 2, md: 3 }}>
@@ -113,13 +246,20 @@ export default function RanveerRSDashboard() {
       </Stack>
 
       <Grid container spacing={2}>
-        {DEMO_FUNNEL_DATA.map((item) => (
+        {liveFunnelData.map((item) => (
           <Grid key={item.id} size={{ xs: 12, sm: 6, lg: 12 / 5 }}>
+
             <KPIStat
               label={item.label}
               value={item.value}
+              loading={(item.id === "qr-scans" || item.id === "otp-landing-page" || item.id === "otp-verified" || item.id === "add-to-cart" || item.id === "purchase") && loading}
+
+
+
+
               formatter={(value) => value.toLocaleString("en-IN")}
               hint={`${item.percent}% of QR scans`}
+
               centerOnMobile
               sx={{
                 borderRadius: { xs: 2, md: 3 },

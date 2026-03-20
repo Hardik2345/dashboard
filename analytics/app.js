@@ -27,6 +27,8 @@ const { buildUploadsRouter } = require('./routes/uploads');
 const { buildApiKeysRouter } = require('./routes/apiKeys');
 const { buildShopifyRouter } = require('./routes/shopify');
 const { buildNotificationsRouter } = require('./routes/notifications'); // [NEW]
+const { buildRanvirRouter } = require('./routes/ranvir'); // [NEW]
+
 
 
 const app = express();
@@ -484,6 +486,8 @@ app.use('/', buildUploadsRouter());
 app.use('/', buildApiKeysRouter(sequelize));
 app.use('/shopify', buildShopifyRouter(sequelize));
 app.use('/notifications', buildNotificationsRouter()); // [NEW]
+app.use('/ranvir', buildRanvirRouter()); // [NEW]
+
 
 // ---- Init -------------------------------------------------------------------
 async function init() {
