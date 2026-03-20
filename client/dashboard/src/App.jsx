@@ -784,6 +784,7 @@ export default function App() {
         align: "hour",
       };
 
+      
       const [summary, hourlyTrend, orderSplit, salesSplit, trafficSplit, webVitals] =
         await Promise.all([
           getDashboardSummary(summaryBase),
