@@ -126,7 +126,9 @@ export default function UnifiedFilterBar({
   },
   utmOptions = {}, // Add prop
   onDownload, // Callback for download button
+  hideAllExceptDate = false,
 }) {
+
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const [start, end] = range || [];
@@ -397,12 +399,14 @@ export default function UnifiedFilterBar({
   }, [utm?.campaign]);
 
   // --- Visibility Logic ---
-  const showUtm = allowedFilters.utm;
-  const showBrand = isAuthor || brands.length > 1;
+  const showUtm = !hideAllExceptDate && allowedFilters.utm;
+  const showBrand = !hideAllExceptDate && (isAuthor || brands.length > 1);
   const showDivision =
-    allowedFilters.salesChannel ||
-    allowedFilters.deviceType ||
-    allowedFilters.product;
+    !hideAllExceptDate &&
+    (allowedFilters.salesChannel ||
+      allowedFilters.deviceType ||
+      allowedFilters.product);
+
 
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -707,7 +711,7 @@ export default function UnifiedFilterBar({
         )}
 
         {/* 3. Compare Toggle - ONLY FOR ADMINS */}
-        {isAuthor && (
+        {isAuthor && !hideAllExceptDate && (
           <>
             <Button
               onClick={(e) => setCompareToggleAnchor(e.currentTarget)}
@@ -745,7 +749,7 @@ export default function UnifiedFilterBar({
         )}
 
         {/* 3b. Compare Date ("To") - Only in compare mode */}
-        {isAuthor && compareMode && (
+        {isAuthor && !hideAllExceptDate && compareMode && (
           <>
             <Button
               onClick={handleCompDateClick}
@@ -792,6 +796,7 @@ export default function UnifiedFilterBar({
             />
           </>
         )}
+
 
         {/* 3c. Current Date Segment */}
         <Button
@@ -940,7 +945,7 @@ export default function UnifiedFilterBar({
       </Paper>
 
       {/* Download Button (Separate) - ONLY FOR ADMINS */}
-      {isAuthor && (
+      {isAuthor && !hideAllExceptDate && (
         <IconButton
           onClick={onDownload}
           sx={{
@@ -960,6 +965,7 @@ export default function UnifiedFilterBar({
           <Download size={18} />
         </IconButton>
       )}
+
 
       {/* --- Popovers --- */}
 

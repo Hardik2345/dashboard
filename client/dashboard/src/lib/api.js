@@ -954,3 +954,23 @@ export async function deleteAlert(id) {
 export async function setAlertActive(id, isActive) {
   return doPost(`/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
 }
+
+export async function getQrScans(from, to) {
+  return doGet("/ranvir/qr-scans", { from, to });
+}
+
+export async function getLandingPageSessions(from, to) {
+  return doGet("/ranvir/landing-page-sessions", { from, to });
+}
+
+export async function getMongoEventCount(from, to, eventType) {
+  return doGet("/ranvir/mongo-event-count", { from, to, eventType });
+}
+
+export async function getMongoCollectionCount(from, to, collectionName) {
+  return doGet("/ranvir/mongo-collection-count", { from, to, collectionName });
+}
+
+
+
+

@@ -16,7 +16,10 @@ const {
 const Alert = require("./models/alert");
 const AlertChannel = require("./models/alertChannel");
 const BrandAlertChannel = require("./models/brandAlertChannel");
+const OtpVerified = require("./models/otpVerified");
+const AjrsPurchase = require("./models/ajrsPurchase");
 const { sendToAll } = require("./utils/fcm");
+
 
 const app = express();
 app.use(helmet());
@@ -49,28 +52,55 @@ const Session = require("./models/session");
 app.post("/track", async (req, res) => {
   try {
     const sessionData = req.body;
+    const isRSEvent = sessionData.tags === "RS_Cinema_KP" || sessionData.orderId;
 
-    // Check for idempotency key to prevent duplicates
-    if (!sessionData.idempotency_key) {
+    // Check for idempotency key to prevent duplicates (bypass for custom RS events)
+    if (!sessionData.idempotency_key && !isRSEvent) {
       return res.status(400).json({ error: "idempotency_key is required" });
     }
 
-    const existingSession = await Session.findOne({
-      idempotency_key: sessionData.idempotency_key,
-    });
+    let existingSession = null;
+    if (sessionData.idempotency_key) {
+      existingSession = await Session.findOne({
+        idempotency_key: sessionData.idempotency_key,
+      });
+    }
+
     if (existingSession) {
-      // Already processed this event, return success without saving again
       return res
         .status(200)
         .json({ message: "Event already processed", session: existingSession });
+    }
+
+    // ---- RS Specific Event Handling ----
+    if (isRSEvent) {
+      if (sessionData.tags === "RS_Cinema_KP" && sessionData.customer_id) {
+        const exists = await OtpVerified.findOne({ customer_id: sessionData.customer_id });
+        if (!exists) {
+          const otpVerify = new OtpVerified({ customer_id: sessionData.customer_id });
+          await otpVerify.save();
+          logger.info(`[track] OTP Verified saved for customer: ${sessionData.customer_id}`);
+        }
+      }
+
+      if (sessionData.orderId) {
+        const exists = await AjrsPurchase.findOne({ order_id: sessionData.orderId });
+        if (!exists) {
+          const purchase = new AjrsPurchase({ order_id: sessionData.orderId });
+          await purchase.save();
+          logger.info(`[track] AJRS Purchase saved for order: ${sessionData.orderId}`);
+        }
+      }
+
+      return res.status(201).json({ message: "Session tracked successfully" });
     }
 
     // Save new session document
     const session = new Session(sessionData);
     await session.save();
 
-    res.status(201).json({ message: "Session tracked successfully", session });
   } catch (err) {
+
     logger.error("Error tracking session:", err);
     res.status(500).json({ error: "Failed to track alert" });
   }

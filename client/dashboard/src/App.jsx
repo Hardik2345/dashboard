@@ -2207,14 +2207,17 @@ export default function App() {
                   }}
                 >
                   {/* Unified Filter Bar - Desktop Only (Dashboard Tab) */}
-                  {!isMobile && authorTab === "dashboard" && hasBrand && (
+                  {!isMobile && (authorTab === "dashboard" || authorTab === "ranveer-rs") && hasBrand && (
                     <Box sx={{ mb: { xs: 1, md: 0 } }}>
+
                       <UnifiedFilterBar
                         range={normalizedRange}
                         onRangeChange={handleRangeChange}
                         brandKey={activeBrandKey}
                         brands={brandsForSelector}
+                        hideAllExceptDate={authorTab === "ranveer-rs"}
                         onBrandChange={
+
                           isAuthor
                             ? handleAuthorBrandChange
                             : (val) =>
@@ -2728,7 +2731,8 @@ export default function App() {
 
                     {canAccessRanveerRs && authorTab === "ranveer-rs" && (
                       <Suspense fallback={<SectionFallback count={2} height={220} />}>
-                        <RanveerRSDashboard />
+                        <RanveerRSDashboard dateRange={normalizedRange} />
+
                       </Suspense>
                     )}
 
