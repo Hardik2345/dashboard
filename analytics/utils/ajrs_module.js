@@ -26,6 +26,7 @@ async function getMongoClient() {
  */
 async function getQrScans(from, to) {
   const apiKey = process.env.RS_QR_API;
+  console.log("API key is here!!🚨", apiKey)
   
   if (!apiKey) {
     logger.warn('RS_QR_API is not set in environment variables');
