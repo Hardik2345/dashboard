@@ -487,6 +487,8 @@ app.use('/', buildApiKeysRouter(sequelize));
 app.use('/shopify', buildShopifyRouter(sequelize));
 app.use('/notifications', buildNotificationsRouter()); // [NEW]
 app.use('/ranvir', buildRanvirRouter()); // [NEW]
+app.use('/analytics/ranvir', buildRanvirRouter()); // Alias for local gateways
+
 
 
 // ---- Init -------------------------------------------------------------------

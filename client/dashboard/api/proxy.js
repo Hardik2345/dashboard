@@ -22,7 +22,9 @@ export default async function handler(req, res) {
       "/tenant",
       "/push",
       "/track",
+      "/analytics",
     ];
+
     const shouldPassthrough = passthroughPrefixes.some(
       (prefix) =>
         cleanedPath === prefix || cleanedPath.startsWith(`${prefix}/`),
