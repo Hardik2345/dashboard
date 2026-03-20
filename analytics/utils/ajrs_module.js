@@ -81,22 +81,22 @@ async function getLandingPageSessions(from, to) {
     const db = await getBrandConnection('AJMAL');
     
     const rows = await db.sequelize.query(
-      `SELECT SUM(sessions) as total_sessions 
+      `SELECT SUM(sessions) as total_sessions, SUM(sessions_with_cart_additions) as total_cart_additions 
        FROM mv_product_sessions_by_path_daily 
        WHERE date >= ? AND date <= ? AND landing_page_path = ?`,
       {
         replacements: [fromDate, toDate, '/pages/ajmalxranvir/'],
         type: QueryTypes.SELECT
-
-
       }
     );
 
     // SELECT SUM returns rows array with one object usually
     const result = Array.isArray(rows) && rows[0] ? rows[0] : rows;
     const total = result?.total_sessions ? Number(result.total_sessions) : 0;
+    const atc = result?.total_cart_additions ? Number(result.total_cart_additions) : 0;
 
-    return { success: true, count: total };
+    return { success: true, count: total, atcCount: atc };
+
   } catch (error) {
     logger.error('Error fetching landing page sessions from AJMAL DB:', error.message);
     throw error;

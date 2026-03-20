@@ -66,8 +66,8 @@ export default function RanveerRSDashboard({ dateRange }) {
   const FUNNEL_DATA = useMemo(() => [
     {
       id: "qr-scans",
-      label: "QR Scans",
-      shortLabel: "QR Scans",
+      label: "Scans",
+      shortLabel: "Scans",
       value: 0,
       percent: 100,
       color: theme.palette.primary.main,
@@ -75,7 +75,7 @@ export default function RanveerRSDashboard({ dateRange }) {
     {
       id: "otp-landing-page",
       label: "OTP Landing Page",
-      shortLabel: "OTP Landing",
+      shortLabel: "LP",
       value: 0,
       percent: 0,
       color: theme.palette.info.main,
@@ -123,13 +123,13 @@ export default function RanveerRSDashboard({ dateRange }) {
         const fromStr = startStr.format ? startStr.format("YYYY-MM-DD") : startStr;
         const toStr = endStr.format ? endStr.format("YYYY-MM-DD") : endStr;
         
-        const [qrRes, lpRes, otpRes, otpVerifyRes, purchaseRes] = await Promise.all([
+        const [qrRes, lpRes, otpVerifyRes, purchaseRes] = await Promise.all([
           getQrScans(fromUnix, toUnix),
           getLandingPageSessions(fromStr, toStr),
-          getMongoEventCount(fromStr, toStr, 'add_to_cart_rs'),
           getMongoCollectionCount(fromStr, toStr, 'ajrs_otpverified'),
           getMongoCollectionCount(fromStr, toStr, 'ajrsPurchase')
         ]);
+
 
 
         if (cancelled) return;
@@ -143,12 +143,7 @@ export default function RanveerRSDashboard({ dateRange }) {
 
         if (!lpRes.error && lpRes.data?.success) {
           setLandingPageSessions(lpRes.data.count);
-        } else {
-          hasError = true;
-        }
-
-        if (!otpRes.error && otpRes.data?.success) {
-          setAddToCartCount(otpRes.data.count);
+          setAddToCartCount(lpRes.data.atcCount);
         } else {
           hasError = true;
         }
@@ -164,6 +159,7 @@ export default function RanveerRSDashboard({ dateRange }) {
         } else {
           hasError = true;
         }
+
 
 
         if (hasError) {
@@ -217,18 +213,7 @@ export default function RanveerRSDashboard({ dateRange }) {
 
   return (
     <Stack spacing={{ xs: 2, md: 3 }}>
-      <Stack
-        direction={{ xs: "column", md: "row" }}
-        spacing={1.5}
-        alignItems={{ xs: "flex-start", md: "center" }}
-        justifyContent="space-between"
-      >
-        <Box>
-          <Typography variant="h6" sx={{ fontWeight: 700 }} color="text.primary">
-            Ranveer RS Campaign
-          </Typography>
-        </Box>
-      </Stack>
+
 
       <Grid container spacing={2}>
         {liveFunnelData.map((item) => (
@@ -242,7 +227,22 @@ export default function RanveerRSDashboard({ dateRange }) {
               hint={`${item.percent}% of QR scans`}
               centerOnMobile
               activeColor={theme.palette.primary.main}
+              sx={{
+                "& .MuiCardContent-root": {
+                  p: { xs: 1, md: 1.5 },
+                  "&:last-child": { pb: { xs: 0.75, md: 1.5 } },
+                  minHeight: { xs: "auto", md: 110 },
+                },
+                "& .MuiTypography-h5": {
+                  fontSize: { xs: "1.25rem", md: "1.5rem" },
+                },
+                "& .MuiCardContent-root > .MuiBox-root:last-of-type": {
+                  display: { xs: "none", md: "flex" },
+                },
+              }}
+
             />
+
 
 
           </Grid>

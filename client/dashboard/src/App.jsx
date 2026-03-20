@@ -41,7 +41,7 @@ import {
 const MOBILE_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { id: "product-conversion", label: "Funnels", icon: Filter },
-  { id: "ranveer-rs", label: "Ranveer RS Campaign", icon: ScanLine },
+  { id: "ranveer-rs", label: "RS Campaign", icon: ({ className }) => <span className={className} style={{ fontWeight: 800, fontSize: "0.85rem" }}>RS</span> },
   { id: "alerts", label: "Alerts", icon: Bell },
   //  { id: "notifications-log", label: "Logs", icon: Bell },
   { id: "access", label: "Access", icon: ShieldCheck },
@@ -2201,13 +2201,19 @@ export default function App() {
                 <Box
                   sx={{
                     display: "flex",
-                    flexDirection: { xs: "column", md: "row" },
+                    flexDirection: authorTab === "ranveer-rs" ? "row" : { xs: "column", md: "row" },
                     alignItems: "center",
-                    justifyContent: { xs: "space-between", md: "flex-end" },
+                    justifyContent: authorTab === "ranveer-rs" ? "space-between" : { xs: "space-between", md: "flex-end" },
                     width: "100%",
                     gap: 1,
                   }}
                 >
+                  {authorTab === "ranveer-rs" && (
+                    <Typography variant="h6" sx={{ fontWeight: 700 }} color="text.primary">
+                      RS Campaign
+                    </Typography>
+                  )}
+
                   {/* Unified Filter Bar - Desktop Only (Dashboard Tab) */}
                   {(!isMobile || authorTab === "ranveer-rs") && (authorTab === "dashboard" || authorTab === "ranveer-rs") && hasBrand && (
                     <Box sx={{ mb: { xs: 1, md: 0 } }}>
