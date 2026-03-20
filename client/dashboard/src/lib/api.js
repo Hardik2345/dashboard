@@ -956,20 +956,21 @@ export async function setAlertActive(id, isActive) {
 }
 
 export async function getQrScans(from, to) {
-  return doGet("/ranvir/qr-scans", { from, to });
+  return doGet("/analytics/ranvir/qr-scans", { from, to });
 }
 
 export async function getLandingPageSessions(from, to) {
-  return doGet("/ranvir/landing-page-sessions", { from, to });
+  return doGet("/analytics/ranvir/landing-page-sessions", { from, to });
 }
 
 export async function getMongoEventCount(from, to, eventType) {
-  return doGet("/ranvir/mongo-event-count", { from, to, eventType });
+  return doGet("/analytics/ranvir/mongo-event-count", { from, to, eventType });
 }
 
 export async function getMongoCollectionCount(from, to, collectionName) {
-  return doGet("/ranvir/mongo-collection-count", { from, to, collectionName });
+  return doGet("/analytics/ranvir/mongo-collection-count", { from, to, collectionName });
 }
+
 
 
 
