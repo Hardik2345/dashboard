@@ -58,6 +58,7 @@ const getAvatarColor = (initial) => {
   return AVATAR_COLORS[code % AVATAR_COLORS.length];
 };
 
+
 const NAV_ITEMS = [
   {
     group: "main",
