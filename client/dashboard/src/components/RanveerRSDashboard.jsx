@@ -36,18 +36,30 @@ const tooltipFormatter = (value, _name, payload) => {
   return [`${value}`, pct != null ? `${pct}% of QR scans` : "Count"];
 };
 
-// Helper: Convert dateStr or dayjs to Unix Timestamp (Seconds)
-const toUnixTimestamp = (dateValue, isEnd = false) => {
+const IST_OFFSET_MINUTES = 330;
+
+// Helper: Convert dateStr or dayjs to Unix Timestamp (Seconds) using IST day boundaries.
+const toUnixTimestampInIst = (dateValue, isEnd = false) => {
   if (!dateValue) return null;
   let str = dateValue;
   if (dateValue.format) {
     str = dateValue.format("YYYY-MM-DD");
   }
-  const date = new Date(`${str}T00:00:00Z`); // UTC
-  if (isEnd) {
-    date.setUTCHours(23, 59, 59, 999);
+
+  const [year, month, day] = String(str)
+    .split("-")
+    .map((value) => Number(value));
+
+  if (!year || !month || !day) {
+    return null;
   }
-  return Math.floor(date.getTime() / 1000);
+
+  // Convert local IST day boundaries into the correct UTC instant.
+  const utcMillis =
+    Date.UTC(year, month - 1, day, isEnd ? 23 : 0, isEnd ? 59 : 0, isEnd ? 59 : 0, isEnd ? 999 : 0) -
+    IST_OFFSET_MINUTES * 60 * 1000;
+
+  return Math.floor(utcMillis / 1000);
 };
 
 
@@ -58,8 +70,6 @@ export default function RanveerRSDashboard({ dateRange }) {
   const [addToCartCount, setAddToCartCount] = useState(null);
   const [otpVerifiedCount, setOtpVerifiedCount] = useState(null);
   const [purchaseCount, setPurchaseCount] = useState(null);
-
-  const [error, setError] = useState(null);
 
   const theme = useTheme();
 
@@ -116,10 +126,9 @@ export default function RanveerRSDashboard({ dateRange }) {
 
     const loadData = async () => {
       setLoading(true);
-      setError(null);
       try {
-        const fromUnix = toUnixTimestamp(startStr);
-        const toUnix = toUnixTimestamp(endStr, true);
+        const fromUnix = toUnixTimestampInIst(startStr);
+        const toUnix = toUnixTimestampInIst(endStr, true);
         const fromStr = startStr.format ? startStr.format("YYYY-MM-DD") : startStr;
         const toStr = endStr.format ? endStr.format("YYYY-MM-DD") : endStr;
         
@@ -165,8 +174,8 @@ export default function RanveerRSDashboard({ dateRange }) {
         if (hasError) {
           // Optional: handle partial error or show message
         }
-      } catch (e) {
-        if (!cancelled) setError('Error loading metrics');
+      } catch {
+        // Keep the page usable even if one or more demo endpoints fail.
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -262,9 +271,6 @@ export default function RanveerRSDashboard({ dateRange }) {
           <Stack spacing={0.5} sx={{ mb: 2 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
               Funnel Overview
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Hardcoded conversion view for the demo flow.
             </Typography>
           </Stack>
 

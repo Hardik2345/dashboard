@@ -5,7 +5,8 @@
   "type": "commonjs",
   "main": "app.js",
   "scripts": {
-    "start": "nodemon app.js"
+    "start": "nodemon app.js",
+    "import:otp-verified": "node scripts/import-otp-verified.js"
   },
   "dependencies": {
     "amqplib": "^0.10.5",
