@@ -5,6 +5,7 @@ const { QueryTypes } = require('sequelize');
 const { MongoClient } = require('mongodb');
 
 let mongoClient = null;
+const IST_OFFSET_MINUTES = 330;
 
 async function getMongoClient() {
   const uri = process.env.RS_MONGO_URI;
@@ -14,6 +15,29 @@ async function getMongoClient() {
     await mongoClient.connect();
   }
   return mongoClient;
+}
+
+function toUtcDateFromIstDay(dateStr, isEnd = false) {
+  const [year, month, day] = String(dateStr)
+    .split('-')
+    .map((value) => Number(value));
+
+  if (!year || !month || !day) {
+    throw new Error(`Invalid date: ${dateStr}`);
+  }
+
+  const utcMillis =
+    Date.UTC(
+      year,
+      month - 1,
+      day,
+      isEnd ? 23 : 0,
+      isEnd ? 59 : 0,
+      isEnd ? 59 : 0,
+      isEnd ? 999 : 0,
+    ) - IST_OFFSET_MINUTES * 60 * 1000;
+
+  return new Date(utcMillis);
 }
 
 
@@ -112,8 +136,8 @@ async function getLandingPageSessions(from, to) {
  */
 async function getMongoEventCount(from, to, eventType) {
   try {
-    const startDate = new Date(`${from}T00:00:00.000Z`);
-    const endDate = new Date(`${to}T23:59:59.999Z`);
+    const startDate = toUtcDateFromIstDay(from);
+    const endDate = toUtcDateFromIstDay(to, true);
 
     const client = await getMongoClient();
     const db = client.db('alerts'); 
@@ -123,7 +147,7 @@ async function getMongoEventCount(from, to, eventType) {
     const pipeline = [
       {
         $match: {
-          createdAt: { $gte: startDate, $lt: endDate },
+          createdAt: { $gte: startDate, $lte: endDate },
           event_type: { $in: [eventType] }
         }
       },
@@ -160,15 +184,15 @@ async function getMongoEventCount(from, to, eventType) {
  */
 async function getMongoCollectionCount(from, to, collectionName) {
   try {
-    const startDate = new Date(`${from}T00:00:00.000Z`);
-    const endDate = new Date(`${to}T23:59:59.999Z`);
+    const startDate = toUtcDateFromIstDay(from);
+    const endDate = toUtcDateFromIstDay(to, true);
 
     const client = await getMongoClient();
     const db = client.db('alerts'); 
     const collection = db.collection(collectionName);
 
     const count = await collection.countDocuments({
-      createdAt: { $gte: startDate, $lt: endDate }
+      createdAt: { $gte: startDate, $lte: endDate }
     });
 
     return { success: true, count };
@@ -184,5 +208,4 @@ module.exports = {
   getMongoEventCount,
   getMongoCollectionCount
 };
-
 
