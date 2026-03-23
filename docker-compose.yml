@@ -118,4 +118,5 @@ services:
 
 networks:
   saas-net:
+    name: saas-net-main
     driver: bridge
