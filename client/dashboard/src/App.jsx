@@ -20,6 +20,9 @@ import {
   Divider,
   Alert,
   Skeleton,
+  FormControl,
+  Select,
+  MenuItem,
   useTheme,
   useMediaQuery,
 } from "@mui/material";
@@ -279,6 +282,12 @@ export default function App() {
 
   // Track navigation direction for transitions
   const [direction, setDirection] = useState(0);
+
+  // RS Campaign Filter State
+  const [rsCity, setRsCity] = useState("All");
+  const [rsUtm, setRsUtm] = useState("All");
+  const [rsCityOptions, setRsCityOptions] = useState(["All"]);
+  const [rsUtmOptions, setRsUtmOptions] = useState(["All"]);
 
   // Animation variants for page content
   const pageVariants = {
@@ -2260,7 +2269,47 @@ export default function App() {
                         }}
                         utmOptions={utmOptions}
                         onDownload={handleDownloadSnapshot}
-                      />
+                      >
+                        {authorTab === "ranveer-rs" && (
+                          <Box sx={{ display: "flex", gap: 1, px: 1, alignItems: 'center' }}>
+                            <FormControl size="small" variant="standard" sx={{ minWidth: 100 }}>
+                              <Select
+                                value={rsCity}
+                                onChange={(e) => setRsCity(e.target.value)}
+                                disableUnderline
+                                sx={{ fontSize: '0.8rem' }}
+                                renderValue={(selected) => (
+                                  <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                                    <Typography sx={{ color: 'text.secondary', fontWeight: 500, fontSize: '0.75rem' }}>City:</Typography>
+                                    <Typography sx={{ fontWeight: 700, fontSize: '0.75rem', color: 'primary.main' }}>{selected}</Typography>
+                                  </Box>
+                                )}
+                                MenuProps={{ PaperProps: { sx: { maxHeight: 300, borderRadius: '12px', mt: 1 } } }}
+                              >
+                                {rsCityOptions.map(c => <MenuItem key={c} value={c} sx={{ fontSize: '0.8rem' }}>{c}</MenuItem>)}
+                              </Select>
+                            </FormControl>
+                            <Divider orientation="vertical" flexItem sx={{ my: 1, height: 20 }} />
+                            <FormControl size="small" variant="standard" sx={{ minWidth: 120 }}>
+                              <Select
+                                value={rsUtm}
+                                onChange={(e) => setRsUtm(e.target.value)}
+                                disableUnderline
+                                sx={{ fontSize: '0.8rem' }}
+                                renderValue={(selected) => (
+                                  <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                                    <Typography sx={{ color: 'text.secondary', fontWeight: 500, fontSize: '0.75rem' }}>UTM:</Typography>
+                                    <Typography sx={{ fontWeight: 700, fontSize: '0.75rem', color: 'primary.main' }}>{selected}</Typography>
+                                  </Box>
+                                )}
+                                MenuProps={{ PaperProps: { sx: { maxHeight: 300, borderRadius: '12px', mt: 1 } } }}
+                              >
+                                {rsUtmOptions.map(u => <MenuItem key={u} value={u} sx={{ fontSize: '0.8rem' }}>{u}</MenuItem>)}
+                              </Select>
+                            </FormControl>
+                          </Box>
+                        )}
+                      </UnifiedFilterBar>
                     </Box>
                   )}
 
@@ -2739,7 +2788,15 @@ export default function App() {
 
                     {canAccessRanveerRs && authorTab === "ranveer-rs" && (
                       <Suspense fallback={<SectionFallback count={2} height={220} />}>
-                        <RanveerRSDashboard dateRange={normalizedRange} />
+                        <RanveerRSDashboard 
+                          dateRange={normalizedRange} 
+                          selectedCity={rsCity}
+                          setSelectedCity={setRsCity}
+                          selectedUtm={rsUtm}
+                          setSelectedUtm={setRsUtm}
+                          setCityOptions={setRsCityOptions}
+                          setUtmOptions={setRsUtmOptions}
+                        />
 
                       </Suspense>
                     )}

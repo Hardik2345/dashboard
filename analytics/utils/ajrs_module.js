@@ -43,6 +43,40 @@ function toUtcDateFromIstDay(dateStr, isEnd = false) {
 
 
 /**
+ * Saves QR scan data to MongoDB.
+ * @param {Array} scans - Array of QR scan objects.
+ */
+async function saveQrScans(scans) {
+  if (!Array.isArray(scans) || scans.length === 0) return;
+
+  try {
+    const client = await getMongoClient();
+    const db = client.db('alerts'); 
+    const collection = db.collection('qr_scans');
+
+    // Prepare bulk operations for upserting
+    const operations = scans.map((scan) => {
+      // Use scanUrl and date as unique identifiers
+      return {
+        updateOne: {
+          filter: { scanUrl: scan.scanUrl, date: scan.date },
+          update: { $set: { ...scan, stored_at: new Date() } },
+          upsert: true
+        }
+      };
+    });
+
+    if (operations.length > 0) {
+      const result = await collection.bulkWrite(operations);
+      logger.info(`[saveQrScans] Bulk write completed: ${result.upsertedCount} upserted, ${result.modifiedCount} modified.`);
+    }
+  } catch (error) {
+    logger.error('Error saving QR scans to MongoDB:', error.message);
+    // Don't throw, we don't want to break the fetch if storage fails
+  }
+}
+
+/**
  * Fetches QR scan data from qrfy.com API.
  * @param {string|number} from - Unix timestamp for start date.
  * @param {string|number} to - Unix timestamp for end date.
@@ -70,6 +104,12 @@ async function getQrScans(from, to) {
     });
 
     if (response.status === 200 && Array.isArray(response.data)) {
+      // --- Save to MongoDB as a side effect ---
+      // We don't await this to avoid blocking the API response
+      saveQrScans(response.data).catch(err => {
+        logger.error('[getQrScans] Background save failed:', err.message);
+      });
+
       return {
         count: response.data.length,
         data: response.data
@@ -204,8 +244,10 @@ async function getMongoCollectionCount(from, to, collectionName) {
 
 module.exports = {
   getQrScans,
+  saveQrScans,
   getLandingPageSessions,
   getMongoEventCount,
   getMongoCollectionCount
 };
+
 

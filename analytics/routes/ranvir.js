@@ -13,7 +13,7 @@ function buildRanvirRouter() {
 
     try {
       const result = await getQrScans(from, to);
-      res.json({ success: true, count: result.count });
+      res.json({ success: true, count: result.count, data: result.data });
     } catch (error) { 
       res.status(500).json({ error: error.message, stack: error.stack });
     }
