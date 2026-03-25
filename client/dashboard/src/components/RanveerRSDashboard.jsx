@@ -1,25 +1,25 @@
 import { useMemo, useState, useEffect } from "react";
-import { getQrScans, getLandingPageSessions, getMongoEventCount, getMongoCollectionCount } from "../lib/api.js";
-
-
+import { getQrScans, getLandingPageSessions, getMongoCollectionCount } from "../lib/api.js";
 
 
 import Grid from "@mui/material/Grid2";
 import {
-
   Box,
   Card,
   CardContent,
-  Chip,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   Typography,
+  Alert,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   LabelList,
   ResponsiveContainer,
   Tooltip,
@@ -27,9 +27,6 @@ import {
   YAxis,
 } from "recharts";
 import KPIStat from "./KPIStat.jsx";
-
-
-
 
 const tooltipFormatter = (value, _name, payload) => {
   const pct = payload?.payload?.percent;
@@ -62,9 +59,17 @@ const toUnixTimestampInIst = (dateValue, isEnd = false) => {
   return Math.floor(utcMillis / 1000);
 };
 
-
-export default function RanveerRSDashboard({ dateRange }) {
+export default function RanveerRSDashboard({ 
+  dateRange, 
+  selectedCity = "All", 
+  setSelectedCity, 
+  selectedUtm = "All", 
+  setSelectedUtm, 
+  setCityOptions, 
+  setUtmOptions 
+}) {
   const [loading, setLoading] = useState(false);
+  const [allScans, setAllScans] = useState([]);
   const [qrScansCount, setQrScansCount] = useState(null);
   const [landingPageSessions, setLandingPageSessions] = useState(null);
   const [addToCartCount, setAddToCartCount] = useState(null);
@@ -139,15 +144,29 @@ export default function RanveerRSDashboard({ dateRange }) {
           getMongoCollectionCount(fromStr, toStr, 'ajrsPurchase')
         ]);
 
-
-
         if (cancelled) return;
 
         let hasError = false;
-        if (!qrRes.error && qrRes.data?.success) {
-          setQrScansCount(qrRes.data.count);
+        if (!qrRes.error && Array.isArray(qrRes.data?.data)) {
+          // Process scans to include utm_source
+          const scansWithUtm = qrRes.data.data.map(scan => {
+            let utm = "None";
+            try {
+              if (scan.destinationUrl) {
+                const url = new URL(scan.destinationUrl);
+                utm = url.searchParams.get("utm_source") || "None";
+              }
+            } catch (e) {
+              console.warn("Invalid destination URL:", scan.destinationUrl);
+            }
+            return { ...scan, utm_source: utm };
+          });
+          setAllScans(scansWithUtm);
+          setQrScansCount(scansWithUtm.length);
         } else {
           hasError = true;
+          setAllScans([]);
+          setQrScansCount(0);
         }
 
         if (!lpRes.error && lpRes.data?.success) {
@@ -169,8 +188,6 @@ export default function RanveerRSDashboard({ dateRange }) {
           hasError = true;
         }
 
-
-
         if (hasError) {
           // Optional: handle partial error or show message
         }
@@ -182,15 +199,56 @@ export default function RanveerRSDashboard({ dateRange }) {
     };
 
     loadData();
+    // Reset filters when date range changes
+    setSelectedCity("All");
+    setSelectedUtm("All");
     return () => { cancelled = true; };
   }, [startStr, endStr]);
 
+  // Derive Filter Options and pass them to App.jsx
+  useEffect(() => {
+    const cities = new Set(allScans.map(s => s.city).filter(Boolean));
+    const cityList = ["All", ...Array.from(cities).sort()];
+    if (setCityOptions) setCityOptions(cityList);
+
+    let filteredForUtm = allScans;
+    if (selectedCity !== "All") {
+      filteredForUtm = allScans.filter(s => s.city === selectedCity);
+    }
+    const sources = new Set(filteredForUtm.map(s => s.utm_source).filter(Boolean));
+    const utmList = ["All", ...Array.from(sources).sort()];
+    if (setUtmOptions) setUtmOptions(utmList);
+  }, [allScans, selectedCity, setCityOptions, setUtmOptions]);
+
+  // Reset UTM source if it's no longer available for the selected city
+  useEffect(() => {
+    const cities = new Set(allScans.map(s => s.city).filter(Boolean));
+    let filteredForUtm = allScans;
+    if (selectedCity !== "All") {
+      filteredForUtm = allScans.filter(s => s.city === selectedCity);
+    }
+    const sources = new Set(filteredForUtm.map(s => s.utm_source).filter(Boolean));
+    const utmList = ["All", ...Array.from(sources).sort()];
+    
+    if (selectedUtm !== "All" && !utmList.includes(selectedUtm)) {
+      setSelectedUtm("All");
+    }
+  }, [allScans, selectedCity, selectedUtm, setSelectedUtm]);
+
+  const filteredQrScans = useMemo(() => {
+    return allScans.filter(scan => {
+      const matchCity = selectedCity === "All" || scan.city === selectedCity;
+      const matchUtm = selectedUtm === "All" || scan.utm_source === selectedUtm;
+      return matchCity && matchUtm;
+    });
+  }, [allScans, selectedCity, selectedUtm]);
+
   const liveFunnelData = useMemo(() => {
-    const qrVal = qrScansCount !== null ? qrScansCount : FUNNEL_DATA[0].value;
+    const qrVal = filteredQrScans.length;
     
     return FUNNEL_DATA.map((item) => {
       let val = item.value;
-      if (item.id === "qr-scans" && qrScansCount !== null) val = qrScansCount;
+      if (item.id === "qr-scans") val = qrVal;
       if (item.id === "otp-landing-page" && landingPageSessions !== null) val = landingPageSessions;
       if (item.id === "otp-verified" && otpVerifiedCount !== null) val = otpVerifiedCount;
       if (item.id === "add-to-cart" && addToCartCount !== null) val = addToCartCount;
@@ -203,12 +261,7 @@ export default function RanveerRSDashboard({ dateRange }) {
         percent: Math.round(percent)
       };
     });
-  }, [qrScansCount, landingPageSessions, addToCartCount, otpVerifiedCount, purchaseCount, FUNNEL_DATA]);
-
-
-
-
-
+  }, [filteredQrScans.length, landingPageSessions, addToCartCount, otpVerifiedCount, purchaseCount, FUNNEL_DATA]);
 
   const chartData = useMemo(
     () =>
@@ -219,19 +272,30 @@ export default function RanveerRSDashboard({ dateRange }) {
     [liveFunnelData],
   );
 
-
   return (
     <Stack spacing={{ xs: 2, md: 3 }}>
-
+      { (selectedCity !== "All" || selectedUtm !== "All") && (
+        <Alert 
+          severity="info" 
+          variant="outlined"
+          sx={{ 
+            borderRadius: '12px', 
+            bgcolor: theme.palette.mode === 'dark' ? 'rgba(2, 136, 209, 0.05)' : 'rgba(2, 136, 209, 0.02)',
+            borderColor: 'rgba(2, 136, 209, 0.3)',
+            '& .MuiAlert-message': { fontSize: '0.85rem', fontWeight: 500 }
+          }}
+        >
+          Note: Filtering currently applies to QR Scans and conversion percentages only. Funnel stage counts (OTP, ATC, etc.) represent aggregate data.
+        </Alert>
+      )}
 
       <Grid container spacing={2}>
         {liveFunnelData.map((item) => (
           <Grid key={item.id} size={{ xs: 12, sm: 6, lg: 12 / 5 }}>
-
             <KPIStat
               label={item.label}
               value={item.value}
-              loading={(item.id === "qr-scans" || item.id === "otp-landing-page" || item.id === "otp-verified" || item.id === "add-to-cart" || item.id === "purchase") && loading}
+              loading={loading}
               formatter={(value) => value.toLocaleString("en-IN")}
               hint={`${item.percent}% of QR scans`}
               centerOnMobile
@@ -249,11 +313,7 @@ export default function RanveerRSDashboard({ dateRange }) {
                   display: { xs: "none", md: "flex" },
                 },
               }}
-
             />
-
-
-
           </Grid>
         ))}
       </Grid>
@@ -293,7 +353,6 @@ export default function RanveerRSDashboard({ dateRange }) {
                   interval={0}
                   angle={0}
                   height={30}
-
                   tick={{ fill: theme.palette.text.primary, fontSize: 12 }}
                 />
                 <YAxis
@@ -313,7 +372,6 @@ export default function RanveerRSDashboard({ dateRange }) {
                   }}
                 />
                 <Bar dataKey="value" fill="#10b981" radius={[10, 10, 0, 0]} maxBarSize={90}>
-
                   <LabelList
                     dataKey="percentLabel"
                     position="top"
@@ -323,9 +381,7 @@ export default function RanveerRSDashboard({ dateRange }) {
                       fontWeight: 600,
                     }}
                   />
-                </Bar>
-
-              </BarChart>
+                </Bar></BarChart>
             </ResponsiveContainer>
           </Box>
         </CardContent>
@@ -333,3 +389,4 @@ export default function RanveerRSDashboard({ dateRange }) {
     </Stack>
   );
 }
+

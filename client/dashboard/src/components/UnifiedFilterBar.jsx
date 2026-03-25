@@ -127,6 +127,7 @@ export default function UnifiedFilterBar({
   utmOptions = {}, // Add prop
   onDownload, // Callback for download button
   hideAllExceptDate = false,
+  children,
 }) {
 
   const theme = useTheme();
@@ -424,6 +425,17 @@ export default function UnifiedFilterBar({
           height: 40,
         }}
       >
+        {children}
+        {children && (
+          <Divider
+            orientation="vertical"
+            flexItem
+            sx={{
+              borderColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
+            }}
+          />
+        )}
+
         {/* 1. Filter Icon (Far Left) - Toggles UTM Visibility */}
         {showUtm && (
           <Box sx={{ px: 0.75, display: "flex", alignItems: "center" }}>
