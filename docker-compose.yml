@@ -1,5 +1,5 @@
 version: "3.9"
-#fixed
+
 services:
   api-gateway:
     container_name: api-gateway-main
@@ -100,15 +100,26 @@ services:
     build:
       context: ./analytics
       dockerfile: Dockerfile
+    ports:
+      - "3006:3006"
     env_file:
       - .env
       - ./analytics/.env
     environment:
       PORT: 3006
       NODE_ENV: production
+
+      # 🔥 ADD THIS
+      KAFKA_BROKER: kafka:9092
+      KAFKA_TOPIC: brands-topic
+
     restart: unless-stopped
+
+    # 🔥 CRITICAL: attach to BOTH networks
     networks:
       - saas-net
+      - shared-net
+
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3006/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
       interval: 10s
@@ -120,3 +131,7 @@ networks:
   saas-net:
     name: saas-net-main
     driver: bridge
+
+  # 🔥 ADD THIS
+  shared-net:
+    external: true
