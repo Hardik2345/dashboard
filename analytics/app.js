@@ -448,7 +448,7 @@ if (sessionTrackingEnabled) {
       if (!req.isAuthenticated || !req.isAuthenticated()) return next();
       const user = req.user || {};
       if (user.isAuthor || !user.brandKey) return next();
-      if (req.path === '/activity/heartbeat') return next();
+      if (req.path === '/activity/heartbeat' || req.path.startsWith('/admin/api-keys')) return next();
       const meta = {
         path: (req.originalUrl || '').slice(0, 180),
         method: req.method,
