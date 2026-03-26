@@ -2210,8 +2210,8 @@ export default function App() {
                 <Box
                   sx={{
                     display: "flex",
-                    flexDirection: authorTab === "ranveer-rs" ? "row" : { xs: "column", md: "row" },
-                    alignItems: "center",
+                    flexDirection: { xs: "column", md: "row" },
+                    alignItems: authorTab === "ranveer-rs" ? { xs: "flex-start", md: "center" } : "center",
                     justifyContent: authorTab === "ranveer-rs" ? "space-between" : { xs: "space-between", md: "flex-end" },
                     width: "100%",
                     gap: 1,

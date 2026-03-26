@@ -4667,7 +4667,7 @@ function buildMetricsController() {
                     : [compareStart, compareEnd, productIds],
                 });
                 ordersRows.forEach((r) =>
-                  prevOrdersMap.set(r.product_id, {
+                  prevOrdersMap.set(String(r.product_id), {
                     orders: Number(r.orders || 0),
                     sales: Number(r.sales || 0),
                   }),
@@ -4719,7 +4719,7 @@ function buildMetricsController() {
                   );
                 }
                 sessionsRows.forEach((r) =>
-                  prevSessionsMap.set(r.landing_page_path, {
+                  prevSessionsMap.set(String(r.landing_page_path), {
                     sessions: Number(r.sessions || 0),
                     atc: Number(r.atc || 0),
                   }),
@@ -4728,11 +4728,11 @@ function buildMetricsController() {
 
               // 3. Merge into rows
               rows = rows.map((r) => {
-                const pOrders = prevOrdersMap.get(r.product_id) || {
+                const pOrders = prevOrdersMap.get(String(r.product_id)) || {
                   orders: 0,
                   sales: 0,
                 };
-                const pSessions = prevSessionsMap.get(r.landing_page_path) || {
+                const pSessions = prevSessionsMap.get(String(r.landing_page_path)) || {
                   sessions: 0,
                   atc: 0,
                 };
