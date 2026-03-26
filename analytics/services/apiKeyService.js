@@ -50,7 +50,7 @@ class ApiKeyService {
    * Create a new API key in the database
    * Returns { plainKey, apiKey } where plainKey is the only time it's returned
    */
-  async createApiKey(brandKey, name = '', permissions = [], createdByEmail = '') {
+   async createApiKey(brandKey, name = '', permissions = [], createdByEmail = '', saveToDb = true) {
     const plainKey = this.generateKey();
     const keyHash = await this.hashKey(plainKey);
     const sha256Hash = this.generateSha256Hash(plainKey);
@@ -58,22 +58,39 @@ class ApiKeyService {
     expiresAt.setFullYear(expiresAt.getFullYear() + 1); // 1 year from now
 
     try {
-      const apiKey = await this.ApiKey.create({
-        key_hash: keyHash,
-        sha256_hash: sha256Hash,
-        name,
-        brand_key: brandKey,
-        permissions: Array.isArray(permissions) ? permissions : JSON.stringify(permissions),
-        expires_at: expiresAt,
-        is_active: true,
-        created_by_email: createdByEmail,
-      });
+      if (saveToDb) {
+        const apiKey = await this.ApiKey.create({
+          key_hash: keyHash,
+          sha256_hash: sha256Hash,
+          name,
+          brand_key: brandKey,
+          permissions: Array.isArray(permissions) ? permissions : JSON.stringify(permissions),
+          expires_at: expiresAt,
+          is_active: true,
+          created_by_email: createdByEmail,
+        });
 
-      return {
-        success: true,
-        plainKey, // Return once, user must save
-        apiKey: apiKey.toJSON(),
-      };
+        return {
+          success: true,
+          plainKey, // Return once, user must save
+          apiKey: apiKey.toJSON(),
+        };
+      } else {
+        // Return simulated API key object without saving to DB
+        return {
+          success: true,
+          plainKey,
+          apiKey: {
+            id: 'unsaved',
+            name,
+            brand_key: brandKey,
+            permissions,
+            expires_at: expiresAt,
+            is_active: true,
+            created_at: new Date(),
+          },
+        };
+      }
     } catch (err) {
       return {
         success: false,

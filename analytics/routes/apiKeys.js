@@ -63,7 +63,8 @@ function buildApiKeysRouter(sequelize) {
         brand_key,
         name || '',
         permissions || [],
-        userEmail
+        userEmail,
+        false // saveToDb = false
       );
 
       if (!result.success) {
