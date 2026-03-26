@@ -28,6 +28,7 @@ const { buildApiKeysRouter } = require('./routes/apiKeys');
 const { buildShopifyRouter } = require('./routes/shopify');
 const { buildNotificationsRouter } = require('./routes/notifications'); // [NEW]
 const { buildRanvirRouter } = require('./routes/ranvir'); // [NEW]
+const kafkaService = require('./lib/kafka');
 
 
 
@@ -515,11 +516,27 @@ async function init() {
     }
   }
   const port = process.env.PORT || 3000;
+  const { initSocket, emitKafkaMessage } = require('./utils/socket');
+  
   const server = app.listen(port, () => {
     logger.info(`Metrics API running on :${port}`);
+    
+    // Initialize Socket.io
+    initSocket(server);
+
     // Load dynamic brand IDs from tenant-router asynchronously to non-block healthcare healthchecks startup
     require('./config/brands').fetchBrandIds().catch(err => {
       logger.warn('Failed to load dynamic brand IDs on startup', { error: err.message });
+    });
+
+    // Initialize Kafka Consumer
+    kafkaService.startConsumer(async ({ key, value, topic, partition }) => {
+      logger.info('Kafka message received in app.js', { key, value });
+      
+      // Emit message to connected clients via WebSocket
+      emitKafkaMessage({ key, value, topic, partition, timestamp: new Date().toISOString() });
+    }).catch(err => {
+      logger.error('Failed to start Kafka consumer on startup', { error: err.message });
     });
   });
   return server;

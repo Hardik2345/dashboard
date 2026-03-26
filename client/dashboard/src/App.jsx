@@ -31,6 +31,7 @@ import Header from "./components/Header.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import SidebarToggle from "./components/ui/SidebarToggle.jsx";
 import { AnimeNavBar } from "./components/ui/AnimeNavBar.jsx";
+import KafkaNotification from "./components/KafkaNotification.jsx";
 import {
   LayoutGrid,
   Table2,
@@ -2079,6 +2080,7 @@ export default function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
+      <KafkaNotification />
       <AppProvider
         i18n={enTranslations}
         theme={{ colorScheme: darkMode === "dark" ? "dark" : "light" }}
