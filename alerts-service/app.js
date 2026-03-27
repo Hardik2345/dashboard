@@ -18,6 +18,7 @@ const AlertChannel = require("./models/alertChannel");
 const BrandAlertChannel = require("./models/brandAlertChannel");
 const OtpVerified = require("./models/otpVerified");
 const AjrsPurchase = require("./models/ajrsPurchase");
+const ItemQtyPush = require("./models/itemQtyPush");
 const { sendToAll } = require("./utils/fcm");
 
 
@@ -119,6 +120,27 @@ app.post("/push/receive", async (req, res) => {
     }
 
     const payload = { ...req.body };
+
+    // --- Detect Item Quantity Push ---
+    if (payload.product_id && payload.current_quantity !== undefined) {
+      const itemQtyEvent = new ItemQtyPush(payload);
+      await itemQtyEvent.save();
+
+      const subject = `🚨Inventory update: **${payload.product_title}** | ${payload.previous_quantity} -> ${payload.current_quantity}`;
+      const description = `**${payload.product_title} (${payload.variant_title})** stock dropped from ${payload.previous_quantity} to ${payload.current_quantity} units`;
+
+      sendToAll(mongoose.connection, subject, description, {
+        brand: payload.brand || "System",
+      }).catch((err) =>
+        logger.error("[push/receive] FCM sendToAll error (ItemQtyPush):", err.message)
+      );
+
+      return res.json({
+        message: "Item quantity push notification received and stored successfully",
+        data: payload,
+      });
+    }
+
     const evt = payload.event || {};
 
     // --- Performance Alert Guard (Comment out to restore) ---
@@ -244,7 +266,7 @@ app.get("/push/notifications", async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 50;
     const skip = parseInt(req.query.skip, 10) || 0;
 
-    const notifications = await mongoose.connection
+    const pushNotifs = await mongoose.connection
       .collection("pushnotifications")
       .find({})
       .sort({ stored_at: -1 })
@@ -252,10 +274,50 @@ app.get("/push/notifications", async (req, res) => {
       .limit(limit)
       .toArray();
 
+    const itemQtyNotifs = await mongoose.connection
+      .collection("item_qty_push")
+      .find({})
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    const formattedItemQty = itemQtyNotifs.map((reqPush) => {
+      const diff = (reqPush.previous_quantity || 0) - (reqPush.current_quantity || 0);
+      const pct = reqPush.previous_quantity ? (diff / reqPush.previous_quantity) * 100 : 0;
+      return {
+        _id: reqPush._id,
+        stored_at: reqPush.createdAt,
+        read: reqPush.read || false,
+        is_item_qty_push: true,
+        event: {
+          metric: reqPush.variant_title || "Quantity",
+          delta_percent: -pct, // negative for drop
+          threshold_type: "drop",
+          direction: "drop",
+          condition: `Stock dropped to ${reqPush.current_quantity}`,
+          current_state: "CRITICAL",
+          brand: reqPush.product_title || "Inventory",
+          current_value: reqPush.current_quantity,
+          previous_quantity: reqPush.previous_quantity,
+        },
+      };
+    });
+
+    let combined = [...pushNotifs, ...formattedItemQty];
+    combined.sort((a, b) => new Date(b.stored_at) - new Date(a.stored_at));
+    const notifications = combined.slice(0, limit);
+
     // Also get unread count
-    const unreadCount = await mongoose.connection
+    const unreadPushNotifs = await mongoose.connection
       .collection("pushnotifications")
       .countDocuments({ read: false });
+
+    const unreadItemQty = await mongoose.connection
+      .collection("item_qty_push")
+      .countDocuments({ read: false });
+
+    const unreadCount = unreadPushNotifs + unreadItemQty;
 
     res.json({ notifications, unreadCount });
   } catch (err) {
@@ -280,9 +342,14 @@ app.put("/push/notifications/read", async (req, res) => {
       query = { _id: { $in: objectIds } };
     }
 
-    await mongoose.connection
-      .collection("pushnotifications")
-      .updateMany(query, { $set: { read: true } });
+    await Promise.all([
+      mongoose.connection
+        .collection("pushnotifications")
+        .updateMany(query, { $set: { read: true } }),
+      mongoose.connection
+        .collection("item_qty_push")
+        .updateMany(query, { $set: { read: true } }),
+    ]);
     res.json({ message: "Notifications marked as read" });
   } catch (err) {
     logger.error("Error marking notifications as read:", err);
