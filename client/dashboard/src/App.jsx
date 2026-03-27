@@ -47,11 +47,15 @@ const MOBILE_NAV_ITEMS = [
   { id: "product-conversion", label: "Funnels", icon: Filter },
   { id: "ranveer-rs", label: "RS Campaign", icon: ({ className }) => <span className={className} style={{ fontWeight: 800, fontSize: "0.85rem" }}>RS</span> },
   { id: "alerts", label: "Alerts", icon: Bell },
+  { id: "tenant-setup", label: "Tenant Setup", icon: Store },
   //  { id: "notifications-log", label: "Logs", icon: Bell },
   { id: "access", label: "Access", icon: ShieldCheck },
   { id: "traffic-split-config", label: "Traffic Config", icon: Table2 },
   //  { id: 'brands', label: 'Setup', icon: Store },
 ];
+const TenantSetupForm = lazy(() => import("./components/TenantSetupForm.jsx"));
+const LogsPanel = lazy(() => import("./components/LogsPanel.jsx"));
+
 import {
   listAuthorBrands,
   getTopProducts,
@@ -2322,6 +2326,7 @@ export default function App() {
                     authorTab !== "alerts" &&
                     authorTab !== "access" &&
                     authorTab !== "notifications-log" &&
+                    authorTab !== "tenant-setup" &&
                     (isAuthor || showMultipleBrands) && (
                       <Box sx={{ mb: 1 }}>
                         <AuthorBrandSelector
@@ -2443,6 +2448,24 @@ export default function App() {
                         style={{ width: "100%", height: "100%" }}
                       >
                         <NotificationsLog darkMode={darkMode === "dark"} />
+                      </motion.div>
+                    )}
+                    {authorTab === "tenant-setup" && (
+                      <motion.div
+                        key="tenant-setup"
+                        custom={direction}
+                        variants={pageVariants}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        style={{ width: "100%" }}
+                      >
+                        <Suspense fallback={<SectionFallback count={1} />}>
+                          <Stack spacing={2}>
+                            <TenantSetupForm onOnboard={(data) => console.log("Onboard:", data)} />
+                            <LogsPanel />
+                          </Stack>
+                        </Suspense>
                       </motion.div>
                     )}
                     {authorTab === "dashboard" &&
