@@ -75,11 +75,11 @@ const NAV_ITEMS = [
       { id: "access", label: "Access Control", icon: ShieldCheck },
       {
         id: "traffic-split-config",
-        label: "Traffic Split Config",
+        label: "Configurations",
         icon: SlidersHorizontal,
       },
+      { id: "tenant-setup", label: "Tenant Setup", icon: Store },
       //      { id: 'notifications-log', label: 'Notifications/Alerts', icon: Bell },
-      //      { id: 'brands', label: 'Brand Setup', icon: Store },
     ],
   },
 ];
