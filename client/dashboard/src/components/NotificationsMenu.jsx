@@ -11,6 +11,7 @@ import {
   Divider,
   Avatar,
   useTheme,
+  Tooltip,
 } from "@mui/material";
 import {
   Bell,
@@ -254,6 +255,111 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                 handleClose();
                 */
               };
+
+              if (notif.is_item_qty_push) {
+                const prevQty = evt.previous_quantity || 0;
+                const currQty = evt.current_value || 0;
+                const prodTitle = evt.brand || "Item";
+                const varTitle = evt.metric || "Variant";
+
+                return (
+                  <div key={notif._id || index}>
+                    <ListItem
+                      onClick={handleItemClick}
+                      sx={{
+                        px: 2,
+                        py: 1.5,
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 2,
+                        bgcolor: notif.read
+                          ? "transparent"
+                          : darkMode
+                            ? "rgba(255,255,255,0.03)"
+                            : "rgba(0,0,0,0.02)",
+                        transition: "background-color 0.2s",
+                      }}
+                    >
+                      <Avatar
+                        sx={{
+                          bgcolor: darkMode ? "rgba(239, 68, 68, 0.1)" : "rgba(239, 68, 68, 0.05)",
+                          color: "#ef4444",
+                          width: 40,
+                          height: 40,
+                          borderRadius: "10px",
+                        }}
+                      >
+                        <AlertCircle size={20} />
+                      </Avatar>
+
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            mb: 0.5,
+                          }}
+                        >
+                            <Box 
+                              sx={{ minWidth: 0, flex: 1, overflow: "hidden" }}
+                              title={`🚨Inventory update: ${prodTitle} | ${prevQty} -> ${currQty}`}
+                            >
+                              <Typography
+                                variant="subtitle2"
+                                noWrap
+                                sx={{
+                                  fontWeight: 600,
+                                  color: "text.primary",
+                                  fontSize: "0.85rem",
+                                  cursor: "help",
+                                }}
+                              >
+                                🚨Inventory update: <strong style={{ fontWeight: 800 }}>{prodTitle}</strong> | {prevQty} -{'>'} {currQty}
+                              </Typography>
+                            </Box>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: "text.disabled",
+                              whiteSpace: "nowrap",
+                              ml: 1,
+                            }}
+                          >
+                            {notif.stored_at
+                              ? dayjs(notif.stored_at).fromNow()
+                              : ""}
+                          </Typography>
+                        </Box>
+
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: "text.secondary",
+                            lineHeight: 1.4,
+                            mb: 0.5,
+                            fontSize: "0.825rem",
+                          }}
+                        >
+                          <strong style={{ fontWeight: 800 }}>{prodTitle} ({varTitle})</strong> stock dropped from {prevQty} to {currQty} units
+                        </Typography>
+                      </Box>
+                      {!notif.read && (
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            bgcolor: "primary.main",
+                            mt: 1,
+                          }}
+                        />
+                      )}
+                    </ListItem>
+                    {index < 4 && index < notifications.length - 1 && <Divider />}
+                  </div>
+                );
+              }
 
               return (
                 <div key={notif._id || index}>
