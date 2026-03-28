@@ -8,8 +8,13 @@ import {
   Button,
   Box,
   Grid,
+  Alert,
+  CircularProgress,
+  Snackbar,
 } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
+import { onboardTenant } from "../lib/api";
+
 
 export default function TenantSetupForm({ onOnboard }) {
   const theme = useTheme();
@@ -33,10 +38,46 @@ export default function TenantSetupForm({ onOnboard }) {
   };
 
 
-  const handleSubmit = (e) => {
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState({ type: "", message: "" });
+  const [showSnackbar, setShowSnackbar] = useState(false);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onOnboard?.(form);
+    setLoading(true);
+    setStatus({ type: "", message: "" });
+
+    // Mapping fields
+    const payload = {
+      brand_id: form.tenantId,
+      brand_name: form.tenantName,
+      client_id: form.clientId,
+      client_secret: form.clientSecret,
+      shop_name: form.shopName,
+      code: form.authCode,
+      brand_url: form.shopifyUrl,
+      website_url: form.websiteUrl,
+    };
+
+    try {
+      const res = await onboardTenant(payload);
+      if (res.error) {
+        setStatus({
+          type: "error",
+          message: res.data?.error || "Failed to initiate onboarding.",
+        });
+      } else {
+        setStatus({ type: "success", message: "Onboarding initiated successfully!" });
+        onOnboard?.(form);
+      }
+    } catch (err) {
+      setStatus({ type: "error", message: "An unexpected error occurred." });
+    } finally {
+      setLoading(false);
+      setShowSnackbar(true);
+    }
   };
+
 
   const cardStyle = {
     borderRadius: "16px",
@@ -130,10 +171,20 @@ export default function TenantSetupForm({ onOnboard }) {
               </Grid>
             ))}
             <Grid item xs={12}>
+              {status.message && (
+                <Alert
+                  severity={status.type}
+                  sx={{ mb: 2, borderRadius: "10px" }}
+                  onClose={() => setStatus({ ...status, message: "" })}
+                >
+                  {status.message}
+                </Alert>
+              )}
               <Button
                 type="submit"
                 variant="contained"
                 size="large"
+                disabled={loading}
                 sx={{
                   mt: 1,
                   minWidth: 180,
@@ -148,12 +199,27 @@ export default function TenantSetupForm({ onOnboard }) {
                   }
                 }}
               >
-                Onboard Tenant
+                {loading ? <CircularProgress size={24} color="inherit" /> : "Onboard Tenant"}
               </Button>
             </Grid>
           </Grid>
         </Box>
       </CardContent>
+      <Snackbar
+        open={showSnackbar}
+        autoHideDuration={4000}
+        onClose={() => setShowSnackbar(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      >
+        <Alert
+          onClose={() => setShowSnackbar(false)}
+          severity={status.type || "info"}
+          sx={{ width: "100%", borderRadius: "10px" }}
+        >
+          {status.message}
+        </Alert>
+      </Snackbar>
     </Card>
   );
 }
+
