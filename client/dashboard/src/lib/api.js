@@ -283,6 +283,11 @@ export async function removeWhitelist(id) {
   return doDelete(`/author/access-control/whitelist/${id}`);
 }
 
+export async function onboardTenant(payload) {
+  return doPost("/tenant/onboard", payload);
+}
+
+
 // ---- Admin user management (Access Control) -------------------------------
 export async function adminListUsers() {
   return doGet("/auth/admin/users");

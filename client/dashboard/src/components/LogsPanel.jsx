@@ -1,18 +1,90 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Card, CardContent, Typography, Box, Stack, Divider } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
+import { io } from "socket.io-client";
+
+const SOCKET_URL = "http://localhost:3006"; // Direct connection to analytics-service
 
 
-export default function LogsPanel({ logs = [] }) {
+
+export default function LogsPanel({ logs: externalLogs = [] }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
+  const [internalLogs, setInternalLogs] = useState([]);
+
+  useEffect(() => {
+    const socket = io(SOCKET_URL);
+
+    socket.on("connect", () => {
+      console.log("LogsPanel connected to Kafka WebSocket");
+    });
+
+    socket.on("kafka-message", (data) => {
+      if (data.topic !== "brands-topic") return;
+
+      let value;
+      try {
+        value = typeof data.value === "string" ? JSON.parse(data.value) : data.value;
+      } catch (e) {
+        console.error("Failed to parse Kafka message value", e);
+        return;
+      }
+
+      const state = value.state;
+      const brandName = value.brand_name || "Unknown Brand";
+      
+      let message = "";
+      let type = "info";
+
+      switch (state) {
+        case "initiated":
+          message = `[INIT] Brand onboarding initiated for "${brandName}". Received authorization code from Shopify. Preparing token exchange and tenant provisioning.`;
+          break;
+        case "access_token_generated":
+          message = `[AUTH] Shopify access token successfully generated for "${brandName}". Secure credentials stored and tenant payload initialized. Pipeline configuration prepared for downstream services.`;
+          break;
+        case "database_created":
+          message = `[DB] Dedicated database provisioned successfully for "${brandName}". Schema initialization in progress. System ready for data ingestion setup.`;
+          break;
+        case "speed_key_generated":
+          message = `[PIPELINE] Speed key generated and securely attached to pipeline credentials for brand_id: ${value.brand_id}.`;
+          break;
+        case "tenant_record_created":
+          message = `[TENANT] Tenant record created successfully for "${brandName}". App id mappings configured. Tenant is now registered within routing layer.`;
+          break;
+        case "pipeline_credentials_created":
+          message = `[CONFIG] Pipeline credentials successfully created for brand_id: ${value.brand_id}. All required service configurations are now active. System ready to begin historical data sync.`;
+          break;
+        case "tenant_added":
+          message = `[COMPLETE] Brand onboarding completed successfully for "${brandName}". Historical data backfill finished. Tenant is now live and available on the dashboard.`;
+          type = "success";
+          break;
+        default:
+          return; // Ignore unknown states
+      }
+
+      const newLog = {
+        id: Date.now() + Math.random(),
+        timestamp: new Date().toISOString(),
+        message,
+        type,
+      };
+
+      setInternalLogs((prev) => [newLog, ...prev].slice(0, 50));
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
 
   const dummyLogs = [
-    { id: 1, timestamp: new Date().toISOString(), message: "System initialized.", type: "info" },
+    { id: 1, timestamp: new Date().toISOString(), message: "System initialized. Dashboard ready.", type: "info" },
     { id: 2, timestamp: new Date().toISOString(), message: "Waiting for tenant configuration...", type: "warning" },
   ];
 
-  const displayLogs = logs.length > 0 ? logs : dummyLogs;
+  const displayLogs = internalLogs.length > 0 ? internalLogs : (externalLogs.length > 0 ? externalLogs : dummyLogs);
+
 
   const cardStyle = {
     borderRadius: "16px",

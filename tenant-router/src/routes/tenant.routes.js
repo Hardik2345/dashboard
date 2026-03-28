@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const tenantRouterService = require("../services/tenantRouter.service");
 const cdsService = require("../services/cds.service");
+const kafka = require("../lib/kafka");
+
 
 router.post("/resolve", async (req, res) => {
   const { brand_id } = req.body;
@@ -24,8 +26,48 @@ router.post("/resolve", async (req, res) => {
   res.status(200).json(tenantMetadata);
 });
 
+// Onboard a new brand
+router.post("/onboard", async (req, res) => {
+  const {
+    brand_id,
+    brand_name,
+    client_id,
+    client_secret,
+    shop_name,
+    code,
+    brand_url,
+    website_url,
+  } = req.body;
+
+  // Basic validation
+  if (!brand_id || !brand_name || !client_id || !client_secret || !shop_name || !code || !brand_url || !website_url) {
+    return res.status(400).json({ error: "missing_required_fields" });
+  }
+
+  const message = {
+    brand_id,
+    brand_name,
+    client_id,
+    client_secret,
+    shop_name,
+    code,
+    brand_url,
+    website_url,
+  };
+
+  try {
+    await kafka.publishMessage("brands-topic", brand_id, message);
+    console.log(`[Tenant Router] Published onboarding message for brand ${brand_id}`);
+    res.status(200).json({ status: "initiated", brand_id });
+  } catch (err) {
+    console.error("[Routes] Error publishing onboarding message:", err.stack || err.message);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
 // GET all brands mapped by brand_num
 router.get("/brands", async (req, res) => {
+
   try {
     const tenants = await cdsService.getAllTenants();
     const response = {};
