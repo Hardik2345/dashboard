@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { getQrScans, getLandingPageSessions, getMongoCollectionCount } from "../lib/api.js";
+import { getQrScans, getLandingPageSessions, getMongoCollectionCount, getMongoEventCount } from "../lib/api.js";
 
 
 import Grid from "@mui/material/Grid2";
@@ -137,9 +137,10 @@ export default function RanveerRSDashboard({
         const fromStr = startStr.format ? startStr.format("YYYY-MM-DD") : startStr;
         const toStr = endStr.format ? endStr.format("YYYY-MM-DD") : endStr;
         
-        const [qrRes, lpRes, otpVerifyRes, purchaseRes] = await Promise.all([
+        const [qrRes, lpRes, atcRes, otpVerifyRes, purchaseRes] = await Promise.all([
           getQrScans(fromUnix, toUnix),
           getLandingPageSessions(fromStr, toStr),
+          getMongoEventCount(fromStr, toStr, 'add_to_cart_rs'),
           getMongoCollectionCount(fromStr, toStr, 'ajrs_otpverified'),
           getMongoCollectionCount(fromStr, toStr, 'ajrsPurchase')
         ]);
@@ -171,7 +172,12 @@ export default function RanveerRSDashboard({
 
         if (!lpRes.error && lpRes.data?.success) {
           setLandingPageSessions(lpRes.data.count);
-          setAddToCartCount(lpRes.data.atcCount);
+        } else {
+          hasError = true;
+        }
+
+        if (!atcRes.error && atcRes.data?.success) {
+          setAddToCartCount(atcRes.data.count);
         } else {
           hasError = true;
         }
