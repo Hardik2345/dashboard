@@ -129,23 +129,19 @@ async function getQrScans(from, to) {
 
 /**
  * Fetches landing page sessions from AJMAL database.
- * @param {string|number} from - Unix timestamp for start date.
- * @param {string|number} to - Unix timestamp for end date.
- * @returns {Promise<{ success: boolean, count: number }>}
  */
 async function getLandingPageSessions(from, to) {
   try {
-    // Convert Unix timestamp (seconds) to YYYY-MM-DD
     const fromDate = from;
     const toDate = to;
 
-    logger.info(`Fetching landing page sessions for AJMAL: ${fromDate} to ${toDate}`);
-
+    logger.info(`[getLandingPageSessions] Fetching sessions for AJMAL: ${fromDate} to ${toDate}`);
 
     const db = await getBrandConnection('AJMAL');
     
+    // We only fetch total_sessions here. ATC is now handled via MongoDB.
     const rows = await db.sequelize.query(
-      `SELECT SUM(sessions) as total_sessions, SUM(sessions_with_cart_additions) as total_cart_additions 
+      `SELECT SUM(sessions) as total_sessions 
        FROM mv_product_sessions_by_path_daily 
        WHERE date >= ? AND date <= ? AND landing_page_path = ?`,
       {
@@ -154,12 +150,10 @@ async function getLandingPageSessions(from, to) {
       }
     );
 
-    // SELECT SUM returns rows array with one object usually
     const result = Array.isArray(rows) && rows[0] ? rows[0] : rows;
     const total = result?.total_sessions ? Number(result.total_sessions) : 0;
-    const atc = result?.total_cart_additions ? Number(result.total_cart_additions) : 0;
 
-    return { success: true, count: total, atcCount: atc };
+    return { success: true, count: total };
 
   } catch (error) {
     logger.error('Error fetching landing page sessions from AJMAL DB:', error.message);
@@ -169,10 +163,7 @@ async function getLandingPageSessions(from, to) {
 
 /**
  * Fetches unique cart tokens count from MongoDB sessions collection.
- * @param {string} from - YYYY-MM-DD
- * @param {string} to - YYYY-MM-DD
- * @param {string} eventType - The event_type to match
- * @returns {Promise<{ success: boolean, count: number }>}
+ * Supports multiple timestamp fields (createdAt, stored_at) to avoid missing documents.
  */
 async function getMongoEventCount(from, to, eventType) {
   try {
@@ -183,11 +174,13 @@ async function getMongoEventCount(from, to, eventType) {
     const db = client.db('alerts'); 
     const collection = db.collection('sessions');
 
-
     const pipeline = [
       {
         $match: {
-          createdAt: { $gte: startDate, $lte: endDate },
+          $or: [
+            { createdAt: { $gte: startDate, $lte: endDate } },
+            { stored_at: { $gte: startDate, $lte: endDate } }
+          ],
           event_type: { $in: [eventType] }
         }
       },
@@ -217,10 +210,7 @@ async function getMongoEventCount(from, to, eventType) {
 
 /**
  * Fetches document count from a specific MongoDB collection over dates.
- * @param {string} from - YYYY-MM-DD
- * @param {string} to - YYYY-MM-DD
- * @param {string} collectionName
- * @returns {Promise<{ success: boolean, count: number }>}
+ * Supports multiple timestamp fields (createdAt, stored_at) to avoid missing documents.
  */
 async function getMongoCollectionCount(from, to, collectionName) {
   try {
@@ -231,9 +221,17 @@ async function getMongoCollectionCount(from, to, collectionName) {
     const db = client.db('alerts'); 
     const collection = db.collection(collectionName);
 
-    const count = await collection.countDocuments({
-      createdAt: { $gte: startDate, $lte: endDate }
-    });
+    // Filter to handle multiple possible timestamp fields
+    const query = {
+      $or: [
+        { createdAt: { $gte: startDate, $lte: endDate } },
+        { stored_at: { $gte: startDate, $lte: endDate } },
+        // Fallback for some legacy imports
+        { timestamp: { $gte: startDate, $lte: endDate } }
+      ]
+    };
+
+    const count = await collection.countDocuments(query);
 
     return { success: true, count };
   } catch (error) {
@@ -249,5 +247,6 @@ module.exports = {
   getMongoEventCount,
   getMongoCollectionCount
 };
+
 
 
