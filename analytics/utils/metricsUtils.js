@@ -234,32 +234,13 @@ async function computeReturnCounts({ start, end, conn, filters }) {
       parts.push("rf.event_date <= ?");
       params.push(end);
     }
-    const add = (col, val) => {
-      if (!val) return;
-      const vals = Array.isArray(val)
-        ? val
-        : typeof val === "string" && val.includes(",")
-          ? val.split(",")
-          : [val];
-      if (vals.length === 0) return;
-      if (vals.length === 1) {
-        parts.push(`so.${col} = ?`);
-        params.push(vals[0].trim());
-      } else {
-        parts.push(`so.${col} IN (${vals.map(() => "?").join(", ")})`);
-        params.push(...vals.map((v) => v.trim()));
-      }
-    };
     if (filters) {
-      add("utm_source", filters.utm_source);
-      add("utm_medium", filters.utm_medium);
-      add("utm_campaign", filters.utm_campaign);
-      add("utm_term", filters.utm_term);
-      add("utm_content", filters.utm_content);
-      add("order_app_name", filters.sales_channel);
-      const dtClause = buildDeviceTypeUserAgentClause(filters.device_type);
-      if (dtClause) {
-        parts.push(`(${dtClause.replace(/user_agent/g, "so.user_agent")})`);
+      const built = buildUtmWhereClause(filters, {
+        deviceColumn: "so.user_agent",
+      });
+      if (built.clause) {
+        parts.push(built.clause);
+        params.push(...built.params);
       }
     }
     const where = parts.length ? `WHERE ${parts.join(" AND ")}` : "";
@@ -302,30 +283,47 @@ async function computeReturnCounts({ start, end, conn, filters }) {
   }
 }
 
-function appendUtmWhere(sql, params, filters, mapDirectToNull = false) {
-  if (!filters) return sql;
+function normalizeFilterValues(val) {
+  if (!val) return [];
+  const vals = Array.isArray(val)
+    ? val
+    : typeof val === "string" && val.includes(",")
+      ? val.split(",")
+      : [val];
+  return vals
+    .map((v) => (typeof v === "string" ? v.trim() : String(v).trim()))
+    .filter(Boolean);
+}
+
+function buildUtmWhereClause(
+  filters,
+  {
+    mapDirectToNull = false,
+    prefixWithAnd = false,
+    deviceColumn = "user_agent",
+  } = {},
+) {
+  if (!filters) {
+    return { clause: "", params: [] };
+  }
+
+  const clauses = [];
+  const params = [];
   const append = (col, val) => {
-    if (!val) return;
-    const vals = Array.isArray(val)
-      ? val
-      : typeof val === "string" && val.includes(",")
-        ? val.split(",")
-        : [val];
-    const cleanVals = vals.map((v) => v.trim()).filter(Boolean);
+    const cleanVals = normalizeFilterValues(val);
     if (cleanVals.length === 0) return;
 
-    // Special handling for 'direct' in snapshot tables (where it is NULL)
     if (mapDirectToNull && col === "utm_source") {
       const hasDirect = cleanVals.some((v) => v.toLowerCase() === "direct");
       const otherVals = cleanVals.filter((v) => v.toLowerCase() !== "direct");
 
       if (hasDirect) {
         if (otherVals.length === 0) {
-          // Only direct
-          sql += ` AND ${col} IS NULL`;
+          clauses.push(`${col} IS NULL`);
         } else {
-          // Mixed
-          sql += ` AND (${col} IN (${otherVals.map(() => "?").join(", ")}) OR ${col} IS NULL)`;
+          clauses.push(
+            `(${col} IN (${otherVals.map(() => "?").join(", ")}) OR ${col} IS NULL)`,
+          );
           params.push(...otherVals);
         }
         return;
@@ -333,25 +331,46 @@ function appendUtmWhere(sql, params, filters, mapDirectToNull = false) {
     }
 
     if (cleanVals.length === 1) {
-      sql += ` AND ${col} = ?`;
+      clauses.push(`${col} = ?`);
       params.push(cleanVals[0]);
     } else {
-      sql += ` AND ${col} IN (${cleanVals.map(() => "?").join(", ")})`;
+      clauses.push(`${col} IN (${cleanVals.map(() => "?").join(", ")})`);
       params.push(...cleanVals);
     }
   };
+
   append("utm_source", filters.utm_source);
   append("utm_medium", filters.utm_medium);
   append("utm_campaign", filters.utm_campaign);
   append("utm_term", filters.utm_term);
   append("utm_content", filters.utm_content);
   append("order_app_name", filters.sales_channel);
-  // Device type filter on user_agent
-  const dtClause = buildDeviceTypeUserAgentClause(filters.device_type);
+
+  const dtClause = buildDeviceTypeUserAgentClause(
+    filters.device_type,
+    deviceColumn,
+  );
   if (dtClause) {
-    sql += ` AND (${dtClause})`;
+    clauses.push(`(${dtClause})`);
   }
-  return sql;
+
+  if (clauses.length === 0) {
+    return { clause: "", params };
+  }
+
+  return {
+    clause: `${prefixWithAnd ? " AND " : ""}${clauses.join(" AND ")}`,
+    params,
+  };
+}
+
+function appendUtmWhere(sql, params, filters, mapDirectToNull = false) {
+  const built = buildUtmWhereClause(filters, {
+    mapDirectToNull,
+    prefixWithAnd: true,
+  });
+  params.push(...built.params);
+  return `${sql}${built.clause}`;
 }
 
 async function computeSessionsFromSnapshot({
@@ -371,7 +390,8 @@ async function computeSessionsFromSnapshot({
   const snapParams = [start, end];
 
   // Use shared helper, but exclude sales_channel (order_app_name) as it doesn't exist in snapshot
-  const { sales_channel, ...filtersForSnapshot } = filters || {};
+  const filtersForSnapshot = { ...(filters || {}) };
+  delete filtersForSnapshot.sales_channel;
   // Pass true to map 'direct' -> NULL for snapshot tables
   snapshotSql = appendUtmWhere(
     snapshotSql,
@@ -413,41 +433,11 @@ function buildShopifyOrdersWhere(start, end, filters) {
     params.push(end);
   }
 
-  // Allow multi-select using helper logic, but we need to adapt since this builds parts array
-  // instead of appending to SQL string.
-  // actually we can just build the base string and then use the helper if we change the signature
-  // BUT to keep it compatible let's just do it inline here or adapt helper.
-
-  // Let's just implement the multi-select logic here for parts/params structure
-  const add = (col, val) => {
-    if (!val) return;
-    const vals = Array.isArray(val)
-      ? val
-      : typeof val === "string" && val.includes(",")
-        ? val.split(",")
-        : [val];
-    if (vals.length === 0) return;
-
-    if (vals.length === 1) {
-      parts.push(`${col} = ?`);
-      params.push(vals[0].trim());
-    } else {
-      parts.push(`${col} IN (${vals.map(() => "?").join(", ")})`);
-      params.push(...vals.map((v) => v.trim()));
-    }
-  };
-
   if (filters) {
-    add("utm_source", filters.utm_source);
-    add("utm_medium", filters.utm_medium);
-    add("utm_campaign", filters.utm_campaign);
-    add("utm_term", filters.utm_term);
-    add("utm_content", filters.utm_content);
-    add("order_app_name", filters.sales_channel);
-    // Device type filter on user_agent
-    const dtClause = buildDeviceTypeUserAgentClause(filters.device_type);
-    if (dtClause) {
-      parts.push(`(${dtClause})`);
+    const built = buildUtmWhereClause(filters);
+    if (built.clause) {
+      parts.push(built.clause);
+      params.push(...built.params);
     }
   }
 
@@ -545,7 +535,7 @@ async function cvrForRange({ start, end, conn, filters }) {
  * @param {string|string[]|null} deviceType - e.g. ['Desktop','Mobile'] or 'Desktop'
  * @returns {string|null} SQL snippet like "(user_agent LIKE '%Windows%')" or null
  */
-function buildDeviceTypeUserAgentClause(deviceType) {
+function buildDeviceTypeUserAgentClause(deviceType, column = "user_agent") {
   if (!deviceType) return null;
   const types = Array.isArray(deviceType) ? deviceType : [deviceType];
   if (types.length === 0) return null;
@@ -554,14 +544,14 @@ function buildDeviceTypeUserAgentClause(deviceType) {
   for (const t of types) {
     const lower = (t || "").toString().toLowerCase().trim();
     if (lower === "desktop") {
-      clauses.push("user_agent LIKE '%Windows%'");
+      clauses.push(`${column} LIKE '%Windows%'`);
     } else if (lower === "mobile") {
       clauses.push(
-        "(user_agent LIKE '%Android%' OR user_agent LIKE '%iPhone%')",
+        `(${column} LIKE '%Android%' OR ${column} LIKE '%iPhone%')`,
       );
     } else if (lower === "others") {
       clauses.push(
-        "(user_agent NOT LIKE '%Windows%' AND user_agent NOT LIKE '%Android%' AND user_agent NOT LIKE '%iPhone%')",
+        `(${column} NOT LIKE '%Windows%' AND ${column} NOT LIKE '%Android%' AND ${column} NOT LIKE '%iPhone%')`,
       );
     }
   }
@@ -634,6 +624,7 @@ module.exports = {
   cvrForRange,
   buildShopifyOrdersWhere,
   hasUtmFilters,
+  buildUtmWhereClause,
   appendUtmWhere,
   extractUtmParam,
   buildDeviceTypeUserAgentClause,
