@@ -1,6 +1,7 @@
 const { QueryTypes } = require("sequelize");
 const { shiftDays } = require("../utils/dateUtils");
 const { buildUtmWhereClause } = require("../utils/metricsUtils");
+const { buildWhereClause } = require("../utils/sql");
 const {
   pad2,
   getNowIst,
@@ -8,6 +9,14 @@ const {
   resolveCompareRange,
   buildCompletedHourCutoffContext,
 } = require("./metricsFoundation");
+
+const PAYMENT_TYPE_CASE_SQL = `
+  CASE
+    WHEN payment_gateway_names LIKE '%Gokwik PPCOD%' THEN 'Partial'
+    WHEN payment_gateway_names LIKE '%Cash on Delivery (COD)%' OR payment_gateway_names LIKE '%cash_on_delivery%' OR payment_gateway_names LIKE '%cash_on_delivery%' OR payment_gateway_names IS NULL OR payment_gateway_names = '' THEN 'COD'
+    ELSE 'Prepaid'
+  END
+`;
 
 function formatIstDate(date) {
   return formatUtcDate(date);
@@ -181,11 +190,7 @@ function buildMetricsReportService() {
       SELECT payment_type, SUM(max_price) AS sales
       FROM (
         SELECT 
-          CASE 
-            WHEN payment_gateway_names LIKE '%Gokwik PPCOD%' THEN 'Partial'
-            WHEN payment_gateway_names LIKE '%Cash on Delivery (COD)%' OR payment_gateway_names LIKE '%cash_on_delivery%' OR payment_gateway_names LIKE '%cash_on_delivery%' OR payment_gateway_names IS NULL OR payment_gateway_names = '' THEN 'COD'
-            ELSE 'Prepaid'
-          END AS payment_type,
+          ${PAYMENT_TYPE_CASE_SQL} AS payment_type,
           order_name,
           MAX(total_price) AS max_price
         FROM shopify_orders
@@ -229,6 +234,140 @@ function buildMetricsReportService() {
       prepaid_percent: total > 0 ? (prepaidSales / total) * 100 : 0,
       partial_percent: total > 0 ? (partialSales / total) * 100 : 0,
       sql_used: includeSql ? sql : undefined,
+    };
+  }
+
+  async function getOrderSplit({
+    conn,
+    start,
+    end,
+    hourLte = null,
+    productId = "",
+    filters = {},
+    includeSql = false,
+  }) {
+    const hasScopedFilters = !!(
+      productId ||
+      filters.utm_source ||
+      filters.utm_medium ||
+      filters.utm_campaign ||
+      filters.sales_channel
+    );
+    const useHourlyCutoff = Number.isInteger(hourLte);
+
+    if (productId || hasScopedFilters || useHourlyCutoff) {
+      if (!start && !end) {
+        return {
+          metric: "ORDER_SPLIT",
+          range: { start: null, end: null, product_id: productId || "" },
+          cod_orders: 0,
+          prepaid_orders: 0,
+          partially_paid_orders: 0,
+          total_orders_from_split: 0,
+          cod_percent: 0,
+          prepaid_percent: 0,
+          partially_paid_percent: 0,
+        };
+      }
+
+      const range = buildClosedOpenTimestampRange(start, end, hourLte);
+      let whereSql = `WHERE created_at >= ? AND created_at < ?`;
+      const replacements = [range.startTs, range.endTs];
+      if (productId) {
+        whereSql += ` AND product_id = ?`;
+        replacements.push(productId);
+      }
+      const built = buildUtmWhereClause(filters, { prefixWithAnd: true });
+      whereSql += built.clause;
+      replacements.push(...built.params);
+
+      const sql = `
+        SELECT payment_type, COUNT(DISTINCT order_name) AS cnt
+        FROM (
+          SELECT
+            ${PAYMENT_TYPE_CASE_SQL} AS payment_type,
+            order_name
+          FROM shopify_orders
+          ${whereSql}
+          GROUP BY payment_gateway_names, order_name
+        ) sub
+        GROUP BY payment_type
+      `;
+
+      const rows = await conn.query(sql, {
+        type: QueryTypes.SELECT,
+        replacements,
+      });
+
+      let codOrders = 0;
+      let prepaidOrders = 0;
+      let partiallyPaidOrders = 0;
+      for (const row of rows) {
+        if (row.payment_type === "COD") {
+          codOrders = Number(row.cnt || 0);
+        } else if (row.payment_type === "Prepaid") {
+          prepaidOrders = Number(row.cnt || 0);
+        } else if (row.payment_type === "Partial") {
+          partiallyPaidOrders = Number(row.cnt || 0);
+        }
+      }
+
+      const total = codOrders + prepaidOrders + partiallyPaidOrders;
+      return {
+        metric: "ORDER_SPLIT",
+        range: {
+          start: range.effectiveStart,
+          end: range.effectiveEnd,
+          hour_lte: useHourlyCutoff ? hourLte : null,
+          product_id: productId,
+          ...filters,
+        },
+        cod_orders: codOrders,
+        prepaid_orders: prepaidOrders,
+        partially_paid_orders: partiallyPaidOrders,
+        total_orders_from_split: total,
+        cod_percent: total > 0 ? (codOrders / total) * 100 : 0,
+        prepaid_percent: total > 0 ? (prepaidOrders / total) * 100 : 0,
+        partially_paid_percent:
+          total > 0 ? (partiallyPaidOrders / total) * 100 : 0,
+        sql_used: includeSql ? sql : undefined,
+      };
+    }
+
+    const { where, params } = buildWhereClause(start, end);
+    const sql = `
+      SELECT
+        COALESCE(SUM(cod_orders), 0) AS cod_orders,
+        COALESCE(SUM(prepaid_orders), 0) AS prepaid_orders,
+        COALESCE(SUM(partially_paid_orders), 0) AS partially_paid_orders
+      FROM overall_summary
+      ${where}
+    `;
+    const [row] = await conn.query(sql, {
+      type: QueryTypes.SELECT,
+      replacements: params,
+    });
+
+    const codOrders = Number(row?.cod_orders || 0);
+    const prepaidOrders = Number(row?.prepaid_orders || 0);
+    const partiallyPaidOrders = Number(row?.partially_paid_orders || 0);
+    const total = codOrders + prepaidOrders + partiallyPaidOrders;
+
+    return {
+      metric: "ORDER_SPLIT",
+      range: {
+        start: start || null,
+        end: end || null,
+        hour_lte: useHourlyCutoff ? hourLte : null,
+      },
+      cod_orders: codOrders,
+      prepaid_orders: prepaidOrders,
+      partially_paid_orders: partiallyPaidOrders,
+      total_orders_from_split: total,
+      cod_percent: total > 0 ? (codOrders / total) * 100 : 0,
+      prepaid_percent: total > 0 ? (prepaidOrders / total) * 100 : 0,
+      partially_paid_percent:
+        total > 0 ? (partiallyPaidOrders / total) * 100 : 0,
     };
   }
 
@@ -282,6 +421,7 @@ function buildMetricsReportService() {
   return {
     getTrafficSourceSplit,
     getPaymentSalesSplit,
+    getOrderSplit,
     getHourlySalesCompare,
   };
 }

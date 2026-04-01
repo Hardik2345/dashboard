@@ -96,6 +96,7 @@ describe("metricsCacheService", () => {
     const conn = {
       query: jest.fn().mockResolvedValue([
         {
+          date: "2026-03-30",
           hour: 11,
           total_sales: 90,
           number_of_orders: 3,
@@ -122,5 +123,14 @@ describe("metricsCacheService", () => {
     expect(result.data.today.source).toBe("redis");
     expect(result.data.yesterday.source).toBe("db");
     expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(result.data.yesterday.data).toEqual([
+      {
+        hour: 11,
+        total_sales: 90,
+        number_of_orders: 3,
+        number_of_sessions: 50,
+        number_of_atc_sessions: 10,
+      },
+    ]);
   });
 });

@@ -113,7 +113,7 @@ function buildCompletedHourCutoffContext(start, end, now = new Date()) {
   };
 }
 
-function buildLegacyRowTwoCutoffs(cutoffCtx) {
+function buildRowTwoComparisonCutoffs(cutoffCtx) {
   const currentCutoffHour = cutoffCtx.cutoffHour;
   return {
     currentCutoffHour,
@@ -136,5 +136,5 @@ module.exports = {
   resolveCompareRange,
   buildLiveCutoffContext,
   buildCompletedHourCutoffContext,
-  buildLegacyRowTwoCutoffs,
+  buildRowTwoComparisonCutoffs,
 };

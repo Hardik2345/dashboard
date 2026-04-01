@@ -10,7 +10,7 @@ const {
   resolveCompareRange,
   buildLiveCutoffContext,
   buildCompletedHourCutoffContext,
-  buildLegacyRowTwoCutoffs,
+  buildRowTwoComparisonCutoffs,
 } = require("../../../services/metricsFoundation");
 
 describe("metricsFoundation", () => {
@@ -25,7 +25,7 @@ describe("metricsFoundation", () => {
     expect(parseHourFromCutoff("12:34:56")).toBe(12);
   });
 
-  test("builds live and completed-hour cutoff contexts with legacy row-two cutoffs", () => {
+  test("builds live and completed-hour cutoff contexts with row-two comparison cutoffs", () => {
     const now = new Date("2026-03-31T06:30:15Z");
 
     const live = buildLiveCutoffContext("2026-03-31", "2026-03-31", now);
@@ -47,7 +47,7 @@ describe("metricsFoundation", () => {
       orderCutoffTime: "12:00:15",
       todayIst: "2026-03-31",
     });
-    expect(buildLegacyRowTwoCutoffs(live)).toEqual({
+    expect(buildRowTwoComparisonCutoffs(live)).toEqual({
       currentCutoffHour: 12,
       previousSessionCutoffHour: 11,
       previousOrderCutoffTime: "12:00:00",

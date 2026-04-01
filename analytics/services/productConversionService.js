@@ -40,6 +40,10 @@ const PREVIOUS_HEADER_MAP = {
   cvr: "prev_cvr",
 };
 
+function hasCompareRange(spec) {
+  return !!(spec.compareStart && spec.compareEnd);
+}
+
 function parseJsonArray(value) {
   if (Array.isArray(value)) return value;
   if (typeof value !== "string") return [];
@@ -180,8 +184,8 @@ function buildProductConditions(spec, baseAlias) {
   };
 }
 
-function buildBaseCte() {
-  return `
+function buildBaseCte(spec, includeCompare = false) {
+  const baseSql = `
     WITH orders_60d AS (
       SELECT
         product_id,
@@ -203,9 +207,94 @@ function buildBaseCte() {
       GROUP BY product_id, landing_page_path
     )
   `;
+
+  if (!includeCompare || !hasCompareRange(spec)) {
+    return {
+      sql: baseSql,
+      replacements: [spec.start, spec.end, spec.start, spec.end],
+    };
+  }
+
+  const {
+    currentRangeIncludesToday,
+    orderCutoffTime,
+    cutoffHour,
+  } = buildIstCutoffContext(spec.start, spec.end);
+
+  return {
+    sql: `
+      ${baseSql},
+      previous_orders AS (
+        SELECT
+          product_id,
+          COUNT(DISTINCT order_name) AS orders,
+          SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity) AS sales
+        FROM shopify_orders
+        WHERE created_date >= ? AND created_date <= ?
+          ${currentRangeIncludesToday ? "AND created_time < ?" : ""}
+          AND product_id IS NOT NULL
+        GROUP BY product_id
+      ),
+      previous_sessions AS (
+        SELECT
+          product_id,
+          landing_page_path,
+          SUM(sessions) AS sessions,
+          SUM(sessions_with_cart_additions) AS atc
+        FROM ${
+          currentRangeIncludesToday
+            ? "hourly_product_sessions"
+            : "mv_product_sessions_by_path_daily"
+        }
+        WHERE date >= ? AND date <= ?
+          ${currentRangeIncludesToday ? "AND hour <= ?" : ""}
+        GROUP BY product_id, landing_page_path
+      )
+    `,
+    replacements: currentRangeIncludesToday
+      ? [
+          spec.start,
+          spec.end,
+          spec.start,
+          spec.end,
+          spec.compareStart,
+          spec.compareEnd,
+          orderCutoffTime,
+          spec.compareStart,
+          spec.compareEnd,
+          cutoffHour,
+        ]
+      : [
+          spec.start,
+          spec.end,
+          spec.start,
+          spec.end,
+          spec.compareStart,
+          spec.compareEnd,
+          spec.compareStart,
+          spec.compareEnd,
+        ],
+  };
 }
 
-function buildSelectSql(useMappingBase, whereClause, sortCol, sortDir, pagination) {
+function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pagination) {
+  const includeCompare = hasCompareRange(spec);
+  const base = buildBaseCte(spec, includeCompare);
+  const previousSelect = includeCompare
+    ? `,
+        COALESCE(ps.sessions, 0) AS prev_sessions,
+        COALESCE(ps.atc, 0) AS prev_atc,
+        CASE WHEN ps.sessions > 0 THEN ROUND(ps.atc / ps.sessions * 100, 4) ELSE 0 END AS prev_atc_rate,
+        COALESCE(po.orders, 0) AS prev_orders,
+        COALESCE(po.sales, 0) AS prev_sales,
+        CASE WHEN ps.sessions > 0 THEN ROUND(COALESCE(po.orders, 0) / ps.sessions * 100, 4) ELSE 0 END AS prev_cvr`
+    : "";
+  const previousJoins = includeCompare
+    ? `
+      LEFT JOIN previous_sessions ps ON ${useMappingBase ? "m.landing_page_path" : "s.landing_page_path"} = ps.landing_page_path
+      LEFT JOIN previous_orders po ON ${useMappingBase ? "m.product_id" : "s.product_id"} = po.product_id
+    `
+    : "";
   const selectPrefix = useMappingBase
     ? `
       SELECT
@@ -217,9 +306,11 @@ function buildSelectSql(useMappingBase, whereClause, sortCol, sortDir, paginatio
         COALESCE(o.orders, 0) AS orders,
         COALESCE(o.sales, 0) AS sales,
         CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
+        ${previousSelect}
       FROM product_landing_mapping m
       LEFT JOIN sessions_60d s ON m.landing_page_path = s.landing_page_path
       LEFT JOIN orders_60d o ON m.product_id = o.product_id
+      ${previousJoins}
     `
     : `
       SELECT
@@ -231,22 +322,28 @@ function buildSelectSql(useMappingBase, whereClause, sortCol, sortDir, paginatio
         COALESCE(o.orders, 0) AS orders,
         COALESCE(o.sales, 0) AS sales,
         CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
+        ${previousSelect}
       FROM sessions_60d s
       LEFT JOIN orders_60d o ON s.product_id = o.product_id
+      ${previousJoins}
     `;
   const limitClause = pagination
     ? ` LIMIT ${pagination.pageSize} OFFSET ${(pagination.page - 1) * pagination.pageSize}`
     : "";
-  return `
-    ${buildBaseCte()}
-    ${selectPrefix}
-    ${whereClause}
-    ORDER BY ${sortCol} ${sortDir}
-    ${limitClause}
-  `;
+  return {
+    sql: `
+      ${base.sql}
+      ${selectPrefix}
+      ${whereClause}
+      ORDER BY ${sortCol} ${sortDir}
+      ${limitClause}
+    `,
+    replacements: [...base.replacements],
+  };
 }
 
-function buildCountSql(useMappingBase, whereClause) {
+function buildCountSql(spec, useMappingBase, whereClause) {
+  const base = buildBaseCte(spec, false);
   const fromSql = useMappingBase
     ? `
       FROM product_landing_mapping m
@@ -257,18 +354,21 @@ function buildCountSql(useMappingBase, whereClause) {
       FROM sessions_60d s
       LEFT JOIN orders_60d o ON s.product_id = o.product_id
     `;
-  return `
-    ${buildBaseCte()}
-    SELECT COUNT(*) AS total_count
-    FROM (
-      SELECT 1
-      ${fromSql}
-      ${whereClause}
-    ) AS filtered
-  `;
+  return {
+    sql: `
+      ${base.sql}
+      SELECT COUNT(*) AS total_count
+      FROM (
+        SELECT 1
+        ${fromSql}
+        ${whereClause}
+      ) AS filtered
+    `,
+    replacements: [...base.replacements],
+  };
 }
 
-function normalizeCurrentRows(rows) {
+function normalizeRows(rows, includeCompare = false) {
   return rows.map((row) => ({
     product_id: row.product_id || null,
     landing_page_path: row.landing_page_path || "",
@@ -278,127 +378,25 @@ function normalizeCurrentRows(rows) {
     orders: Number(row.orders || 0),
     sales: Number(row.sales || 0),
     cvr: Number(row.cvr || 0),
-    previous: null,
+    previous: includeCompare
+      ? {
+          sessions: Number(row.prev_sessions || 0),
+          atc: Number(row.prev_atc || 0),
+          atc_rate: Number(row.prev_atc_rate || 0),
+          orders: Number(row.prev_orders || 0),
+          sales: Number(row.prev_sales || 0),
+          cvr: Number(row.prev_cvr || 0),
+        }
+      : null,
   }));
-}
-
-async function attachComparisonRows(conn, rows, spec) {
-  if (!spec.compareStart || !spec.compareEnd || rows.length === 0) {
-    return rows;
-  }
-
-  const productIds = [...new Set(rows.map((row) => row.product_id).filter(Boolean))];
-  const paths = [
-    ...new Set(rows.map((row) => row.landing_page_path).filter(Boolean)),
-  ];
-  const {
-    currentRangeIncludesToday,
-    orderCutoffTime,
-    cutoffHour,
-  } = buildIstCutoffContext(spec.start, spec.end);
-
-  const [orderRows, sessionRows] = await Promise.all([
-    productIds.length > 0
-      ? conn.query(
-          `
-            SELECT
-              product_id,
-              COUNT(DISTINCT order_name) AS orders,
-              SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity) AS sales
-            FROM shopify_orders
-            WHERE created_date >= ? AND created_date <= ?
-              ${currentRangeIncludesToday ? "AND created_time < ?" : ""}
-              AND product_id IN (?)
-            GROUP BY product_id
-          `,
-          {
-            type: QueryTypes.SELECT,
-            replacements: currentRangeIncludesToday
-              ? [spec.compareStart, spec.compareEnd, orderCutoffTime, productIds]
-              : [spec.compareStart, spec.compareEnd, productIds],
-          },
-        )
-      : Promise.resolve([]),
-    paths.length > 0
-      ? conn.query(
-          `
-            SELECT
-              landing_page_path,
-              SUM(sessions) AS sessions,
-              SUM(sessions_with_cart_additions) AS atc
-            FROM ${
-              currentRangeIncludesToday
-                ? "hourly_product_sessions"
-                : "mv_product_sessions_by_path_daily"
-            }
-            WHERE date >= ? AND date <= ?
-              ${currentRangeIncludesToday ? "AND hour <= ?" : ""}
-              AND landing_page_path IN (?)
-            GROUP BY landing_page_path
-          `,
-          {
-            type: QueryTypes.SELECT,
-            replacements: currentRangeIncludesToday
-              ? [spec.compareStart, spec.compareEnd, cutoffHour, paths]
-              : [spec.compareStart, spec.compareEnd, paths],
-          },
-        )
-      : Promise.resolve([]),
-  ]);
-
-  const orderMap = new Map();
-  for (const row of orderRows) {
-    orderMap.set(String(row.product_id), {
-      orders: Number(row.orders || 0),
-      sales: Number(row.sales || 0),
-    });
-  }
-
-  const sessionMap = new Map();
-  for (const row of sessionRows) {
-    sessionMap.set(String(row.landing_page_path), {
-      sessions: Number(row.sessions || 0),
-      atc: Number(row.atc || 0),
-    });
-  }
-
-  return rows.map((row) => {
-    const previousOrders = orderMap.get(String(row.product_id)) || {
-      orders: 0,
-      sales: 0,
-    };
-    const previousSessions = sessionMap.get(String(row.landing_page_path)) || {
-      sessions: 0,
-      atc: 0,
-    };
-    const atcRate =
-      previousSessions.sessions > 0
-        ? (previousSessions.atc / previousSessions.sessions) * 100
-        : 0;
-    const cvr =
-      previousSessions.sessions > 0
-        ? (previousOrders.orders / previousSessions.sessions) * 100
-        : 0;
-
-    return {
-      ...row,
-      previous: {
-        sessions: previousSessions.sessions,
-        atc: previousSessions.atc,
-        atc_rate: atcRate,
-        orders: previousOrders.orders,
-        sales: previousOrders.sales,
-        cvr,
-      },
-    };
-  });
 }
 
 function buildCsvHeaders(visibleColumns, includeCompare) {
   const requestedHeaders =
     Array.isArray(visibleColumns) && visibleColumns.length > 0
       ? CSV_HEADERS.filter(
-          (header) => visibleColumns.includes(header) || header === "landing_page_path",
+          (header) =>
+            visibleColumns.includes(header) || header === "landing_page_path",
         )
       : CSV_HEADERS;
   if (!includeCompare) {
@@ -443,37 +441,36 @@ function buildProductConversionService() {
       Array.isArray(spec.productTypes) && spec.productTypes.length > 0;
     const baseAlias = useMappingBase ? "m" : "s";
     const built = buildProductConditions(spec, baseAlias);
-    const replacements = [spec.start, spec.end, spec.start, spec.end, ...built.replacements];
+    const selectBuilt = buildSelectSql(
+      spec,
+      useMappingBase,
+      built.whereClause,
+      spec.sortCol,
+      spec.sortDir,
+      {
+        page: spec.page,
+        pageSize: spec.pageSize,
+      },
+    );
+    const countBuilt = buildCountSql(spec, useMappingBase, built.whereClause);
 
     const [rowsRaw, countRows] = await Promise.all([
-      spec.conn.query(
-        buildSelectSql(useMappingBase, built.whereClause, spec.sortCol, spec.sortDir, {
-          page: spec.page,
-          pageSize: spec.pageSize,
-        }),
-        {
-          type: QueryTypes.SELECT,
-          replacements,
-        },
-      ),
-      spec.conn.query(buildCountSql(useMappingBase, built.whereClause), {
+      spec.conn.query(selectBuilt.sql, {
         type: QueryTypes.SELECT,
-        replacements,
+        replacements: [...selectBuilt.replacements, ...built.replacements],
+      }),
+      spec.conn.query(countBuilt.sql, {
+        type: QueryTypes.SELECT,
+        replacements: [...countBuilt.replacements, ...built.replacements],
       }),
     ]);
-
-    const rows = await attachComparisonRows(
-      spec.conn,
-      normalizeCurrentRows(rowsRaw),
-      spec,
-    );
 
     return {
       range: { start: spec.start, end: spec.end },
       page: spec.page,
       page_size: spec.pageSize,
       total_count: Number(countRows?.[0]?.total_count || 0),
-      rows,
+      rows: normalizeRows(rowsRaw, hasCompareRange(spec)),
       sort: { by: spec.sortBy, dir: spec.sortDir.toLowerCase() },
     };
   }
@@ -483,30 +480,25 @@ function buildProductConversionService() {
       Array.isArray(spec.productTypes) && spec.productTypes.length > 0;
     const baseAlias = useMappingBase ? "m" : "s";
     const built = buildProductConditions(spec, baseAlias);
-    const replacements = [spec.start, spec.end, spec.start, spec.end, ...built.replacements];
-    const rowsRaw = await spec.conn.query(
-      buildSelectSql(useMappingBase, built.whereClause, spec.sortCol, spec.sortDir),
-      {
-        type: QueryTypes.SELECT,
-        replacements,
-      },
-    );
-
-    const rows = await attachComparisonRows(
-      spec.conn,
-      normalizeCurrentRows(rowsRaw),
+    const selectBuilt = buildSelectSql(
       spec,
+      useMappingBase,
+      built.whereClause,
+      spec.sortCol,
+      spec.sortDir,
     );
-    const headers = buildCsvHeaders(
-      spec.visibleColumns,
-      !!(spec.compareStart && spec.compareEnd),
-    );
+    const rowsRaw = await spec.conn.query(selectBuilt.sql, {
+      type: QueryTypes.SELECT,
+      replacements: [...selectBuilt.replacements, ...built.replacements],
+    });
+
+    const headers = buildCsvHeaders(spec.visibleColumns, hasCompareRange(spec));
     const dateTag =
       spec.start === spec.end ? spec.start : `${spec.start}_to_${spec.end}`;
     return {
       filename: `product_conversion_${dateTag}.csv`,
       headers,
-      csv: buildCsvContent(rows, headers),
+      csv: buildCsvContent(normalizeRows(rowsRaw, hasCompareRange(spec)), headers),
     };
   }
 

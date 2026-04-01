@@ -1,89 +1,13 @@
 const { QueryTypes } = require("sequelize");
+const { formatIsoDate } = require("../utils/dateUtils");
 const {
-  computeFunnelStats,
-  appendUtmWhere,
-} = require("../utils/metricsUtils");
+  queryHourlyProductSessions,
+} = require("./duckdbQueryService");
+const {
+  queryProductKpiTotals,
+} = require("./metricsAggregateService");
 
 function buildMetricsPageService({ cacheService } = {}) {
-  async function getFunnelStats({
-    conn,
-    start,
-    end,
-    productId = "",
-    filters = {},
-  }) {
-    if (!productId) {
-      const stats = await computeFunnelStats({
-        start,
-        end,
-        conn,
-        filters,
-      });
-      return {
-        metric: "FUNNEL_STATS",
-        range: { start: start || null, end: end || null },
-        total_sessions: stats.total_sessions,
-        total_atc_sessions: stats.total_atc_sessions,
-        total_orders: stats.total_orders,
-      };
-    }
-
-    const effectiveStart = start || end;
-    const effectiveEnd = end || start;
-    const rows = await conn.query(
-      `
-        WITH sess AS (
-          SELECT
-            SUM(sessions) AS total_sessions,
-            SUM(sessions_with_cart_additions) AS total_atc_sessions
-          FROM mv_product_sessions_by_path_daily
-          WHERE date >= ? AND date <= ?
-            AND product_id = ?
-        ),
-        ord AS (
-          SELECT
-            COUNT(DISTINCT order_name) AS total_orders
-          FROM shopify_orders
-          WHERE created_date >= ? AND created_date <= ?
-            AND product_id = ?
-        )
-        SELECT
-          COALESCE(sess.total_sessions, 0) AS total_sessions,
-          COALESCE(sess.total_atc_sessions, 0) AS total_atc_sessions,
-          COALESCE(ord.total_orders, 0) AS total_orders
-        FROM sess CROSS JOIN ord
-      `,
-      {
-        type: QueryTypes.SELECT,
-        replacements: [
-          effectiveStart,
-          effectiveEnd,
-          productId,
-          effectiveStart,
-          effectiveEnd,
-          productId,
-        ],
-      },
-    );
-    const result = rows?.[0] || {
-      total_sessions: 0,
-      total_atc_sessions: 0,
-      total_orders: 0,
-    };
-
-    return {
-      metric: "FUNNEL_STATS",
-      range: {
-        start: effectiveStart || null,
-        end: effectiveEnd || null,
-        product_id: productId,
-      },
-      total_sessions: Number(result.total_sessions || 0),
-      total_atc_sessions: Number(result.total_atc_sessions || 0),
-      total_orders: Number(result.total_orders || 0),
-    };
-  }
-
   async function getTopProductPages({
     conn,
     brandKey,
@@ -199,60 +123,16 @@ function buildMetricsPageService({ cacheService } = {}) {
     end,
     filters = {},
   }) {
-    let sessionsSql = `
-      SELECT
-        SUM(sessions) AS total_sessions,
-        SUM(sessions_with_cart_additions) AS total_atc_sessions
-      FROM mv_product_sessions_by_path_daily
-      WHERE date >= ? AND date <= ?
-    `;
-    const sessionReplacements = [start, end];
-
-    if (filters.product_id) {
-      if (Array.isArray(filters.product_id)) {
-        sessionsSql += ` AND product_id IN (?)`;
-        sessionReplacements.push(filters.product_id);
-      } else {
-        sessionsSql += ` AND product_id = ?`;
-        sessionReplacements.push(filters.product_id);
-      }
-    }
-
-    let ordersSql = `
-      SELECT
-        COUNT(DISTINCT order_name) AS total_orders,
-        COALESCE(SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity), 0) AS total_sales
-      FROM shopify_orders
-      WHERE created_date >= ? AND created_date <= ?
-    `;
-    const orderReplacements = [start, end];
-
-    ordersSql = appendUtmWhere(ordersSql, orderReplacements, filters);
-    if (filters.product_id) {
-      if (Array.isArray(filters.product_id)) {
-        ordersSql += ` AND product_id IN (?)`;
-        orderReplacements.push(filters.product_id);
-      } else {
-        ordersSql += ` AND product_id = ?`;
-        orderReplacements.push(filters.product_id);
-      }
-    }
-
-    const [[sessionRow], [orderRow]] = await Promise.all([
-      conn.query(sessionsSql, {
-        type: QueryTypes.SELECT,
-        replacements: sessionReplacements,
-      }),
-      conn.query(ordersSql, {
-        type: QueryTypes.SELECT,
-        replacements: orderReplacements,
-      }),
-    ]);
-
-    const totalSessions = Number(sessionRow?.total_sessions || 0);
-    const totalAtcSessions = Number(sessionRow?.total_atc_sessions || 0);
-    const totalOrders = Number(orderRow?.total_orders || 0);
-    const totalSales = Number(orderRow?.total_sales || 0);
+    const totals = await queryProductKpiTotals({
+      conn,
+      start,
+      end,
+      filters,
+    });
+    const totalSessions = totals.total_sessions;
+    const totalAtcSessions = totals.total_atc_sessions;
+    const totalOrders = totals.total_orders;
+    const totalSales = totals.total_sales;
     const addToCartRate =
       totalSessions > 0 ? totalAtcSessions / totalSessions : 0;
     const cvr = totalSessions > 0 ? totalOrders / totalSessions : 0;
@@ -279,12 +159,114 @@ function buildMetricsPageService({ cacheService } = {}) {
     return cacheService.getHourlySalesSummary({ conn, brandKey, now });
   }
 
+  async function getProductTypes({ conn, date = formatIsoDate(new Date()) }) {
+    const rows = await conn.query(
+      `
+        SELECT DISTINCT product_type
+        FROM product_landing_mapping
+        WHERE product_type IS NOT NULL
+          AND product_type <> ''
+        ORDER BY product_type ASC
+      `,
+      {
+        type: QueryTypes.SELECT,
+      },
+    );
+
+    return {
+      date,
+      types: rows.map((row) => row.product_type),
+    };
+  }
+
+  async function getHourlyProductSessionsExport({
+    conn,
+    brandKey,
+    start,
+    end,
+    filters = {},
+  }) {
+    const startD = new Date(start);
+    const endD = new Date(end);
+    const diffDays = Math.round((endD - startD) / 86400000);
+    if (diffDays > 90) {
+      const error = new Error("Export range cannot exceed 90 days");
+      error.status = 400;
+      throw error;
+    }
+
+    const rows = await queryHourlyProductSessions({
+      brandKey,
+      conn,
+      startDate: start,
+      endDate: end,
+      filters,
+    });
+
+    const headers = [
+      "date",
+      "hour",
+      "landing_page_type",
+      "landing_page_path",
+      "product_id",
+      "product_title",
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_content",
+      "utm_term",
+      "referrer_name",
+      "sessions",
+      "sessions_with_cart_additions",
+    ];
+    const escapeCsv = (value) => {
+      if (value === null || value === undefined) return "";
+      const stringValue = String(value);
+      if (/[",\n]/.test(stringValue)) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    const lines = [headers.join(",")];
+    for (const row of rows) {
+      lines.push(
+        headers
+          .map((header) => {
+            if (header === "date") {
+              const dateValue = row.date;
+              if (dateValue instanceof Date) {
+                return dateValue.toISOString().slice(0, 10);
+              }
+              return escapeCsv(dateValue);
+            }
+            if (
+              header === "hour" ||
+              header === "sessions" ||
+              header === "sessions_with_cart_additions"
+            ) {
+              return Number(row[header] || 0);
+            }
+            return escapeCsv(row[header]);
+          })
+          .join(","),
+      );
+    }
+
+    const dateTag = start === end ? start : `${start}_to_${end}`;
+    return {
+      filename: `hourly_product_sessions_${brandKey || "all"}_${dateTag}.csv`,
+      csv: lines.join("\n"),
+    };
+  }
+
   return {
-    getFunnelStats,
     getTopProductPages,
     getTopProducts,
     getProductKpis,
     getHourlySalesSummary,
+    getProductTypes,
+    getHourlyProductSessionsExport,
   };
 }
 

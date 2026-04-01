@@ -3,6 +3,7 @@
 const mockReportService = {
   getTrafficSourceSplit: jest.fn(),
   getPaymentSalesSplit: jest.fn(),
+  getOrderSplit: jest.fn(),
   getHourlySalesCompare: jest.fn(),
 };
 
@@ -16,25 +17,18 @@ const mockParseHourLte = jest.fn((raw) => ({
 }));
 
 const mockMetricsService = {
-  getRolling30d: jest.fn(),
   getTrend: jest.fn(),
-  getDeltaSummary: jest.fn(),
   getDashboardSummary: jest.fn(),
   getSummaryFilterOptions: jest.fn(),
-  getTotalOrdersDelta: jest.fn(),
-  getTotalSalesDelta: jest.fn(),
-  getTotalSessionsDelta: jest.fn(),
-  getAtcSessionsDelta: jest.fn(),
-  getAovDelta: jest.fn(),
-  getCvrDelta: jest.fn(),
 };
 
 const mockPageService = {
-  getFunnelStats: jest.fn(),
   getTopProductPages: jest.fn(),
   getTopProducts: jest.fn(),
   getProductKpis: jest.fn(),
   getHourlySalesSummary: jest.fn(),
+  getProductTypes: jest.fn(),
+  getHourlyProductSessionsExport: jest.fn(),
 };
 
 jest.mock("../../../services/metricsSnapshotService", () => ({
@@ -204,29 +198,28 @@ describe("metricsController medium handlers", () => {
     });
   });
 
-  test("cvrDelta delegates to snapshot service delta methods", async () => {
-    mockMetricsService.getCvrDelta.mockResolvedValue({
-      metric: "CVR_DELTA",
-      date: "2026-03-31",
-      diff_pct: 10,
+  test("orderSplit delegates to the report service", async () => {
+    mockReportService.getOrderSplit.mockResolvedValue({
+      metric: "ORDER_SPLIT",
+      total_orders_from_split: 35,
     });
     const controller = buildMetricsController();
     const res = createRes();
 
-    await controller.cvrDelta(
+    await controller.orderSplit(
       {
-        query: { start: "2026-03-31", end: "2026-03-31" },
-        brandDb: { sequelize: { query: jest.fn() } },
+        query: { start: "2026-03-10", end: "2026-03-10", hour_lte: "11" },
+        brandDb: { sequelize: {} },
       },
       res,
     );
 
-    expect(mockMetricsService.getCvrDelta).toHaveBeenCalledWith({
-      start: "2026-03-31",
-      end: "2026-03-31",
-      align: "",
-      compare: "",
-      conn: { query: expect.any(Function) },
+    expect(mockReportService.getOrderSplit).toHaveBeenCalledWith({
+      conn: {},
+      start: "2026-03-10",
+      end: "2026-03-10",
+      hourLte: 11,
+      productId: "",
       filters: {
         device_type: null,
         product_id: null,
@@ -237,9 +230,10 @@ describe("metricsController medium handlers", () => {
         utm_source: null,
         utm_term: null,
       },
+      includeSql: true,
     });
     expect(res.statusCode).toBe(200);
-    expect(res.jsonBody.metric).toBe("CVR_DELTA");
+    expect(res.jsonBody.total_orders_from_split).toBe(35);
   });
 
   test("hourlySalesSummary delegates to the page service", async () => {
@@ -270,5 +264,62 @@ describe("metricsController medium handlers", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.jsonBody.source).toBe("mixed");
+  });
+
+  test("productTypes delegates to the page service", async () => {
+    mockPageService.getProductTypes.mockResolvedValue({
+      date: "2026-03-31",
+      types: ["Bundle"],
+    });
+    const controller = buildMetricsController();
+    const res = createRes();
+
+    await controller.productTypes(
+      {
+        query: { date: "2026-03-31" },
+        brandDb: { sequelize: {} },
+      },
+      res,
+    );
+
+    expect(mockPageService.getProductTypes).toHaveBeenCalledWith({
+      conn: {},
+      date: "2026-03-31",
+    });
+    expect(res.jsonBody).toEqual({
+      date: "2026-03-31",
+      types: ["Bundle"],
+    });
+  });
+
+  test("hourlyProductSessionsExport delegates csv generation to the page service", async () => {
+    mockPageService.getHourlyProductSessionsExport.mockResolvedValue({
+      filename: "hourly_product_sessions_TMC_2026-03-31.csv",
+      csv: "date,hour\n2026-03-31,11",
+    });
+    const controller = buildMetricsController();
+    const res = createRes();
+
+    await controller.hourlyProductSessionsExport(
+      {
+        brandKey: "TMC",
+        query: { start: "2026-03-31", end: "2026-03-31", product_id: "sku-1" },
+        brandDb: { sequelize: {} },
+      },
+      res,
+    );
+
+    expect(mockPageService.getHourlyProductSessionsExport).toHaveBeenCalledWith({
+      conn: {},
+      brandKey: "TMC",
+      start: "2026-03-31",
+      end: "2026-03-31",
+      filters: { product_id: "sku-1" },
+    });
+    expect(res.headers["Content-Type"]).toBe("text/csv");
+    expect(res.headers["Content-Disposition"]).toBe(
+      'attachment; filename="hourly_product_sessions_TMC_2026-03-31.csv"',
+    );
+    expect(res.jsonBody).toBe("date,hour\n2026-03-31,11");
   });
 });

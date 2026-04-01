@@ -23,8 +23,7 @@ if (process.env.REDIS_URL) {
     console.log('[REDIS] Connected successfully');
   });
 
-  // Provide a small compatibility layer so connect-redis (built for node-redis v4)
-  // can work with ioredis.
+  // Provide a small compatibility layer for cache helpers that expect node-redis style methods.
   redisClient.mGet = (...args) => redisClient.mget(...args);
   redisClient.del = (keys) => {
     if (Array.isArray(keys)) return redisClient.call('DEL', ...keys);

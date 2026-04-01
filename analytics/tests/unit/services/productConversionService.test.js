@@ -32,21 +32,13 @@ describe("productConversionService", () => {
               orders: 8,
               sales: 640,
               cvr: 8,
+              prev_sessions: 80,
+              prev_atc: 16,
+              prev_atc_rate: 20,
+              prev_orders: 6,
+              prev_sales: 480,
+              prev_cvr: 7.5,
             },
-          ]);
-        }
-        if (
-          sql.includes("FROM shopify_orders") &&
-          sql.includes("created_time < ?") &&
-          sql.includes("GROUP BY product_id")
-        ) {
-          return Promise.resolve([
-            { product_id: "sku-1", orders: 6, sales: 480 },
-          ]);
-        }
-        if (sql.includes("FROM hourly_product_sessions")) {
-          return Promise.resolve([
-            { landing_page_path: "/products/a", sessions: 80, atc: 16 },
           ]);
         }
         return Promise.resolve([]);
@@ -77,6 +69,7 @@ describe("productConversionService", () => {
 
     expect(conn.query.mock.calls[0][0]).toContain("FROM product_landing_mapping m");
     expect(conn.query.mock.calls[0][0]).toContain("m.product_type IN (?)");
+    expect(conn.query).toHaveBeenCalledTimes(2);
     expect(response.total_count).toBe(1);
     expect(response.rows[0]).toEqual({
       product_id: "sku-1",
@@ -114,21 +107,13 @@ describe("productConversionService", () => {
               orders: 8,
               sales: 640,
               cvr: 8,
+              prev_sessions: 80,
+              prev_atc: 16,
+              prev_atc_rate: 20,
+              prev_orders: 6,
+              prev_sales: 480,
+              prev_cvr: 7.5,
             },
-          ]);
-        }
-        if (
-          sql.includes("FROM shopify_orders") &&
-          sql.includes("created_time < ?") &&
-          sql.includes("GROUP BY product_id")
-        ) {
-          return Promise.resolve([
-            { product_id: "sku-1", orders: 6, sales: 480 },
-          ]);
-        }
-        if (sql.includes("FROM hourly_product_sessions")) {
-          return Promise.resolve([
-            { landing_page_path: "/products/a", sessions: 80, atc: 16 },
           ]);
         }
         return Promise.resolve([]);
@@ -150,6 +135,7 @@ describe("productConversionService", () => {
     });
 
     expect(response.filename).toBe("product_conversion_2026-03-31.csv");
+    expect(conn.query).toHaveBeenCalledTimes(1);
     expect(response.headers).toEqual([
       "landing_page_path",
       "sessions",

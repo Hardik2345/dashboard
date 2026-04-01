@@ -123,26 +123,28 @@ function buildMetricsCacheService({
     return results;
   }
 
-  async function fetchHourlySalesRows(conn, date) {
+  async function fetchHourlySalesRangeRows(conn, start, end) {
     const rows = await conn.query(
       `
         SELECT 
+          DATE_FORMAT(date, '%Y-%m-%d') AS date,
           hour,
           total_sales,
           number_of_orders,
           COALESCE(adjusted_number_of_sessions, number_of_sessions) AS number_of_sessions,
           number_of_atc_sessions
         FROM hour_wise_sales
-        WHERE date = ?
-        ORDER BY hour ASC
+        WHERE date >= ? AND date <= ?
+        ORDER BY date ASC, hour ASC
       `,
       {
         type: QueryTypes.SELECT,
-        replacements: [date],
+        replacements: [start, end],
       },
     );
 
     return rows.map((row) => ({
+      date: row.date,
       hour: row.hour,
       total_sales: Number(row.total_sales || 0),
       number_of_orders: Number(row.number_of_orders || 0),
@@ -194,13 +196,35 @@ function buildMetricsCacheService({
       log.warn("[REDIS SKIP] Client not available");
     }
 
-    if (!todayData) {
-      todayData = await fetchHourlySalesRows(conn, todayStr);
-      log.debug(`[DB FETCH] hourly sales for ${brandKey} on ${todayStr}`);
-    }
-    if (!yesterdayData) {
-      yesterdayData = await fetchHourlySalesRows(conn, yesterdayStr);
-      log.debug(`[DB FETCH] hourly sales for ${brandKey} on ${yesterdayStr}`);
+    const missingDates = [];
+    if (!todayData) missingDates.push(todayStr);
+    if (!yesterdayData) missingDates.push(yesterdayStr);
+
+    if (missingDates.length > 0) {
+      const rangeStart = [...missingDates].sort()[0];
+      const rangeEnd = [...missingDates].sort()[missingDates.length - 1];
+      const rows = await fetchHourlySalesRangeRows(conn, rangeStart, rangeEnd);
+      const rowMap = new Map();
+      for (const row of rows) {
+        const key = row.date;
+        if (!rowMap.has(key)) rowMap.set(key, []);
+        rowMap.get(key).push({
+          hour: row.hour,
+          total_sales: row.total_sales,
+          number_of_orders: row.number_of_orders,
+          number_of_sessions: row.number_of_sessions,
+          number_of_atc_sessions: row.number_of_atc_sessions,
+        });
+      }
+
+      if (!todayData) {
+        todayData = rowMap.get(todayStr) || [];
+        log.debug(`[DB FETCH] hourly sales for ${brandKey} on ${todayStr}`);
+      }
+      if (!yesterdayData) {
+        yesterdayData = rowMap.get(yesterdayStr) || [];
+        log.debug(`[DB FETCH] hourly sales for ${brandKey} on ${yesterdayStr}`);
+      }
     }
 
     return {

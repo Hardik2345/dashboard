@@ -1,5 +1,4 @@
 const { QueryTypes } = require("sequelize");
-const { isoDate } = require("../validation/schemas");
 const {
   computePercentDelta,
   computeReturnCounts,
@@ -8,7 +7,6 @@ const {
 const {
   parseIsoDate,
   formatIsoDate,
-  shiftDays,
 } = require("../utils/dateUtils");
 const {
   DAY_MS,
@@ -18,14 +16,17 @@ const {
   parseHourFromCutoff,
   resolveCompareRange,
   buildLiveCutoffContext,
-  buildLegacyRowTwoCutoffs,
+  buildRowTwoComparisonCutoffs,
 } = require("./metricsFoundation");
 const {
   normalizeMetricRequest,
 } = require("./metricsRequestNormalizer");
 const {
-  buildMetricsDeltaMethods,
-} = require("./metricsLegacyDeltaService");
+  queryOverallSummaryTotals,
+  queryOrderSalesTotals,
+  queryProductDailySessionTotals,
+  buildSummaryFilterOptions,
+} = require("./metricsAggregateService");
 
 function hasAnyFilters(filters = {}) {
   return !!(
@@ -66,52 +67,7 @@ function buildCutoffContext(start, end, now = new Date()) {
   return buildLiveCutoffContext(start, end, now);
 }
 
-async function queryOverallSummaryTotals(conn, start, end) {
-  const sql = `
-    SELECT
-      COALESCE(SUM(total_orders), 0) AS total_orders,
-      COALESCE(SUM(total_sales), 0) AS total_sales,
-      COALESCE(SUM(COALESCE(adjusted_total_sessions, total_sessions)), 0) AS total_sessions,
-      COALESCE(SUM(total_atc_sessions), 0) AS total_atc_sessions
-    FROM overall_summary
-    WHERE date >= ? AND date <= ?
-  `;
-  const rows = await conn.query(sql, {
-    type: QueryTypes.SELECT,
-    replacements: [start, end],
-  });
-  return rows?.[0] || {};
-}
-
-async function queryOrderSalesTotals(conn, start, end, filters = {}, cutoffTime = null) {
-  const salesExpr = filters.product_id
-    ? `COALESCE(SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity), 0)`
-    : `COALESCE(SUM(total_price), 0)`;
-
-  let sql = `
-    SELECT
-      COUNT(DISTINCT order_name) AS total_orders,
-      ${salesExpr} AS total_sales
-    FROM shopify_orders
-    WHERE created_date >= ? AND created_date <= ?
-  `;
-  const replacements = [start, end];
-  if (cutoffTime) {
-    sql += ` AND created_time < ?`;
-    replacements.push(cutoffTime);
-  }
-
-  sql = appendUtmWhere(sql, replacements, filters);
-  sql = appendProductFilter(sql, replacements, filters.product_id);
-
-  const rows = await conn.query(sql, {
-    type: QueryTypes.SELECT,
-    replacements,
-  });
-  return rows?.[0] || {};
-}
-
-async function queryLegacyCurrentSessionTotals(
+async function queryCurrentRowTwoSessionTotals(
   conn,
   start,
   end,
@@ -134,7 +90,7 @@ async function queryLegacyCurrentSessionTotals(
   return queryHourlySessionTotals(conn, start, end, cutoffHour);
 }
 
-async function queryLegacyPreviousSessionTotals(
+async function queryPreviousRowTwoSessionTotals(
   conn,
   start,
   end,
@@ -203,23 +159,6 @@ async function querySnapshotSessionTotals(conn, start, end, filters = {}) {
   `;
   const replacements = [start, end];
   sql = appendUtmWhere(sql, replacements, buildSnapshotSessionFilters(filters), true);
-  const rows = await conn.query(sql, {
-    type: QueryTypes.SELECT,
-    replacements,
-  });
-  return rows?.[0] || {};
-}
-
-async function queryProductDailySessionTotals(conn, start, end, filters = {}) {
-  let sql = `
-    SELECT
-      COALESCE(SUM(sessions), 0) AS total_sessions,
-      COALESCE(SUM(sessions_with_cart_additions), 0) AS total_atc_sessions
-    FROM mv_product_sessions_by_path_daily
-    WHERE date >= ? AND date <= ?
-  `;
-  const replacements = [start, end];
-  sql = appendProductFilter(sql, replacements, filters.product_id);
   const rows = await conn.query(sql, {
     type: QueryTypes.SELECT,
     replacements,
@@ -322,19 +261,6 @@ function buildCachedSnapshot(cachedData = {}, returnsObj = {}, source = "cache")
   };
 }
 
-function buildMetricDelta(metric, currentValue, previousValue, deltaCurrent = currentValue, deltaPrevious = previousValue) {
-  const diff = Number(currentValue || 0) - Number(previousValue || 0);
-  const pct = computePercentDelta(Number(deltaCurrent || 0), Number(deltaPrevious || 0));
-  return {
-    metric,
-    current: Number(currentValue || 0),
-    previous: Number(previousValue || 0),
-    diff_pct: pct.diff_pct,
-    direction: pct.direction,
-    diff,
-  };
-}
-
 function buildSummaryMetric(currentValue, previousValue, deltaCurrent = currentValue, deltaPrevious = previousValue) {
   const diff = Number(currentValue || 0) - Number(previousValue || 0);
   const pct = computePercentDelta(Number(deltaCurrent || 0), Number(deltaPrevious || 0));
@@ -347,7 +273,7 @@ function buildSummaryMetric(currentValue, previousValue, deltaCurrent = currentV
   };
 }
 
-async function getLegacyRowTwoSnapshots({
+async function getRowTwoComparisonSnapshots({
   conn,
   currentRange,
   previousRange,
@@ -362,7 +288,7 @@ async function getLegacyRowTwoSnapshots({
     currentCutoffHour,
     previousSessionCutoffHour,
     previousOrderCutoffTime,
-  } = buildLegacyRowTwoCutoffs(cutoffCtx);
+  } = buildRowTwoComparisonCutoffs(cutoffCtx);
 
   const [currentOrders, currentSessions, previousOrders, previousSessions] =
     await Promise.all([
@@ -373,7 +299,7 @@ async function getLegacyRowTwoSnapshots({
         filters,
         cutoffCtx.cutoffTime,
       ),
-      queryLegacyCurrentSessionTotals(
+      queryCurrentRowTwoSessionTotals(
         conn,
         currentRange.start,
         currentRange.end,
@@ -387,7 +313,7 @@ async function getLegacyRowTwoSnapshots({
         filters,
         previousOrderCutoffTime,
       ),
-      queryLegacyPreviousSessionTotals(
+      queryPreviousRowTwoSessionTotals(
         conn,
         previousRange.start,
         previousRange.end,
@@ -869,71 +795,9 @@ function buildDailyPoints(rows, start, end) {
   }));
 }
 
-function buildRollingSeriesFromDailyRows(rows, end) {
-  const endDate = end;
-  const startDate = shiftDays(endDate, -58);
-  const allDays = buildSeriesBuckets(startDate, endDate);
-  const dayMap = new Map(rows.map((row) => [row.date, row]));
-  const running = [];
-  for (const day of allDays) {
-    const row = dayMap.get(day) || {
-      date: day,
-      sales: 0,
-      orders: 0,
-      sessions: 0,
-    };
-    running.push({
-      date: day,
-      sales: Number(row.sales || 0),
-      orders: Number(row.orders || 0),
-      sessions: Number(row.sessions || 0),
-    });
-  }
-
-  const window = [];
-  let salesSum = 0;
-  let ordersSum = 0;
-  let sessionsSum = 0;
-  const series = [];
-  for (const dayRow of running) {
-    window.push(dayRow);
-    salesSum += dayRow.sales;
-    ordersSum += dayRow.orders;
-    sessionsSum += dayRow.sessions;
-    if (window.length > 30) {
-      const removed = window.shift();
-      salesSum -= removed.sales;
-      ordersSum -= removed.orders;
-      sessionsSum -= removed.sessions;
-    }
-    if (window.length === 30) {
-      const aov = ordersSum > 0 ? salesSum / ordersSum : 0;
-      const cvr = sessionsSum > 0 ? ordersSum / sessionsSum : 0;
-      series.push({
-        date: dayRow.date,
-        window_start: window[0].date,
-        window_end: dayRow.date,
-        aov_30d: aov,
-        aov_totals: {
-          total_sales: salesSum,
-          total_orders: ordersSum,
-        },
-        cvr_30d: cvr,
-        cvr_percent_30d: cvr * 100,
-        cvr_totals: {
-          total_orders: ordersSum,
-          total_sessions: sessionsSum,
-        },
-      });
-    }
-  }
-  return series;
-}
-
 function buildMetricsSnapshotService(deps = {}) {
   const { fetchCachedMetricsBatch } = deps;
   const now = deps.now || (() => new Date());
-  const deltaMethods = buildMetricsDeltaMethods(deps);
 
   async function getSnapshot({ conn, range, filters = {}, cutoffTime = null, cachedData = null }) {
     if (!conn) throw new Error("Database connection unavailable");
@@ -1032,144 +896,6 @@ function buildMetricsSnapshotService(deps = {}) {
     return { current, previous };
   }
 
-  async function getDeltaSummary(spec) {
-    const compareRange = getComparableRange(
-      spec.start,
-      spec.end,
-      spec.compareStart,
-      spec.compareEnd,
-    );
-    if (!compareRange) {
-      throw new Error("Previous range unavailable");
-    }
-    const cutoffCtx = buildCutoffContext(spec.start, spec.end, now());
-    const cutoffTime = cutoffCtx.includesToday ? cutoffCtx.cutoffTime : null;
-    const { current, previous } = await getSnapshotPair({
-      conn: spec.conn,
-      brandKey: spec.brandKey,
-      currentRange: { start: spec.start, end: spec.end },
-      previousRange: compareRange,
-      filters: spec.filters,
-      cutoffTime,
-    });
-
-    let deltaCurrent = current;
-    let deltaPrevious = previous;
-    if (spec.filters.sales_channel) {
-      const { sales_channel, ...filtersWithoutChannel } = spec.filters;
-      const pair = await getSnapshotPair({
-        conn: spec.conn,
-        brandKey: spec.brandKey,
-        currentRange: { start: spec.start, end: spec.end },
-        previousRange: compareRange,
-        filters: filtersWithoutChannel,
-        cutoffTime,
-      });
-      deltaCurrent = pair.current;
-      deltaPrevious = pair.previous;
-      void sales_channel;
-    }
-
-    const legacyRowTwo = await getLegacyRowTwoSnapshots({
-      conn: spec.conn,
-      currentRange: { start: spec.start, end: spec.end },
-      previousRange: compareRange,
-      filters: spec.filters,
-      cutoffCtx,
-    });
-    const legacyDeltaRowTwo =
-      spec.filters.sales_channel && legacyRowTwo
-        ? await getLegacyRowTwoSnapshots({
-            conn: spec.conn,
-            currentRange: { start: spec.start, end: spec.end },
-            previousRange: compareRange,
-            filters: {
-              ...spec.filters,
-              sales_channel: undefined,
-            },
-            cutoffCtx,
-          })
-        : legacyRowTwo;
-
-    const currentRowTwo = legacyRowTwo?.current || current;
-    const previousRowTwo = legacyRowTwo?.previous || previous;
-    const deltaCurrentRowTwo = legacyDeltaRowTwo?.current || deltaCurrent;
-    const deltaPreviousRowTwo = legacyDeltaRowTwo?.previous || deltaPrevious;
-
-    return {
-      range: { start: spec.start, end: spec.end },
-      prev_range: compareRange,
-      metrics: {
-        total_orders: {
-          metric: "TOTAL_ORDERS_DELTA",
-          range: { start: spec.start, end: spec.end },
-          ...buildMetricDelta(
-            "TOTAL_ORDERS_DELTA",
-            current.total_orders,
-            previous.total_orders,
-            deltaCurrent.total_orders,
-            deltaPrevious.total_orders,
-          ),
-        },
-        total_sales: {
-          metric: "TOTAL_SALES_DELTA",
-          range: { start: spec.start, end: spec.end },
-          ...buildMetricDelta(
-            "TOTAL_SALES_DELTA",
-            current.total_sales,
-            previous.total_sales,
-            deltaCurrent.total_sales,
-            deltaPrevious.total_sales,
-          ),
-        },
-        total_sessions: {
-          metric: "TOTAL_SESSIONS_DELTA",
-          range: { start: spec.start, end: spec.end },
-          ...buildMetricDelta(
-            "TOTAL_SESSIONS_DELTA",
-            currentRowTwo.total_sessions,
-            previousRowTwo.total_sessions,
-            deltaCurrentRowTwo.total_sessions,
-            deltaPreviousRowTwo.total_sessions,
-          ),
-        },
-        total_atc_sessions: {
-          metric: "TOTAL_ATC_SESSIONS_DELTA",
-          range: { start: spec.start, end: spec.end },
-          ...buildMetricDelta(
-            "TOTAL_ATC_SESSIONS_DELTA",
-            currentRowTwo.total_atc_sessions,
-            previousRowTwo.total_atc_sessions,
-            deltaCurrentRowTwo.total_atc_sessions,
-            deltaPreviousRowTwo.total_atc_sessions,
-          ),
-        },
-        average_order_value: {
-          metric: "AOV_DELTA",
-          range: { start: spec.start, end: spec.end },
-          ...buildMetricDelta(
-            "AOV_DELTA",
-            current.average_order_value,
-            previous.average_order_value,
-            deltaCurrent.average_order_value,
-            deltaPrevious.average_order_value,
-          ),
-        },
-        conversion_rate: {
-          metric: "CVR_DELTA",
-          range: { start: spec.start, end: spec.end },
-          ...buildMetricDelta(
-            "CVR_DELTA",
-            currentRowTwo.conversion_rate_percent,
-            previousRowTwo.conversion_rate_percent,
-            deltaCurrentRowTwo.conversion_rate_percent,
-            deltaPreviousRowTwo.conversion_rate_percent,
-          ),
-        },
-      },
-    };
-  }
-
   async function getDashboardSummary(spec) {
     const compareRange = getComparableRange(
       spec.start,
@@ -1208,16 +934,16 @@ function buildMetricsSnapshotService(deps = {}) {
       void sales_channel;
     }
 
-    const legacyRowTwo = await getLegacyRowTwoSnapshots({
+    const rowTwoComparison = await getRowTwoComparisonSnapshots({
       conn: spec.conn,
       currentRange: { start: spec.start, end: spec.end },
       previousRange: compareRange,
       filters: spec.filters,
       cutoffCtx,
     });
-    const legacyDeltaRowTwo =
-      spec.filters.sales_channel && legacyRowTwo
-        ? await getLegacyRowTwoSnapshots({
+    const deltaRowTwoComparison =
+      spec.filters.sales_channel && rowTwoComparison
+        ? await getRowTwoComparisonSnapshots({
             conn: spec.conn,
             currentRange: { start: spec.start, end: spec.end },
             previousRange: compareRange,
@@ -1227,12 +953,13 @@ function buildMetricsSnapshotService(deps = {}) {
             },
             cutoffCtx,
           })
-        : legacyRowTwo;
+        : rowTwoComparison;
 
-    const currentRowTwo = legacyRowTwo?.current || current;
-    const previousRowTwo = legacyRowTwo?.previous || previous;
-    const deltaCurrentRowTwo = legacyDeltaRowTwo?.current || deltaCurrent;
-    const deltaPreviousRowTwo = legacyDeltaRowTwo?.previous || deltaPrevious;
+    const currentRowTwo = rowTwoComparison?.current || current;
+    const previousRowTwo = rowTwoComparison?.previous || previous;
+    const deltaCurrentRowTwo = deltaRowTwoComparison?.current || deltaCurrent;
+    const deltaPreviousRowTwo =
+      deltaRowTwoComparison?.previous || deltaPrevious;
 
     return {
       filter_options: null,
@@ -1297,79 +1024,30 @@ function buildMetricsSnapshotService(deps = {}) {
   }
 
   async function getSummaryFilterOptions({ conn, start, end }) {
-    const [channelRows, utmRows] = await Promise.all([
-      conn.query(
-        `
-          SELECT DISTINCT order_app_name AS val
-          FROM shopify_orders
-          WHERE created_date >= ? AND created_date <= ?
-            AND order_app_name IS NOT NULL AND order_app_name <> ''
-          ORDER BY val
-        `,
-        {
-          type: QueryTypes.SELECT,
-          replacements: [start, end],
-        },
-      ),
-      conn.query(
-        `
-          SELECT DISTINCT utm_source, utm_medium, utm_campaign, utm_term, utm_content
-          FROM shopify_orders
-          WHERE created_date >= ? AND created_date <= ?
-            AND utm_source IS NOT NULL AND utm_source <> ''
-          ORDER BY utm_source, utm_medium, utm_campaign, utm_term, utm_content
-        `,
-        {
-          type: QueryTypes.SELECT,
-          replacements: [start, end],
-        },
-      ),
-    ]);
+    const rows = await conn.query(
+      `
+        SELECT DISTINCT
+          order_app_name,
+          utm_source,
+          utm_medium,
+          utm_campaign,
+          utm_term,
+          utm_content
+        FROM shopify_orders
+        WHERE created_date >= ? AND created_date <= ?
+          AND (
+            (order_app_name IS NOT NULL AND order_app_name <> '')
+            OR (utm_source IS NOT NULL AND utm_source <> '')
+          )
+        ORDER BY order_app_name, utm_source, utm_medium, utm_campaign, utm_term, utm_content
+      `,
+      {
+        type: QueryTypes.SELECT,
+        replacements: [start, end],
+      },
+    );
 
-    const utmTree = {};
-    for (const row of utmRows) {
-      const {
-        utm_source: source,
-        utm_medium: medium,
-        utm_campaign: campaign,
-        utm_term: term,
-        utm_content: content,
-      } = row;
-      if (!source) continue;
-      if (!utmTree[source]) utmTree[source] = { mediums: {} };
-      if (!medium) continue;
-      if (!utmTree[source].mediums[medium]) {
-        utmTree[source].mediums[medium] = { campaigns: {} };
-      }
-      if (!campaign) continue;
-      if (!utmTree[source].mediums[medium].campaigns[campaign]) {
-        utmTree[source].mediums[medium].campaigns[campaign] = {
-          terms: [],
-          contents: [],
-        };
-      }
-      if (
-        term &&
-        !utmTree[source].mediums[medium].campaigns[campaign].terms.includes(term)
-      ) {
-        utmTree[source].mediums[medium].campaigns[campaign].terms.push(term);
-      }
-      if (
-        content &&
-        !utmTree[source].mediums[medium].campaigns[campaign].contents.includes(
-          content,
-        )
-      ) {
-        utmTree[source].mediums[medium].campaigns[campaign].contents.push(
-          content,
-        );
-      }
-    }
-
-    return {
-      sales_channel: channelRows.map((row) => row.val),
-      utm_tree: utmTree,
-    };
+    return buildSummaryFilterOptions(rows);
   }
 
   async function getTrend(spec, granularity) {
@@ -1456,119 +1134,12 @@ function buildMetricsSnapshotService(deps = {}) {
     };
   }
 
-  async function getRolling30d({ conn, brandKey, end, filters = {} }) {
-    let resolvedEnd = end || null;
-    if (resolvedEnd) {
-      const parsed = isoDate.safeParse(resolvedEnd);
-      if (!parsed.success) {
-        const error = new Error("Invalid end date. Use YYYY-MM-DD");
-        error.status = 400;
-        throw error;
-      }
-      resolvedEnd = parsed.data;
-    } else {
-      const rows = await conn.query(`SELECT MAX(date) AS max_d FROM overall_summary`, {
-        type: QueryTypes.SELECT,
-      });
-      resolvedEnd = rows?.[0]?.max_d || formatIsoDate(new Date());
-    }
-
-    const dailyStart = shiftDays(resolvedEnd, -58);
-    const dailyRows = await fetchDailyRows(conn, dailyStart, resolvedEnd, filters);
-    return {
-      metric: "ROLLING_30D_SERIES",
-      brand: brandKey || null,
-      end: resolvedEnd,
-      days: buildRollingSeriesFromDailyRows(dailyRows, resolvedEnd),
-    };
-  }
-
-  async function getDeltaMetric(spec, metricName) {
-    const compareRange = getComparableRange(
-      spec.start,
-      spec.end,
-      spec.compareStart,
-      spec.compareEnd,
-    );
-    if (!compareRange) {
-      throw new Error("Previous range unavailable");
-    }
-    const cutoffCtx = buildCutoffContext(spec.start, spec.end, now());
-    const cutoffTime = (spec.align === "hour" || cutoffCtx.includesToday)
-      ? cutoffCtx.cutoffTime
-      : null;
-    const { current, previous } = await getSnapshotPair({
-      conn: spec.conn,
-      brandKey: spec.brandKey,
-      currentRange: { start: spec.start, end: spec.end },
-      previousRange: compareRange,
-      filters: spec.filters,
-      cutoffTime,
-    });
-
-    const legacyRowTwo = await getLegacyRowTwoSnapshots({
-      conn: spec.conn,
-      currentRange: { start: spec.start, end: spec.end },
-      previousRange: compareRange,
-      filters: spec.filters,
-      cutoffCtx,
-    });
-
-    const metricMap = {
-      TOTAL_ORDERS_DELTA: "total_orders",
-      TOTAL_SALES_DELTA: "total_sales",
-      TOTAL_SESSIONS_DELTA: "total_sessions",
-      ATC_SESSIONS_DELTA: "total_atc_sessions",
-      AOV_DELTA: "average_order_value",
-      CVR_DELTA: "conversion_rate_percent",
-    };
-    const key = metricMap[metricName];
-    const currentSource =
-      legacyRowTwo &&
-      (metricName === "TOTAL_SESSIONS_DELTA" ||
-        metricName === "ATC_SESSIONS_DELTA" ||
-        metricName === "CVR_DELTA")
-        ? legacyRowTwo.current
-        : current;
-    const previousSource =
-      legacyRowTwo &&
-      (metricName === "TOTAL_SESSIONS_DELTA" ||
-        metricName === "ATC_SESSIONS_DELTA" ||
-        metricName === "CVR_DELTA")
-        ? legacyRowTwo.previous
-        : previous;
-    const delta = buildMetricDelta(
-      metricName,
-      currentSource[key],
-      previousSource[key],
-      currentSource[key],
-      previousSource[key],
-    );
-    return {
-      metric: metricName,
-      range: { start: spec.start, end: spec.end },
-      current: delta.current,
-      previous: delta.previous,
-      diff_pct: delta.diff_pct,
-      direction: delta.direction,
-    };
-  }
-
   return {
     getSnapshot,
     getSnapshotPair,
     getDashboardSummary,
-    getDeltaSummary,
     getTrend,
-    getRolling30d,
-    getDeltaMetric,
     getSummaryFilterOptions,
-    getTotalOrdersDelta: deltaMethods.calcTotalOrdersDelta,
-    getTotalSalesDelta: deltaMethods.calcTotalSalesDelta,
-    getTotalSessionsDelta: deltaMethods.calcTotalSessionsDelta,
-    getAtcSessionsDelta: deltaMethods.calcAtcSessionsDelta,
-    getAovDelta: deltaMethods.calcAovDelta,
-    getCvrDelta: deltaMethods.calcCvrDelta,
   };
 }
 
