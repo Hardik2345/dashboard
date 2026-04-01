@@ -259,4 +259,67 @@ describe("metricsSnapshotService", () => {
       },
     });
   });
+
+  test("batches unfiltered historical current and previous dashboard summaries", async () => {
+    const conn = {
+      query: jest
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            current_total_orders: 100,
+            current_total_sales: 1000,
+            current_total_sessions: 400,
+            current_total_atc_sessions: 80,
+            previous_total_orders: 60,
+            previous_total_sales: 600,
+            previous_total_sessions: 300,
+            previous_total_atc_sessions: 45,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            current_cancelled_orders: 4,
+            current_refunded_orders: 2,
+            previous_cancelled_orders: 3,
+            previous_refunded_orders: 1,
+          },
+        ]),
+    };
+
+    const service = buildMetricsSnapshotService({
+      now: () => new Date("2026-03-20T06:30:00Z"),
+    });
+    const response = await service.getDashboardSummary({
+      conn,
+      brandKey: "PTS",
+      start: "2026-03-10",
+      end: "2026-03-15",
+      compareStart: "2026-03-04",
+      compareEnd: "2026-03-09",
+      filters: {},
+    });
+
+    expect(conn.query).toHaveBeenCalledTimes(2);
+    expect(response.metrics.total_orders).toEqual({
+      value: 100,
+      previous: 60,
+      diff: 40,
+      diff_pct: 66.66666666666666,
+      direction: "up",
+    });
+    expect(response.metrics.total_sessions).toEqual({
+      value: 400,
+      previous: 300,
+      diff: 100,
+      diff_pct: 33.33333333333333,
+      direction: "up",
+    });
+    expect(response.metrics.cancelled_orders).toEqual({
+      value: 4,
+      previous: 3,
+      diff: 1,
+      diff_pct: 33.33333333333333,
+      direction: "up",
+    });
+  });
 });

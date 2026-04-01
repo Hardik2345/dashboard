@@ -23,6 +23,7 @@ const {
 } = require("./metricsRequestNormalizer");
 const {
   queryOverallSummaryTotals,
+  queryOverallSummaryPair,
   queryOrderSalesTotals,
   queryProductDailySessionTotals,
   buildSummaryFilterOptions,
@@ -221,6 +222,55 @@ async function getReturnsSnapshot(conn, start, end, filters = {}) {
   return {
     cancelled_orders: Number(rows.cancelled_orders || 0),
     refunded_orders: Number(rows.refunded_orders || 0),
+  };
+}
+
+async function getReturnsSnapshotPair(conn, currentRange, previousRange) {
+  const combinedStart =
+    currentRange.start <= previousRange.start
+      ? currentRange.start
+      : previousRange.start;
+  const combinedEnd =
+    currentRange.end >= previousRange.end
+      ? currentRange.end
+      : previousRange.end;
+
+  const rows = await conn.query(
+    `
+      SELECT
+        COALESCE(SUM(CASE WHEN event_type = 'CANCEL' AND event_date >= ? AND event_date <= ? THEN 1 ELSE 0 END), 0) AS current_cancelled_orders,
+        COALESCE(SUM(CASE WHEN event_type = 'REFUND' AND event_date >= ? AND event_date <= ? THEN 1 ELSE 0 END), 0) AS current_refunded_orders,
+        COALESCE(SUM(CASE WHEN event_type = 'CANCEL' AND event_date >= ? AND event_date <= ? THEN 1 ELSE 0 END), 0) AS previous_cancelled_orders,
+        COALESCE(SUM(CASE WHEN event_type = 'REFUND' AND event_date >= ? AND event_date <= ? THEN 1 ELSE 0 END), 0) AS previous_refunded_orders
+      FROM returns_fact
+      WHERE event_date >= ? AND event_date <= ?
+    `,
+    {
+      type: QueryTypes.SELECT,
+      replacements: [
+        currentRange.start,
+        currentRange.end,
+        currentRange.start,
+        currentRange.end,
+        previousRange.start,
+        previousRange.end,
+        previousRange.start,
+        previousRange.end,
+        combinedStart,
+        combinedEnd,
+      ],
+    },
+  );
+  const row = rows?.[0] || {};
+  return {
+    current: {
+      cancelled_orders: Number(row.current_cancelled_orders || 0),
+      refunded_orders: Number(row.current_refunded_orders || 0),
+    },
+    previous: {
+      cancelled_orders: Number(row.previous_cancelled_orders || 0),
+      refunded_orders: Number(row.previous_refunded_orders || 0),
+    },
   };
 }
 
@@ -874,6 +924,27 @@ function buildMetricsSnapshotService(deps = {}) {
       );
       cachedCurrent = currentCached;
       cachedPrevious = previousCached;
+    }
+
+    if (
+      !cachedCurrent &&
+      !cachedPrevious &&
+      !cutoffTime &&
+      !hasAnyFilters(filters)
+    ) {
+      const [metricsPair, returnsPair] = await Promise.all([
+        queryOverallSummaryPair(conn, currentRange, previousRange),
+        getReturnsSnapshotPair(conn, currentRange, previousRange),
+      ]);
+
+      return {
+        current: buildSnapshotPayload(metricsPair.current, returnsPair.current, "db"),
+        previous: buildSnapshotPayload(
+          metricsPair.previous,
+          returnsPair.previous,
+          "db",
+        ),
+      };
     }
 
     const [current, previous] = await Promise.all([

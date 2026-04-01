@@ -7,6 +7,7 @@ const mockController = {
   paymentSalesSplit: handler("paymentSalesSplit"),
   trafficSourceSplit: handler("trafficSourceSplit"),
   dashboardSummary: handler("dashboardSummary"),
+  summaryFilterOptions: handler("summaryFilterOptions"),
   topProductPages: handler("topProductPages"),
   topProducts: handler("topProducts"),
   productKpis: handler("productKpis"),

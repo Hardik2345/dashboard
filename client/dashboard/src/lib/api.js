@@ -336,6 +336,21 @@ export async function getDashboardSummary(args) {
   };
 }
 
+export async function getSummaryFilterOptions(args) {
+  const params = appendBrandKey(
+    {
+      start: args.start || args.date,
+      end: args.end || args.date || args.start,
+    },
+    args,
+  );
+  const json = await getJSON("/metrics/summary-filter-options", params);
+  return {
+    filter_options: json?.filter_options || null,
+    error: json?.__error,
+  };
+}
+
 // Product Types
 export async function getProductTypes(args) {
   const params = appendBrandKey({ date: args.date }, args);
@@ -975,7 +990,6 @@ export async function getMongoEventCount(from, to, eventType) {
 export async function getMongoCollectionCount(from, to, collectionName) {
   return doGet("/analytics/ranvir/mongo-collection-count", { from, to, collectionName });
 }
-
 
 
 

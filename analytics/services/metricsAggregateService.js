@@ -32,6 +32,69 @@ async function queryOverallSummaryTotals(conn, start, end) {
   return rows?.[0] || {};
 }
 
+async function queryOverallSummaryPair(conn, currentRange, previousRange) {
+  const combinedStart =
+    currentRange.start <= previousRange.start
+      ? currentRange.start
+      : previousRange.start;
+  const combinedEnd =
+    currentRange.end >= previousRange.end
+      ? currentRange.end
+      : previousRange.end;
+
+  const sql = `
+    SELECT
+      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_orders ELSE 0 END), 0) AS current_total_orders,
+      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_sales ELSE 0 END), 0) AS current_total_sales,
+      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN COALESCE(adjusted_total_sessions, total_sessions) ELSE 0 END), 0) AS current_total_sessions,
+      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_atc_sessions ELSE 0 END), 0) AS current_total_atc_sessions,
+      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_orders ELSE 0 END), 0) AS previous_total_orders,
+      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_sales ELSE 0 END), 0) AS previous_total_sales,
+      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN COALESCE(adjusted_total_sessions, total_sessions) ELSE 0 END), 0) AS previous_total_sessions,
+      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_atc_sessions ELSE 0 END), 0) AS previous_total_atc_sessions
+    FROM overall_summary
+    WHERE date >= ? AND date <= ?
+  `;
+  const rows = await conn.query(sql, {
+    type: QueryTypes.SELECT,
+    replacements: [
+      currentRange.start,
+      currentRange.end,
+      currentRange.start,
+      currentRange.end,
+      currentRange.start,
+      currentRange.end,
+      currentRange.start,
+      currentRange.end,
+      previousRange.start,
+      previousRange.end,
+      previousRange.start,
+      previousRange.end,
+      previousRange.start,
+      previousRange.end,
+      previousRange.start,
+      previousRange.end,
+      combinedStart,
+      combinedEnd,
+    ],
+  });
+  const row = rows?.[0] || {};
+  return {
+    current: {
+      total_orders: Number(row.current_total_orders || 0),
+      total_sales: Number(row.current_total_sales || 0),
+      total_sessions: Number(row.current_total_sessions || 0),
+      total_atc_sessions: Number(row.current_total_atc_sessions || 0),
+    },
+    previous: {
+      total_orders: Number(row.previous_total_orders || 0),
+      total_sales: Number(row.previous_total_sales || 0),
+      total_sessions: Number(row.previous_total_sessions || 0),
+      total_atc_sessions: Number(row.previous_total_atc_sessions || 0),
+    },
+  };
+}
+
 async function queryOrderSalesTotals(
   conn,
   start,
@@ -172,6 +235,7 @@ function buildSummaryFilterOptions(rows = []) {
 module.exports = {
   appendProductFilter,
   queryOverallSummaryTotals,
+  queryOverallSummaryPair,
   queryOrderSalesTotals,
   queryProductDailySessionTotals,
   queryProductKpiTotals,

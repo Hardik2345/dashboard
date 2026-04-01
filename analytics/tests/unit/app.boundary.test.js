@@ -26,6 +26,7 @@ describe("analytics app boundary", () => {
 
     expect(hasHealth).toBe(true);
     expect(routePaths).toContain("/summary");
+    expect(routePaths).toContain("/summary-filter-options");
     expect(routePaths).toContain("/order-split");
     expect(routePaths).toContain("/payment-sales-split");
     expect(routePaths).toContain("/traffic-source-split");
