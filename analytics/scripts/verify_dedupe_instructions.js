@@ -14,10 +14,7 @@ const BASE_URL = 'http://localhost:5000/api/metrics'; // Adjust port if needed
 // Actually, I can't check app.js port easily without viewing.
 // But I can use the existing `scripts/test_cache_api.js` logic which made direct calls to external API.
 // Wait, I need to test the CONTROLLER.
-// So I will make calls to:
-// GET /api/metrics/total-sales?start=2025-12-17&end=2025-12-17
-// GET /api/metrics/total-orders?start=2025-12-17&end=2025-12-17
-// ... simultaneously.
+// So I will make parallel calls to active metrics endpoints.
 
 // NOTE: This script assumes the local server is running.
 async function testDedupe() {

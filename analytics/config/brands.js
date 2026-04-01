@@ -39,17 +39,6 @@ const fetchBrandIds = async () => {
   }
 };
 
-function normalizeDomain(d) {
-  return String(d || '').trim().toLowerCase();
-}
-
-function domainMatches(host, rule) {
-  const h = normalizeDomain(host);
-  const r = normalizeDomain(rule);
-  if (!h || !r) return false;
-  return h === r || h.endsWith('.' + r);
-}
-
 function loadBrands() {
   const map = {};
   if (process.env.BRANDS_CONFIG) {
@@ -71,7 +60,6 @@ function loadBrands() {
             brandId: item.brandId != null && item.brandId !== ''
               ? Number(item.brandId)
               : (fallbackId !== undefined ? fallbackId : undefined),
-            domains: Array.isArray(item.domains) ? item.domains.map(normalizeDomain).filter(Boolean) : [],
           };
         }
       }
@@ -101,7 +89,6 @@ function loadBrands() {
         brandId: process.env[`${upper}_BRAND_ID`]
           ? Number(process.env[`${upper}_BRAND_ID`])
           : (fallbackId !== undefined ? fallbackId : undefined),
-        domains: [],
       };
     }
   }
@@ -109,25 +96,6 @@ function loadBrands() {
 }
 
 let brands = loadBrands();
-
-function addBrandRuntime(cfg) {
-  const upper = cfg.key.toUpperCase();
-  if (brands[upper]) throw new Error(`Brand ${upper} already exists`);
-  const fallbackId = DEFAULT_BRAND_IDS[upper];
-  const brandCfg = {
-    key: upper,
-    dbHost: cfg.dbHost,
-    dbPort: Number(cfg.dbPort || 3306),
-    dbUser: cfg.dbUser,
-    dbPass: cfg.dbPass,
-    dbName: cfg.dbName || upper,
-    brandId: cfg.brandId != null
-      ? Number(cfg.brandId)
-      : (fallbackId !== undefined ? fallbackId : undefined),
-  };
-  brands[upper] = brandCfg;
-  return brandCfg;
-}
 
 function getBrands() { return { ...brands }; }
 
@@ -139,33 +107,4 @@ function getBrandById(id) {
   return Object.values(map).find((b) => Number(b.brandId) === numeric) || null;
 }
 
-// Optional external mapping: BRAND_DOMAIN_MAP = JSON array [{ domain, brandKey }]
-let externalDomainMap = [];
-try {
-  if (process.env.BRAND_DOMAIN_MAP) {
-    const parsed = JSON.parse(process.env.BRAND_DOMAIN_MAP);
-    if (Array.isArray(parsed)) externalDomainMap = parsed
-      .map(e => ({ domain: normalizeDomain(e.domain), brandKey: String(e.brandKey || '').toUpperCase() }))
-      .filter(e => e.domain && e.brandKey && e.brandKey !== 'MILA'); // EXPLICIT REMOVAL
-  }
-} catch (e) {
-  console.error('Failed to parse BRAND_DOMAIN_MAP JSON:', e.message);
-}
-
-function resolveBrandFromEmail(email) {
-  if (!email || !email.includes('@')) return null;
-  const [local, domain] = email.split('@');
-  const d = normalizeDomain(domain);
-  // 1) Try BRANDS_CONFIG domains
-  for (const b of Object.values(brands)) {
-    if (Array.isArray(b.domains) && b.domains.some(rule => domainMatches(d, rule))) return b;
-  }
-  // 2) Try BRAND_DOMAIN_MAP
-  const hit = externalDomainMap.find(e => domainMatches(d, e.domain));
-  if (hit && brands[hit.brandKey]) return brands[hit.brandKey];
-  // 3) Fallback: local-part equals brand key
-  const key = String(local || '').toUpperCase();
-  return brands[key] || null;
-}
-
-module.exports = { brands, resolveBrandFromEmail, addBrandRuntime, getBrands, getBrandById, fetchBrandIds };
+module.exports = { brands, getBrands, getBrandById, fetchBrandIds };

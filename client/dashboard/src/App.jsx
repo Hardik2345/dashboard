@@ -498,8 +498,10 @@ export default function App() {
   const showSidebar = isAuthor || (accessibleTabs && accessibleTabs.length > 1);
 
   const mobileNavItems = useMemo(() => {
-    if (isAuthor) return MOBILE_NAV_ITEMS;
-    return MOBILE_NAV_ITEMS.filter((item) => accessibleTabs?.includes(item.id));
+    const base = isAuthor
+      ? MOBILE_NAV_ITEMS
+      : MOBILE_NAV_ITEMS.filter((item) => accessibleTabs?.includes(item.id));
+    return base.filter((item) => item.id !== "tenant-setup");
   }, [isAuthor, accessibleTabs]);
 
   useEffect(() => {
@@ -2450,7 +2452,7 @@ export default function App() {
                         <NotificationsLog darkMode={darkMode === "dark"} />
                       </motion.div>
                     )}
-                    {authorTab === "tenant-setup" && (
+                    {authorTab === "tenant-setup" && !isMobile && (
                       <motion.div
                         key="tenant-setup"
                         custom={direction}

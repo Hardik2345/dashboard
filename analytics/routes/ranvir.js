@@ -1,13 +1,13 @@
 const express = require('express');
 const { getQrScans, getLandingPageSessions, getMongoEventCount, getMongoCollectionCount } = require('../utils/ajrs_module');
 
-const { requireAuth } = require('../middlewares/auth');
+const { requireTrustedPrincipal } = require('../middlewares/identityEdge');
 
 function buildRanvirRouter() {
   const router = express.Router();
 
   // GET /ranvir/qr-scans?from=1773878400&to=1773964800
-  router.get('/qr-scans', requireAuth, async (req, res, next) => {
+  router.get('/qr-scans', requireTrustedPrincipal, async (req, res) => {
     const { from, to } = req.query;
     if (!from || !to) return res.status(400).json({ error: 'Missing required parameters: from and to' });
 
@@ -20,7 +20,7 @@ function buildRanvirRouter() {
   });
 
   // GET /ranvir/landing-page-sessions?from=YYYY-MM-DD&to=YYYY-MM-DD
-  router.get('/landing-page-sessions', requireAuth, async (req, res, next) => {
+  router.get('/landing-page-sessions', requireTrustedPrincipal, async (req, res) => {
     const { from, to } = req.query;
     if (!from || !to) return res.status(400).json({ error: 'Missing required parameters: from and to' });
 
@@ -33,7 +33,7 @@ function buildRanvirRouter() {
   });
 
   // GET /ranvir/mongo-event-count?from=YYYY-MM-DD&to=YYYY-MM-DD&eventType=...
-  router.get('/mongo-event-count', requireAuth, async (req, res, next) => {
+  router.get('/mongo-event-count', requireTrustedPrincipal, async (req, res) => {
     const { from, to, eventType } = req.query;
     if (!from || !to || !eventType) {
       return res.status(400).json({ error: 'Missing required parameters: from, to, and eventType' });
@@ -48,7 +48,7 @@ function buildRanvirRouter() {
   });
 
   // GET /ranvir/mongo-collection-count?from=YYYY-MM-DD&to=YYYY-MM-DD&collectionName=...
-  router.get('/mongo-collection-count', requireAuth, async (req, res, next) => {
+  router.get('/mongo-collection-count', requireTrustedPrincipal, async (req, res) => {
     const { from, to, collectionName } = req.query;
     if (!from || !to || !collectionName) {
       return res.status(400).json({ error: 'Missing required parameters: from, to, and collectionName' });
