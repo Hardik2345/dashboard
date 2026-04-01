@@ -5,10 +5,6 @@ const logger = require('../utils/logger');
 function buildNotificationsRouter() {
   const router = express.Router();
 
-  // POST /notifications/subscribe
-  // Body: { token: string, topic: string }
-  // POST /notifications/subscribe
-  // Body: { token: string, topic: string | string[] }
   router.post('/subscribe', async (req, res) => {
     const { token, topic, topics } = req.body;
     if (!token) {
@@ -20,16 +16,20 @@ function buildNotificationsRouter() {
     if (typeof topic === 'string') topicList.push(topic);
 
     if (topicList.length === 0) {
-        return res.status(400).json({ error: 'No topics provided' });
+      return res.status(400).json({ error: 'No topics provided' });
     }
 
     try {
-      await Promise.all(topicList.map(t => admin.messaging().subscribeToTopic(token, t)));
+      await Promise.all(topicList.map((value) => admin.messaging().subscribeToTopic(token, value)));
       logger.info(`[Notifications] Subscribed token to ${topicList.length} topics:`, topicList);
-      res.json({ success: true, message: `Subscribed to ${topicList.length} topics`, topics: topicList });
+      return res.json({
+        success: true,
+        message: `Subscribed to ${topicList.length} topics`,
+        topics: topicList,
+      });
     } catch (error) {
       logger.error('[Notifications] Subscribe error:', error);
-      res.status(500).json({ error: 'Failed to subscribe', details: error.message });
+      return res.status(500).json({ error: 'Failed to subscribe', details: error.message });
     }
   });
 

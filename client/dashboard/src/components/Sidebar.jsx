@@ -100,13 +100,26 @@ export default function Sidebar({
   const avatarColor = getAvatarColor(initials);
 
   const filteredNavItems = useMemo(() => {
-    if (!allowedTabs) return NAV_ITEMS;
-    const set = new Set(allowedTabs);
-    return NAV_ITEMS.map((group) => ({
-      ...group,
-      items: group.items.filter((item) => set.has(item.id)),
-    })).filter((group) => group.items.length > 0);
-  }, [allowedTabs]);
+    let base = NAV_ITEMS;
+    if (allowedTabs) {
+      const set = new Set(allowedTabs);
+      base = NAV_ITEMS.map((group) => ({
+        ...group,
+        items: group.items.filter((item) => set.has(item.id)),
+      })).filter((group) => group.items.length > 0);
+    }
+
+    if (isMobile) {
+      base = base
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((item) => item.id !== "tenant-setup"),
+        }))
+        .filter((group) => group.items.length > 0);
+    }
+
+    return base;
+  }, [allowedTabs, isMobile]);
 
   const NavContent = () => (
     <div
