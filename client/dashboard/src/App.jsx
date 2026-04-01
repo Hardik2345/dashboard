@@ -60,6 +60,7 @@ import {
   listAuthorBrands,
   getTopProducts,
   getDashboardSummary,
+  getSummaryFilterOptions,
   getHourlyTrend,
   getOrderSplit,
   getPaymentSalesSplit,
@@ -1729,84 +1730,28 @@ export default function App() {
       brand: activeBrandKey,
       start: formatDate(start),
       end: formatDate(end),
-      utm: JSON.stringify(utm),
-      salesChannel: JSON.stringify(salesChannel),
-      deviceType: JSON.stringify(deviceType),
-      compare: compareMode,
-      product: JSON.stringify(productSelection),
     };
   }, [
     activeBrandKey,
     start,
     end,
-    utm,
-    salesChannel,
-    deviceType,
-    compareMode,
-    productSelection,
   ]);
 
   useEffect(() => {
     if (!activeBrandKey) return;
 
-    // We use lastFetchParams to decide if we REALLY need a fetch.
-    // However, since this effect depends on the memoized lastFetchParams,
-    // it will only run when the params actually change.
-    // The previous check was potentially too aggressive by blocking on brand_key alone.
-
-    const productsForQuery = Array.isArray(productSelection)
-      ? productSelection
-      : [productSelection];
-    const productIds = productsForQuery.map((p) => p.id).filter(Boolean);
-
-    getDashboardSummary({
+    getSummaryFilterOptions({
       brand_key: activeBrandKey,
       start: formatDate(start),
       end: formatDate(end),
-      include_utm_options: true,
-      utm_source: utm?.source, // Dependent filtering
-      utm_medium: utm?.medium,
-      utm_campaign: utm?.campaign,
-      sales_channel: salesChannel,
-      device_type: deviceType,
-      compare: compareMode, // Include compare mode for deltas
-      product_id: productIds.length > 0 ? productIds : undefined,
     })
       .then((res) => {
         if (res.filter_options) {
           setUtmOptions({ ...res.filter_options, brand_key: activeBrandKey });
         }
-
-        // Also update funnelData for the Funnels tab and inline charts
-        if (res.metrics) {
-          const m = res.metrics;
-          const stats = {
-            total_sessions: m.total_sessions?.value ?? 0,
-            total_atc_sessions: m.total_atc_sessions?.value ?? 0,
-            total_orders: m.total_orders?.value ?? 0,
-          };
-          const deltas = {
-            sessions: {
-              diff_pct: m.total_sessions?.diff_pct,
-              direction: m.total_sessions?.direction,
-            },
-            atc: {
-              diff_pct: m.total_atc_sessions?.diff_pct,
-              direction: m.total_atc_sessions?.direction,
-            },
-            orders: {
-              diff_pct: m.total_orders?.diff_pct,
-              diff_pp: m.total_orders?.diff_pp,
-              direction: m.total_orders?.direction,
-            },
-          };
-          handleFunnelData({ stats, deltas, loading: false });
-        }
       })
-      .catch(() => {
-        handleFunnelData({ stats: null, deltas: null, loading: false });
-      });
-  }, [lastFetchParams, isAuthor, handleFunnelData]); // Depend on stable memoized params
+      .catch(() => {});
+  }, [lastFetchParams, activeBrandKey, start, end]);
 
   // Sync funnel data with product table's Curr date when on Funnels tab
   useEffect(() => {

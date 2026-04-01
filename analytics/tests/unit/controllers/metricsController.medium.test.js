@@ -266,6 +266,46 @@ describe("metricsController medium handlers", () => {
     expect(res.jsonBody.source).toBe("mixed");
   });
 
+  test("summaryFilterOptions delegates to the snapshot service", async () => {
+    const { normalizeMetricRequest } = require("../../../services/metricsSnapshotService");
+    normalizeMetricRequest.mockReturnValue({
+      ok: true,
+      spec: {
+        start: "2026-03-01",
+        end: "2026-03-31",
+        conn: {},
+      },
+    });
+    mockMetricsService.getSummaryFilterOptions.mockResolvedValue({
+      sales_channel: ["Facebook"],
+      utm_tree: {},
+    });
+
+    const controller = buildMetricsController();
+    const res = createRes();
+
+    await controller.summaryFilterOptions(
+      {
+        query: { start: "2026-03-01", end: "2026-03-31" },
+        brandDb: { sequelize: {} },
+      },
+      res,
+    );
+
+    expect(mockMetricsService.getSummaryFilterOptions).toHaveBeenCalledWith({
+      conn: {},
+      start: "2026-03-01",
+      end: "2026-03-31",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody).toEqual({
+      filter_options: {
+        sales_channel: ["Facebook"],
+        utm_tree: {},
+      },
+    });
+  });
+
   test("productTypes delegates to the page service", async () => {
     mockPageService.getProductTypes.mockResolvedValue({
       date: "2026-03-31",

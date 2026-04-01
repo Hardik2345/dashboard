@@ -555,16 +555,33 @@ function buildMetricsController() {
         }
         normalized.spec.brandKey = brandQuery;
         const response = await metricsService.getDashboardSummary(normalized.spec);
-        if (req.query.include_utm_options === "true") {
-          response.filter_options = await metricsService.getSummaryFilterOptions({
-            conn: normalized.spec.conn,
-            start: normalized.spec.start,
-            end: normalized.spec.end,
-          });
-        }
         return res.json(response);
       } catch (e) {
         logger.error("[dashboardSummary] Error:", e);
+        return res
+          .status(500)
+          .json({ error: "Internal server error", details: e.message });
+      }
+    },
+
+    summaryFilterOptions: async (req, res) => {
+      try {
+        const normalized = normalizeMetricRequest(req, { defaultToToday: true });
+        if (!normalized.ok) {
+          return res.status(normalized.status).json(normalized.body);
+        }
+        if (!normalized.spec.conn) {
+          throw new Error("Database connection missing (tenant router required)");
+        }
+        return res.json({
+          filter_options: await metricsService.getSummaryFilterOptions({
+            conn: normalized.spec.conn,
+            start: normalized.spec.start,
+            end: normalized.spec.end,
+          }),
+        });
+      } catch (e) {
+        logger.error("[summaryFilterOptions] Error:", e);
         return res
           .status(500)
           .json({ error: "Internal server error", details: e.message });

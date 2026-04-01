@@ -32,7 +32,7 @@ import {
 } from "@mui/material";
 import { TransitionGroup } from "react-transition-group";
 import { GlassChip } from "./ui/GlassChip";
-import { getDashboardSummary, getProductTypes } from "../lib/api";
+import { getSummaryFilterOptions, getProductTypes } from "../lib/api";
 
 export default function MobileFilterDrawer({
   open,
@@ -118,10 +118,8 @@ export default function MobileFilterDrawer({
       brand: tempBrand,
       start: dateRange?.[0]?.format?.("YYYY-MM-DD"),
       end: dateRange?.[1]?.format?.("YYYY-MM-DD"),
-      utm: JSON.stringify(tempUtm),
-      salesChannel: JSON.stringify(tempSalesChannel),
     };
-  }, [open, tempBrand, dateRange, tempUtm, tempSalesChannel]);
+  }, [open, tempBrand, dateRange]);
 
   useEffect(() => {
     if (
@@ -142,15 +140,10 @@ export default function MobileFilterDrawer({
       // if tempUtm changed. But to avoid loops, let's be conservative.
     }
 
-    getDashboardSummary({
+    getSummaryFilterOptions({
       brand_key: tempBrand,
       start: lastFetchParams.start,
       end: lastFetchParams.end,
-      include_utm_options: true,
-      utm_source: tempUtm?.source, // Still support dependent filtering if needed
-      utm_medium: tempUtm?.medium,
-      utm_campaign: tempUtm?.campaign,
-      sales_channel: tempSalesChannel,
     })
       .then((res) => {
         if (res.filter_options) {
