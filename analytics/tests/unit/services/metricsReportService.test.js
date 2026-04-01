@@ -78,6 +78,38 @@ describe("metricsReportService", () => {
     expect(response.sql_used).toContain("created_at >= ?");
   });
 
+  test("returns order split from a single aggregate summary query when unfiltered", async () => {
+    const conn = {
+      query: jest.fn().mockResolvedValue([
+        {
+          cod_orders: 40,
+          prepaid_orders: 50,
+          partially_paid_orders: 10,
+        },
+      ]),
+    };
+
+    const service = buildMetricsReportService();
+    const response = await service.getOrderSplit({
+      conn,
+      start: "2026-03-01",
+      end: "2026-03-02",
+    });
+
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(conn.query.mock.calls[0][0]).toContain("SUM(cod_orders)");
+    expect(response).toMatchObject({
+      metric: "ORDER_SPLIT",
+      cod_orders: 40,
+      prepaid_orders: 50,
+      partially_paid_orders: 10,
+      total_orders_from_split: 100,
+      cod_percent: 40,
+      prepaid_percent: 50,
+      partially_paid_percent: 10,
+    });
+  });
+
   test("returns traffic source split with resolved previous range", async () => {
     const conn = {
       query: jest.fn().mockResolvedValue([

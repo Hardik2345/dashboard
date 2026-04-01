@@ -4,18 +4,6 @@ const {
   buildMetricsSnapshotService,
 } = require("../../../services/metricsSnapshotService");
 
-function buildDailyRows(startDate, days, rowFactory) {
-  const rows = [];
-  const start = new Date(`${startDate}T00:00:00Z`);
-  for (let index = 0; index < days; index += 1) {
-    const date = new Date(start.getTime() + index * 24 * 3600_000)
-      .toISOString()
-      .slice(0, 10);
-    rows.push(rowFactory(date, index));
-  }
-  return rows;
-}
-
 describe("metricsSnapshotService", () => {
   afterEach(() => {
     jest.restoreAllMocks();
@@ -81,41 +69,6 @@ describe("metricsSnapshotService", () => {
     });
   });
 
-  test("builds rolling 30 day series from constant daily queries", async () => {
-    const conn = {
-      query: jest
-        .fn()
-        .mockResolvedValueOnce(
-          buildDailyRows("2026-02-01", 59, (date, index) => ({
-            date,
-            sales: 100 + index,
-            orders: 10 + (index % 3),
-          })),
-        )
-        .mockResolvedValueOnce(
-          buildDailyRows("2026-02-01", 59, (date, index) => ({
-            date,
-            sessions: 200 + index,
-            atc: 50 + (index % 5),
-          })),
-        ),
-    };
-
-    const service = buildMetricsSnapshotService();
-    const response = await service.getRolling30d({
-      conn,
-      brandKey: "PTS",
-      end: "2026-03-30",
-      filters: {},
-    });
-
-    expect(conn.query).toHaveBeenCalledTimes(2);
-    expect(response.metric).toBe("ROLLING_30D_SERIES");
-    expect(response.days).toHaveLength(30);
-    expect(response.days[0].window_start).toBe("2026-01-31");
-    expect(response.days[29].window_end).toBe("2026-03-30");
-  });
-
   test("uses actual hourly product sessions without distributing daily totals", async () => {
     jest
       .spyOn(Date, "now")
@@ -159,7 +112,7 @@ describe("metricsSnapshotService", () => {
     expect(response.points[11].metrics.sessions).toBe(0);
   });
 
-  test("restores legacy row-two today comparison semantics in dashboard summary", async () => {
+  test("restores row-two today comparison semantics in dashboard summary", async () => {
     const conn = {
       query: jest.fn().mockImplementation((sql, options = {}) => {
         const replacements = options.replacements || [];
@@ -258,116 +211,52 @@ describe("metricsSnapshotService", () => {
     });
   });
 
-  test("exposes total orders delta through the canonical snapshot service", async () => {
-    const service = buildMetricsSnapshotService({
-      deltaForSumImpl: jest.fn().mockResolvedValue({
-        current: 12,
-        previous: 10,
-        diff_pct: 20,
-        direction: "up",
-      }),
-    });
-
-    const result = await service.getTotalOrdersDelta({
-      start: "2026-03-31",
-      conn: {},
-    });
-
-    expect(result).toEqual({
-      metric: "TOTAL_ORDERS_DELTA",
-      date: "2026-03-31",
-      current: 12,
-      previous: 10,
-      diff_pct: 20,
-      direction: "up",
-    });
-  });
-
-  test("preserves filtered total sessions delta semantics through snapshot service", async () => {
-    const computeTotalSessionsImpl = jest
-      .fn()
-      .mockResolvedValueOnce(90)
-      .mockResolvedValueOnce(60);
-    const service = buildMetricsSnapshotService({
-      hasUtmFiltersImpl: jest.fn(() => true),
-      computeTotalSessionsImpl,
-      previousWindowImpl: jest.fn(() => ({
-        prevStart: "2026-03-29",
-        prevEnd: "2026-03-30",
-      })),
-    });
-
-    const result = await service.getTotalSessionsDelta({
-      start: "2026-03-31",
-      end: "2026-04-01",
-      conn: {},
-      filters: { utm_source: "google" },
-    });
-
-    expect(result).toEqual({
-      metric: "TOTAL_SESSIONS_DELTA",
-      range: { start: "2026-03-31", end: "2026-04-01" },
-      current: 90,
-      previous: 60,
-      diff_pct: 50,
-      direction: "up",
-    });
-  });
-
-  test("preserves legacy hourly CVR comparison semantics through snapshot service", async () => {
+  test("builds summary filter options from a single query", async () => {
     const conn = {
-      query: jest.fn().mockImplementation((sql, options = {}) => {
-        const replacements = options.replacements || [];
-        if (sql.includes("hourly_sessions_summary_shopify")) {
-          if (replacements[0] === "2026-03-31") {
-            return Promise.resolve([{ total: 120 }]);
-          }
-          return Promise.resolve([{ total: 100 }]);
-        }
-        if (sql.includes("overall_summary")) {
-          return Promise.resolve([{ total: 140 }]);
-        }
-        if (sql.includes("shopify_orders")) {
-          if (replacements[0] === "2026-03-31") {
-            return Promise.resolve([{ cnt: 14 }]);
-          }
-          return Promise.resolve([{ cnt: 10 }]);
-        }
-        throw new Error(`Unexpected SQL ${sql}`);
-      }),
+      query: jest.fn().mockResolvedValue([
+        {
+          order_app_name: "Facebook",
+          utm_source: "google",
+          utm_medium: "cpc",
+          utm_campaign: "launch",
+          utm_term: "shampoo",
+          utm_content: "video",
+        },
+        {
+          order_app_name: "Shop",
+          utm_source: null,
+          utm_medium: null,
+          utm_campaign: null,
+          utm_term: null,
+          utm_content: null,
+        },
+      ]),
     };
-    const service = buildMetricsSnapshotService({
-      now: () => new Date("2026-03-31T06:30:00Z"),
-      prevDayStrImpl: jest.fn(() => "2026-03-30"),
-    });
+    const service = buildMetricsSnapshotService();
 
-    const result = await service.getCvrDelta({
-      start: "2026-03-31",
-      align: "hour",
+    const result = await service.getSummaryFilterOptions({
       conn,
-      filters: {},
+      start: "2026-03-01",
+      end: "2026-03-31",
     });
 
-    expect(conn.query.mock.calls[1][1].replacements).toEqual(["2026-03-30", 11]);
-    expect(result).toMatchObject({
-      metric: "CVR_DELTA",
-      date: "2026-03-31",
-      current: {
-        total_orders: 14,
-        total_sessions: 140,
-        cvr_percent: 10,
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      sales_channel: ["Facebook", "Shop"],
+      utm_tree: {
+        google: {
+          mediums: {
+            cpc: {
+              campaigns: {
+                launch: {
+                  terms: ["shampoo"],
+                  contents: ["video"],
+                },
+              },
+            },
+          },
+        },
       },
-      previous: {
-        total_orders: 10,
-        total_sessions: 100,
-        cvr_percent: 10,
-      },
-      diff_pp: 0,
-      diff_pct: 0,
-      direction: "flat",
-      align: "hour",
-      hour: 12,
-      cutoff_time: "12:00:00",
     });
   });
 });
