@@ -113,14 +113,19 @@ function buildCompletedHourCutoffContext(start, end, now = new Date()) {
   };
 }
 
+function buildCompletedHourOrderCutoffTime(cutoffHour) {
+  const nextHour = Math.min(24, Number.isInteger(cutoffHour) ? cutoffHour + 1 : 24);
+  return nextHour >= 24 ? "24:00:00" : `${pad2(nextHour)}:00:00`;
+}
+
 function buildRowTwoComparisonCutoffs(cutoffCtx) {
   const currentCutoffHour = cutoffCtx.cutoffHour;
-  const nextHour = Math.min(24, currentCutoffHour + 1);
+  const nextHourCutoffTime = buildCompletedHourOrderCutoffTime(currentCutoffHour);
   return {
     currentCutoffHour,
     previousSessionCutoffHour: currentCutoffHour,
-    currentOrderCutoffTime: nextHour >= 24 ? "24:00:00" : `${pad2(nextHour)}:00:00`,
-    previousOrderCutoffTime: nextHour >= 24 ? "24:00:00" : `${pad2(nextHour)}:00:00`,
+    currentOrderCutoffTime: nextHourCutoffTime,
+    previousOrderCutoffTime: nextHourCutoffTime,
   };
 }
 
@@ -138,5 +143,6 @@ module.exports = {
   resolveCompareRange,
   buildLiveCutoffContext,
   buildCompletedHourCutoffContext,
+  buildCompletedHourOrderCutoffTime,
   buildRowTwoComparisonCutoffs,
 };
