@@ -117,7 +117,17 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
 
+      // Sessions service
+      '/api/sessions': {
+
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
       // 5️⃣ Catch-all analytics (MUST BE LAST)
+
       '/api': {
         target: 'http://localhost:8081',
         // target: 'https://api.trytechit.co/main',
@@ -181,6 +191,15 @@ export default defineConfig({
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
+
+      // Sessions service
+      '/api/sessions': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
 
       // Catch-all analytics
       '/api': {
