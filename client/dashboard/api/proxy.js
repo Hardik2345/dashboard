@@ -23,7 +23,9 @@ export default async function handler(req, res) {
       "/push",
       "/track",
       "/analytics",
+      "/sessions",
     ];
+
 
     const shouldPassthrough = passthroughPrefixes.some(
       (prefix) =>

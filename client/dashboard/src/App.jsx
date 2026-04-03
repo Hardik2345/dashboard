@@ -68,7 +68,9 @@ import {
   doPost,
   doDelete,
 } from "./lib/api.js";
+import { initializeSessionTracking } from "./lib/sessionTracker.js";
 import { isRangeOver30DaysInclusive } from "./lib/dateRange.js";
+
 import { TextField, Button, Paper, Typography, Chip } from "@mui/material";
 import axios from "axios";
 import { requestForToken, onMessageListener } from "./firebase";
@@ -432,7 +434,19 @@ export default function App() {
       viewerBrands[0] ||
       "";
 
+  // Session Tracking Initialization
+  useEffect(() => {
+    if (initialized && user && activeBrandKey) {
+      // Small delay to ensure everything is fully loaded and stable
+      const timer = setTimeout(() => {
+        initializeSessionTracking(user, activeBrandKey);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [initialized, user, activeBrandKey]);
+
   const trafficSplitRulesStorageKey = useMemo(() => {
+
     const brand = (activeBrandKey || "GLOBAL").toString().trim().toUpperCase();
     return `${TRAFFIC_SPLIT_RULES_STORAGE_PREFIX}_${brand}`;
   }, [activeBrandKey]);
