@@ -1,6 +1,9 @@
 const { QueryTypes } = require("sequelize");
-const { buildIstCutoffContext } = require("./metricsReportService");
 const { normalizeRangeQuery } = require("./metricsRequestNormalizer");
+const {
+  buildCompletedHourCutoffContext,
+  buildCompletedHourOrderCutoffTime,
+} = require("./metricsFoundation");
 
 const ALLOWED_SORT = new Map([
   ["sessions", "sessions"],
@@ -185,6 +188,18 @@ function buildProductConditions(spec, baseAlias) {
 }
 
 function buildBaseCte(spec, includeCompare = false) {
+  const cutoffCtx =
+    includeCompare && hasCompareRange(spec)
+      ? buildCompletedHourCutoffContext(spec.start, spec.end)
+      : {
+          currentRangeIncludesToday: false,
+          cutoffHour: 23,
+          orderCutoffTime: "24:00:00",
+        };
+  const currentRangeIncludesToday = !!cutoffCtx.currentRangeIncludesToday;
+  const completedOrderCutoffTime = currentRangeIncludesToday
+    ? buildCompletedHourOrderCutoffTime(cutoffCtx.cutoffHour)
+    : null;
   const baseSql = `
     WITH orders_60d AS (
       SELECT
@@ -193,6 +208,7 @@ function buildBaseCte(spec, includeCompare = false) {
         SUM((line_item_price * line_item_quantity) - COALESCE(discount_amount_per_line_item, 0)) AS sales
       FROM shopify_orders
       WHERE created_date >= ? AND created_date <= ?
+        ${currentRangeIncludesToday ? "AND (created_date < ? OR created_time < ?)" : ""}
         AND product_id IS NOT NULL
       GROUP BY product_id
     ),
@@ -202,8 +218,9 @@ function buildBaseCte(spec, includeCompare = false) {
         landing_page_path,
         SUM(sessions) AS sessions,
         SUM(sessions_with_cart_additions) AS atc
-      FROM mv_product_sessions_by_path_daily
+      FROM ${currentRangeIncludesToday ? "hourly_product_sessions" : "mv_product_sessions_by_path_daily"}
       WHERE date >= ? AND date <= ?
+        ${currentRangeIncludesToday ? "AND (date < ? OR hour <= ?)" : ""}
       GROUP BY product_id, landing_page_path
     )
   `;
@@ -211,15 +228,20 @@ function buildBaseCte(spec, includeCompare = false) {
   if (!includeCompare || !hasCompareRange(spec)) {
     return {
       sql: baseSql,
-      replacements: [spec.start, spec.end, spec.start, spec.end],
+      replacements: currentRangeIncludesToday
+        ? [
+            spec.start,
+            spec.end,
+            spec.end,
+            completedOrderCutoffTime,
+            spec.start,
+            spec.end,
+            spec.end,
+            cutoffCtx.cutoffHour,
+          ]
+        : [spec.start, spec.end, spec.start, spec.end],
     };
   }
-
-  const {
-    currentRangeIncludesToday,
-    orderCutoffTime,
-    cutoffHour,
-  } = buildIstCutoffContext(spec.start, spec.end);
 
   return {
     sql: `
@@ -231,7 +253,7 @@ function buildBaseCte(spec, includeCompare = false) {
           SUM((line_item_price - COALESCE(discount_amount_per_line_item, 0)) * line_item_quantity) AS sales
         FROM shopify_orders
         WHERE created_date >= ? AND created_date <= ?
-          ${currentRangeIncludesToday ? "AND created_time < ?" : ""}
+          ${currentRangeIncludesToday ? "AND (created_date < ? OR created_time < ?)" : ""}
           AND product_id IS NOT NULL
         GROUP BY product_id
       ),
@@ -247,7 +269,7 @@ function buildBaseCte(spec, includeCompare = false) {
             : "mv_product_sessions_by_path_daily"
         }
         WHERE date >= ? AND date <= ?
-          ${currentRangeIncludesToday ? "AND hour <= ?" : ""}
+          ${currentRangeIncludesToday ? "AND (date < ? OR hour <= ?)" : ""}
         GROUP BY product_id, landing_page_path
       )
     `,
@@ -255,14 +277,20 @@ function buildBaseCte(spec, includeCompare = false) {
       ? [
           spec.start,
           spec.end,
+          spec.end,
+          completedOrderCutoffTime,
           spec.start,
           spec.end,
+          spec.end,
+          cutoffCtx.cutoffHour,
           spec.compareStart,
           spec.compareEnd,
-          orderCutoffTime,
+          spec.compareEnd,
+          completedOrderCutoffTime,
           spec.compareStart,
           spec.compareEnd,
-          cutoffHour,
+          spec.compareEnd,
+          cutoffCtx.cutoffHour,
         ]
       : [
           spec.start,

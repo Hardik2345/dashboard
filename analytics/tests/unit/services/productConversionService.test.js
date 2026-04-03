@@ -148,4 +148,49 @@ describe("productConversionService", () => {
     );
     expect(response.csv).toContain("/products/a,100,8,80,7.5");
   });
+
+  test("uses completed-hour cutoff symmetrically for compare mode when current range includes today", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-04-03T05:20:00Z"));
+
+    const calls = [];
+    const conn = {
+      query: jest.fn().mockImplementation((sql, options = {}) => {
+        calls.push({ sql, replacements: options.replacements || [] });
+        if (sql.includes("COUNT(*) AS total_count")) {
+          return Promise.resolve([{ total_count: 0 }]);
+        }
+        return Promise.resolve([]);
+      }),
+    };
+
+    const service = buildProductConversionService();
+    const normalized = service.normalizeProductConversionRequest({
+      start: "2026-04-03",
+      end: "2026-04-03",
+      compare_start: "2026-04-02",
+      compare_end: "2026-04-02",
+    });
+
+    await service.getProductConversion({
+      ...normalized.spec,
+      conn,
+    });
+
+    expect(calls[0].sql).toContain("FROM hourly_product_sessions");
+    expect(calls[0].sql).toContain("AND (created_date < ? OR created_time < ?)");
+    expect(calls[0].sql).toContain("AND (date < ? OR hour <= ?)");
+    expect(calls[0].replacements).toEqual(
+      expect.arrayContaining([
+        "2026-04-03",
+        "2026-04-03",
+        "10:00:00",
+        9,
+        "2026-04-02",
+        "2026-04-02",
+        "10:00:00",
+        9,
+      ]),
+    );
+    expect(calls[0].replacements).not.toContain("10:50:00");
+  });
 });
