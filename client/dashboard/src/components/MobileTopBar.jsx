@@ -39,6 +39,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import { getLastUpdatedPTS, getDashboardSummary } from "../lib/api.js";
+import { isRangeOver30DaysInclusive } from "../lib/dateRange.js";
 import SearchableSelect from "./ui/SearchableSelect.jsx";
 
 dayjs.extend(relativeTime);
@@ -287,8 +288,7 @@ export default function MobileTopBar({
   );
 
   const isDateRangeOver30Days = useMemo(() => {
-    if (!start || !end) return false;
-    return end.diff(start, "day") > 30;
+    return isRangeOver30DaysInclusive(start, end);
   }, [start, end]);
 
   const activeUtmCount = [utm?.source, utm?.medium, utm?.campaign].filter(

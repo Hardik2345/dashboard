@@ -30,7 +30,7 @@ export function AnimeNavBar({ items, className, activeTab, onTabChange, isDark =
             <div className="flex justify-center">
                 <motion.div
                     className={cn(
-                        "flex items-center gap-2 py-2 px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative border backdrop-blur-[40px] transition-all duration-500",
+                        "flex items-center gap-1 md:gap-2 py-1.5 md:py-2 px-1.5 md:px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative border backdrop-blur-[40px] transition-all duration-500 max-w-[calc(100vw-24px)] overflow-hidden",
                         isDark
                             ? "bg-[#1a1a1a]/75 border-white/10"
                             : "bg-[#f5f5f5]/75 border-black/5"
@@ -55,7 +55,7 @@ export function AnimeNavBar({ items, className, activeTab, onTabChange, isDark =
                                 onMouseEnter={() => setHoveredTab(item.id)}
                                 onMouseLeave={() => setHoveredTab(null)}
                                 className={cn(
-                                    "relative cursor-pointer text-sm font-bold px-6 py-4 rounded-full transition-all duration-300 flex items-center gap-3",
+                                    "relative cursor-pointer text-sm font-bold px-2.5 md:px-6 py-2.5 md:py-4 rounded-full transition-all duration-300 flex items-center justify-center gap-0 md:gap-3 min-w-0 flex-1 md:flex-none",
                                     isDark
                                         ? "text-white/50 hover:text-white"
                                         : "text-black/40 hover:text-black",

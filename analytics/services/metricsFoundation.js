@@ -115,10 +115,12 @@ function buildCompletedHourCutoffContext(start, end, now = new Date()) {
 
 function buildRowTwoComparisonCutoffs(cutoffCtx) {
   const currentCutoffHour = cutoffCtx.cutoffHour;
+  const nextHour = Math.min(24, currentCutoffHour + 1);
   return {
     currentCutoffHour,
-    previousSessionCutoffHour: Math.max(0, currentCutoffHour - 1),
-    previousOrderCutoffTime: `${pad2(currentCutoffHour)}:00:00`,
+    previousSessionCutoffHour: currentCutoffHour,
+    currentOrderCutoffTime: nextHour >= 24 ? "24:00:00" : `${pad2(nextHour)}:00:00`,
+    previousOrderCutoffTime: nextHour >= 24 ? "24:00:00" : `${pad2(nextHour)}:00:00`,
   };
 }
 

@@ -33,6 +33,7 @@ import {
 import { TransitionGroup } from "react-transition-group";
 import { GlassChip } from "./ui/GlassChip";
 import { getSummaryFilterOptions, getProductTypes } from "../lib/api";
+import { isRangeOver30DaysInclusive } from "../lib/dateRange.js";
 
 export default function MobileFilterDrawer({
   open,
@@ -166,10 +167,7 @@ export default function MobileFilterDrawer({
   };
 
   const isDateRangeOver30Days = useMemo(() => {
-    if (!dateRange?.[0] || !dateRange?.[1]) return false;
-    const s = dayjs(dateRange[0]);
-    const e = dayjs(dateRange[1]);
-    return e.diff(s, "day") > 30;
+    return isRangeOver30DaysInclusive(dateRange?.[0], dateRange?.[1]);
   }, [dateRange]);
 
   // Clear UTM filters if date range > 30 days

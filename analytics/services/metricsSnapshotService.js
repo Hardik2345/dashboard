@@ -16,6 +16,7 @@ const {
   parseHourFromCutoff,
   resolveCompareRange,
   buildLiveCutoffContext,
+  buildCompletedHourCutoffContext,
   buildRowTwoComparisonCutoffs,
 } = require("./metricsFoundation");
 const {
@@ -25,8 +26,12 @@ const {
   queryOverallSummaryTotals,
   queryOverallSummaryPair,
   queryOrderSalesTotals,
+  queryUtmAggregateTotals,
+  queryUtmAggregatePair,
+  queryUtmAggregateRows,
+  queryUtmSummaryFilterOptions,
   queryProductDailySessionTotals,
-  buildSummaryFilterOptions,
+  resolveUtmAggregateSource,
 } = require("./metricsAggregateService");
 
 function hasAnyFilters(filters = {}) {
@@ -68,6 +73,10 @@ function buildCutoffContext(start, end, now = new Date()) {
   return buildLiveCutoffContext(start, end, now);
 }
 
+function getUtmAggregateSource(filters = {}, granularity = "daily") {
+  return resolveUtmAggregateSource(filters, granularity);
+}
+
 async function queryCurrentRowTwoSessionTotals(
   conn,
   start,
@@ -75,6 +84,16 @@ async function queryCurrentRowTwoSessionTotals(
   filters = {},
   cutoffHour = 23,
 ) {
+  if (getUtmAggregateSource(filters, "hourly")) {
+    const totals = await queryUtmAggregateTotals(conn, start, end, filters, {
+      granularity: "hourly",
+      cutoffHour,
+    });
+    return {
+      total_sessions: totals.total_sessions,
+      total_atc_sessions: totals.total_atc_sessions,
+    };
+  }
   if (filters.device_type) {
     return queryDeviceHourlyTotals(conn, start, end, filters, cutoffHour);
   }
@@ -82,11 +101,7 @@ async function queryCurrentRowTwoSessionTotals(
     return queryHourlyProductSessionTotals(conn, start, end, cutoffHour, filters);
   }
   if (!hasAnyFilters(filters)) {
-    const totals = await queryOverallSummaryTotals(conn, start, end);
-    return {
-      total_sessions: totals.total_sessions,
-      total_atc_sessions: totals.total_atc_sessions,
-    };
+    return queryHourlySessionTotals(conn, start, end, cutoffHour);
   }
   return queryHourlySessionTotals(conn, start, end, cutoffHour);
 }
@@ -98,6 +113,16 @@ async function queryPreviousRowTwoSessionTotals(
   filters = {},
   cutoffHour = 23,
 ) {
+  if (getUtmAggregateSource(filters, "hourly")) {
+    const totals = await queryUtmAggregateTotals(conn, start, end, filters, {
+      granularity: "hourly",
+      cutoffHour,
+    });
+    return {
+      total_sessions: totals.total_sessions,
+      total_atc_sessions: totals.total_atc_sessions,
+    };
+  }
   if (filters.device_type) {
     return queryDeviceHourlyTotals(conn, start, end, filters, cutoffHour);
   }
@@ -218,6 +243,15 @@ async function queryHourlyProductSessionTotals(conn, start, end, cutoffHour = 23
 }
 
 async function getReturnsSnapshot(conn, start, end, filters = {}) {
+  if (getUtmAggregateSource(filters, "daily")) {
+    const totals = await queryUtmAggregateTotals(conn, start, end, filters, {
+      granularity: "daily",
+    });
+    return {
+      cancelled_orders: Number(totals?.cancelled_orders || 0),
+      refunded_orders: Number(totals?.refunded_orders || 0),
+    };
+  }
   const rows = await computeReturnCounts({ start, end, conn, filters });
   return {
     cancelled_orders: Number(rows.cancelled_orders || 0),
@@ -225,7 +259,26 @@ async function getReturnsSnapshot(conn, start, end, filters = {}) {
   };
 }
 
-async function getReturnsSnapshotPair(conn, currentRange, previousRange) {
+async function getReturnsSnapshotPair(conn, currentRange, previousRange, filters = {}) {
+  if (getUtmAggregateSource(filters, "daily")) {
+    const pair = await queryUtmAggregatePair(
+      conn,
+      currentRange,
+      previousRange,
+      filters,
+      { granularity: "daily" },
+    );
+    return {
+      current: {
+        cancelled_orders: Number(pair?.current?.cancelled_orders || 0),
+        refunded_orders: Number(pair?.current?.refunded_orders || 0),
+      },
+      previous: {
+        cancelled_orders: Number(pair?.previous?.cancelled_orders || 0),
+        refunded_orders: Number(pair?.previous?.refunded_orders || 0),
+      },
+    };
+  }
   const combinedStart =
     currentRange.start <= previousRange.start
       ? currentRange.start
@@ -330,15 +383,57 @@ async function getRowTwoComparisonSnapshots({
   filters = {},
   cutoffCtx,
 }) {
-  if (!cutoffCtx?.includesToday) {
+  if (!(cutoffCtx?.includesToday || cutoffCtx?.currentRangeIncludesToday)) {
     return null;
   }
 
   const {
     currentCutoffHour,
+    currentOrderCutoffTime,
     previousSessionCutoffHour,
     previousOrderCutoffTime,
   } = buildRowTwoComparisonCutoffs(cutoffCtx);
+
+  if (getUtmAggregateSource(filters, "hourly")) {
+    const [currentTotals, previousTotals] = await Promise.all([
+      queryUtmAggregateTotals(conn, currentRange.start, currentRange.end, filters, {
+        granularity: "hourly",
+        cutoffHour: currentCutoffHour,
+      }),
+      queryUtmAggregateTotals(conn, previousRange.start, previousRange.end, filters, {
+        granularity: "hourly",
+        cutoffHour: previousSessionCutoffHour,
+      }),
+    ]);
+
+    const currentTotalOrders = Number(currentTotals?.total_orders || 0);
+    const currentTotalSessions = Number(currentTotals?.total_sessions || 0);
+    const currentTotalAtcSessions = Number(currentTotals?.total_atc_sessions || 0);
+    const previousTotalOrders = Number(previousTotals?.total_orders || 0);
+    const previousTotalSessions = Number(previousTotals?.total_sessions || 0);
+    const previousTotalAtcSessions = Number(previousTotals?.total_atc_sessions || 0);
+
+    return {
+      current: {
+        total_orders: currentTotalOrders,
+        total_sessions: currentTotalSessions,
+        total_atc_sessions: currentTotalAtcSessions,
+        conversion_rate_percent:
+          currentTotalSessions > 0
+            ? (currentTotalOrders / currentTotalSessions) * 100
+            : 0,
+      },
+      previous: {
+        total_orders: previousTotalOrders,
+        total_sessions: previousTotalSessions,
+        total_atc_sessions: previousTotalAtcSessions,
+        conversion_rate_percent:
+          previousTotalSessions > 0
+            ? (previousTotalOrders / previousTotalSessions) * 100
+            : 0,
+      },
+    };
+  }
 
   const [currentOrders, currentSessions, previousOrders, previousSessions] =
     await Promise.all([
@@ -347,7 +442,7 @@ async function getRowTwoComparisonSnapshots({
         currentRange.start,
         currentRange.end,
         filters,
-        cutoffCtx.cutoffTime,
+        currentOrderCutoffTime,
       ),
       queryCurrentRowTwoSessionTotals(
         conn,
@@ -448,6 +543,13 @@ async function fetchHourlyRows(conn, start, end, filters = {}, cutoffHour = 23) 
   const hasDevice = !!filters.device_type;
   const hasSnapshot = hasSnapshotFilters(filters);
   const hasSalesChannel = !!filters.sales_channel;
+
+  if (getUtmAggregateSource(filters, "hourly")) {
+    return queryUtmAggregateRows(conn, start, end, filters, {
+      granularity: "hourly",
+      cutoffHour,
+    });
+  }
 
   if (!hasProduct && !hasDevice && !hasSnapshot && !hasSalesChannel) {
     const sql = `
@@ -585,6 +687,12 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
   const hasDevice = !!filters.device_type;
   const hasSnapshot = hasSnapshotFilters(filters);
   const hasSalesChannel = !!filters.sales_channel;
+
+  if (getUtmAggregateSource(filters, "daily")) {
+    return queryUtmAggregateRows(conn, start, end, filters, {
+      granularity: "daily",
+    });
+  }
 
   if (!hasProduct && !hasDevice && !hasSnapshot && !hasSalesChannel) {
     const salesSql = `
@@ -858,6 +966,22 @@ function buildMetricsSnapshotService(deps = {}) {
       return buildCachedSnapshot(cachedData, returnsObj, "cache+db_returns");
     }
 
+    if (getUtmAggregateSource(filters, cutoffTime ? "hourly" : "daily")) {
+      const cutoffHour = cutoffTime ? parseHourFromCutoff(cutoffTime) : null;
+      const totals = await queryUtmAggregateTotals(conn, start, end, filters, {
+        granularity: cutoffTime ? "hourly" : "daily",
+        cutoffHour,
+      });
+      return buildSnapshotPayload(
+        totals,
+        {
+          cancelled_orders: totals.cancelled_orders,
+          refunded_orders: totals.refunded_orders,
+        },
+        "db",
+      );
+    }
+
     let metrics;
     if (!cutoffTime && !hasAnyFilters(filters)) {
       metrics = await queryOverallSummaryTotals(conn, start, end);
@@ -910,7 +1034,16 @@ function buildMetricsSnapshotService(deps = {}) {
     return buildSnapshotPayload(metrics, returnsObj, "db");
   }
 
-  async function getSnapshotPair({ conn, brandKey, currentRange, previousRange, filters = {}, cutoffTime = null }) {
+  async function getSnapshotPair({
+    conn,
+    brandKey,
+    currentRange,
+    previousRange,
+    filters = {},
+    cutoffTime = null,
+    currentCutoffHour = null,
+    previousCutoffHour = null,
+  }) {
     let cachedCurrent = null;
     let cachedPrevious = null;
     if (
@@ -929,12 +1062,71 @@ function buildMetricsSnapshotService(deps = {}) {
     if (
       !cachedCurrent &&
       !cachedPrevious &&
+      getUtmAggregateSource(
+        filters,
+        cutoffTime !== null ||
+          currentCutoffHour !== null ||
+          previousCutoffHour !== null
+          ? "hourly"
+          : "daily",
+      )
+    ) {
+      const resolvedCurrentCutoffHour =
+        currentCutoffHour !== null && currentCutoffHour !== undefined
+          ? currentCutoffHour
+          : cutoffTime
+            ? parseHourFromCutoff(cutoffTime)
+            : null;
+      const resolvedPreviousCutoffHour =
+        previousCutoffHour !== null && previousCutoffHour !== undefined
+          ? previousCutoffHour
+          : resolvedCurrentCutoffHour;
+      const pair = await queryUtmAggregatePair(
+        conn,
+        currentRange,
+        previousRange,
+        filters,
+        {
+          granularity:
+            cutoffTime !== null ||
+            resolvedCurrentCutoffHour !== null ||
+            resolvedPreviousCutoffHour !== null
+              ? "hourly"
+              : "daily",
+          currentCutoffHour: resolvedCurrentCutoffHour,
+          previousCutoffHour: resolvedPreviousCutoffHour,
+        },
+      );
+
+      return {
+        current: buildSnapshotPayload(
+          pair.current,
+          {
+            cancelled_orders: pair.current.cancelled_orders,
+            refunded_orders: pair.current.refunded_orders,
+          },
+          "db",
+        ),
+        previous: buildSnapshotPayload(
+          pair.previous,
+          {
+            cancelled_orders: pair.previous.cancelled_orders,
+            refunded_orders: pair.previous.refunded_orders,
+          },
+          "db",
+        ),
+      };
+    }
+
+    if (
+      !cachedCurrent &&
+      !cachedPrevious &&
       !cutoffTime &&
       !hasAnyFilters(filters)
     ) {
       const [metricsPair, returnsPair] = await Promise.all([
         queryOverallSummaryPair(conn, currentRange, previousRange),
-        getReturnsSnapshotPair(conn, currentRange, previousRange),
+        getReturnsSnapshotPair(conn, currentRange, previousRange, filters),
       ]);
 
       return {
@@ -979,6 +1171,14 @@ function buildMetricsSnapshotService(deps = {}) {
     }
     const cutoffCtx = buildCutoffContext(spec.start, spec.end, now());
     const cutoffTime = cutoffCtx.includesToday ? cutoffCtx.cutoffTime : null;
+    const rowTwoCutoffCtx = buildCompletedHourCutoffContext(
+      spec.start,
+      spec.end,
+      now(),
+    );
+    const useCompletedHourSummaryForUtm =
+      !!getUtmAggregateSource(spec.filters, "daily") &&
+      !!rowTwoCutoffCtx.currentRangeIncludesToday;
     const { current, previous } = await getSnapshotPair({
       conn: spec.conn,
       brandKey: spec.brandKey,
@@ -986,6 +1186,12 @@ function buildMetricsSnapshotService(deps = {}) {
       previousRange: compareRange,
       filters: spec.filters,
       cutoffTime,
+      currentCutoffHour: useCompletedHourSummaryForUtm
+        ? rowTwoCutoffCtx.cutoffHour
+        : null,
+      previousCutoffHour: useCompletedHourSummaryForUtm
+        ? rowTwoCutoffCtx.cutoffHour
+        : null,
     });
 
     let deltaCurrent = current;
@@ -999,6 +1205,12 @@ function buildMetricsSnapshotService(deps = {}) {
         previousRange: compareRange,
         filters: filtersWithoutChannel,
         cutoffTime,
+        currentCutoffHour: useCompletedHourSummaryForUtm
+          ? rowTwoCutoffCtx.cutoffHour
+          : null,
+        previousCutoffHour: useCompletedHourSummaryForUtm
+          ? rowTwoCutoffCtx.cutoffHour
+          : null,
       });
       deltaCurrent = pair.current;
       deltaPrevious = pair.previous;
@@ -1010,7 +1222,7 @@ function buildMetricsSnapshotService(deps = {}) {
       currentRange: { start: spec.start, end: spec.end },
       previousRange: compareRange,
       filters: spec.filters,
-      cutoffCtx,
+      cutoffCtx: rowTwoCutoffCtx,
     });
     const deltaRowTwoComparison =
       spec.filters.sales_channel && rowTwoComparison
@@ -1022,7 +1234,7 @@ function buildMetricsSnapshotService(deps = {}) {
               ...spec.filters,
               sales_channel: undefined,
             },
-            cutoffCtx,
+            cutoffCtx: rowTwoCutoffCtx,
           })
         : rowTwoComparison;
 
@@ -1095,30 +1307,7 @@ function buildMetricsSnapshotService(deps = {}) {
   }
 
   async function getSummaryFilterOptions({ conn, start, end }) {
-    const rows = await conn.query(
-      `
-        SELECT DISTINCT
-          order_app_name,
-          utm_source,
-          utm_medium,
-          utm_campaign,
-          utm_term,
-          utm_content
-        FROM shopify_orders
-        WHERE created_date >= ? AND created_date <= ?
-          AND (
-            (order_app_name IS NOT NULL AND order_app_name <> '')
-            OR (utm_source IS NOT NULL AND utm_source <> '')
-          )
-        ORDER BY order_app_name, utm_source, utm_medium, utm_campaign, utm_term, utm_content
-      `,
-      {
-        type: QueryTypes.SELECT,
-        replacements: [start, end],
-      },
-    );
-
-    return buildSummaryFilterOptions(rows);
+    return queryUtmSummaryFilterOptions(conn, start, end);
   }
 
   async function getTrend(spec, granularity) {

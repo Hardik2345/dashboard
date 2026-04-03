@@ -68,6 +68,7 @@ import {
   doPost,
   doDelete,
 } from "./lib/api.js";
+import { isRangeOver30DaysInclusive } from "./lib/dateRange.js";
 import { TextField, Button, Paper, Typography, Chip } from "@mui/material";
 import axios from "axios";
 import { requestForToken, onMessageListener } from "./firebase";
@@ -1711,7 +1712,7 @@ export default function App() {
   // Centralized UTM clearing for > 30 days
   useEffect(() => {
     if (!start || !end) return;
-    const isOver30 = end.diff(start, "day") > 30;
+    const isOver30 = isRangeOver30DaysInclusive(start, end);
     const hasUtm = Object.values(utm).some((v) =>
       Array.isArray(v) ? v.length > 0 : !!v,
     );

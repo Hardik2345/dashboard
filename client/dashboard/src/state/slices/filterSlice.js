@@ -98,6 +98,13 @@ const filterSlice = createSlice({
       // Ensure we don't have duplicates
       const unique = new Map(state.productSelection.map(p => [p.id, p]));
       state.productSelection = Array.from(unique.values());
+      // If any real product is selected, drop the synthetic "All products" option.
+      if (state.productSelection.some((p) => p?.id)) {
+        state.productSelection = state.productSelection.filter((p) => p?.id);
+      }
+      if (state.productSelection.length === 0) {
+        state.productSelection = [DEFAULT_PRODUCT_OPTION];
+      }
     },
     setUtm(state, action) {
       state.utm = { ...state.utm, ...action.payload };

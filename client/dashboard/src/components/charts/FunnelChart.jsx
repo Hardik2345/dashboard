@@ -22,7 +22,7 @@ const FunnelChart = React.memo(function FunnelChart({
   const isDark = theme.palette.mode === "dark";
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
-  const [viewMode, setViewMode] = useState("new"); // 'new' | 'legacy'
+  const [viewMode, setViewMode] = useState("funnel"); // 'funnel' | 'bar'
 
   // Process data to calculate scaling and centering
   const funnelPoints = useMemo(() => {
@@ -30,44 +30,69 @@ const FunnelChart = React.memo(function FunnelChart({
 
     const count = data.length;
     const maxValue = Math.max(...data.map((d) => d.value)) || 1;
-    const maxSqrtValue = Math.sqrt(maxValue);
-    const minHeightPx = 24;
+    const minHeightPx = 16; // Increased from 8 to give a better minimum thickness
     const minPct = (minHeightPx / height) * 100;
 
     const points = [];
 
-    // Add padding at start
-    points.push({ val: data[0].value, x: 0, isPadding: true });
+    const getPct = (val) => {
+      const rawPct = Math.pow(val / maxValue, 0.8) * 100;
+      return Math.max(rawPct, minPct);
+    };
 
-    // Add real step centers
-    data.forEach((item, i) => {
-      points.push({ ...item, val: item.value, x: i + 0.5, isPadding: false });
-    });
+    const firstPct = getPct(data[0]?.value || 1);
+    const lastPct = getPct(data[count - 1]?.value || 1);
+    const flowLength = Math.max(1, count - 1); 
 
-    // Add padding at end
-    points.push({ val: data[count - 1].value, x: count, isPadding: true });
+    const getInterpolatedPct = (x) => {
+      // The triangle flows flawlessly until the last stage
+      if (x >= flowLength) return lastPct;
+      return firstPct - (x / flowLength) * (firstPct - lastPct);
+    };
 
-    return points.map((p, index) => {
-      const rawPct = (Math.sqrt(p.val) / maxSqrtValue) * 100;
-      const conversionPct = Math.max(rawPct, minPct);
-      const spacer = (100 - conversionPct) / 2;
+    for (let i = 0; i < count; i++) {
+      // Use the geometric triangle height for visual flow
+      const currentPct = getInterpolatedPct(i);
+      const nextPct = getInterpolatedPct(i + 0.5);
 
       const firstValue = data[0]?.value || 1;
-      const pctLabel = p.isPadding
-        ? ""
-        : p.label === data[0].label
+      const pctValue = (data[i].value / firstValue) * 100;
+      const pctLabel =
+        i === 0
           ? "100%"
-          : `${Number(((p.val / firstValue) * 100).toFixed(1))}%`;
+          : `${pctValue % 1 === 0 ? pctValue : pctValue.toFixed(1)}%`;
 
-      return {
-        ...p,
-        conversionPct,
-        spacer,
+      // Left edge point
+      points.push({
+        xOffset: i,
+        conversionPct: currentPct,
+        spacer: (100 - currentPct) / 2,
+        isCenter: false,
+        rawValue: data[i].value,
+      });
+
+      // Center point (for label)
+      points.push({
+        ...data[i],
+        xOffset: i + 0.5,
+        conversionPct: nextPct,
+        spacer: (100 - nextPct) / 2,
+        isCenter: true,
         displayValue: pctLabel,
-        rawValue: p.val,
-        xOffset: p.x,
-      };
+        rawValue: data[i].value,
+      });
+    }
+
+    // Final right edge point, kept identical to last step (flat rectangle)
+    points.push({
+      xOffset: count,
+      conversionPct: lastPct,
+      spacer: (100 - lastPct) / 2,
+      isCenter: false,
+      rawValue: data[count - 1].value,
     });
+
+    return points;
   }, [data, height]);
 
   // Generate gradient stops for segmented look
@@ -111,26 +136,26 @@ const FunnelChart = React.memo(function FunnelChart({
         {/* View Mode Toggle */}
         <div className="absolute top-3 right-3 z-30 hidden md:flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg border border-gray-200 dark:border-gray-700">
           <button
-            onClick={() => setViewMode("new")}
+            onClick={() => setViewMode("funnel")}
             className={cn(
-              "px-3 py-1 text-[10px] md:text-xs font-medium rounded-md transition-all duration-200",
-              viewMode === "new"
+              "px-4 py-1.5 text-[10px] md:text-[11px] uppercase tracking-wide font-semibold rounded-md transition-all duration-200",
+              viewMode === "funnel"
                 ? "bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm"
                 : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200",
             )}
           >
-            New
+            Funnel
           </button>
           <button
-            onClick={() => setViewMode("legacy")}
+            onClick={() => setViewMode("bar")}
             className={cn(
-              "px-3 py-1 text-[10px] md:text-xs font-medium rounded-md transition-all duration-200",
-              viewMode === "legacy"
+              "px-4 py-1.5 text-[10px] md:text-[11px] uppercase tracking-wide font-semibold rounded-md transition-all duration-200",
+              viewMode === "bar"
                 ? "bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm"
                 : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200",
             )}
           >
-            Legacy
+            Bar
           </button>
         </div>
 
@@ -205,7 +230,7 @@ const FunnelChart = React.memo(function FunnelChart({
             style={{ height }}
             className="relative w-full pointer-events-auto"
           >
-            {viewMode === "new" ? (
+            {viewMode === "funnel" ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
                   data={funnelPoints}
@@ -215,32 +240,11 @@ const FunnelChart = React.memo(function FunnelChart({
                   overflow="visible"
                   onMouseMove={(state) => {
                     if (state && state.activeTooltipIndex !== undefined) {
-                      // Map the chart index back to data index if needed
-                      // The chart uses internal indices based on funnelPoints
-                      // calculating correct data index from tooltip index:
-                      // funnelPoints: [padding, data0, data1, ..., padding]
-                      // If tooltip index is 1 -> data index 0
-                      // If tooltip index is len-2 -> data index len-1
-                      // Actually simplest is to rely on the generic hover behavior which seems to just work with setHoveredIndex(state.activeTooltipIndex) in the previous code?
-                      // Wait, Previous logic:
-                      // if (i === 0) isActive = hoveredIndex <= 1;
-                      // else if (i === data.length - 1) isActive = hoveredIndex >= funnelPoints.length - 2;
-                      // else isActive = hoveredIndex === i + 1;
-
-                      // This implies chart hover index is shifted by +1 due to padding.
-                      // EXCEPT, if I hover the background layer, I set index 0, 1, 2 directly.
-                      // If I hover the chart, I get 1, 2, 3...
-                      // I need to normalize.
-
-                      // Let's adjust the chart's onMouseMove to set the correct data index.
-                      const chartIndex = state.activeTooltipIndex;
-                      let dataIndex = -1;
-                      if (chartIndex <= 1) dataIndex = 0;
-                      else if (chartIndex >= funnelPoints.length - 2)
-                        dataIndex = data.length - 1;
-                      else dataIndex = chartIndex - 1;
-
-                      if (dataIndex >= 0 && dataIndex < data.length) {
+                      const dataIndex = Math.min(
+                        Math.floor(state.activeTooltipIndex / 2),
+                        data.length - 1
+                      );
+                      if (dataIndex >= 0) {
                         setHoveredIndex(dataIndex);
                       }
                     } else {
@@ -304,7 +308,7 @@ const FunnelChart = React.memo(function FunnelChart({
                   />
 
                   <Area
-                    type="monotone"
+                    type="linear"
                     dataKey="spacer"
                     stackId="1"
                     stroke="none"
@@ -315,7 +319,7 @@ const FunnelChart = React.memo(function FunnelChart({
                   />
 
                   <Area
-                    type="monotone"
+                    type="linear"
                     dataKey="conversionPct"
                     stackId="1"
                     stroke="none"
@@ -328,8 +332,8 @@ const FunnelChart = React.memo(function FunnelChart({
                       dataKey="displayValue"
                       position="center"
                       content={({ x, width, value, index }) => {
-                        if (!value || funnelPoints[index]?.isPadding)
-                          return null;
+                        const pt = funnelPoints[index];
+                        if (!value || !pt?.isCenter) return null;
                         const centerY = height / 2;
 
                         const textAnchor = "middle";
@@ -373,10 +377,16 @@ const FunnelChart = React.memo(function FunnelChart({
                     <div
                       key={i}
                       className="flex-1 flex flex-col justify-end items-center h-full"
+                      onMouseEnter={() => setHoveredIndex(i)}
+                      onMouseLeave={() => setHoveredIndex(null)}
                     >
                       <div
-                        className="w-[80%] bg-emerald-500 rounded-t-md relative flex items-center justify-center transition-all duration-500 ease-out hover:opacity-90"
-                        style={{ height: `${heightPct}%` }}
+                        className="w-[80%] bg-emerald-500 rounded-t-md relative flex items-center justify-center transition-all duration-500 ease-out"
+                        style={{
+                          height: `${heightPct}%`,
+                          opacity:
+                            hoveredIndex === null || hoveredIndex === i ? 1 : 0.92,
+                        }}
                       >
                         {/* Percentage Label inside bar */}
                         <span className="text-white font-bold text-sm drop-shadow-md">
