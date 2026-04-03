@@ -37,6 +37,7 @@ import { DatePicker } from "@shopify/polaris";
 import dayjs from "dayjs";
 import SearchableSelect from "./ui/SearchableSelect.jsx";
 import StaticSearchableList from "./ui/StaticSearchableList.jsx";
+import { isRangeOver30DaysInclusive } from "../lib/dateRange.js";
 
 // Date Presets (Same as MobileTopBar for consistency)
 const DATE_PRESETS = [
@@ -294,8 +295,7 @@ export default function UnifiedFilterBar({
 
   // Check if date range exceeds 30 days
   const isDateRangeOver30Days = useMemo(() => {
-    if (!start || !end) return false;
-    return end.diff(start, "day") > 30;
+    return isRangeOver30DaysInclusive(start, end);
   }, [start, end]);
 
   // Auto-collapse UTM and clear filters when date range changes to exceed 30 days
@@ -381,23 +381,48 @@ export default function UnifiedFilterBar({
   const utmSourceLabel = useMemo(() => {
     const selected = utm?.source || [];
     if (selected.length === 0) return "Source";
-    if (selected.length === 1) return selected[0];
-    return `Source (${selected.length})`;
+    return `Source(${selected.length})`;
   }, [utm?.source]);
 
   const utmMediumLabel = useMemo(() => {
     const selected = utm?.medium || [];
     if (selected.length === 0) return "Medium";
-    if (selected.length === 1) return selected[0];
-    return `Medium (${selected.length})`;
+    return `Medium(${selected.length})`;
   }, [utm?.medium]);
 
   const utmCampaignLabel = useMemo(() => {
     const selected = utm?.campaign || [];
     if (selected.length === 0) return "Campaign";
-    if (selected.length === 1) return selected[0];
-    return `Campaign (${selected.length})`;
+    return `Campaign(${selected.length})`;
   }, [utm?.campaign]);
+
+  const utmButtonSx = {
+    px: 1.5,
+    height: 40,
+    maxWidth: { xs: 132, sm: 168, md: 220 },
+    minWidth: 0,
+    color: "text.secondary",
+    textTransform: "none",
+    fontWeight: 500,
+    fontSize: "0.85rem",
+    borderRadius: 0,
+    flexShrink: 1,
+    "& .MuiButton-endIcon": {
+      flexShrink: 0,
+      ml: 0.5,
+    },
+    "&:hover": {
+      bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)",
+    },
+  };
+
+  const utmLabelSx = {
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    display: "block",
+    minWidth: 0,
+  };
 
   // --- Visibility Logic ---
   const showUtm = !hideAllExceptDate && allowedFilters.utm;
@@ -573,24 +598,16 @@ export default function UnifiedFilterBar({
                   onClick={handleUtmSourceClick}
                   endIcon={<ChevronDown size={14} />}
                   sx={{
-                    px: 1.5,
-                    height: 40,
+                    ...utmButtonSx,
                     color:
                       (utm?.source?.length || 0) > 0
                         ? "primary.main"
                         : "text.secondary",
-                    textTransform: "none",
-                    fontWeight: 500,
-                    fontSize: "0.85rem",
-                    borderRadius: 0,
-                    "&:hover": {
-                      bgcolor: isDark
-                        ? "rgba(255,255,255,0.05)"
-                        : "rgba(0,0,0,0.03)",
-                    },
                   }}
                 >
-                  {utmSourceLabel}
+                  <Box component="span" sx={utmLabelSx}>
+                    {utmSourceLabel}
+                  </Box>
                 </Button>
 
                 <Divider
@@ -610,24 +627,16 @@ export default function UnifiedFilterBar({
                   onClick={handleUtmMediumClick}
                   endIcon={<ChevronDown size={14} />}
                   sx={{
-                    px: 1.5,
-                    height: 40,
+                    ...utmButtonSx,
                     color:
                       (utm?.medium?.length || 0) > 0
                         ? "primary.main"
                         : "text.secondary",
-                    textTransform: "none",
-                    fontWeight: 500,
-                    fontSize: "0.85rem",
-                    borderRadius: 0,
-                    "&:hover": {
-                      bgcolor: isDark
-                        ? "rgba(255,255,255,0.05)"
-                        : "rgba(0,0,0,0.03)",
-                    },
                   }}
                 >
-                  {utmMediumLabel}
+                  <Box component="span" sx={utmLabelSx}>
+                    {utmMediumLabel}
+                  </Box>
                 </Button>
 
                 <Divider
@@ -647,24 +656,16 @@ export default function UnifiedFilterBar({
                   onClick={handleUtmCampaignClick}
                   endIcon={<ChevronDown size={14} />}
                   sx={{
-                    px: 1.5,
-                    height: 40,
+                    ...utmButtonSx,
                     color:
                       (utm?.campaign?.length || 0) > 0
                         ? "primary.main"
                         : "text.secondary",
-                    textTransform: "none",
-                    fontWeight: 500,
-                    fontSize: "0.85rem",
-                    borderRadius: 0,
-                    "&:hover": {
-                      bgcolor: isDark
-                        ? "rgba(255,255,255,0.05)"
-                        : "rgba(0,0,0,0.03)",
-                    },
                   }}
                 >
-                  {utmCampaignLabel}
+                  <Box component="span" sx={utmLabelSx}>
+                    {utmCampaignLabel}
+                  </Box>
                 </Button>
 
                 <Divider
@@ -1664,14 +1665,8 @@ export default function UnifiedFilterBar({
             variant="outlined"
             size="small"
             onClick={() => {
-              onUtmChange({
-                source: [],
-                medium: [],
-                campaign: [],
-                term: [],
-                content: [],
-              });
-              onSalesChannelChange("");
+              onSalesChannelChange([]);
+              onDeviceTypeChange([]);
               onProductChange(null);
               handleFilterClose();
             }}
@@ -1689,7 +1684,7 @@ export default function UnifiedFilterBar({
               },
             }}
           >
-            CLEAR ALL FILTERS
+            CLEAR DIVISION FILTERS
           </Button>
         </Box>
       </Popover>

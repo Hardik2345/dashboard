@@ -2,6 +2,8 @@
 
 const {
   queryOrderSalesTotals,
+  resolveUtmAggregateSource,
+  queryUtmAggregatePair,
   queryProductKpiTotals,
   buildSummaryFilterOptions,
 } = require("../../../services/metricsAggregateService");
@@ -54,6 +56,101 @@ describe("metricsAggregateService", () => {
       total_atc_sessions: 25,
       total_orders: 5,
       total_sales: 250,
+    });
+  });
+
+  test("resolveUtmAggregateSource maps all supported combinations to the correct table", () => {
+    expect(resolveUtmAggregateSource({ utm_source: "google" }, "daily")).toEqual({
+      table: "utm_source_daily",
+      filters: { utm_source: "google", utm_medium: null, utm_campaign: null },
+    });
+    expect(resolveUtmAggregateSource({ utm_medium: "cpc" }, "daily")).toEqual({
+      table: "utm_medium_daily",
+      filters: { utm_source: null, utm_medium: "cpc", utm_campaign: null },
+    });
+    expect(resolveUtmAggregateSource({ utm_campaign: "launch" }, "daily")).toEqual({
+      table: "utm_campaign_daily",
+      filters: { utm_source: null, utm_medium: null, utm_campaign: "launch" },
+    });
+    expect(
+      resolveUtmAggregateSource({ utm_source: "google", utm_medium: "cpc" }, "daily"),
+    ).toEqual({
+      table: "utm_source_medium_daily",
+      filters: { utm_source: "google", utm_medium: "cpc", utm_campaign: null },
+    });
+    expect(
+      resolveUtmAggregateSource({ utm_source: "google", utm_campaign: "launch" }, "hourly"),
+    ).toEqual({
+      table: "utm_source_campaign_hourly",
+      filters: { utm_source: "google", utm_medium: null, utm_campaign: "launch" },
+    });
+    expect(
+      resolveUtmAggregateSource({ utm_medium: "cpc", utm_campaign: "launch" }, "hourly"),
+    ).toEqual({
+      table: "utm_medium_campaign_hourly",
+      filters: { utm_source: null, utm_medium: "cpc", utm_campaign: "launch" },
+    });
+    expect(
+      resolveUtmAggregateSource(
+        { utm_source: "google", utm_medium: "cpc", utm_campaign: "launch" },
+        "hourly",
+      ),
+    ).toEqual({
+      table: "utm_source_medium_campaign_hourly",
+      filters: { utm_source: "google", utm_medium: "cpc", utm_campaign: "launch" },
+    });
+    expect(
+      resolveUtmAggregateSource({ utm_source: "google", utm_term: "brand" }, "daily"),
+    ).toBeNull();
+  });
+
+  test("queryUtmAggregatePair batches current and previous aggregate windows", async () => {
+    const conn = {
+      query: jest.fn().mockResolvedValue([
+        {
+          current_total_orders: 9,
+          current_total_sales: 450,
+          current_total_sessions: 300,
+          current_total_atc_sessions: 60,
+          current_cancelled_orders: 2,
+          current_refunded_orders: 1,
+          previous_total_orders: 6,
+          previous_total_sales: 240,
+          previous_total_sessions: 200,
+          previous_total_atc_sessions: 40,
+          previous_cancelled_orders: 1,
+          previous_refunded_orders: 0,
+        },
+      ]),
+    };
+
+    const result = await queryUtmAggregatePair(
+      conn,
+      { start: "2026-03-15", end: "2026-03-31" },
+      { start: "2026-02-28", end: "2026-03-14" },
+      { utm_source: "google", utm_medium: "cpc" },
+      { granularity: "daily" },
+    );
+
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(conn.query.mock.calls[0][0]).toContain("FROM utm_source_medium_daily");
+    expect(result).toEqual({
+      current: {
+        total_orders: 9,
+        total_sales: 450,
+        total_sessions: 300,
+        total_atc_sessions: 60,
+        cancelled_orders: 2,
+        refunded_orders: 1,
+      },
+      previous: {
+        total_orders: 6,
+        total_sales: 240,
+        total_sessions: 200,
+        total_atc_sessions: 40,
+        cancelled_orders: 1,
+        refunded_orders: 0,
+      },
     });
   });
 
