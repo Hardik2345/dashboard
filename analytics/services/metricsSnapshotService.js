@@ -2,12 +2,15 @@ const { QueryTypes } = require("sequelize");
 const {
   computePercentDelta,
   computeReturnCounts,
+  appendProductFilter,
+} = require("../shared/utils/metricsUtils");
+const {
   appendUtmWhere,
-} = require("../utils/metricsUtils");
+} = require("../shared/utils/filters");
 const {
   parseIsoDate,
   formatIsoDate,
-} = require("../utils/dateUtils");
+} = require("../shared/utils/date");
 const {
   DAY_MS,
   pad2,
@@ -34,6 +37,9 @@ const {
   resolveUtmAggregateSource,
 } = require("./metricsAggregateService");
 
+const buildCutoffContext = buildLiveCutoffContext;
+const getUtmAggregateSource = resolveUtmAggregateSource;
+
 function hasAnyFilters(filters = {}) {
   return !!(
     filters.utm_source ||
@@ -55,26 +61,6 @@ function hasSnapshotFilters(filters = {}) {
     filters.utm_term ||
     filters.utm_content
   );
-}
-
-function appendProductFilter(sql, replacements, productId, column = "product_id") {
-  if (!productId) return sql;
-  if (Array.isArray(productId)) {
-    sql += ` AND ${column} IN (?)`;
-    replacements.push(productId);
-    return sql;
-  }
-  sql += ` AND ${column} = ?`;
-  replacements.push(productId);
-  return sql;
-}
-
-function buildCutoffContext(start, end, now = new Date()) {
-  return buildLiveCutoffContext(start, end, now);
-}
-
-function getUtmAggregateSource(filters = {}, granularity = "daily") {
-  return resolveUtmAggregateSource(filters, granularity);
 }
 
 async function queryCurrentRowTwoSessionTotals(
@@ -1406,5 +1392,4 @@ function buildMetricsSnapshotService(deps = {}) {
 module.exports = {
   normalizeMetricRequest,
   buildMetricsSnapshotService,
-  buildCutoffContext,
 };

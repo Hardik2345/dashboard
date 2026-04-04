@@ -1,6 +1,6 @@
 const { QueryTypes } = require("sequelize");
-const redisClient = require("../lib/redis");
-const logger = require("../utils/logger");
+const redisClient = require("../shared/db/redis");
+const logger = require("../shared/utils/logger");
 const { getNowIst, formatUtcDate } = require("./metricsFoundation");
 
 const MEM_CACHE = new Map();

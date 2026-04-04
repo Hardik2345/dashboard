@@ -9,8 +9,8 @@ _realLog(`  NODE_ENV:   ${process.env.NODE_ENV || '(not set)'}\n`);
 _realLog(`========================================\n\n`);
 
 const { init, sequelize } = require('./app');
-const { closeAll: closeBrandConnections } = require('./lib/brandConnectionManager');
-const logger = require('./utils/logger');
+const { closeAll: closeBrandConnections } = require('./shared/db/brandConnectionManager');
+const logger = require('./shared/utils/logger');
 
 let server = null;
 

@@ -1,7 +1,7 @@
 const { QueryTypes } = require("sequelize");
 const {
   appendUtmWhere,
-} = require("../utils/metricsUtils");
+} = require("../shared/utils/filters");
 
 function pickSupportedUtmFilters(filters = {}) {
   return {

@@ -1,5 +1,5 @@
 const { QueryTypes } = require("sequelize");
-const { formatIsoDate } = require("../utils/dateUtils");
+const { formatIsoDate } = require("../shared/utils/date");
 const {
   queryHourlyProductSessions,
 } = require("./duckdbQueryService");
