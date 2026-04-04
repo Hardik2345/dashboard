@@ -1,6 +1,6 @@
 const { RangeSchema } = require("../validation/schemas");
-const { formatIsoDate } = require("../utils/dateUtils");
-const { extractFilters } = require("../utils/metricsUtils");
+const { formatIsoDate } = require("../shared/utils/date");
+const { extractFilters } = require("../shared/utils/filters");
 
 function normalizeRangeQuery(query = {}, options = {}) {
   const {

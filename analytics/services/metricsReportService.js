@@ -1,7 +1,7 @@
 const { QueryTypes } = require("sequelize");
-const { shiftDays } = require("../utils/dateUtils");
-const { buildUtmWhereClause } = require("../utils/metricsUtils");
-const { buildWhereClause } = require("../utils/sql");
+const { shiftDays } = require("../shared/utils/date");
+const { buildUtmWhereClause } = require("../shared/utils/filters");
+const { buildWhereClause } = require("../shared/utils/sql");
 const {
   pad2,
   getNowIst,
@@ -17,14 +17,6 @@ const PAYMENT_TYPE_CASE_SQL = `
     ELSE 'Prepaid'
   END
 `;
-
-function formatIstDate(date) {
-  return formatUtcDate(date);
-}
-
-function buildIstCutoffContext(start, end, now = new Date()) {
-  return buildCompletedHourCutoffContext(start, end, now);
-}
 
 function parseHourLte(hourLteRaw) {
   const hasHourLte =
@@ -70,7 +62,7 @@ function buildIstBuckets(days, now = new Date()) {
   for (let offset = 0; offset < days; offset += 1) {
     const day = new Date(nowIst.getTime());
     day.setUTCDate(day.getUTCDate() - offset);
-    const date = formatIstDate(day);
+    const date = formatUtcDate(day);
     const maxHour = offset === 0 ? day.getUTCHours() : 23;
     for (let hour = 0; hour <= maxHour; hour += 1) {
       buckets.push({ date, hour });
@@ -429,7 +421,6 @@ function buildMetricsReportService() {
 module.exports = {
   buildMetricsReportService,
   resolveCompareRange,
-  buildIstCutoffContext,
   parseHourLte,
   buildClosedOpenTimestampRange,
   buildIstBuckets,

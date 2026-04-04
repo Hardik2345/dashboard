@@ -1,14 +1,19 @@
 const { Server } = require("socket.io");
-const logger = require("./logger");
+const logger = require("../shared/utils/logger");
 
 let io = null;
 
 function initSocket(server) {
+  const allowedOrigins = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
   io = new Server(server, {
     cors: {
-      origin: "*", // Adjust this to your specific frontend URL in production
-      methods: ["GET", "POST"]
-    }
+      origin: allowedOrigins.length ? allowedOrigins : false,
+      methods: ['GET', 'POST'],
+    },
   });
 
   io.on("connection", (socket) => {
@@ -30,15 +35,7 @@ function getIO() {
   return io;
 }
 
-function emitKafkaMessage(message) {
-  if (io) {
-    io.emit("kafka-message", message);
-    logger.info("Emitted kafka-message via socket", { message });
-  }
-}
-
 module.exports = {
   initSocket,
   getIO,
-  emitKafkaMessage
 };
