@@ -11,7 +11,10 @@ export default function LogsPanel({ logs: externalLogs = [] }) {
   const [internalLogs, setInternalLogs] = useState([]);
 
   useEffect(() => {
-    const socket = io(SOCKET_URL);
+    const socket = io(SOCKET_URL, {
+      path: "/api/tenant/socket.io",
+      transports: ["polling", "websocket"], // Standard transport order
+    });
 
     socket.on("connect", () => {
       console.log("LogsPanel connected to Onboarding WebSocket (Port 3004)");
