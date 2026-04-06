@@ -26,9 +26,9 @@ router.post("/resolve", async (req, res) => {
   }
   res.status(200).json(tenantMetadata);
 });
-router.post("/add", async (req, res) => {
+// Common handler for onboarding forwarding
+const handleOnboarding = async (req, res) => {
   const dataset = req.body;
-  
   const pipelineApi = process.env.TENANT_ONBOARD_API;
   const pipelineKey = process.env.X_PIPELINE_KEY;
 
@@ -37,7 +37,7 @@ router.post("/add", async (req, res) => {
     return res.status(500).json({ error: "onboarding_api_not_configured" });
   }
 
-  console.log(`[Tenant Router] Forwarding /tenant/add request to: ${pipelineApi}`);
+  console.log(`[Tenant Router] Forwarding onboarding request for ${dataset.brand_name} to: ${pipelineApi}`);
 
   try {
     const response = await axios.post(pipelineApi, dataset, {
@@ -59,12 +59,15 @@ router.post("/add", async (req, res) => {
       details: errorData
     });
   }
-});
+};
+
+router.post("/onboard", handleOnboarding);
+router.post("/add", handleOnboarding);
 
 // Endpoint to receive real-time logs from the pipeline orchestrator
-router.post("/onboard/logs", async (req, res) => {
+const handleLogs = async (req, res) => {
   const pipelineKey = req.headers["x-pipeline-key"];
-  const expectedKey = process.env.X_PIPELINE_KEY;
+  const expectedKey = process.env.X_PIPELINE_KEY || process.env["X-PIPELINE-KEY"]; // Support both casing
 
   // Security Check
   if (!pipelineKey || pipelineKey !== expectedKey) {
@@ -89,7 +92,10 @@ router.post("/onboard/logs", async (req, res) => {
   });
 
   return res.status(200).json({ success: true });
-});
+};
+
+router.post("/onboard/logs", handleLogs);
+router.post("/tenant-onboard/logs", handleLogs); // User requested format
 
 // GET all brands mapped by brand_num
 router.get("/brands", async (req, res) => {

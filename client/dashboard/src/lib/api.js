@@ -284,7 +284,7 @@ export async function removeWhitelist(id) {
 }
 
 export async function onboardTenant(payload) {
-  return doPost("/tenant/onboard", payload);
+  return doPost("/tenant/add", payload);
 }
 
 
