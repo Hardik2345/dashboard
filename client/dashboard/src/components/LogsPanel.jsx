@@ -3,7 +3,7 @@ import { Card, CardContent, Typography, Box, Stack, Divider } from "@mui/materia
 import { useTheme, alpha } from "@mui/material/styles";
 import { io } from "socket.io-client";
 
-const SOCKET_URL = "http://localhost:3006"; // Direct connection to analytics-service
+const SOCKET_URL = "http://localhost:3004"; // Direct connection to tenant-router
 
 export default function LogsPanel({ logs: externalLogs = [] }) {
   const theme = useTheme();
@@ -14,82 +14,41 @@ export default function LogsPanel({ logs: externalLogs = [] }) {
     const socket = io(SOCKET_URL);
 
     socket.on("connect", () => {
-      console.log("LogsPanel connected to Kafka WebSocket");
+      console.log("LogsPanel connected to Onboarding WebSocket (Port 3004)");
     });
 
     socket.on("disconnect", () => {
-      console.log("LogsPanel disconnected from Kafka WebSocket");
+      console.log("LogsPanel disconnected from Onboarding WebSocket");
     });
 
-    socket.on("kafka-message", (data) => {
-      console.log("Kafka socket event:", data);
+    socket.on("onboarding-log", (data) => {
+      console.log("Onboarding log received:", data);
 
-      const messageData = data?.message;
-
-      if (!messageData || messageData.topic !== "brands-topic") {
-        return;
-      }
-
-      let value;
-      try {
-        value =
-          typeof messageData.value === "string"
-            ? JSON.parse(messageData.value)
-            : messageData.value;
-      } catch (e) {
-        console.error("Failed to parse Kafka message value", e);
-        return;
-      }
-
-      const state = value.state;
-      const brandName = value.brand_name || "Unknown Brand";
-
-      let message = "";
+      // Data format: { brand_id, brand_name, log, timestamp? }
+      const brandName = data.brand_name || "Unknown Brand";
+      const logContent = data.log || "";
+      
       let type = "info";
+      let displayMessage = logContent;
 
-      switch (state) {
-        case "initiated":
-          message = `[INIT] Brand onboarding initiated for "${brandName}". Received authorization code from Shopify. Preparing token exchange and tenant provisioning.`;
-          break;
+      // Basic styling based on content
+      if (logContent.toLowerCase().includes("error") || logContent.toLowerCase().includes("fail")) {
+        type = "error";
+      } else if (logContent.toLowerCase().includes("success") || logContent.toLowerCase().includes("complete")) {
+        type = "success";
+      } else if (logContent.toLowerCase().includes("warn")) {
+        type = "warning";
+      }
 
-        case "access_token_generated":
-          message = `[AUTH] Shopify access token successfully generated for "${brandName}". Secure credentials stored and tenant payload initialized. Pipeline configuration prepared for downstream services.`;
-          break;
-
-        case "database_created":
-          message = `[DB] Dedicated database provisioned successfully for "${brandName}". Schema initialization in progress. System ready for data ingestion setup.`;
-          break;
-
-        case "speed_key_generated":
-          message = `[PIPELINE] Speed key generated and securely attached to pipeline credentials for brand_id: ${value.brand_id}.`;
-          break;
-
-        case "tenant_record_created":
-          message = `[TENANT] Tenant record created successfully for "${brandName}". App id mappings configured. Tenant is now registered within routing layer.`;
-          break;
-
-        case "pipeline_credentials_created":
-          message = `[CONFIG] Pipeline credentials successfully created for brand_id: ${value.brand_id}. All required service configurations are now active. System ready to begin historical data sync.`;
-          break;
-
-        case "data_backfill_completed":
-          message = `[BACKFILL] Historical orders and products data successfully backfilled for "${brandName}". Final validation checks completed.`;
-          break;
-
-        case "tenant_added":
-          message = `[COMPLETE] Brand onboarding completed successfully for "${brandName}". Historical data backfill finished. Tenant is now live and available on the dashboard.`;
-          type = "success";
-          break;
-
-        default:
-          console.log("Ignoring unsupported state:", state);
-          return;
+      // Add brand context if not already present in the log string
+      if (!logContent.includes(brandName)) {
+        displayMessage = `[${brandName}] ${logContent}`;
       }
 
       const newLog = {
         id: Date.now() + Math.random(),
-        timestamp: messageData.timestamp || new Date().toISOString(),
-        message,
+        timestamp: data.timestamp || new Date().toISOString(),
+        message: displayMessage,
         type,
       };
 

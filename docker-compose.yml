@@ -28,9 +28,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:18080/health || exit 1"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 20s
 
   auth-service:
     container_name: auth-service-main
@@ -47,11 +47,11 @@ services:
     networks:
       - saas-net
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3001/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:3001/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
 
   tenant-router:
     container_name: tenant-router-main
@@ -64,8 +64,6 @@ services:
     environment:
       PORT: 3004
       NODE_ENV: production
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_TOPIC: brands-topic
       
     restart: unless-stopped
     networks:
@@ -74,11 +72,11 @@ services:
     
     
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3004/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:3004/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
 
   alerts-service:
     container_name: alerts-service-main
@@ -95,11 +93,11 @@ services:
     networks:
       - saas-net
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:5005/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:5005/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
 
   analytics-service:
     container_name: analytics-service-main
@@ -115,10 +113,6 @@ services:
       PORT: 3006
       NODE_ENV: production
 
-      # 🔥 ADD THIS
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_TOPIC: brands-topic
-
 
     restart: unless-stopped
 
@@ -128,11 +122,11 @@ services:
       - shared-net
 
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3006/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:3006/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 20s
 
   sessions-service:
     container_name: sessions-service-main
