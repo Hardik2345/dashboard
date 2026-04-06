@@ -243,7 +243,8 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 1 }}>
                     <Box sx={{ flex: '1 1 auto', minWidth: '150px' }}>
                         <Typography variant="h6" component="div" sx={{ mb: 0.5, fontSize: '1rem', fontWeight: 600 }}>
-                            Mode of Payment <span className="text-muted-foreground text-sm font-normal">(excluding cancelled orders)</span>
+                            Mode of Payment 
+                            {/* <span className="text-muted-foreground text-sm font-normal">(excluding cancelled orders)</span> */}
                         </Typography>
                     </Box>
 
