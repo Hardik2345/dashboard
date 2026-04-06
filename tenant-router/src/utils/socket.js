@@ -8,6 +8,7 @@ let io;
  */
 const init = (httpServer) => {
   io = new Server(httpServer, {
+    path: "/api/tenant/socket.io", // Ensure this matches the Nginx/Gateway proxy path
     cors: {
       origin: process.env.CORS_ORIGIN || "*",
       methods: ["GET", "POST"]
