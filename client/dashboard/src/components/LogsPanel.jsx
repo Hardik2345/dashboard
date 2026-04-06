@@ -11,9 +11,14 @@ export default function LogsPanel({ logs: externalLogs = [] }) {
   const [internalLogs, setInternalLogs] = useState([]);
 
   useEffect(() => {
+    const token = window.localStorage.getItem("gateway_access_token");
     const socket = io(SOCKET_URL, {
       path: "/api/tenant/socket.io",
-      transports: ["polling", "websocket"], // Standard transport order
+      auth: { token },
+      extraHeaders: {
+        Authorization: `Bearer ${token}`
+      },
+      transports: ["polling", "websocket"], 
     });
 
     socket.on("connect", () => {
