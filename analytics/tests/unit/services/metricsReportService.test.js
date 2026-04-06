@@ -75,7 +75,7 @@ describe("metricsReportService", () => {
       prepaid_percent: 70,
       partial_percent: 0,
     });
-    expect(response.sql_used).toContain("created_at >= ?");
+    expect(response.sql_used).toContain("created_date");
   });
 
   test("returns order split from a single aggregate summary query when unfiltered", async () => {

@@ -38,13 +38,29 @@ function _M.authenticate()
     end
 
     if is_pipeline_call then
-        -- Allow bypass for resolve and pipeline routes, /tenant/create, /tenant/brands, and /analytics/admin/api-keys
-        if ngx.var.uri:find("^/tenant/resolve") or 
-           ngx.var.uri:find("^/tenant/pipeline/") or 
-           ngx.var.uri:find("^/tenant/create") or 
-           ngx.var.uri:find("^/tenant/brands") or 
-           ngx.var.uri:find("^/analytics/admin/api%-keys") or 
-           ngx.var.uri:find("^/analytics/api%-keys") then
+        local uri = ngx.var.uri or ""
+        local method = ngx.req.get_method()
+
+        local is_onboard_logs_endpoint =
+            method == "POST" and (
+                uri == "/tenant/onboard/logs" or
+                uri == "/tenant/onboard/logs/" or
+                uri == "/tenant/tenant-onboard/logs" or
+                uri == "/tenant/tenant-onboard/logs/" or
+                uri == "/api/tenant/onboard/logs" or
+                uri == "/api/tenant/onboard/logs/" or
+                uri == "/api/tenant/tenant-onboard/logs" or
+                uri == "/api/tenant/tenant-onboard/logs/"
+            )
+
+        -- Allow bypass for pipeline-owned tenant routes + onboarding log ingestion endpoints.
+        if uri:find("^/tenant/resolve") or 
+           uri:find("^/tenant/pipeline/") or 
+           uri:find("^/tenant/create") or 
+           uri:find("^/tenant/brands") or 
+           uri:find("^/analytics/admin/api%-keys") or 
+           uri:find("^/analytics/api%-keys") or
+           is_onboard_logs_endpoint then
             ngx.req.set_header("x-user-id", "pipeline-service")
             ngx.req.set_header("x-role", "system")
             return

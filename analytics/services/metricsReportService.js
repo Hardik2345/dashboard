@@ -1,6 +1,5 @@
 const { QueryTypes } = require("sequelize");
 const { shiftDays } = require("../shared/utils/date");
-const { buildUtmWhereClause } = require("../shared/utils/filters");
 const { buildWhereClause } = require("../shared/utils/sql");
 const {
   pad2,
@@ -153,8 +152,9 @@ function buildMetricsReportService() {
     filters = {},
     includeSql = false,
   }) {
-    const range = buildClosedOpenTimestampRange(start, end, hourLte);
-    if (!range) {
+    const effectiveStart = start || end;
+    const effectiveEnd = end || start;
+    if (!effectiveStart || !effectiveEnd) {
       return {
         metric: "PAYMENT_SPLIT_SALES",
         range: { start: null, end: null },
@@ -168,15 +168,18 @@ function buildMetricsReportService() {
       };
     }
 
-    let whereSql = `WHERE created_at >= ? AND created_at < ?`;
-    const replacements = [range.startTs, range.endTs];
+    const isSingleDay = effectiveStart === effectiveEnd;
+    let whereSql = isSingleDay
+      ? `WHERE created_date = ?`
+      : `WHERE created_date >= ? AND created_date <= ?`;
+    const replacements = isSingleDay
+      ? [effectiveStart]
+      : [effectiveStart, effectiveEnd];
+
     if (productId) {
       whereSql += ` AND product_id = ?`;
       replacements.push(productId);
     }
-    const built = buildUtmWhereClause(filters, { prefixWithAnd: true });
-    whereSql += built.clause;
-    replacements.push(...built.params);
 
     const sql = `
       SELECT payment_type, SUM(max_price) AS sales
@@ -214,9 +217,9 @@ function buildMetricsReportService() {
     return {
       metric: "PAYMENT_SPLIT_SALES",
       range: {
-        start: range.effectiveStart,
-        end: range.effectiveEnd,
-        hour_lte: Number.isInteger(hourLte) ? hourLte : null,
+        start: effectiveStart,
+        end: effectiveEnd,
+        hour_lte: null,
       },
       cod_sales: codSales,
       prepaid_sales: prepaidSales,
@@ -238,16 +241,7 @@ function buildMetricsReportService() {
     filters = {},
     includeSql = false,
   }) {
-    const hasScopedFilters = !!(
-      productId ||
-      filters.utm_source ||
-      filters.utm_medium ||
-      filters.utm_campaign ||
-      filters.sales_channel
-    );
-    const useHourlyCutoff = Number.isInteger(hourLte);
-
-    if (productId || hasScopedFilters || useHourlyCutoff) {
+    if (productId) {
       if (!start && !end) {
         return {
           metric: "ORDER_SPLIT",
@@ -262,16 +256,20 @@ function buildMetricsReportService() {
         };
       }
 
-      const range = buildClosedOpenTimestampRange(start, end, hourLte);
-      let whereSql = `WHERE created_at >= ? AND created_at < ?`;
-      const replacements = [range.startTs, range.endTs];
+      const effectiveStart = start || end;
+      const effectiveEnd = end || start;
+      const isSingleDay = effectiveStart === effectiveEnd;
+      let whereSql = isSingleDay
+        ? `WHERE created_date = ?`
+        : `WHERE created_date >= ? AND created_date <= ?`;
+      const replacements = isSingleDay
+        ? [effectiveStart]
+        : [effectiveStart, effectiveEnd];
+
       if (productId) {
         whereSql += ` AND product_id = ?`;
         replacements.push(productId);
       }
-      const built = buildUtmWhereClause(filters, { prefixWithAnd: true });
-      whereSql += built.clause;
-      replacements.push(...built.params);
 
       const sql = `
         SELECT payment_type, COUNT(DISTINCT order_name) AS cnt
@@ -308,11 +306,10 @@ function buildMetricsReportService() {
       return {
         metric: "ORDER_SPLIT",
         range: {
-          start: range.effectiveStart,
-          end: range.effectiveEnd,
-          hour_lte: useHourlyCutoff ? hourLte : null,
+          start: effectiveStart,
+          end: effectiveEnd,
+          hour_lte: null,
           product_id: productId,
-          ...filters,
         },
         cod_orders: codOrders,
         prepaid_orders: prepaidOrders,
@@ -327,6 +324,7 @@ function buildMetricsReportService() {
     }
 
     const { where, params } = buildWhereClause(start, end);
+    const useHourlyCutoff = Number.isInteger(hourLte);
     const sql = `
       SELECT
         COALESCE(SUM(cod_orders), 0) AS cod_orders,
