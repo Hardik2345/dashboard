@@ -3,7 +3,7 @@ import { Card, CardContent, Typography, Box, Stack, Divider } from "@mui/materia
 import { useTheme, alpha } from "@mui/material/styles";
 import { io } from "socket.io-client";
 
-const SOCKET_URL = "http://localhost:3004"; // Direct connection to tenant-router
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin; // Supports production through Nginx or gateway
 
 export default function LogsPanel({ logs: externalLogs = [] }) {
   const theme = useTheme();
