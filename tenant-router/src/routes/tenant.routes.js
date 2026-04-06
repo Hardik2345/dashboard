@@ -2,7 +2,8 @@ const express = require("express");
 const router = express.Router();
 const tenantRouterService = require("../services/tenantRouter.service");
 const cdsService = require("../services/cds.service");
-const kafka = require("../lib/kafka");
+const axios = require("axios");
+const socketUtils = require("../utils/socket");
 
 
 router.post("/resolve", async (req, res) => {
@@ -25,44 +26,69 @@ router.post("/resolve", async (req, res) => {
   }
   res.status(200).json(tenantMetadata);
 });
+router.post("/add", async (req, res) => {
+  const dataset = req.body;
+  
+  const pipelineApi = process.env.TENANT_ONBOARD_API;
+  const pipelineKey = process.env.X_PIPELINE_KEY;
 
-// Onboard a new brand
-router.post("/onboard", async (req, res) => {
-  const {
-    brand_id,
-    brand_name,
-    client_id,
-    client_secret,
-    shop_name,
-    code,
-    brand_url,
-    website_url,
-  } = req.body;
+  if (!pipelineApi || !pipelineKey) {
+    console.error("[Routes] TENANT_ONBOARD_API or X_PIPELINE_KEY not configured");
+    return res.status(500).json({ error: "onboarding_api_not_configured" });
+  }
 
-  // Basic validation
-  if (!brand_id || !brand_name || !client_id || !client_secret || !shop_name || !code || !brand_url || !website_url) {
+  console.log(`[Tenant Router] Forwarding /tenant/add request to: ${pipelineApi}`);
+
+  try {
+    const response = await axios.post(pipelineApi, dataset, {
+      headers: {
+        "x-pipeline-key": pipelineKey,
+        "Content-Type": "application/json"
+      }
+    });
+
+    console.log(`[Tenant Router] Pipeline response: ${response.status}`);
+    return res.status(response.status).json(response.data);
+  } catch (err) {
+    const errorData = err.response?.data || { message: err.message };
+    const statusCode = err.response?.status || 500;
+
+    console.error(`[Routes] Error forwarding to pipeline (${statusCode}):`, errorData);
+    return res.status(statusCode).json({
+      error: "pipeline_forwarding_failed",
+      details: errorData
+    });
+  }
+});
+
+// Endpoint to receive real-time logs from the pipeline orchestrator
+router.post("/onboard/logs", async (req, res) => {
+  const pipelineKey = req.headers["x-pipeline-key"];
+  const expectedKey = process.env.X_PIPELINE_KEY;
+
+  // Security Check
+  if (!pipelineKey || pipelineKey !== expectedKey) {
+    console.warn(`[Logs] Unauthorized log attempt with key: ${pipelineKey}`);
+    return res.status(401).json({ error: "unauthorized_pipeline_key" });
+  }
+
+  const { brand_id, brand_name, log } = req.body;
+
+  if (!brand_id || !log) {
     return res.status(400).json({ error: "missing_required_fields" });
   }
 
-  const message = {
+  console.log(`[Logs] Received log for brand ${brand_id} (${brand_name}): ${log.substring(0, 50)}...`);
+
+  // Broadcast to all connected clients via Socket.io
+  socketUtils.emitOnboardingLog({
     brand_id,
     brand_name,
-    client_id,
-    client_secret,
-    shop_name,
-    code,
-    brand_url,
-    website_url,
-  };
+    log,
+    timestamp: new Date().toISOString()
+  });
 
-  try {
-    await kafka.publishMessage("brands-topic", brand_id, message);
-    console.log(`[Tenant Router] Published onboarding message for brand ${brand_id}`);
-    res.status(200).json({ status: "initiated", brand_id });
-  } catch (err) {
-    console.error("[Routes] Error publishing onboarding message:", err.stack || err.message);
-    res.status(500).json({ error: "internal_error" });
-  }
+  return res.status(200).json({ success: true });
 });
 
 // GET all brands mapped by brand_num
