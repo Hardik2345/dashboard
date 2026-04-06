@@ -19,9 +19,6 @@ export default function LogsPanel({ logs: externalLogs = [] }) {
     const socket = io(SOCKET_URL, {
       path: "/api/tenant/socket.io",
       auth: { token },
-      extraHeaders: {
-        Authorization: `Bearer ${token}`
-      },
       transports: ["polling", "websocket"], 
     });
 

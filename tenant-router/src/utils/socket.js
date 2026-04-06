@@ -2,16 +2,57 @@ const { Server } = require("socket.io");
 
 let io;
 
+const DEFAULT_ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "https://datum.trytechit.co",
+  "https://www.datum.trytechit.co",
+];
+
+function parseAllowedOrigins() {
+  const raw = [process.env.CORS_ORIGINS, process.env.CORS_ORIGIN]
+    .filter(Boolean)
+    .join(",");
+
+  const origins = raw
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  if (origins.includes("*")) {
+    return "*";
+  }
+
+  const deduped = Array.from(new Set([...DEFAULT_ALLOWED_ORIGINS, ...origins]));
+  return deduped;
+}
+
 /**
  * Initialize Socket.io with an existing HTTP server.
  * @param {import('http').Server} httpServer 
  */
 const init = (httpServer) => {
+  const allowedOrigins = parseAllowedOrigins();
+
   io = new Server(httpServer, {
     path: "/api/tenant/socket.io", // Ensure this matches the Nginx/Gateway proxy path
     cors: {
-      origin: process.env.CORS_ORIGIN || "*",
-      methods: ["GET", "POST"]
+      origin: (origin, callback) => {
+        // Allow non-browser clients or same-origin calls with no Origin header.
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins === "*") {
+          return callback(null, true);
+        }
+
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error(`Origin not allowed by Socket.IO CORS: ${origin}`));
+      },
+      methods: ["GET", "POST", "OPTIONS"],
+      allowedHeaders: ["Authorization", "Content-Type", "x-pipeline-key"],
+      credentials: true,
     }
   });
 
