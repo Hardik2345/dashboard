@@ -16,7 +16,8 @@ const init = (httpServer) => {
   });
 
   io.on("connection", (socket) => {
-    console.log(`[Socket] New client connected: ${socket.id}`);
+    const token = socket.handshake.auth?.token || socket.handshake.headers["authorization"];
+    console.log(`[Socket] New client connected: ${socket.id} (Auth: ${token ? 'PROVIDED' : 'MISSING'})`);
 
     socket.on("disconnect", () => {
       console.log(`[Socket] Client disconnected: ${socket.id}`);
