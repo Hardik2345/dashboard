@@ -6,16 +6,25 @@ export const config = {
 
 export default async function handler(req, res) {
   try {
-    const targetBase = (process.env.API_BASE_URL || "")
+    const rawTargetBase = (process.env.API_BASE_URL || "")
       .trim()
       .replace(/\/+$/, "");
+
+    const { path, ...query } = req.query || {};
+    const cleanedPath = path ? `/${path.replace(/^\/+/, "")}` : "";
+    const isSocketIoPath = /(^|\/)socket\.io(\/|$)/i.test(cleanedPath);
+
+    // Only normalize trailing /api for Socket.IO proxying.
+    // This avoids changing behavior for regular REST endpoints.
+    const targetBase = isSocketIoPath
+      ? rawTargetBase.replace(/\/api$/i, "")
+      : rawTargetBase;
+
     if (!targetBase) {
       res.status(500).json({ error: "API_BASE_URL not configured" });
       return;
     }
 
-    const { path, ...query } = req.query || {};
-    const cleanedPath = path ? `/${path.replace(/^\/+/, "")}` : "";
     const passthroughPrefixes = [
       "/auth",
       "/alerts",
