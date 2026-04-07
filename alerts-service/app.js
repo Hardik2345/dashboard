@@ -171,13 +171,31 @@ app.post("/push/receive", async (req, res) => {
     // Build FCM notification headline
     const delta = Math.abs(evt.delta_percent || 0).toFixed(2);
     const thresholdType = String(evt.threshold_type || "").toLowerCase();
-    const direction = thresholdType.includes("rise")
-      ? "Rise"
-      : thresholdType.includes("drop") || thresholdType.includes("less_than")
+    const eventDirection = String(evt.direction || "").toLowerCase();
+    const conditionText = String(evt.condition || "").toLowerCase();
+
+    const direction =
+      eventDirection.includes("below") ||
+      eventDirection.includes("drop") ||
+      eventDirection.includes("down") ||
+      eventDirection.includes("decrease") ||
+      conditionText.includes("drop") ||
+      conditionText.includes("below") ||
+      thresholdType.includes("drop") ||
+      thresholdType.includes("less_than")
         ? "Drop"
+        : eventDirection.includes("above") ||
+          eventDirection.includes("rise") ||
+          eventDirection.includes("up") ||
+          eventDirection.includes("increase") ||
+          conditionText.includes("rise") ||
+          conditionText.includes("above") ||
+          thresholdType.includes("rise") ||
+          thresholdType.includes("greater_than")
+        ? "Rise"
         : (evt.delta_percent || 0) < 0
-          ? "Drop"
-          : "Rise";
+        ? "Drop"
+        : "Rise";
     const rawMetric = evt.metric || "metric";
     const formattedMetric = rawMetric
       .split("_")

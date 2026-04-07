@@ -12,14 +12,21 @@ const {
 const PAYMENT_TYPE_CASE_SQL = `
   CASE
     WHEN payment_gateway_names LIKE '%Gokwik PPCOD%' THEN 'Partial'
-    WHEN payment_gateway_names LIKE '%Cash on Delivery (COD)%' OR payment_gateway_names LIKE '%cash_on_delivery%' OR payment_gateway_names LIKE '%cash_on_delivery%' OR payment_gateway_names IS NULL OR payment_gateway_names = '' THEN 'COD'
+    WHEN (payment_gateway_names IS NULL 
+    OR payment_gateway_names = '' 
+    OR payment_gateway_names LIKE '%Cash on Delivery (COD)%' 
+    OR payment_gateway_names LIKE '%cash_on_delivery%')
+    AND (payment_gateway_names NOT LIKE '%Gokwik PPCOD%' OR payment_gateway_names IS NULL)
+    THEN 'COD'
     ELSE 'Prepaid'
   END
 `;
 
 function parseHourLte(hourLteRaw) {
   const hasHourLte =
-    hourLteRaw !== undefined && hourLteRaw !== null && `${hourLteRaw}`.trim() !== "";
+    hourLteRaw !== undefined &&
+    hourLteRaw !== null &&
+    `${hourLteRaw}`.trim() !== "";
   if (!hasHourLte) {
     return { hasHourLte: false, hourLte: null };
   }
