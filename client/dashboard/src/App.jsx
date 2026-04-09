@@ -2283,7 +2283,6 @@ export default function App() {
 
                   {!isMobile &&
                     authorTab !== "dashboard" &&
-                    authorTab !== "product-conversion" &&
                     authorTab !== "ranveer-rs" &&
                     authorTab !== "alerts" &&
                     authorTab !== "access" &&
@@ -2673,28 +2672,6 @@ export default function App() {
                               >
                                 Funnels
                               </Typography>
-                              <Chip
-                                label={`Brand: ${activeBrandKey}`}
-                                size="small"
-                                sx={{
-                                  height: 24,
-                                  fontSize: "0.75rem",
-                                  fontWeight: 600,
-                                  bgcolor:
-                                    darkMode === "dark"
-                                      ? "rgba(255,255,255,0.1)"
-                                      : "rgba(0,0,0,0.05)",
-                                  color:
-                                    darkMode === "dark"
-                                      ? "text.secondary"
-                                      : "text.primary",
-                                  border: "1px solid",
-                                  borderColor:
-                                    darkMode === "dark"
-                                      ? "rgba(255,255,255,0.1)"
-                                      : "rgba(0,0,0,0.1)",
-                                }}
-                              />
                             </Box>
                             {funnelData?.stats ? (
                               <Suspense
