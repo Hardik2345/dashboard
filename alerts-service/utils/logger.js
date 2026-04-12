@@ -1,4 +1,4 @@
-const enabled = process.env.NODE_ENV !== 'production';
+const enabled = process.env.NODE_ENV == 'production';
 const noop = () => {};
 const base = {
   debug: console.debug ? console.debug.bind(console) : console.log.bind(console),
