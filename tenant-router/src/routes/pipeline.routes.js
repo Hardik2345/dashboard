@@ -2,6 +2,25 @@ const express = require("express");
 const router = express.Router();
 const pipelineService = require("../services/pipeline.service");
 
+// Bypass authentication if x-pipeline-key matches
+const bypassAuth = (req, res, next) => {
+  const pipelineKey = req.headers["x-pipeline-key"];
+  const expectedKey = process.env.X_PIPELINE_KEY;
+
+  if (pipelineKey && pipelineKey === expectedKey) {
+    req.isBypassed = true;
+    return next();
+  }
+
+  if (pipelineKey && pipelineKey !== expectedKey) {
+    return res.status(401).json({ error: "unauthorized_pipeline_key" });
+  }
+
+  next();
+};
+
+router.use(bypassAuth);
+
 // POST /pipeline/credentials/create
 router.post("/credentials/create", async (req, res) => {
   const {

@@ -37,6 +37,21 @@ mongoose.set("strictQuery", true);
 const alertConfigEventPublisher = buildAlertConfigEventPublisher();
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
+app.post("/inventory", (req, res) => {
+  const pipelineKey = req.headers["x-pipeline-key"];
+  const correctKey = process.env.X_PIPELINE_KEY;
+
+  if (!pipelineKey || pipelineKey !== correctKey) {
+    logger.warn(`[inventory] Unauthorized access attempt with key: ${pipelineKey}`);
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  logger.info("[inventory] Received inventory update:", req.body);
+  // Log full received body on console as requested
+  console.log("Full Received Body:", JSON.stringify(req.body, null, 2));
+
+  res.status(200).json({ message: "Inventory received successfully" });
+});
 app.use(
   "/alerts",
   requireAuthor,
