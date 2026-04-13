@@ -87,7 +87,7 @@ async function processInventoryMetrics(data) {
     // Use SKU filter to minimize order data fetching
     const ordersQuery = `
       query getOrders($query: String!, $cursor: String) {
-        orders(first: 250, query: $query, after: $cursor) {
+        orders(first: 250, query: $query, after: $cursor, reverse: true) {
           pageInfo { hasNextPage endCursor }
           edges {
             node {
@@ -109,7 +109,7 @@ async function processInventoryMetrics(data) {
 
     const searchQuery = `created_at:>=${date90}${sku ? ` AND sku:${sku}` : ""}`;
 
-    while (hasNextPage && pageCount < 20) {
+    while (hasNextPage && pageCount < 50) {
       const ordersData = await shopifyGraphQL(shopName, accessToken, ordersQuery, { 
         query: searchQuery, 
         cursor 
