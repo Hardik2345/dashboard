@@ -1,4 +1,4 @@
-const enabled = process.env.NODE_ENV == 'production';
+const enabled = true; // Enable logging by default
 const noop = () => {};
 const base = {
   debug: console.debug ? console.debug.bind(console) : console.log.bind(console),
@@ -7,13 +7,7 @@ const base = {
   error: console.error.bind(console),
 };
 
-if (!enabled) {
-  console.debug = noop;
-  console.log = noop;
-  console.info = noop;
-  console.warn = noop;
-  console.error = noop;
-}
+// Removed global console suppression to allow direct console.log usage
 
 function log(fn, args) {
   if (!enabled) return;

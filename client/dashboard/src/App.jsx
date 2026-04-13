@@ -2614,6 +2614,8 @@ export default function App() {
                                             showCompareMode={hasPermission(
                                               "compare_mode",
                                             )}
+                                            isAuthor={isAuthor}
+                                            permissions={viewerPermissions}
                                           />
                                         </Suspense>
                                       </Box>
@@ -2736,6 +2738,8 @@ export default function App() {
                             <ProductConversionTable
                               brandKey={activeBrandKey}
                               showCompareMode={true}
+                              isAuthor={isAuthor}
+                              permissions={viewerPermissions}
                             />
                           </Stack>
                         </Suspense>

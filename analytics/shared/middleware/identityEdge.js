@@ -70,6 +70,9 @@ function buildPrincipalFromHeaders(req) {
   const roleRaw = (req.headers["x-role"] || "").toString().trim().toLowerCase();
   const email = (req.headers["x-email"] || "").toString().trim().toLowerCase();
 
+  const permissionsRaw = (req.headers["x-permissions"] || "").toString().trim();
+  const permissions = permissionsRaw ? permissionsRaw.split(",").map((p) => p.trim()) : [];
+
   if (!userId || !brandId || !roleRaw) return null;
 
   return {
@@ -78,6 +81,7 @@ function buildPrincipalFromHeaders(req) {
     role: roleRaw,
     isAuthor: roleRaw === "author" || roleRaw === "admin",
     email: email || null,
+    permissions: permissions,
   };
 }
 
@@ -113,9 +117,36 @@ function requireTrustedAuthor(req, res, next) {
   return res.status(403).json({ error: "Forbidden" });
 }
 
+function requirePermission(permission) {
+  return (req, res, next) => {
+    if (!verifyGatewaySignature(req)) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const principal = buildPrincipalFromHeaders(req);
+    if (!principal) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    req.user = principal;
+    req.isAuthenticated = () => true;
+
+    if (
+      principal.isAuthor ||
+      (principal.permissions && principal.permissions.includes(permission)) ||
+      (principal.permissions && principal.permissions.includes("all"))
+    ) {
+      return next();
+    }
+
+    return res.status(403).json({ error: "Forbidden" });
+  };
+}
+
 module.exports = {
   verifyGatewaySignature,
   buildPrincipalFromHeaders,
   requireTrustedPrincipal,
   requireTrustedAuthor,
+  requirePermission,
 };
