@@ -32,6 +32,8 @@ import {
   Popover as MuiPopover,
   InputAdornment,
   Grow,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
@@ -65,6 +67,7 @@ import {
   setSearch,
   setProductTypes,
   setPageTypes,
+  setInventoryPeriod,
 } from "../state/slices/productConversionSlice.js";
 
 import { exportProductConversionCsv, getProductTypes } from "../lib/api.js";
@@ -587,11 +590,22 @@ function DetailedFilterPanel({
   onProductTypeChange,
   pageTypes = [],
   onPageTypeChange,
+  inventoryPeriod = "7d",
+  onInventoryPeriodChange,
   expanded,
   onExpandedChange,
+  permissions = [],
+  isAuthor = false,
+  isGranularMode = false,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
+
+  const hasDrrDohAccess = useMemo(() => {
+    if (isAuthor || (permissions || []).includes("all")) return true;
+    if ((permissions || []).includes("product_conversion")) return true;
+    return (permissions || []).some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
+  }, [isAuthor, permissions]);
 
   const glassStyle = {
     bgcolor: isDark ? "rgba(65, 65, 65, 0.15)" : "rgba(255, 255, 255, 0.6)",
@@ -693,7 +707,7 @@ function DetailedFilterPanel({
   };
 
   const metricCols = allColumns.filter((c) => c.id !== "landing_page_path");
-  const isAllSelected = metricCols.every((c) =>
+  const isAllSelected = metricCols.length > 0 && metricCols.every((c) =>
     visibleColumnIds.includes(c.id),
   );
 
@@ -749,18 +763,116 @@ function DetailedFilterPanel({
         {/* NEW ACCORDION LAYOUT */}
 
         {/* 1. Metrics Section */}
-        <Accordion
-          expanded={expanded === "metrics"}
-          onChange={handleAccordionChange("metrics")}
-          disableGutters
-          elevation={0}
-          sx={{
-            bgcolor: "transparent",
-            "&:before": { display: "none" },
-            borderBottom: "1px solid",
-            borderColor: "divider",
-          }}
-        >
+        {metricCols.length > 0 && (
+          <Accordion
+            expanded={expanded === "metrics"}
+            onChange={handleAccordionChange("metrics")}
+            disableGutters
+            elevation={0}
+            sx={{
+              bgcolor: "transparent",
+              "&:before": { display: "none" },
+              borderBottom: "1px solid",
+              borderColor: "divider",
+            }}
+          >
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography
+                variant="subtitle2"
+                color="text.primary"
+                sx={{
+                  textTransform: "uppercase",
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  letterSpacing: 0.5,
+                }}
+              >
+                Metrics
+              </Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={{ p: 0, pb: 2 }}>
+              <List dense disablePadding>
+                {/* "All" Toggle */}
+                <ListItem dense divider button onClick={handleToggleAllMetrics}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <Checkbox
+                      edge="start"
+                      checked={isAllSelected}
+                      indeterminate={
+                        !isAllSelected &&
+                        metricCols.some((c) => visibleColumnIds.includes(c.id))
+                      }
+                      tabIndex={-1}
+                      disableRipple
+                      size="small"
+                    />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="All Metrics"
+                    primaryTypographyProps={{
+                      fontWeight: 600,
+                      fontSize: "0.875rem",
+                      color: isAllSelected ? "primary.main" : "text.primary",
+                    }}
+                  />
+                </ListItem>
+
+                {/* Individual Metrics */}
+                {metricCols.map((col) => {
+                  const isChecked = visibleColumnIds.includes(col.id);
+                  return (
+                    <ListItem
+                      key={col.id}
+                      dense
+                      divider
+                      button
+                      onClick={() => handleToggleColumn(col.id)}
+                      sx={{
+                        transition: "background-color 0.2s",
+                        "&:hover": { bgcolor: "action.hover" },
+                      }}
+                    >
+                      <ListItemIcon sx={{ minWidth: 36 }}>
+                        <Checkbox
+                          edge="start"
+                          checked={isChecked}
+                          tabIndex={-1}
+                          disableRipple
+                          size="small"
+                          sx={{
+                            p: 0.5,
+                            color: "action.disabled",
+                            "&.Mui-checked": { color: "primary.main" },
+                          }}
+                        />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={col.label}
+                        primaryTypographyProps={{ fontSize: "0.875rem" }}
+                      />
+                    </ListItem>
+                  );
+                })}
+              </List>
+            </AccordionDetails>
+          </Accordion>
+        )}
+
+        {(isAuthor ||
+          (permissions.includes("product_table_filters:inventory") && hasDrrDohAccess) ||
+          (permissions.includes("product_table_filters") && !isGranularMode && hasDrrDohAccess)) && (
+          <Accordion
+            expanded={expanded === "inventory"}
+            onChange={handleAccordionChange("inventory")}
+            disableGutters
+            elevation={0}
+            sx={{
+              bgcolor: "transparent",
+              "&:before": { display: "none" },
+              borderBottom: "1px solid",
+              borderColor: "divider",
+            }}
+          >
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Typography
               variant="subtitle2"
@@ -772,89 +884,73 @@ function DetailedFilterPanel({
                 letterSpacing: 0.5,
               }}
             >
-              Metrics
+              Inventory Analysis
             </Typography>
           </AccordionSummary>
-          <AccordionDetails sx={{ p: 0, pb: 2 }}>
-            <List dense disablePadding>
-              {/* "All" Toggle */}
-              <ListItem dense divider button onClick={handleToggleAllMetrics}>
-                <ListItemIcon sx={{ minWidth: 36 }}>
-                  <Checkbox
-                    edge="start"
-                    checked={isAllSelected}
-                    indeterminate={
-                      !isAllSelected &&
-                      metricCols.some((c) => visibleColumnIds.includes(c.id))
-                    }
-                    tabIndex={-1}
-                    disableRipple
-                    size="small"
-                  />
-                </ListItemIcon>
-                <ListItemText
-                  primary="All Metrics"
-                  primaryTypographyProps={{
-                    fontWeight: 600,
-                    fontSize: "0.875rem",
-                    color: isAllSelected ? "primary.main" : "text.primary",
-                  }}
-                />
-              </ListItem>
-
-              {/* Individual Metrics */}
-              {metricCols.map((col) => {
-                const isChecked = visibleColumnIds.includes(col.id);
-                return (
-                  <ListItem
-                    key={col.id}
-                    dense
-                    divider
-                    button
-                    onClick={() => handleToggleColumn(col.id)}
-                    sx={{
-                      transition: "background-color 0.2s",
-                      "&:hover": { bgcolor: "action.hover" },
-                    }}
-                  >
-                    <ListItemIcon sx={{ minWidth: 36 }}>
-                      <Checkbox
-                        edge="start"
-                        checked={isChecked}
-                        tabIndex={-1}
-                        disableRipple
-                        size="small"
-                        sx={{
-                          p: 0.5,
-                          color: "action.disabled",
-                          "&.Mui-checked": { color: "primary.main" },
-                        }}
-                      />
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={col.label}
-                      primaryTypographyProps={{ fontSize: "0.875rem" }}
-                    />
-                  </ListItem>
-                );
-              })}
-            </List>
+          <AccordionDetails sx={{ px: 2, pb: 2 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ mb: 1.5, display: "block", fontSize: "0.7rem" }}
+            >
+              Select calculation period for Daily Run Rate & Days On Hand
+            </Typography>
+            <ToggleButtonGroup
+              value={inventoryPeriod}
+              exclusive
+              onChange={(e, val) => val && onInventoryPeriodChange(val)}
+              size="small"
+              fullWidth
+              sx={{
+                bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)",
+                borderRadius: 2,
+                p: "4px",
+                "& .MuiToggleButton-root": {
+                  border: "none",
+                  borderRadius: "6px !important",
+                  py: 0.5,
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  color: "text.secondary",
+                  textTransform: "none",
+                  "&.Mui-selected": {
+                    bgcolor: isDark ? "rgba(255,255,255,0.1)" : "background.paper",
+                    color: "primary.main",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                    "&:hover": {
+                      bgcolor: isDark
+                        ? "rgba(255,255,255,0.15)"
+                        : "background.paper",
+                    },
+                  },
+                },
+              }}
+            >
+              {["7d", "30d", "90d"].map((period) => (
+                <ToggleButton key={period} value={period}>
+                  {period}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
           </AccordionDetails>
         </Accordion>
+        )}
 
-        {/* 2. Page Type Section */}
-        <Accordion
-          expanded={expanded === "page-type"}
-          onChange={handleAccordionChange("page-type")}
-          disableGutters
-          elevation={0}
-          sx={{
-            bgcolor: "transparent",
-            "&:before": { display: "none" },
-            borderBottom: "1px solid",
-            borderColor: "divider",
-          }}
-        >
+        {(isAuthor ||
+          permissions.includes("product_table_filters:page_type") ||
+          (permissions.includes("product_table_filters") && !isGranularMode)) && (
+          <Accordion
+            expanded={expanded === "page-type"}
+            onChange={handleAccordionChange("page-type")}
+            disableGutters
+            elevation={0}
+            sx={{
+              bgcolor: "transparent",
+              "&:before": { display: "none" },
+              borderBottom: "1px solid",
+              borderColor: "divider",
+            }}
+          >
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Typography
               variant="subtitle2"
@@ -904,20 +1000,23 @@ function DetailedFilterPanel({
             </List>
           </AccordionDetails>
         </Accordion>
+        )}
 
-        {/* 3. Product Types Section */}
-        <Accordion
-          expanded={expanded === "productTypes"}
-          onChange={handleAccordionChange("productTypes")}
-          disableGutters
-          elevation={0}
-          sx={{
-            bgcolor: "transparent",
-            "&:before": { display: "none" },
-            borderBottom: "1px solid",
-            borderColor: "divider",
-          }}
-        >
+        {(isAuthor ||
+          permissions.includes("product_table_filters:product_types") ||
+          (permissions.includes("product_table_filters") && !isGranularMode)) && (
+          <Accordion
+            expanded={expanded === "productTypes"}
+            onChange={handleAccordionChange("productTypes")}
+            disableGutters
+            elevation={0}
+            sx={{
+              bgcolor: "transparent",
+              "&:before": { display: "none" },
+              borderBottom: "1px solid",
+              borderColor: "divider",
+            }}
+          >
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Typography
               variant="subtitle2"
@@ -1014,15 +1113,23 @@ function DetailedFilterPanel({
             </Box>
           </AccordionDetails>
         </Accordion>
+        )}
 
-        {/* 3. Filters Section */}
-        <Accordion
-          expanded={expanded === "filters"}
-          onChange={handleAccordionChange("filters")}
-          disableGutters
-          elevation={0}
-          sx={{ bgcolor: "transparent", "&:before": { display: "none" } }}
-        >
+        {(isAuthor ||
+          permissions.includes("product_table_filters:sort_filter") ||
+          (permissions.includes("product_table_filters") && !isGranularMode)) && (
+          <Accordion
+            expanded={expanded === "filters"}
+            onChange={handleAccordionChange("filters")}
+            disableGutters
+            elevation={0}
+            sx={{
+              bgcolor: "transparent",
+              "&:before": { display: "none" },
+              borderBottom: "1px solid",
+              borderColor: "divider",
+            }}
+          >
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Typography
               variant="subtitle2"
@@ -1264,6 +1371,7 @@ function DetailedFilterPanel({
             )}
           </AccordionDetails>
         </Accordion>
+        )}
       </Box>
 
       {/* Footer */}
@@ -1493,6 +1601,8 @@ const MemoizedTable = memo(
 export default function ProductConversionTable({
   brandKey,
   showCompareMode = true,
+  isAuthor,
+  permissions = [],
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
@@ -1520,6 +1630,7 @@ export default function ProductConversionTable({
     compareEnd,
     productTypes,
     pageTypes,
+    inventoryPeriod,
   } = productState;
   const [exporting, setExporting] = useState(false);
   const [localSearch, setLocalSearch] = useState(productState.search || "");
@@ -1567,9 +1678,68 @@ export default function ProductConversionTable({
       { id: "orders", label: "Orders", align: "right" },
       { id: "sales", label: "Sales", align: "right" },
       { id: "cvr", label: "CVR", align: "right", format: formatPercent },
+      {
+        id: "drr",
+        label: `DRR (${productState.inventoryPeriod || "7d"})`,
+        align: "right",
+        format: (val) => (val !== null ? formatNumber(val) : "-"),
+      },
+      {
+        id: "doh",
+        label: `DOH (${productState.inventoryPeriod || "7d"})`,
+        align: "right",
+        format: (val) => (val !== null ? formatNumber(val) : "-"),
+      },
     ],
-    [],
+    [productState.inventoryPeriod],
   );
+
+  const isGranularMode = useMemo(() => {
+    return (permissions || []).some(
+      (p) =>
+        p.startsWith("product_conversion:") ||
+        p.startsWith("product_table_filters:"),
+    );
+  }, [permissions]);
+
+  const permittedColumns = useMemo(() => {
+    // 1. Author and 'all' permission override everything
+    if (isAuthor || (permissions && permissions.includes("all"))) {
+      return columns;
+    }
+
+    // 2. If granular permissions (column OR filter) are defined, use strict mode
+    if (isGranularMode) {
+      const hasAnyColumnSub = (permissions || []).some((p) =>
+        p.startsWith("product_conversion:"),
+      );
+
+      // If specific columns are defined, show only those.
+      if (hasAnyColumnSub) {
+        return columns.filter(
+          (col) =>
+            col.id === "landing_page_path" ||
+            permissions.includes(`product_conversion:${col.id}`),
+        );
+      }
+
+      // 2.3 Default Landing Page Enforcement: 
+      // If they have the master 'product_conversion' tag, but NO column-specific scopes are defined,
+      // return ALL columns (legacy behavior). 
+      // BUT if NO master tag AND no column scopes, return just landing page.
+      if (!permissions.includes("product_conversion")) {
+        return columns.filter((c) => c.id === "landing_page_path");
+      }
+    }
+
+    // 3. Fallback: If not in granular mode, use master 'product_conversion' tag
+    if (permissions && permissions.includes("product_conversion")) {
+      return columns;
+    }
+
+    // 4. Default: Just the landing page
+    return columns.filter((c) => c.id === "landing_page_path");
+  }, [columns, isAuthor, permissions, isGranularMode]);
 
   // Panel State (Boolean togglable)
   const [showFilterPanel, setShowFilterPanel] = useState(false);
@@ -1588,13 +1758,48 @@ export default function ProductConversionTable({
     pageSize === 10
       ? Math.max(600, estimatedTableHeight)
       : Math.max(400, estimatedTableHeight / 4);
-  const [visibleColumnIds, setVisibleColumnIds] = useState([
-    "landing_page_path",
-    "sessions",
-    "atc_rate",
-    "orders",
-    "cvr",
-  ]);
+  const [visibleColumnIds, setVisibleColumnIds] = useState(() => {
+    const permittedIds = permittedColumns.map((c) => c.id);
+    const hasAnyColumnSub = (permissions || []).some((p) =>
+      p.startsWith("product_conversion:"),
+    );
+
+    // If explicit granular columns are set, show ALL of them by default
+    if (hasAnyColumnSub) {
+      return permittedIds;
+    }
+
+    // Otherwise, use hardcoded defaults filtered by permissions
+    const defaults = [
+      "landing_page_path",
+      "sessions",
+      "atc_rate",
+      "orders",
+      "cvr",
+    ];
+    return defaults.filter((id) => permittedIds.includes(id));
+  });
+
+  // Forced Range Sync: If user has DRR/DOH columns but NO inventory filter access, lock to 7d
+  useEffect(() => {
+    if (isAuthor || (permissions && permissions.includes("all"))) return;
+
+    const hasInventoryFilterAccess =
+      permissions.includes("product_table_filters:inventory") ||
+      (permissions.includes("product_table_filters") && !isGranularMode);
+
+    const hasDrrDohAccess = (permissions || []).some((p) =>
+      p.includes("product_conversion:drr") || p.includes("product_conversion:doh")
+    );
+
+    if (
+      hasDrrDohAccess &&
+      !hasInventoryFilterAccess &&
+      inventoryPeriod !== "7d"
+    ) {
+      dispatch(setInventoryPeriod("7d"));
+    }
+  }, [permissions, inventoryPeriod, isGranularMode, isAuthor, dispatch]);
 
   // Column Resizing Logic
   const [columnWidths, setColumnWidths] = useState({
@@ -1645,8 +1850,8 @@ export default function ProductConversionTable({
 
   // Compute visible columns
   const visibleColumns = useMemo(() => {
-    return columns.filter((c) => visibleColumnIds.includes(c.id));
-  }, [columns, visibleColumnIds]);
+    return permittedColumns.filter((c) => visibleColumnIds.includes(c.id));
+  }, [permittedColumns, visibleColumnIds]);
 
   // Handler for clearing all filters
   const handleClearFilters = () => {
@@ -1907,6 +2112,11 @@ export default function ProductConversionTable({
 
   const handleExport = async () => {
     setExporting(true);
+    const permittedIds = permittedColumns.map((c) => c.id);
+    const exportColumns = (visibleColumnIds || []).filter((id) =>
+      permittedIds.includes(id),
+    );
+
     const resp = await exportProductConversionCsv({
       brand_key: brandKey,
       start,
@@ -1915,7 +2125,7 @@ export default function ProductConversionTable({
       sortDir,
       filters: productState.filters,
       search: productState.search,
-      visible_columns: visibleColumnIds,
+      visible_columns: exportColumns,
       compareStart: compareMode ? compareStart : undefined,
       compareEnd: compareMode ? compareEnd : undefined,
     });
@@ -2476,8 +2686,11 @@ export default function ProductConversionTable({
             }}
           >
             <DetailedFilterPanel
+              isAuthor={isAuthor}
+              isGranularMode={isGranularMode}
+              permissions={permissions}
               onClose={() => setShowFilterPanel(false)}
-              allColumns={columns}
+              allColumns={permittedColumns}
               visibleColumnIds={visibleColumnIds}
               setVisibleColumnIds={setVisibleColumnIds}
               filters={productState.filters || []}
@@ -2517,6 +2730,8 @@ export default function ProductConversionTable({
               onProductTypeChange={handleProductTypeChange}
               pageTypes={pageTypes}
               onPageTypeChange={handlePageTypeChange}
+              inventoryPeriod={inventoryPeriod}
+              onInventoryPeriodChange={(val) => dispatch(setInventoryPeriod(val))}
               expanded={expanded}
               onExpandedChange={setExpanded}
             />
@@ -2524,8 +2739,11 @@ export default function ProductConversionTable({
         ) : (
           <Collapse in={showFilterPanel} orientation="horizontal" timeout={300}>
             <DetailedFilterPanel
+              isAuthor={isAuthor}
+              isGranularMode={isGranularMode}
+              permissions={permissions}
               onClose={() => setShowFilterPanel(false)}
-              allColumns={columns}
+              allColumns={permittedColumns}
               visibleColumnIds={visibleColumnIds}
               setVisibleColumnIds={setVisibleColumnIds}
               filters={productState.filters || []}
@@ -2566,6 +2784,8 @@ export default function ProductConversionTable({
               onProductTypeChange={handleProductTypeChange}
               pageTypes={pageTypes}
               onPageTypeChange={handlePageTypeChange}
+              inventoryPeriod={inventoryPeriod}
+              onInventoryPeriodChange={(val) => dispatch(setInventoryPeriod(val))}
               expanded={expanded}
               onExpandedChange={setExpanded}
             />

@@ -1,4 +1,5 @@
 const { QueryTypes } = require("sequelize");
+const redisClient = require("../shared/db/redis");
 const { normalizeRangeQuery } = require("./metricsRequestNormalizer");
 const {
   buildCompletedHourCutoffContext,
@@ -13,6 +14,8 @@ const ALLOWED_SORT = new Map([
   ["sales", "sales"],
   ["cvr", "cvr"],
   ["landing_page_path", "landing_page_path"],
+  ["drr", "drr"],
+  ["doh", "doh"],
 ]);
 
 const VALID_FILTER_FIELDS = new Set([
@@ -22,6 +25,8 @@ const VALID_FILTER_FIELDS = new Set([
   "orders",
   "sales",
   "cvr",
+  "drr",
+  "doh",
 ]);
 
 const CSV_HEADERS = [
@@ -32,6 +37,8 @@ const CSV_HEADERS = [
   "orders",
   "sales",
   "cvr",
+  "drr",
+  "doh",
 ];
 
 const PREVIOUS_HEADER_MAP = {
@@ -87,6 +94,10 @@ function buildMetricFilterExpression(field) {
       return "COALESCE(o.sales, 0)";
     case "cvr":
       return "(CASE WHEN s.sessions > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)";
+    case "drr":
+      return "COALESCE(tpi.drr_7d, 0)"; // Defaulting to 7d for filter if not specified otherwise
+    case "doh":
+      return "COALESCE(tpi.doh_7d, 0)";
     default:
       return "";
   }
@@ -130,6 +141,8 @@ function normalizeProductConversionRequest(query) {
       compareStart: query.compare_start || null,
       compareEnd: query.compare_end || null,
       visibleColumns: Array.isArray(visibleColumns) ? visibleColumns : null,
+      inventoryPeriod: (query.inventory_period || "7d").toLowerCase(),
+      brandKey: query.brand_key,
     },
   };
 }
@@ -179,6 +192,20 @@ function buildProductConditions(spec, baseAlias) {
   if (Array.isArray(spec.productTypes) && spec.productTypes.length > 0) {
     conditions.push(`m.product_type IN (?)`);
     replacements.push(spec.productTypes);
+  }
+
+  // Handle inventory filters if they target specific columns
+  for (const filter of spec.filters) {
+    const field = (filter.field || "").toString().toLowerCase();
+    if (field === "drr" || field === "doh") {
+      const col = field === "drr" ? `drr_${spec.inventoryPeriod}` : `doh_${spec.inventoryPeriod}`;
+      const operator = (filter.operator || "").toString().toLowerCase();
+      const value = Number(filter.value);
+      if ((operator === "gt" || operator === "lt") && !Number.isNaN(value)) {
+        conditions.push(`tpi.${col} ${operator === "gt" ? ">" : "<"} ?`);
+        replacements.push(value);
+      }
+    }
   }
 
   return {
@@ -323,6 +350,17 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
       LEFT JOIN previous_orders po ON ${useMappingBase ? "m.product_id" : "s.product_id"} = po.product_id
     `
     : "";
+  const inventoryCol = `
+    COALESCE(tpi.drr_${spec.inventoryPeriod}, 0) AS drr,
+    COALESCE(tpi.doh_${spec.inventoryPeriod}, 0) AS doh,
+    tpi.variant_id,
+    tpi.updated_at
+  `;
+
+  const inventoryJoin = `
+    LEFT JOIN top_products_inventory tpi ON ${useMappingBase ? "m.product_id" : "s.product_id"} = tpi.product_id
+  `;
+
   const selectPrefix = useMappingBase
     ? `
       SELECT
@@ -333,11 +371,13 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
         COALESCE(o.orders, 0) AS orders,
         COALESCE(o.sales, 0) AS sales,
-        CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
+        CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr,
+        ${inventoryCol}
         ${previousSelect}
       FROM product_landing_mapping m
       LEFT JOIN sessions_60d s ON m.landing_page_path = s.landing_page_path
       LEFT JOIN orders_60d o ON m.product_id = o.product_id
+      ${inventoryJoin}
       ${previousJoins}
     `
     : `
@@ -349,10 +389,12 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
         COALESCE(o.orders, 0) AS orders,
         COALESCE(o.sales, 0) AS sales,
-        CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr
+        CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr,
+        ${inventoryCol}
         ${previousSelect}
       FROM sessions_60d s
       LEFT JOIN orders_60d o ON s.product_id = o.product_id
+      ${inventoryJoin}
       ${previousJoins}
     `;
   const limitClause = pagination
@@ -381,6 +423,7 @@ function buildCountSql(spec, useMappingBase, whereClause) {
     : `
       FROM sessions_60d s
       LEFT JOIN orders_60d o ON s.product_id = o.product_id
+      LEFT JOIN top_products_inventory tpi ON s.product_id = tpi.product_id
     `;
   return {
     sql: `
@@ -406,6 +449,11 @@ function normalizeRows(rows, includeCompare = false) {
     orders: Number(row.orders || 0),
     sales: Number(row.sales || 0),
     cvr: Number(row.cvr || 0),
+    drr: row.drr !== null && row.drr !== undefined ? Number(row.drr) : null,
+    doh: row.doh !== null && row.doh !== undefined ? Number(row.doh) : null,
+    variant_id: row.variant_id || null,
+    updated_at: row.updated_at || null,
+    calculation_date: row.calculation_date || null,
     previous: includeCompare
       ? {
           sessions: Number(row.prev_sessions || 0),
@@ -464,6 +512,62 @@ function buildCsvContent(rows, headers) {
 }
 
 function buildProductConversionService() {
+  async function enrichWithRedis(rows, spec, resolveShopSubdomain) {
+    if (!redisClient || !resolveShopSubdomain) return rows;
+    
+    const startD = new Date(spec.start);
+    const endD = new Date(spec.end);
+    const diffDays = Math.round((endD - startD) / 86400000);
+    
+    // User requested: if window is up to 7 days, fetch from Redis
+    if (diffDays > 7) return rows;
+
+    const brandKey = spec.brandKey || "";
+    const shopName = resolveShopSubdomain(brandKey);
+    if (!shopName) return rows;
+
+    const period = spec.inventoryPeriod.replace("d", ""); // "7", "30", "90"
+    
+    const variantIds = rows
+      .filter(r => r.variant_id)
+      .map(r => r.variant_id.split("/").pop());
+
+    if (variantIds.length === 0) return rows;
+
+    try {
+      const keys = variantIds.map(vid => `inventory:cache:${shopName}:${vid}`);
+      const cachedValues = await redisClient.mget(keys);
+      
+      const cacheMap = new Map();
+      cachedValues.forEach((val, i) => {
+        if (val) {
+          try {
+            cacheMap.set(variantIds[i], JSON.parse(val));
+          } catch (e) {
+            // ignore
+          }
+        }
+      });
+
+      return rows.map(row => {
+        if (!row.variant_id) return row;
+        const vid = row.variant_id.split("/").pop();
+        const metrics = cacheMap.get(vid);
+        if (metrics) {
+          // Override with Redis values
+          row.drr = metrics[`drr${period}`] ?? row.drr;
+          row.doh = metrics[`doh${period}`] ?? row.doh;
+          row.updated_at = metrics.updatedAt || row.updated_at;
+          row.calculation_date = metrics.date || row.calculation_date;
+        }
+        return row;
+      });
+    } catch (error) {
+      console.error("[Redis Enrich Error]", error);
+      return rows;
+    }
+  }
+
   async function getProductConversion(spec) {
     const useMappingBase =
       Array.isArray(spec.productTypes) && spec.productTypes.length > 0;
@@ -493,12 +597,15 @@ function buildProductConversionService() {
       }),
     ]);
 
+    const rows = normalizeRows(rowsRaw, hasCompareRange(spec));
+    const enriched = await enrichWithRedis(rows, spec, spec.resolveShopSubdomain);
+
     return {
       range: { start: spec.start, end: spec.end },
       page: spec.page,
       page_size: spec.pageSize,
       total_count: Number(countRows?.[0]?.total_count || 0),
-      rows: normalizeRows(rowsRaw, hasCompareRange(spec)),
+      rows: enriched,
       sort: { by: spec.sortBy, dir: spec.sortDir.toLowerCase() },
     };
   }

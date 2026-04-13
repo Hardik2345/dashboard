@@ -131,6 +131,13 @@ class TokenService {
             brand_ids: brandIds,
             primary_brand_id: primaryBrandId,
             role: user.role || 'viewer',
+            memberships: user.brand_memberships
+                .filter(m => m.status === 'active')
+                .map(m => ({
+                    brand_id: m.brand_id,
+                    role: m.role,
+                    permissions: m.permissions || []
+                }))
         };
 
         const keyConfig = KEY_REGISTRY.get(ACTIVE_KID);

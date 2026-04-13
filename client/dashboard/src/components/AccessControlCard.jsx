@@ -82,6 +82,38 @@ const PERMISSION_OPTIONS = [
   "sessions_drop_off_funnel",
   "product_conversion",
   "compare_mode",
+  "product_conversion:landing_page_path",
+  "product_conversion:sessions",
+  "product_conversion:atc",
+  "product_conversion:atc_rate",
+  "product_conversion:orders",
+  "product_conversion:sales",
+  "product_conversion:cvr",
+  "product_conversion:doh",
+  "product_table_filters",
+  "product_table_filters:inventory",
+  "product_table_filters:page_type",
+  "product_table_filters:product_types",
+  "product_table_filters:sort_filter",
+];
+
+const COLUMN_PERMISSIONS = [
+  { id: "product_conversion:landing_page_path", label: "Landing Page" },
+  { id: "product_conversion:sessions", label: "Sessions" },
+  { id: "product_conversion:atc", label: "ATC" },
+  { id: "product_conversion:atc_rate", label: "ATC Rate" },
+  { id: "product_conversion:orders", label: "Orders" },
+  { id: "product_conversion:sales", label: "Sales" },
+  { id: "product_conversion:cvr", label: "CVR" },
+  { id: "product_conversion:drr", label: "DRR" },
+  { id: "product_conversion:doh", label: "DOH" },
+];
+
+const FILTER_PANEL_PERMISSIONS = [
+  { id: "product_table_filters:inventory", label: "Inventory Analysis" },
+  { id: "product_table_filters:page_type", label: "Page Type" },
+  { id: "product_table_filters:product_types", label: "Product Types" },
+  { id: "product_table_filters:sort_filter", label: "Sort Filter" },
 ];
 
 const StatusSwitch = ({ active, onChange, label = "Active", isDark }) => (
@@ -1322,9 +1354,12 @@ export default function AccessControlCard() {
                 </FormControl>
                 <Autocomplete
                   multiple
-                  options={PERMISSION_OPTIONS}
-                  value={form.permissions}
-                  onChange={(_, val) => handleFormChange("permissions", val)}
+                  options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                  value={form.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                  onChange={(_, val) => {
+                    const nestedPerms = form.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
+                    handleFormChange("permissions", [...val, ...nestedPerms]);
+                  }}
                   slotProps={{
                     popper: {
                       sx: { zIndex: 1400 },
@@ -1350,9 +1385,100 @@ export default function AccessControlCard() {
                     ))
                   }
                   renderInput={(params) => (
-                    <TextField {...params} label="Permissions" fullWidth />
+                    <TextField {...params} label="General Permissions" fullWidth />
                   )}
                 />
+
+                {form.permissions.includes("product_conversion") && (
+                  <Box sx={{ 
+                    p: 2, 
+                    borderRadius: "12px", 
+                    bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
+                    border: "1px dashed",
+                    borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
+                  }}>
+                    <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
+                      PRODUCT TABLE COLUMNS
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {COLUMN_PERMISSIONS.map((col) => {
+                        const active = form.permissions.includes(col.id);
+                        return (
+                          <Chip
+                            key={col.id}
+                            label={col.label}
+                            onClick={() => {
+                              let next = active
+                                ? form.permissions.filter(p => p !== col.id)
+                                : [...form.permissions, col.id];
+                              
+                              // Enforcement: If removing DRR/DOH results in none being selected,
+                              // auto-remove Inventory Analysis filter scope.
+                              const hasDrrDoh = next.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
+                              if (!hasDrrDoh) {
+                                next = next.filter(p => p !== "product_table_filters:inventory");
+                              }
+
+                              handleFormChange("permissions", next);
+                            }}
+                            color={active ? "primary" : "default"}
+                            variant={active ? "filled" : "outlined"}
+                            size="small"
+                            sx={{ borderRadius: '8px' }}
+                          />
+                        );
+                      })}
+                    </Box>
+                  </Box>
+                )}
+
+                {form.permissions.includes("product_table_filters") && (
+                  <Box sx={{ 
+                    p: 2, 
+                    borderRadius: "12px", 
+                    bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
+                    border: "1px dashed",
+                    borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
+                  }}>
+                    <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
+                      PRODUCT TABLE FILTERS
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {FILTER_PANEL_PERMISSIONS.map((f) => {
+                        const active = form.permissions.includes(f.id);
+                        const isInventory = f.id === "product_table_filters:inventory";
+                        const hasDrrDoh = form.permissions.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
+                        const disabled = isInventory && !hasDrrDoh;
+
+                        return (
+                          <Tooltip 
+                            key={f.id} 
+                            title={disabled ? "Requires DRR or DOH column access" : ""}
+                            arrow
+                          >
+                            <span>
+                              <Chip
+                                label={f.label}
+                                onClick={() => {
+                                  if (disabled) return;
+                                  const next = active
+                                    ? form.permissions.filter(p => p !== f.id)
+                                    : [...form.permissions, f.id];
+                                  handleFormChange("permissions", next);
+                                }}
+                                disabled={disabled}
+                                color={active ? "primary" : "default"}
+                                variant={active ? "filled" : "outlined"}
+                                size="small"
+                                sx={{ borderRadius: '8px', opacity: disabled ? 0.5 : 1 }}
+                              />
+                            </span>
+                          </Tooltip>
+                        );
+                      })}
+                    </Box>
+                  </Box>
+                )}
               </>
             )}
             {form.role === "author" && (
@@ -1556,11 +1682,12 @@ export default function AccessControlCard() {
             {domainForm.role === "viewer" && (
               <Autocomplete
                 multiple
-                options={PERMISSION_OPTIONS}
-                value={domainForm.permissions}
-                onChange={(_, val) =>
-                  setDomainForm((prev) => ({ ...prev, permissions: val }))
-                }
+                options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                value={domainForm.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                onChange={(_, val) => {
+                  const nestedPerms = domainForm.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
+                  setDomainForm((prev) => ({ ...prev, permissions: [...val, ...nestedPerms] }));
+                }}
                 slotProps={{
                   popper: {
                     sx: { zIndex: 1400 },

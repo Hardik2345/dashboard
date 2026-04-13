@@ -217,6 +217,20 @@ function _M.authenticate()
     if claims.email then
         ngx.req.set_header("x-email", claims.email)
     end
+    
+    -- 8.1 Inject Permissions for target brand
+    local permissions = {}
+    if role == "author" then
+        permissions = {"all"}
+    elseif claims.memberships then
+        for _, m in ipairs(claims.memberships) do
+            if tostring(m.brand_id):upper() == target_brand_id then
+                permissions = m.permissions or {}
+                break
+            end
+        end
+    end
+    ngx.req.set_header("x-permissions", table.concat(permissions, ","))
 
     -- 9. Gateway-signed header to prevent spoofing downstream
     local gw_secret = os.getenv("GATEWAY_SHARED_SECRET")

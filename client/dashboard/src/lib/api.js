@@ -391,6 +391,7 @@ export async function getProductConversion(args, options = {}) {
         args.pageTypes || args.page_types
           ? JSON.stringify(args.pageTypes || args.page_types)
           : undefined,
+      inventory_period: args.inventoryPeriod || "7d",
     },
     args,
   );

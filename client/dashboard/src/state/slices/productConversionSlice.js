@@ -16,6 +16,7 @@ export const fetchProductConversion = createAsyncThunk(
     const compareMode = params.compareMode ?? state.compareMode ?? false;
     const compareStart = params.compareStart || state.compareStart || null;
     const compareEnd = params.compareEnd || state.compareEnd || null;
+    const inventoryPeriod = params.inventoryPeriod || state.inventoryPeriod || "7d";
 
     let filters = params.filters || state.filters || [];
     const search =
@@ -40,6 +41,7 @@ export const fetchProductConversion = createAsyncThunk(
       search,
       productTypes,
       pageTypes,
+      inventoryPeriod,
     };
 
     if (compareMode && compareStart && compareEnd) {
@@ -68,6 +70,7 @@ export const fetchProductConversion = createAsyncThunk(
       search,
       productTypes,
       pageTypes,
+      inventoryPeriod,
     };
   },
 );
@@ -85,6 +88,7 @@ const saveState = (state) => {
       filters: state.filters,
       productTypes: state.productTypes,
       pageTypes: state.pageTypes,
+      inventoryPeriod: state.inventoryPeriod,
     };
     localStorage.setItem("productConversionState", JSON.stringify(toSave));
   } catch (e) {
@@ -123,6 +127,7 @@ const initialState = {
   filters: Array.isArray(saved.filters) ? saved.filters : [],
   productTypes: Array.isArray(saved.productTypes) ? saved.productTypes : [],
   pageTypes: Array.isArray(saved.pageTypes) ? saved.pageTypes : [],
+  inventoryPeriod: saved.inventoryPeriod || "7d",
   search: "",
 };
 
@@ -185,6 +190,11 @@ const productConversionSlice = createSlice({
       state.page = 1;
       saveState(state);
     },
+    setInventoryPeriod(state, action) {
+      state.inventoryPeriod = action.payload || "7d";
+      state.page = 1;
+      saveState(state);
+    },
     setPage(state, action) {
       state.page = action.payload || 1;
     },
@@ -229,6 +239,7 @@ const productConversionSlice = createSlice({
         state.search = action.payload.search || "";
         state.productTypes = action.payload.productTypes || [];
         state.pageTypes = action.payload.pageTypes || [];
+        state.inventoryPeriod = action.payload.inventoryPeriod || "7d";
       })
       .addCase(fetchProductConversion.rejected, (state, action) => {
         state.status = "failed";
@@ -252,5 +263,6 @@ export const {
   setSearch,
   setProductTypes,
   setPageTypes,
+  setInventoryPeriod,
 } = productConversionSlice.actions;
 export default productConversionSlice.reducer;
