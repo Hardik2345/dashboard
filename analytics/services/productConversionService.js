@@ -414,16 +414,18 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
 
 function buildCountSql(spec, useMappingBase, whereClause) {
   const base = buildBaseCte(spec, false);
+  const joinOn = useMappingBase ? "m.product_id" : "s.product_id";
   const fromSql = useMappingBase
     ? `
       FROM product_landing_mapping m
       LEFT JOIN sessions_60d s ON m.landing_page_path = s.landing_page_path
       LEFT JOIN orders_60d o ON m.product_id = o.product_id
+      LEFT JOIN top_products_inventory tpi ON ${joinOn} = tpi.product_id
     `
     : `
       FROM sessions_60d s
       LEFT JOIN orders_60d o ON s.product_id = o.product_id
-      LEFT JOIN top_products_inventory tpi ON s.product_id = tpi.product_id
+      LEFT JOIN top_products_inventory tpi ON ${joinOn} = tpi.product_id
     `;
   return {
     sql: `
@@ -530,7 +532,7 @@ function buildProductConversionService() {
     
     const variantIds = rows
       .filter(r => r.variant_id)
-      .map(r => r.variant_id.split("/").pop());
+      .map(r => String(r.variant_id).split("/").pop());
 
     if (variantIds.length === 0) return rows;
 
@@ -551,7 +553,7 @@ function buildProductConversionService() {
 
       return rows.map(row => {
         if (!row.variant_id) return row;
-        const vid = row.variant_id.split("/").pop();
+        const vid = String(row.variant_id).split("/").pop();
         const metrics = cacheMap.get(vid);
         if (metrics) {
           // Override with Redis values
