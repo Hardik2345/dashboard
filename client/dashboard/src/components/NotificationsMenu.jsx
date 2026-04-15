@@ -35,6 +35,7 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(5);
   const hasOpenedRef = useRef(false);
 
   const fetchNotifications = async () => {
@@ -64,6 +65,7 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
 
   const handleClick = (event) => {
     setAnchorEl(event.currentTarget);
+    setVisibleCount(5);
     hasOpenedRef.current = true;
     fetchNotifications();
   };
@@ -92,6 +94,12 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
 
   const open = Boolean(anchorEl);
   const id = open ? "notifications-popover" : undefined;
+  const filteredNotifications = notifications.filter((notif) => {
+    // Hide performance alerts from the bell icon window
+    return notif.event?.metric !== "performance";
+  });
+  const visibleNotifications = filteredNotifications.slice(0, visibleCount);
+  const hasMoreNotifications = filteredNotifications.length > visibleCount;
 
   return (
     <>
@@ -131,8 +139,8 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
         }}
         PaperProps={{
           sx: {
-            width: 350,
-            maxHeight: 450,
+            width: { xs: "calc(100vw - 24px)", sm: 500 },
+            maxHeight: { xs: "70vh", sm: 620 },
             mt: 1,
             bgcolor: "background.paper",
             backgroundImage: "none",
@@ -167,7 +175,13 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
             </Typography>
           )}
         </Box>
-        <List sx={{ p: 0 }}>
+        <List
+          sx={{
+            p: 0,
+            maxHeight: { xs: "calc(70vh - 128px)", sm: "calc(620px - 128px)" },
+            overflowY: "auto",
+          }}
+        >
           {loading ? (
             <Box sx={{ display: "flex", justifyContent: "center", p: 3 }}>
               <CircularProgress size={24} />
@@ -179,14 +193,7 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
               </Typography>
             </Box>
           ) : (
-            notifications
-              .filter((notif) => {
-                // Hide performance alerts from the bell icon window
-                // if (notif.event?.metric === "performance") return false;
-                return notif.event?.metric !== "performance";
-              })
-              .slice(0, 5)
-              .map((notif, index) => {
+            visibleNotifications.map((notif, index) => {
               const evt = notif.event || {};
               const metricName = (evt.metric || "Metric").replace(/_/g, " ");
               const deltaValue = Number(evt.delta_percent || 0);
@@ -218,6 +225,20 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                       : "rose";
               const state = evt.current_state || "ALERT";
               const brand = evt.brand || "System";
+              const hasCustomText =
+                typeof notif.subject === "string" &&
+                notif.subject.trim().length > 0 &&
+                typeof notif.description === "string" &&
+                notif.description.trim().length > 0;
+              const subjectText = hasCustomText ? String(notif.subject) : "";
+              const subjectParts = subjectText.split("|").map((part) => part.trim());
+              const hasStyledSubjectParts =
+                hasCustomText &&
+                subjectParts.length >= 3 &&
+                /^current\s+value\s*:/i.test(subjectParts[2]);
+              const currentValueDisplay = hasStyledSubjectParts
+                ? subjectParts[2].replace(/^current\s+value\s*:\s*/i, "").trim()
+                : "";
 
               // State-based icons and colors
               let StatusIcon = AlertCircle;
@@ -356,7 +377,7 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                         />
                       )}
                     </ListItem>
-                    {index < 4 && index < notifications.length - 1 && <Divider />}
+                    {index < visibleNotifications.length - 1 && <Divider />}
                   </div>
                 );
               }
@@ -405,15 +426,31 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                           sx={{
                             fontWeight: 800,
                             color: "text.primary",
-                            fontSize: "0.85rem",
+                            fontSize: "0.8rem",
                             letterSpacing: "0.02em",
-                            textTransform: "uppercase",
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
+                            textTransform: hasCustomText ? "none" : "uppercase",
+                            whiteSpace: "normal",
+                            overflow: "visible",
+                            textOverflow: "unset",
+                            wordBreak: "break-word",
                           }}
                         >
-                          {brand}
+                          {hasStyledSubjectParts ? (
+                            <>
+                              {subjectParts[0]} |{" "}
+                              <Box component="span" sx={{ color: "#facc15", fontWeight: 800 }}>
+                                {subjectParts[1]}
+                              </Box>{" "}
+                              | current value:{" "}
+                              <Box component="span" sx={{ color: "#22c55e", fontWeight: 800 }}>
+                                {currentValueDisplay}
+                              </Box>
+                            </>
+                          ) : hasCustomText ? (
+                            notif.subject
+                          ) : (
+                            brand
+                          )}
                         </Typography>
                         <Typography
                           variant="caption"
@@ -435,10 +472,14 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                           color: "text.secondary",
                           lineHeight: 1.4,
                           mb: 0.5,
-                          fontSize: "0.825rem",
+                          fontSize: "0.78rem",
+                          whiteSpace: "normal",
+                          wordBreak: "break-word",
                         }}
                       >
-                        {state === "NORMAL" ? (
+                        {hasCustomText ? (
+                          notif.description
+                        ) : state === "NORMAL" ? (
                           <>
                             {metricName} came back to normal value
                           </>
@@ -469,23 +510,25 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                         )}
                       </Typography>
 
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
-                      >
-                        <Target size={12} style={{ color: iconColor }} />
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            color: "text.secondary",
-                            display: "flex",
-                            alignItems: "center",
-                          }}
+                      {!hasCustomText && (
+                        <Box
+                          sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
                         >
-                          {evt.current_value !== undefined
-                            ? `current value: ${Number(evt.current_value).toFixed(2)}`
-                            : evt.condition || "Value changed significantly."}
-                        </Typography>
-                      </Box>
+                          <Target size={12} style={{ color: iconColor }} />
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: "text.secondary",
+                              display: "flex",
+                              alignItems: "center",
+                            }}
+                          >
+                            {evt.current_value !== undefined
+                              ? `current value: ${Number(evt.current_value).toFixed(2)}`
+                              : evt.condition || "Value changed significantly."}
+                          </Typography>
+                        </Box>
+                      )}
                     </Box>
                     {!notif.read && (
                       <Box
@@ -499,13 +542,13 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                       />
                     )}
                   </ListItem>
-                  {index < 4 && index < notifications.length - 1 && <Divider />}
+                  {index < visibleNotifications.length - 1 && <Divider />}
                 </div>
               );
             })
           )}
         </List>
-        {notifications.length > 5 && (
+        {hasMoreNotifications && (
           <Box
             sx={{
               p: 1.5,
@@ -516,15 +559,17 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
           >
             <Typography
               variant="button"
+              onClick={() => setVisibleCount((prev) => prev + 5)}
               sx={{
                 fontSize: "0.75rem",
                 fontWeight: 700,
-                color: "text.disabled",
+                color: "primary.main",
                 textTransform: "uppercase",
                 letterSpacing: "0.05em",
+                cursor: "pointer",
               }}
             >
-              Recent Notifications
+              View More
             </Typography>
           </Box>
         )}
