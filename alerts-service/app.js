@@ -177,9 +177,11 @@ async function processInventoryMetrics(data) {
     // 4. Cache Check - Comparison
     const cacheKey = `inventory:cache:${shopName}:${variantId.split("/").pop()}`;
     const cachedData = await redis.get(cacheKey);
+    let oldMetricsObj = null;
     
     if (cachedData) {
       const oldMetrics = JSON.parse(cachedData);
+      oldMetricsObj = oldMetrics; // Save for alert push
       // Remove non-metric fields for comparison
       const { 
         updatedAt: _u, date: _c, 
@@ -207,6 +209,45 @@ async function processInventoryMetrics(data) {
       updatedAt: istFormatted,
       date: istDay
     };
+
+    // Forward metrics to analytics service for threshold alerting
+    if (process.env.ANALYTICS_SERVICE_URL) {
+      try {
+        const payload = {
+          shop_domain: shopName,
+          product_id: productId,
+          product_title: productTitle,
+          variant_id: variantId,
+          date: istDay,
+          inventoryQty: newMetrics.liveQty,
+          old_inventoryQty: oldMetricsObj?.liveQty,
+          drr7: newMetrics.drr7,
+          old_drr7: oldMetricsObj?.drr7,
+          drr30: newMetrics.drr30,
+          old_drr30: oldMetricsObj?.drr30,
+          drr90: newMetrics.drr90,
+          old_drr90: oldMetricsObj?.drr90,
+          doh7: newMetrics.doh7,
+          old_doh7: oldMetricsObj?.doh7,
+          doh30: newMetrics.doh30,
+          old_doh30: oldMetricsObj?.doh30,
+          doh90: newMetrics.doh90,
+          old_doh90: oldMetricsObj?.doh90
+        };
+
+        // Note: Using global fetch here
+        await fetch(`${process.env.ANALYTICS_SERVICE_URL}/push/receive`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-pipeline-key": process.env.X_PIPELINE_KEY
+          },
+          body: JSON.stringify(payload)
+        });
+      } catch (err) {
+        logger.error(`[inventory] Failed to forward metrics to analytics service for ${shopName}-${productId}: ${err.message}`);
+      }
+    }
 
     // 5. Persistence - MySQL Upsert
     const dbPassword = PipelineCreds.decrypt(credsDoc.db_password);
@@ -409,6 +450,127 @@ app.post("/push/receive", async (req, res) => {
     const payload = { ...req.body };
 
     // --- Detect Item Quantity Push ---
+    
+      const toNum = (v) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      const calcDropPct = (oldValue, currentValue) => {
+        const oldN = toNum(oldValue);
+        const curN = toNum(currentValue);
+        if (!oldN || oldN <= 0 || curN === null) return 0;
+        return Number((((oldN - curN) / oldN) * 100).toFixed(2));
+      };
+
+      const isInventoryPayload =
+        payload &&
+        payload.product_id &&
+        payload.product_title &&
+        payload.variant_id &&
+        (payload.drr7 !== undefined || payload.doh7 !== undefined || payload.inventoryQty !== undefined);
+
+      // Special handling for inventory threshold events coming as flat payloads.
+      if (isInventoryPayload) {
+        const drrThreshold = toNum(process.env.DRR_THRESHOLD) ?? 0;
+        const dohThreshold = toNum(process.env.DOH_THRESHOLD) ?? 0;
+        const qtyThreshold = toNum(process.env.INVENTORY_QTY_THRESHOLD) ?? 0;
+
+        const drr7 = toNum(payload.drr7);
+        const doh7 = toNum(payload.doh7);
+        const inventoryQty = toNum(payload.inventoryQty);
+
+        const inventoryAlerts = [];
+
+        if (drr7 !== null && drr7 < drrThreshold) {
+          const delta = calcDropPct(payload.old_drr7, drr7);
+          const productIdShort = String(payload.product_id || "").split("/").pop();
+          inventoryAlerts.push({
+            metric_type: "DRR",
+            current_value: drr7,
+            old_value: toNum(payload.old_drr7),
+            delta_percent: delta,
+            subject: `LOW DRR | ${payload.product_title} | current value: ${drr7}`,
+            description: `${productIdShort} | ${payload.product_title} | DRR dropped by ${delta}%`,
+          });
+        }
+
+        if (doh7 !== null && doh7 < dohThreshold) {
+          const delta = calcDropPct(payload.old_doh7, doh7);
+          const productIdShort = String(payload.product_id || "").split("/").pop();
+          inventoryAlerts.push({
+            metric_type: "DOH",
+            current_value: doh7,
+            old_value: toNum(payload.old_doh7),
+            delta_percent: delta,
+            subject: `LOW DOH | ${payload.product_title} | current value: ${doh7}`,
+            description: `${productIdShort} | ${payload.product_title} | DOH dropped by ${delta}%`,
+          });
+        }
+
+        if (inventoryQty !== null && inventoryQty < qtyThreshold) {
+          const delta = calcDropPct(payload.old_inventoryQty, inventoryQty);
+          const productIdShort = String(payload.product_id || "").split("/").pop();
+          inventoryAlerts.push({
+            metric_type: "INVENTORY_QTY",
+            current_value: inventoryQty,
+            old_value: toNum(payload.old_inventoryQty),
+            delta_percent: delta,
+            subject: `LOW INVENTORY | ${payload.product_title} | current value: ${inventoryQty}`,
+            description: `${productIdShort} | ${payload.product_title} | INVENTORY_QTY dropped by ${delta}%`,
+          });
+        }
+
+        if (inventoryAlerts.length === 0) {
+          return res.json({
+            message: "Inventory payload received, no thresholds breached",
+            alerts_triggered: 0,
+          });
+        }
+
+        await Promise.all(
+          inventoryAlerts.map(async (alert) => {
+            const doc = {
+              read: false,
+              stored_at: new Date(),
+              shop_domain: payload.shop_domain || "system",
+              product_id: payload.product_id,
+              product_title: payload.product_title,
+              variant_id: payload.variant_id,
+              date: payload.date,
+              metric_type: alert.metric_type,
+              subject: alert.subject,
+              description: alert.description,
+              current_value: alert.current_value,
+              old_value: alert.old_value,
+              delta_percentage: alert.delta_percent,
+              event: {
+                metric: alert.metric_type,
+                delta_percent: alert.delta_percent,
+                threshold_type: "less_than",
+                direction: "drop",
+                condition: alert.description,
+                current_state: "ALERT",
+                brand: payload.product_title,
+                current_value: alert.current_value,
+              },
+            };
+
+            await mongoose.connection.collection("inventory_notifications").insertOne(doc);
+            sendToAll(mongoose.connection, alert.subject, alert.description, {
+              severity: "critical",
+              brand: payload.shop_domain || "system",
+              metric_type: alert.metric_type,
+            }).catch((err) =>
+              logger.error("[push/receive] Inventory FCM sendToAll error:", err.message),
+            );
+          }),
+        );
+
+        return res.json({
+          message: "Inventory notifications stored successfully",
+          alerts_triggered: inventoryAlerts.length,
+        });
+      }
     if (payload.product_id && payload.current_quantity !== undefined) {
       const itemQtyEvent = new ItemQtyPush(payload);
       await itemQtyEvent.save();
@@ -587,6 +749,14 @@ app.get("/push/notifications", async (req, res) => {
       .limit(limit)
       .toArray();
 
+    const inventoryNotifs = await mongoose.connection
+      .collection("inventory_notifications")
+      .find({})
+      .sort({ stored_at: -1 })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
     const formattedItemQty = itemQtyNotifs.map((reqPush) => {
       const diff = (reqPush.previous_quantity || 0) - (reqPush.current_quantity || 0);
       const pct = reqPush.previous_quantity ? (diff / reqPush.previous_quantity) * 100 : 0;
@@ -609,7 +779,26 @@ app.get("/push/notifications", async (req, res) => {
       };
     });
 
-    let combined = [...pushNotifs, ...formattedItemQty];
+    const formattedInventory = inventoryNotifs.map((inv) => ({
+      _id: inv._id,
+      stored_at: inv.stored_at || inv.createdAt || new Date(),
+      read: inv.read || false,
+      is_inventory_notification: true,
+      subject: inv.subject,
+      description: inv.description,
+      event: inv.event || {
+        metric: inv.metric_type || "inventory",
+        delta_percent: inv.delta_percentage || 0,
+        threshold_type: "less_than",
+        direction: "drop",
+        condition: inv.description,
+        current_state: "ALERT",
+        brand: inv.product_title || "Inventory",
+        current_value: inv.current_value,
+      },
+    }));
+
+    let combined = [...pushNotifs, ...formattedItemQty, ...formattedInventory];
     combined.sort((a, b) => new Date(b.stored_at) - new Date(a.stored_at));
     const notifications = combined.slice(0, limit);
 
@@ -622,7 +811,11 @@ app.get("/push/notifications", async (req, res) => {
       .collection("item_qty_push")
       .countDocuments({ read: false });
 
-    const unreadCount = unreadPushNotifs + unreadItemQty;
+    const unreadInventory = await mongoose.connection
+      .collection("inventory_notifications")
+      .countDocuments({ read: false });
+
+    const unreadCount = unreadPushNotifs + unreadItemQty + unreadInventory;
 
     res.json({ notifications, unreadCount });
   } catch (err) {
@@ -653,6 +846,9 @@ app.put("/push/notifications/read", async (req, res) => {
         .updateMany(query, { $set: { read: true } }),
       mongoose.connection
         .collection("item_qty_push")
+        .updateMany(query, { $set: { read: true } }),
+      mongoose.connection
+        .collection("inventory_notifications")
         .updateMany(query, { $set: { read: true } }),
     ]);
     res.json({ message: "Notifications marked as read" });

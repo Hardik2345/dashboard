@@ -1,9 +1,12 @@
 const express = require('express');
 const admin = require('firebase-admin');
 const logger = require('../../shared/utils/logger');
+const handlePushReceive = require('./pushReceiveController');
 
 function buildNotificationsRouter() {
   const router = express.Router();
+
+  router.post('/push/receive', handlePushReceive);
 
   router.post('/subscribe', async (req, res) => {
     const { token, topic, topics } = req.body;
