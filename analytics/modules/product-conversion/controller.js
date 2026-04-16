@@ -18,9 +18,14 @@ function buildProductConversionController() {
         // --- Security Filtering: Granular Column Access ---
         if (!req.user.isAuthor) {
           const userPermissions = req.user.permissions || [];
+          const hasInventoryPanel = userPermissions.includes('inventory_panel');
           const permittedColumns = userPermissions
             .filter(p => p.startsWith('product_conversion:'))
             .map(p => p.split(':')[1]);
+
+          if (hasInventoryPanel) {
+            permittedColumns.push('orders', 'drr', 'doh');
+          }
           
           // landing_page_path is always public for anyone with product_conversion scope
           permittedColumns.push('landing_page_path');
@@ -58,9 +63,14 @@ function buildProductConversionController() {
         // --- Security Filtering: Granular Column Access ---
         if (!req.user.isAuthor) {
           const userPermissions = req.user.permissions || [];
+          const hasInventoryPanel = userPermissions.includes('inventory_panel');
           const permittedColumns = userPermissions
             .filter(p => p.startsWith('product_conversion:'))
             .map(p => p.split(':')[1]);
+
+          if (hasInventoryPanel) {
+            permittedColumns.push('orders', 'drr', 'doh');
+          }
           
           permittedColumns.push('landing_page_path');
 

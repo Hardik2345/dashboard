@@ -20,9 +20,6 @@ import {
   Divider,
   Alert,
   Skeleton,
-  FormControl,
-  Select,
-  MenuItem,
   useTheme,
   useMediaQuery,
 } from "@mui/material";
@@ -39,13 +36,13 @@ import {
   ShieldCheck,
   Store,
   Filter,
-  ScanLine,
+  Package,
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { id: "product-conversion", label: "Funnels", icon: Filter },
-  { id: "ranveer-rs", label: "RS Campaign", icon: ({ className }) => <span className={className} style={{ fontWeight: 800, fontSize: "0.85rem" }}>RS</span> },
+  { id: "inventory", label: "Inventory", icon: Package },
   { id: "alerts", label: "Alerts", icon: Bell },
   { id: "tenant-setup", label: "Tenant Setup", icon: Store },
   //  { id: "notifications-log", label: "Logs", icon: Bell },
@@ -133,12 +130,10 @@ const NotificationsLog = lazy(
 const ProductConversionTable = lazy(
   () => import("./components/ProductConversionTable.jsx"),
 );
+const InventoryTable = lazy(() => import("./components/InventoryTable.jsx"));
 const AuthorBrandForm = lazy(() => import("./components/AuthorBrandForm.jsx"));
 const AuthorBrandList = lazy(() => import("./components/AuthorBrandList.jsx"));
 const AlertsAdmin = lazy(() => import("./components/AlertsAdmin.jsx"));
-const RanveerRSDashboard = lazy(
-  () => import("./components/RanveerRSDashboard.jsx"),
-);
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format("YYYY-MM-DD") : undefined;
@@ -291,12 +286,6 @@ export default function App() {
 
   // Track navigation direction for transitions
   const [direction, setDirection] = useState(0);
-
-  // RS Campaign Filter State
-  const [rsCity, setRsCity] = useState("All");
-  const [rsUtm, setRsUtm] = useState("All");
-  const [rsCityOptions, setRsCityOptions] = useState(["All"]);
-  const [rsUtmOptions, setRsUtmOptions] = useState(["All"]);
 
   // Animation variants for page content
   const pageVariants = {
@@ -498,18 +487,29 @@ export default function App() {
     [isAuthor, viewerPermissions],
   );
 
-  const canAccessRanveerRs = useMemo(() => {
+  const canAccessInventoryPanel = useMemo(() => {
     if (isAuthor) return true;
-    return viewerBrands.includes("AJMAL");
-  }, [isAuthor, viewerBrands]);
+    return hasPermission("inventory_panel");
+  }, [hasPermission, isAuthor]);
 
   const accessibleTabs = useMemo(() => {
     if (isAuthor) return null;
     const tabs = ["dashboard"];
-    if (canAccessRanveerRs) tabs.push("ranveer-rs");
-    // Keep viewers on dashboard tab only, even if they have funnel permission (since it's inline now)
+    if (canAccessInventoryPanel) tabs.push("inventory");
     return tabs;
-  }, [canAccessRanveerRs, isAuthor]);
+  }, [canAccessInventoryPanel, isAuthor]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    if (authorTab === "inventory" && !canAccessInventoryPanel) {
+      setAuthorTab("dashboard");
+      try {
+        localStorage.setItem("author_active_tab_v1", "dashboard");
+      } catch {
+        // Ignore storage write errors
+      }
+    }
+  }, [authorTab, canAccessInventoryPanel, initialized]);
 
   const showSidebar = isAuthor || (accessibleTabs && accessibleTabs.length > 1);
 
@@ -519,18 +519,6 @@ export default function App() {
       : MOBILE_NAV_ITEMS.filter((item) => accessibleTabs?.includes(item.id));
     return base.filter((item) => item.id !== "tenant-setup");
   }, [isAuthor, accessibleTabs]);
-
-  useEffect(() => {
-    if (!initialized) return;
-    if (authorTab === "ranveer-rs" && !canAccessRanveerRs) {
-      setAuthorTab("dashboard");
-      try {
-        localStorage.setItem("author_active_tab_v1", "dashboard");
-      } catch {
-        // Ignore storage write errors
-      }
-    }
-  }, [authorTab, canAccessRanveerRs, initialized]);
 
   // Derived arrays/labels for product multi-select used directly by child components
   const selectedProductIds = useMemo(() => {
@@ -2179,20 +2167,14 @@ export default function App() {
                   sx={{
                     display: "flex",
                     flexDirection: { xs: "column", md: "row" },
-                    alignItems: authorTab === "ranveer-rs" ? { xs: "flex-start", md: "center" } : "center",
-                    justifyContent: authorTab === "ranveer-rs" ? "space-between" : { xs: "space-between", md: "flex-end" },
+                    alignItems: "center",
+                    justifyContent: { xs: "space-between", md: "flex-end" },
                     width: "100%",
                     gap: 1,
                   }}
                 >
-                  {authorTab === "ranveer-rs" && (
-                    <Typography variant="h6" sx={{ fontWeight: 700 }} color="text.primary">
-                      RS Campaign
-                    </Typography>
-                  )}
-
                   {/* Unified Filter Bar - Desktop Only (Dashboard Tab) */}
-                  {(!isMobile || authorTab === "ranveer-rs") && (authorTab === "dashboard" || authorTab === "ranveer-rs") && hasBrand && (
+                  {!isMobile && (authorTab === "dashboard") && hasBrand && (
                     <Box sx={{ mb: { xs: 1, md: 0 } }}>
 
                       <UnifiedFilterBar
@@ -2200,7 +2182,7 @@ export default function App() {
                         onRangeChange={handleRangeChange}
                         brandKey={activeBrandKey}
                         brands={brandsForSelector}
-                        hideAllExceptDate={authorTab === "ranveer-rs"}
+                        hideAllExceptDate={false}
                         onBrandChange={
 
                           isAuthor
@@ -2237,53 +2219,12 @@ export default function App() {
                         }}
                         utmOptions={utmOptions}
                         onDownload={handleDownloadSnapshot}
-                      >
-                        {authorTab === "ranveer-rs" && (
-                          <Box sx={{ display: "flex", gap: 1, px: 1, alignItems: 'center' }}>
-                            <FormControl size="small" variant="standard" sx={{ minWidth: 100 }}>
-                              <Select
-                                value={rsCity}
-                                onChange={(e) => setRsCity(e.target.value)}
-                                disableUnderline
-                                sx={{ fontSize: '0.8rem' }}
-                                renderValue={(selected) => (
-                                  <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                                    <Typography sx={{ color: 'text.secondary', fontWeight: 500, fontSize: '0.75rem' }}>City:</Typography>
-                                    <Typography sx={{ fontWeight: 700, fontSize: '0.75rem', color: 'primary.main' }}>{selected}</Typography>
-                                  </Box>
-                                )}
-                                MenuProps={{ PaperProps: { sx: { maxHeight: 300, borderRadius: '12px', mt: 1 } } }}
-                              >
-                                {rsCityOptions.map(c => <MenuItem key={c} value={c} sx={{ fontSize: '0.8rem' }}>{c}</MenuItem>)}
-                              </Select>
-                            </FormControl>
-                            <Divider orientation="vertical" flexItem sx={{ my: 1, height: 20 }} />
-                            <FormControl size="small" variant="standard" sx={{ minWidth: 120 }}>
-                              <Select
-                                value={rsUtm}
-                                onChange={(e) => setRsUtm(e.target.value)}
-                                disableUnderline
-                                sx={{ fontSize: '0.8rem' }}
-                                renderValue={(selected) => (
-                                  <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                                    <Typography sx={{ color: 'text.secondary', fontWeight: 500, fontSize: '0.75rem' }}>UTM:</Typography>
-                                    <Typography sx={{ fontWeight: 700, fontSize: '0.75rem', color: 'primary.main' }}>{selected}</Typography>
-                                  </Box>
-                                )}
-                                MenuProps={{ PaperProps: { sx: { maxHeight: 300, borderRadius: '12px', mt: 1 } } }}
-                              >
-                                {rsUtmOptions.map(u => <MenuItem key={u} value={u} sx={{ fontSize: '0.8rem' }}>{u}</MenuItem>)}
-                              </Select>
-                            </FormControl>
-                          </Box>
-                        )}
-                      </UnifiedFilterBar>
+                      />
                     </Box>
                   )}
 
                   {!isMobile &&
                     authorTab !== "dashboard" &&
-                    authorTab !== "ranveer-rs" &&
                     authorTab !== "alerts" &&
                     authorTab !== "access" &&
                     authorTab !== "notifications-log" &&
@@ -2754,20 +2695,26 @@ export default function App() {
                         </Paper>
                       ))}
 
-                    {canAccessRanveerRs && authorTab === "ranveer-rs" && (
-                      <Suspense fallback={<SectionFallback count={2} height={220} />}>
-                        <RanveerRSDashboard 
-                          dateRange={normalizedRange} 
-                          selectedCity={rsCity}
-                          setSelectedCity={setRsCity}
-                          selectedUtm={rsUtm}
-                          setSelectedUtm={setRsUtm}
-                          setCityOptions={setRsCityOptions}
-                          setUtmOptions={setRsUtmOptions}
-                        />
-
-                      </Suspense>
-                    )}
+                    {canAccessInventoryPanel &&
+                      authorTab === "inventory" &&
+                      (hasBrand ? (
+                        <Suspense fallback={<SectionFallback count={1} height={280} />}>
+                          <InventoryTable
+                            brandKey={activeBrandKey}
+                            startDate={productTableStart}
+                            endDate={productTableEnd}
+                          />
+                        </Suspense>
+                      ) : (
+                        <Paper
+                          variant="outlined"
+                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to view inventory metrics.
+                          </Typography>
+                        </Paper>
+                      ))}
 
                     {isAuthor && authorTab === "access" && (
                       <Suspense fallback={<SectionFallback count={2} />}>
