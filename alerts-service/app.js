@@ -42,19 +42,70 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 
 const redis = require("./utils/redis");
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getThrottleResetSleepMsFromGraphQLErrors(errors) {
+  if (!Array.isArray(errors) || !errors.length) return null;
+
+  const throttled = errors.find(
+    (e) => e?.extensions?.code === "THROTTLED" && e?.extensions?.cost?.windowResetAt,
+  );
+  if (!throttled) return null;
+
+  const resetAt = Date.parse(throttled.extensions.cost.windowResetAt);
+  if (!Number.isFinite(resetAt)) return null;
+
+  return Math.max(0, resetAt - Date.now()) + 250;
+}
+
 // Helper for Shopify GraphQL requests
 async function shopifyGraphQL(shopName, accessToken, query, variables = {}, apiVersion = "2024-04") {
-  const response = await fetch(`https://${shopName}.myshopify.com/admin/api/${apiVersion}/graphql.json`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": accessToken
-    },
-    body: JSON.stringify({ query, variables })
-  });
-  const json = await response.json();
-  if (json.errors) throw new Error(`Shopify GraphQL Error: ${JSON.stringify(json.errors)}`);
-  return json.data;
+  let attempt = 1;
+  const maxRetries = 5;
+
+  while (attempt <= maxRetries) {
+    const response = await fetch(`https://${shopName}.myshopify.com/admin/api/${apiVersion}/graphql.json`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": accessToken
+      },
+      body: JSON.stringify({ query, variables })
+    });
+
+    if (response.status === 429) {
+      const retryAfter = Number(response.headers.get("retry-after") || "3");
+      logger.warn(`[inventory] Shopify GraphQL 429 for ${shopName}, sleeping ${retryAfter}s (attempt ${attempt}/${maxRetries})`);
+      await sleep(retryAfter * 1000);
+      continue;
+    }
+
+    const json = await response.json();
+    if (json.errors?.length) {
+      const throttleSleepMs = getThrottleResetSleepMsFromGraphQLErrors(json.errors);
+      if (throttleSleepMs != null) {
+        logger.warn(`[inventory] Shopify GraphQL THROTTLED for ${shopName}, sleeping ${Math.ceil(throttleSleepMs / 1000)}s until reset`);
+        await sleep(throttleSleepMs);
+        continue;
+      }
+
+      if (attempt < maxRetries) {
+        const backoffMs = Math.min(5000, 500 * attempt);
+        logger.warn(`[inventory] Shopify GraphQL errors for ${shopName}, retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries}): ${JSON.stringify(json.errors)}`);
+        await sleep(backoffMs);
+        attempt += 1;
+        continue;
+      }
+
+      throw new Error(`Shopify GraphQL Error: ${JSON.stringify(json.errors)}`);
+    }
+
+    return json.data;
+  }
+
+  throw new Error(`Shopify GraphQL failed after retries for ${shopName}`);
 }
 
 async function fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, days) {
@@ -104,11 +155,11 @@ async function processInventoryMetrics(data) {
     const apiVersion = credsDoc?.api_version || process.env.SHOPIFY_API_VERSION || "2025-10";
 
     // 1. Fetch sold units from ShopifyQL inventory metrics
-    const [sold7, sold30, sold90] = await Promise.all([
-      fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, 7),
-      fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, 30),
-      fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, 90),
-    ]);
+    const sold7 = await fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, 7);
+    await sleep(3000);
+    const sold30 = await fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, 30);
+    await sleep(3000);
+    const sold90 = await fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, 90);
 
     // 2. Fetch Current Inventory Quantity
     const productQuery = `
