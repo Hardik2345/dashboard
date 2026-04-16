@@ -33,13 +33,11 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-
     env:
       NODE_VERSION: '20'
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -48,10 +46,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+          cache: 'npm'
           cache-dependency-path: client/dashboard/package-lock.json
 
-      - name: Install frontend dependencies
+      - name: Install dependencies
         working-directory: client/dashboard
         run: npm ci
 
@@ -59,21 +57,11 @@ jobs:
         working-directory: client/dashboard
         run: npm run build
 
-      - name: Install Vercel CLI
-        shell: bash
-        run: npm install -g vercel@latest
-
-      - name: Pull Vercel environment
-        shell: bash
-        working-directory: client/dashboard
-        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-
-      - name: Build Vercel project
-        shell: bash
-        working-directory: client/dashboard
-        run: vercel build --prod --token="$VERCEL_TOKEN"
-
       - name: Deploy to Vercel production
-        shell: bash
-        working-directory: client/dashboard
-        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ env.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ env.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ env.VERCEL_PROJECT_ID }}
+        run: |
+          npx --yes vercel@latest pull --yes --environment=production --token "$VERCEL_TOKEN"
+          npx --yes vercel@latest deploy --prod --confirm --token "$VERCEL_TOKEN"
