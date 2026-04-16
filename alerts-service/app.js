@@ -57,6 +57,51 @@ async function shopifyGraphQL(shopName, accessToken, query, variables = {}) {
   return json.data;
 }
 
+async function fetchInventoryUnitsSold(shopName, accessToken, numericProductId, days) {
+  const shopifyQlQuery = `
+    FROM inventory
+      SHOW inventory_units_sold
+      WHERE product_id = ${numericProductId}
+      WITH PERCENT_CHANGE
+      SINCE startOfDay(-${days}d)
+      UNTIL today
+      COMPARE TO previous_period
+      ORDER BY inventory_units_sold DESC
+      LIMIT 1000
+      VISUALIZE inventory_units_sold
+  `.replace(/\n+/g, " ").trim();
+
+  const query = `
+    query InventoryUnitsSoldPercentChangeQuery($query: String!) {
+      shopifyqlQuery(query: $query) {
+        __typename
+        tableData {
+          columns {
+            name
+            dataType
+            displayName
+          }
+          rows
+        }
+        parseErrors
+      }
+    }
+  `;
+
+  const data = await shopifyGraphQL(shopName, accessToken, query, { query: shopifyQlQuery });
+  const result = data?.shopifyqlQuery;
+  if (!result) {
+    throw new Error(`Missing ShopifyQL response for inventory_units_sold ${days}d`);
+  }
+  if (Array.isArray(result.parseErrors) && result.parseErrors.length > 0) {
+    throw new Error(`ShopifyQL parse error for inventory_units_sold ${days}d: ${JSON.stringify(result.parseErrors)}`);
+  }
+
+  const row = result.tableData?.rows?.[0];
+  const soldUnits = Number(row?.inventory_units_sold || 0);
+  return Number.isFinite(soldUnits) ? soldUnits : 0;
+}
+
 // Background processing for inventory metrics
 async function processInventoryMetrics(data) {
   const { 
@@ -68,72 +113,15 @@ async function processInventoryMetrics(data) {
 
   try {
     const now = new Date();
-    const getDateString = (daysAgo) => {
-      const d = new Date(now);
-      d.setDate(d.getDate() - daysAgo);
-      return d.toISOString().split("T")[0];
-    };
+    const numericProductId = (productId || "").split("/").pop();
+    const numericVariantId = (variantId || "").split("/").pop();
 
-    const date7 = getDateString(7);
-    const date30 = getDateString(30);
-    const date90 = getDateString(90);
-
-    // 1. Fetch Sales (Paginated Loop for 90 Days)
-    let sold7 = 0, sold30 = 0, sold90 = 0;
-    let hasNextPage = true;
-    let cursor = null;
-    let pageCount = 0;
-
-    // Use SKU filter to minimize order data fetching
-    const ordersQuery = `
-      query getOrders($query: String!, $cursor: String) {
-        orders(first: 250, query: $query, after: $cursor, reverse: true) {
-          pageInfo { hasNextPage endCursor }
-          edges {
-            node {
-              createdAt
-              lineItems(first: 50) {
-                edges {
-                  node {
-                    quantity
-                    variant { id }
-                    product { id }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    `;
-
-    const searchQuery = `created_at:>=${date90}${sku ? ` AND sku:${sku}` : ""}`;
-
-    while (hasNextPage && pageCount < 50) {
-      const ordersData = await shopifyGraphQL(shopName, accessToken, ordersQuery, { 
-        query: searchQuery, 
-        cursor 
-      });
-      
-      const orders = ordersData.orders.edges;
-      for (const edge of orders) {
-        const order = edge.node;
-        const orderDate = order.createdAt.split("T")[0];
-
-        for (const lineEdge of order.lineItems.edges) {
-          const item = lineEdge.node;
-          if (item.variant?.id === variantId && item.product?.id === productId) {
-            sold90 += item.quantity;
-            if (orderDate >= date30) sold30 += item.quantity;
-            if (orderDate >= date7) sold7 += item.quantity;
-          }
-        }
-      }
-
-      hasNextPage = ordersData.orders.pageInfo.hasNextPage;
-      cursor = ordersData.orders.pageInfo.endCursor;
-      pageCount++;
-    }
+    // 1. Fetch sold units from ShopifyQL inventory metrics
+    const [sold7, sold30, sold90] = await Promise.all([
+      fetchInventoryUnitsSold(shopName, accessToken, numericProductId, 7),
+      fetchInventoryUnitsSold(shopName, accessToken, numericProductId, 30),
+      fetchInventoryUnitsSold(shopName, accessToken, numericProductId, 90),
+    ]);
 
     // 2. Fetch Current Inventory Quantity
     const productQuery = `
@@ -258,9 +246,6 @@ async function processInventoryMetrics(data) {
       password: dbPassword,
       database: credsDoc.db_database
     });
-
-    const numericProductId = (productId || "").split("/").pop();
-    const numericVariantId = (variantId || "").split("/").pop();
 
     const upsertSql = `
       INSERT INTO top_products_inventory (
