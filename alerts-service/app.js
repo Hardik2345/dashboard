@@ -42,100 +42,40 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 
 const redis = require("./utils/redis");
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function getThrottleResetSleepMsFromGraphQLErrors(errors) {
-  if (!Array.isArray(errors) || !errors.length) return null;
-
-  const throttled = errors.find(
-    (e) => e?.extensions?.code === "THROTTLED" && e?.extensions?.cost?.windowResetAt,
-  );
-  if (!throttled) return null;
-
-  const resetAt = Date.parse(throttled.extensions.cost.windowResetAt);
-  if (!Number.isFinite(resetAt)) return null;
-
-  return Math.max(0, resetAt - Date.now()) + 250;
+function formatDateYmd(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 // Helper for Shopify GraphQL requests
 async function shopifyGraphQL(shopName, accessToken, query, variables = {}, apiVersion = "2024-04") {
-  let attempt = 1;
-  const maxRetries = 5;
-
-  while (attempt <= maxRetries) {
-    const response = await fetch(`https://${shopName}.myshopify.com/admin/api/${apiVersion}/graphql.json`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Access-Token": accessToken
-      },
-      body: JSON.stringify({ query, variables })
-    });
-
-    if (response.status === 429) {
-      const retryAfter = Number(response.headers.get("retry-after") || "3");
-      logger.warn(`[inventory] Shopify GraphQL 429 for ${shopName}, sleeping ${retryAfter}s (attempt ${attempt}/${maxRetries})`);
-      await sleep(retryAfter * 1000);
-      continue;
-    }
-
-    const json = await response.json();
-    if (json.errors?.length) {
-      const throttleSleepMs = getThrottleResetSleepMsFromGraphQLErrors(json.errors);
-      if (throttleSleepMs != null) {
-        logger.warn(`[inventory] Shopify GraphQL THROTTLED for ${shopName}, sleeping ${Math.ceil(throttleSleepMs / 1000)}s until reset`);
-        await sleep(throttleSleepMs);
-        continue;
-      }
-
-      if (attempt < maxRetries) {
-        const backoffMs = Math.min(5000, 500 * attempt);
-        logger.warn(`[inventory] Shopify GraphQL errors for ${shopName}, retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries}): ${JSON.stringify(json.errors)}`);
-        await sleep(backoffMs);
-        attempt += 1;
-        continue;
-      }
-
-      throw new Error(`Shopify GraphQL Error: ${JSON.stringify(json.errors)}`);
-    }
-
-    return json.data;
-  }
-
-  throw new Error(`Shopify GraphQL failed after retries for ${shopName}`);
+  const response = await fetch(`https://${shopName}.myshopify.com/admin/api/${apiVersion}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": accessToken
+    },
+    body: JSON.stringify({ query, variables })
+  });
+  const json = await response.json();
+  if (json.errors) throw new Error(`Shopify GraphQL Error: ${JSON.stringify(json.errors)}`);
+  return json.data;
 }
 
-async function fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, days) {
-  const shopifyQlQuery = `
-    FROM inventory
-      SHOW inventory_units_sold
-      WHERE product_id = ${numericProductId}
-      WITH PERCENT_CHANGE
-      SINCE startOfDay(-${days}d)
-      UNTIL today
-      COMPARE TO previous_period
-      ORDER BY inventory_units_sold DESC
-      LIMIT 1000
-      VISUALIZE inventory_units_sold
-  `.replace(/\n+/g, " ").trim();
+async function fetchSoldUnitsFromDb(pool, numericProductId, startDate, endDate) {
+  const [rows] = await pool.query(
+    `
+      SELECT COALESCE(SUM(line_item_quantity), 0) AS sold_units
+      FROM shopify_orders
+      WHERE created_dt BETWEEN ? AND ?
+        AND product_id = ?
+    `,
+    [startDate, endDate, numericProductId],
+  );
 
-  const escapedQuery = shopifyQlQuery.replace(/"/g, '\\"');
-  const query = `query { shopifyqlQuery(query: "${escapedQuery}") { __typename tableData { columns { name dataType displayName } rows } parseErrors } }`;
-
-  const data = await shopifyGraphQL(shopName, accessToken, query, {}, apiVersion);
-  const result = data?.shopifyqlQuery;
-  if (!result) {
-    throw new Error(`Missing ShopifyQL response for inventory_units_sold ${days}d`);
-  }
-  if (Array.isArray(result.parseErrors) && result.parseErrors.length > 0) {
-    throw new Error(`ShopifyQL parse error for inventory_units_sold ${days}d: ${JSON.stringify(result.parseErrors)}`);
-  }
-
-  const row = result.tableData?.rows?.[0];
-  const soldUnits = Number(row?.inventory_units_sold || 0);
+  const soldUnits = Number(rows?.[0]?.sold_units || 0);
   return Number.isFinite(soldUnits) ? soldUnits : 0;
 }
 
@@ -153,13 +93,23 @@ async function processInventoryMetrics(data) {
     const numericProductId = (productId || "").split("/").pop();
     const numericVariantId = (variantId || "").split("/").pop();
     const apiVersion = credsDoc?.api_version || process.env.SHOPIFY_API_VERSION || "2025-10";
+    const dbPassword = PipelineCreds.decrypt(credsDoc.db_password);
+    const pool = getPool({
+      host: credsDoc.db_host,
+      port: credsDoc.port,
+      user: credsDoc.db_user,
+      password: dbPassword,
+      database: credsDoc.db_database
+    });
+    const endDate = formatDateYmd(now);
+    const startDate7 = formatDateYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7));
+    const startDate30 = formatDateYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30));
+    const startDate90 = formatDateYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90));
 
-    // 1. Fetch sold units from ShopifyQL inventory metrics
-    const sold7 = await fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, 7);
-    await sleep(3000);
-    const sold30 = await fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, 30);
-    await sleep(3000);
-    const sold90 = await fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, 90);
+    // 1. Fetch sold units from the brand database
+    const sold7 = await fetchSoldUnitsFromDb(pool, numericProductId, startDate7, endDate);
+    const sold30 = await fetchSoldUnitsFromDb(pool, numericProductId, startDate30, endDate);
+    const sold90 = await fetchSoldUnitsFromDb(pool, numericProductId, startDate90, endDate);
 
     // 2. Fetch Current Inventory Quantity
     const productQuery = `
@@ -276,15 +226,6 @@ async function processInventoryMetrics(data) {
     }
 
     // 5. Persistence - MySQL Upsert
-    const dbPassword = PipelineCreds.decrypt(credsDoc.db_password);
-    const pool = getPool({
-      host: credsDoc.db_host,
-      port: credsDoc.port,
-      user: credsDoc.db_user,
-      password: dbPassword,
-      database: credsDoc.db_database
-    });
-
     const upsertSql = `
       INSERT INTO top_products_inventory (
         product_id, product_title, variant_id, variant_title, sku, 
