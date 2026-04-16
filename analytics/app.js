@@ -10,7 +10,6 @@ const { sequelize } = require("./shared/db/mainSequelize");
 const { buildMetricsRouter } = require("./modules/metrics");
 const { buildProductConversionRouter } = require("./modules/product-conversion");
 const { buildExternalRouter } = require("./modules/external");
-const { buildRanvirRouter } = require("./modules/ranvir");
 const { buildUploadsRouter } = require("./modules/uploads");
 const { buildApiKeysRouter } = require("./modules/api-keys");
 const { buildShopifyRouter } = require("./modules/shopify");
@@ -53,7 +52,6 @@ app.use("/", buildUploadsRouter());
 app.use("/", buildApiKeysRouter(sequelize));
 app.use("/shopify", buildShopifyRouter(sequelize));
 app.use("/notifications", buildNotificationsRouter());
-app.use("/ranvir", buildRanvirRouter());
 
 async function init() {
   await sequelize.authenticate();

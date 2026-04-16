@@ -25,6 +25,7 @@ const DomainRuleSchema = new mongoose.Schema({
     default: ['all'],
     enum: [
       'all',
+      'inventory_panel',
       'product_filter',
       'utm_filter',
       'web_vitals',

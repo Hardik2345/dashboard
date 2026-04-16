@@ -143,10 +143,42 @@ function requirePermission(permission) {
   };
 }
 
+function requireAnyPermission(permissions) {
+  const required = Array.isArray(permissions)
+    ? permissions.map((p) => String(p || "").trim()).filter(Boolean)
+    : [];
+
+  return (req, res, next) => {
+    if (!verifyGatewaySignature(req)) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const principal = buildPrincipalFromHeaders(req);
+    if (!principal) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    req.user = principal;
+    req.isAuthenticated = () => true;
+
+    if (principal.isAuthor || (principal.permissions && principal.permissions.includes("all"))) {
+      return next();
+    }
+
+    const hasAny = required.some(
+      (permission) => principal.permissions && principal.permissions.includes(permission),
+    );
+
+    if (hasAny) return next();
+    return res.status(403).json({ error: "Forbidden" });
+  };
+}
+
 module.exports = {
   verifyGatewaySignature,
   buildPrincipalFromHeaders,
   requireTrustedPrincipal,
   requireTrustedAuthor,
   requirePermission,
+  requireAnyPermission,
 };
