@@ -38,6 +38,7 @@ jobs:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -57,11 +58,14 @@ jobs:
         working-directory: client/dashboard
         run: npm run build
 
+      - name: Pull Vercel environment
+        working-directory: client/dashboard
+        run: npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build Vercel project
+        working-directory: client/dashboard
+        run: npx --yes vercel@latest build --prod --token="$VERCEL_TOKEN"
+
       - name: Deploy to Vercel production
-        env:
-          VERCEL_TOKEN: ${{ env.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ env.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ env.VERCEL_PROJECT_ID }}
-        run: |
-          npx --yes vercel@25.1.0 pull --yes --environment=production --token "$VERCEL_TOKEN"
-          npx --yes vercel@25.1.0 deploy --prod --confirm --token "$VERCEL_TOKEN"
+        working-directory: client/dashboard
+        run: npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
