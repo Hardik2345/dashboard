@@ -43,8 +43,8 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 const redis = require("./utils/redis");
 
 // Helper for Shopify GraphQL requests
-async function shopifyGraphQL(shopName, accessToken, query, variables = {}) {
-  const response = await fetch(`https://${shopName}.myshopify.com/admin/api/2024-04/graphql.json`, {
+async function shopifyGraphQL(shopName, accessToken, query, variables = {}, apiVersion = "2024-04") {
+  const response = await fetch(`https://${shopName}.myshopify.com/admin/api/${apiVersion}/graphql.json`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -57,7 +57,7 @@ async function shopifyGraphQL(shopName, accessToken, query, variables = {}) {
   return json.data;
 }
 
-async function fetchInventoryUnitsSold(shopName, accessToken, numericProductId, days) {
+async function fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, days) {
   const shopifyQlQuery = `
     FROM inventory
       SHOW inventory_units_sold
@@ -71,24 +71,10 @@ async function fetchInventoryUnitsSold(shopName, accessToken, numericProductId, 
       VISUALIZE inventory_units_sold
   `.replace(/\n+/g, " ").trim();
 
-  const query = `
-    query InventoryUnitsSoldPercentChangeQuery($query: String!) {
-      shopifyqlQuery(query: $query) {
-        __typename
-        tableData {
-          columns {
-            name
-            dataType
-            displayName
-          }
-          rows
-        }
-        parseErrors
-      }
-    }
-  `;
+  const escapedQuery = shopifyQlQuery.replace(/"/g, '\\"');
+  const query = `query { shopifyqlQuery(query: "${escapedQuery}") { __typename tableData { columns { name dataType displayName } rows } parseErrors } }`;
 
-  const data = await shopifyGraphQL(shopName, accessToken, query, { query: shopifyQlQuery });
+  const data = await shopifyGraphQL(shopName, accessToken, query, {}, apiVersion);
   const result = data?.shopifyqlQuery;
   if (!result) {
     throw new Error(`Missing ShopifyQL response for inventory_units_sold ${days}d`);
@@ -115,12 +101,13 @@ async function processInventoryMetrics(data) {
     const now = new Date();
     const numericProductId = (productId || "").split("/").pop();
     const numericVariantId = (variantId || "").split("/").pop();
+    const apiVersion = credsDoc?.api_version || process.env.SHOPIFY_API_VERSION || "2025-10";
 
     // 1. Fetch sold units from ShopifyQL inventory metrics
     const [sold7, sold30, sold90] = await Promise.all([
-      fetchInventoryUnitsSold(shopName, accessToken, numericProductId, 7),
-      fetchInventoryUnitsSold(shopName, accessToken, numericProductId, 30),
-      fetchInventoryUnitsSold(shopName, accessToken, numericProductId, 90),
+      fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, 7),
+      fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, 30),
+      fetchInventoryUnitsSold(shopName, accessToken, apiVersion, numericProductId, 90),
     ]);
 
     // 2. Fetch Current Inventory Quantity
@@ -138,7 +125,7 @@ async function processInventoryMetrics(data) {
         }
       }
     `;
-    const productData = await shopifyGraphQL(shopName, accessToken, productQuery, { id: productId });
+    const productData = await shopifyGraphQL(shopName, accessToken, productQuery, { id: productId }, apiVersion);
     const variantNode = productData.product.variants.edges.find(e => e.node.id === variantId);
     const liveQty = variantNode ? variantNode.node.inventoryQuantity : Number(inventoryQuantity);
 
