@@ -33,6 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
+
     env:
       NODE_VERSION: '20'
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -47,10 +48,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: client/dashboard/package-lock.json
 
-      - name: Install dependencies
+      - name: Install frontend dependencies
         working-directory: client/dashboard
         run: npm ci
 
@@ -58,14 +59,21 @@ jobs:
         working-directory: client/dashboard
         run: npm run build
 
+      - name: Install Vercel CLI
+        shell: bash
+        run: npm install -g vercel@latest
+
       - name: Pull Vercel environment
+        shell: bash
         working-directory: client/dashboard
-        run: npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build Vercel project
+        shell: bash
         working-directory: client/dashboard
-        run: npx --yes vercel@latest build --prod --token="$VERCEL_TOKEN"
+        run: vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy to Vercel production
+        shell: bash
         working-directory: client/dashboard
-        run: npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
