@@ -69,7 +69,7 @@ async function fetchSoldUnitsFromDb(pool, numericProductId, startDate, endDate) 
     `
       SELECT COALESCE(SUM(line_item_quantity), 0) AS sold_units
       FROM shopify_orders
-      WHERE created_dt BETWEEN ? AND ?
+      WHERE created_date BETWEEN ? AND ?
         AND product_id = ?
     `,
     [startDate, endDate, numericProductId],
