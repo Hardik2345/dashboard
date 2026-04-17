@@ -9,6 +9,8 @@ const sessionSchema = new mongoose.Schema({
         required: true
     },
     session_id: { type: String, required: true },
+    variantId: { type: String },
+    shop_name: { type: String },
     cart_token: { type: String },
     checkout_token: { type: String },
     user_agent: { type: String },
@@ -19,3 +21,5 @@ const sessionSchema = new mongoose.Schema({
 });
 
 module.exports = mongoose.model('Session', sessionSchema);
+
+
