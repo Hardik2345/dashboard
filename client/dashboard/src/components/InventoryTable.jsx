@@ -3,6 +3,7 @@ import dayjs from "dayjs";
 import {
   Alert,
   Box,
+  InputAdornment,
   Card,
   CardContent,
   CircularProgress,
@@ -19,6 +20,7 @@ import {
   TablePagination,
   TableRow,
   TableSortLabel,
+  TextField,
   Typography,
   Button,
   Tooltip,
@@ -27,6 +29,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import KeyboardArrowLeft from "@mui/icons-material/KeyboardArrowLeft";
 import KeyboardArrowRight from "@mui/icons-material/KeyboardArrowRight";
+import SearchIcon from "@mui/icons-material/Search";
 import { getProductConversion } from "../lib/api.js";
 
 function PaginationActions({ count, page, rowsPerPage, onPageChange, disabled }) {
@@ -72,6 +75,11 @@ function formatRounded(value) {
   return Math.round(num).toLocaleString();
 }
 
+function formatSku(value) {
+  const raw = String(value || "").trim();
+  return raw || "-";
+}
+
 export default function InventoryTable({ brandKey, startDate, endDate }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -85,8 +93,10 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
   const [activeColumn, setActiveColumn] = useState(null);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
   const [columnWidths, setColumnWidths] = useState({
     product: 320,
+    sku: 180,
     drr: 140,
     doh: 140,
   });
@@ -119,6 +129,8 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
       sortBy,
       sortDir,
       inventoryPeriod,
+      inventoryOnly: true,
+      search,
     });
 
     if (resp.error) {
@@ -130,7 +142,7 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
     setRows(Array.isArray(resp.rows) ? resp.rows : []);
     setTotalCount(Number(resp.total_count || 0));
     setStatus("succeeded");
-  }, [brandKey, start, end, page, pageSize, sortBy, sortDir, inventoryPeriod]);
+  }, [brandKey, start, end, page, pageSize, sortBy, sortDir, inventoryPeriod, search]);
 
   useEffect(() => {
     loadData();
@@ -139,6 +151,7 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
   const columns = useMemo(
     () => [
       { id: "product", label: "Product", align: "left" },
+      { id: "sku", label: "SKU", align: "left" },
       { id: "drr", label: `DRR (${normalizePeriodLabel(inventoryPeriod)})`, align: "right" },
       { id: "doh", label: `DOH (${normalizePeriodLabel(inventoryPeriod)})`, align: "right" },
     ],
@@ -149,6 +162,7 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
     (columnId) => {
       const map = {
         product: "landing_page_path",
+        sku: "sku",
         drr: "drr",
         doh: "doh",
       };
@@ -174,6 +188,11 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
 
   const handleInventoryPeriodChange = (e) => {
     setInventoryPeriod(e.target.value);
+    setPage(1);
+  };
+
+  const handleSearchChange = (e) => {
+    setSearch(e.target.value);
     setPage(1);
   };
 
@@ -215,17 +234,18 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
 
   useEffect(() => {
     if (isMobile) {
-      setColumnWidths({ product: 260, drr: 130, doh: 130 });
+      setColumnWidths({ product: 240, sku: 150, drr: 130, doh: 130 });
     } else {
-      setColumnWidths({ product: 320, drr: 140, doh: 140 });
+      setColumnWidths({ product: 320, sku: 180, drr: 140, doh: 140 });
     }
   }, [isMobile]);
 
   const tableMinWidth = useMemo(() => {
     const product = Number(columnWidths.product || 0);
+    const sku = Number(columnWidths.sku || 0);
     const drr = Number(columnWidths.drr || 0);
     const doh = Number(columnWidths.doh || 0);
-    return product + drr + doh;
+    return product + sku + drr + doh;
   }, [columnWidths]);
 
   return (
@@ -240,13 +260,47 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
         >
           Inventory Info
         </Typography>
-        <FormControl size="small" sx={{ minWidth: 120 }}>
-          <Select value={inventoryPeriod} onChange={handleInventoryPeriodChange}>
-            <MenuItem value="7d">7d</MenuItem>
-            <MenuItem value="30d">30d</MenuItem>
-            <MenuItem value="90d">90d</MenuItem>
-          </Select>
-        </FormControl>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            flexWrap: { xs: "nowrap", sm: "wrap" },
+            width: { xs: "100%", sm: "auto" },
+          }}
+        >
+          <TextField
+            size="small"
+            placeholder="Search products or SKU..."
+            value={search}
+            onChange={handleSearchChange}
+            sx={{
+              minWidth: { xs: 0, sm: 260 },
+              width: { xs: "calc(100% - 128px)", sm: "auto" },
+              flex: { xs: "1 1 auto", sm: "0 0 auto" },
+            }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" color="action" />
+                </InputAdornment>
+              ),
+            }}
+          />
+          <FormControl
+            size="small"
+            sx={{
+              minWidth: 120,
+              flex: { xs: "0 0 120px", sm: "0 0 auto" },
+            }}
+          >
+            <Select value={inventoryPeriod} onChange={handleInventoryPeriodChange}>
+              <MenuItem value="7d">7d</MenuItem>
+              <MenuItem value="30d">30d</MenuItem>
+              <MenuItem value="90d">90d</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
       </Box>
 
       <Card variant="outlined" sx={{ height: "100%", overflow: "hidden" }}>
@@ -309,7 +363,7 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
               <TableBody>
                 {status !== "loading" && rows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={3} align="center" sx={{ py: 3, color: "text.secondary" }}>
+                    <TableCell colSpan={4} align="center" sx={{ py: 3, color: "text.secondary" }}>
                       No data for the selected range.
                     </TableCell>
                   </TableRow>
@@ -338,6 +392,30 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
                           }}
                         >
                           {formatProductName(row.landing_page_path)}
+                        </span>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell
+                      align="left"
+                      sx={{
+                        verticalAlign: "middle",
+                        width: columnWidths.sku || "auto",
+                        minWidth: columnWidths.sku || "auto",
+                        maxWidth: columnWidths.sku || "auto",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <Tooltip title={row.sku || ""} arrow>
+                        <span
+                          style={{
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            display: "block",
+                            width: "100%",
+                          }}
+                        >
+                          {formatSku(row.sku)}
                         </span>
                       </Tooltip>
                     </TableCell>

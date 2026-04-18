@@ -139,6 +139,10 @@ function normalizeProductConversionRequest(query) {
       visibleColumns: Array.isArray(visibleColumns) ? visibleColumns : null,
       inventoryPeriod: (query.inventory_period || "7d").toLowerCase(),
       brandKey: query.brand_key,
+      inventoryOnly:
+        String(query.inventory_only || query.inventoryOnly || "")
+          .toLowerCase()
+          .trim() === "true",
     },
   };
 }
@@ -524,7 +528,123 @@ function sortRows(rows, sortBy, sortDir) {
   });
 }
 
+function applySearch(rows, search) {
+  const needle = String(search || "").trim().toLowerCase();
+  if (!needle) return rows;
+  return rows.filter((row) =>
+    String(row.landing_page_path || "").toLowerCase().includes(needle) ||
+    String(row.sku || "").toLowerCase().includes(needle),
+  );
+}
+
 function buildProductConversionService() {
+  async function getInventoryOnlyRowsFromRedis(spec, resolveShopSubdomain) {
+    if (!redisClient || !resolveShopSubdomain) return [];
+
+    const brandKey = spec.brandKey || "";
+    const shopName = resolveShopSubdomain(brandKey);
+    if (!shopName) return [];
+
+    const period = spec.inventoryPeriod.replace("d", "");
+
+    try {
+      let cursor = "0";
+      const redisKeys = [];
+      do {
+        const result = await redisClient.scan(
+          cursor,
+          "MATCH",
+          `inventory:cache:${shopName}:*`,
+          "COUNT",
+          500,
+        );
+        cursor = result[0];
+        redisKeys.push(...result[1]);
+      } while (cursor !== "0");
+
+      if (redisKeys.length === 0) return [];
+
+      const cachedValues = await redisClient.mget(redisKeys);
+      const grouped = new Map();
+
+      cachedValues.forEach((val) => {
+        if (!val) return;
+        try {
+          const parsed = JSON.parse(val);
+          const sku = String(parsed.sku || "").trim();
+          const variantId = parsed.variantId || null;
+          const productId = extractNumericId(parsed.productId, "Product") || null;
+          const groupKey = sku ? `sku:${sku.toLowerCase()}` : `variant:${variantId || productId || Math.random()}`;
+          const drr = Number(parsed[`drr${period}`] ?? 0);
+          const liveQty = Number(parsed.liveQty ?? 0);
+
+          if (!grouped.has(groupKey)) {
+            grouped.set(groupKey, {
+              product_id: productId,
+              landing_page_path: parsed.productTitle || "",
+              productTitles: new Set(parsed.productTitle ? [parsed.productTitle] : []),
+              sessions: 0,
+              atc: 0,
+              atc_rate: 0,
+              orders: 0,
+              sales: 0,
+              cvr: 0,
+              drr: drr,
+              liveQty,
+              variant_id: variantId,
+              sku,
+              updated_at: parsed.updatedAt || null,
+              calculation_date: parsed.date || null,
+              previous: null,
+            });
+            return;
+          }
+
+          const current = grouped.get(groupKey);
+          if (parsed.productTitle) current.productTitles.add(parsed.productTitle);
+          current.drr += drr;
+          current.liveQty += liveQty;
+          if (!current.product_id && productId) current.product_id = productId;
+          if (!current.variant_id && variantId) current.variant_id = variantId;
+          if (!current.updated_at || (parsed.updatedAt && parsed.updatedAt > current.updated_at)) {
+            current.updated_at = parsed.updatedAt || current.updated_at;
+          }
+          if (!current.calculation_date || (parsed.date && parsed.date > current.calculation_date)) {
+            current.calculation_date = parsed.date || current.calculation_date;
+          }
+        } catch (_err) {
+          // ignore invalid cache entry
+        }
+      });
+
+      return Array.from(grouped.values()).map((row) => {
+        const titles = Array.from(row.productTitles).filter(Boolean);
+        const primaryTitle = titles[0] || row.landing_page_path || "";
+        return {
+          product_id: row.product_id,
+          landing_page_path:
+            titles.length > 1 ? `${primaryTitle} (+${titles.length - 1} more)` : primaryTitle,
+          sessions: row.sessions,
+          atc: row.atc,
+          atc_rate: row.atc_rate,
+          orders: row.orders,
+          sales: row.sales,
+          cvr: row.cvr,
+          drr: Number(row.drr || 0),
+          doh: row.drr > 0 ? Number(row.liveQty / row.drr) : 0,
+          variant_id: row.variant_id,
+          sku: row.sku,
+          updated_at: row.updated_at,
+          calculation_date: row.calculation_date,
+          previous: row.previous,
+        };
+      });
+    } catch (error) {
+      console.error("[Redis Inventory Only Error]", error);
+      return [];
+    }
+  }
+
   async function enrichWithRedis(rows, spec, resolveShopSubdomain) {
     if (!redisClient || !resolveShopSubdomain) return rows;
 
@@ -581,6 +701,26 @@ function buildProductConversionService() {
   }
 
   async function getProductConversion(spec) {
+    if (spec.inventoryOnly) {
+      const redisRows = await getInventoryOnlyRowsFromRedis(spec, spec.resolveShopSubdomain);
+      const searched = applySearch(redisRows, spec.search);
+      const filtered = applyInventoryFilters(searched, spec.filters);
+      const sorted = sortRows(filtered, spec.sortBy, spec.sortDir);
+      const paged = sorted.slice(
+        (spec.page - 1) * spec.pageSize,
+        (spec.page - 1) * spec.pageSize + spec.pageSize,
+      );
+
+      return {
+        range: { start: spec.start, end: spec.end },
+        page: spec.page,
+        page_size: spec.pageSize,
+        total_count: sorted.length,
+        rows: paged,
+        sort: { by: spec.sortBy, dir: spec.sortDir.toLowerCase() },
+      };
+    }
+
     const useMappingBase =
       Array.isArray(spec.productTypes) && spec.productTypes.length > 0;
     const baseAlias = useMappingBase ? "m" : "s";
@@ -617,6 +757,21 @@ function buildProductConversionService() {
   }
 
   async function getProductConversionCsv(spec) {
+    if (spec.inventoryOnly) {
+      const redisRows = await getInventoryOnlyRowsFromRedis(spec, spec.resolveShopSubdomain);
+      const searched = applySearch(redisRows, spec.search);
+      const filtered = applyInventoryFilters(searched, spec.filters);
+      const sorted = sortRows(filtered, spec.sortBy, spec.sortDir);
+      const headers = buildCsvHeaders(spec.visibleColumns, hasCompareRange(spec));
+      const dateTag =
+        spec.start === spec.end ? spec.start : `${spec.start}_to_${spec.end}`;
+      return {
+        filename: `product_conversion_${dateTag}.csv`,
+        headers,
+        csv: buildCsvContent(sorted, headers),
+      };
+    }
+
     const useMappingBase =
       Array.isArray(spec.productTypes) && spec.productTypes.length > 0;
     const baseAlias = useMappingBase ? "m" : "s";
