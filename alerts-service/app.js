@@ -42,292 +42,134 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 
 const redis = require("./utils/redis");
 
-function formatDateYmd(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+const INVENTORY_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
+const INVENTORY_CACHE_REFRESH_MS = 30 * 60 * 1000;
+
+function toIstParts(dateValue) {
+  const date = dateValue ? new Date(dateValue) : new Date();
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    date: `${map.year}-${map.month}-${map.day}`,
+    time: `${map.hour}:${map.minute}:${map.second}`,
+  };
 }
 
-// Helper for Shopify GraphQL requests
-async function shopifyGraphQL(shopName, accessToken, query, variables = {}, apiVersion = "2024-04") {
-  const response = await fetch(`https://${shopName}.myshopify.com/admin/api/${apiVersion}/graphql.json`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": accessToken
-    },
-    body: JSON.stringify({ query, variables })
+function buildInventoryCachePayload(row) {
+  const updatedParts = toIstParts(row.updated_at);
+  const numericProductId = row.product_id != null ? String(row.product_id) : "";
+  const numericVariantId = row.variant_id != null ? String(row.variant_id) : "";
+
+  return {
+    sold7: Number(row.sold_units_7d || 0),
+    sold30: Number(row.sold_units_30d || 0),
+    sold90: Number(row.sold_units_90d || 0),
+    drr7: Number(row.drr_7d || 0),
+    drr30: Number(row.drr_30d || 0),
+    drr90: Number(row.drr_90d || 0),
+    doh7: Number(row.doh_7d || 0),
+    doh30: Number(row.doh_30d || 0),
+    doh90: Number(row.doh_90d || 0),
+    liveQty: Number(row.inventory_available || 0),
+    productId: numericProductId ? `gid://shopify/Product/${numericProductId}` : null,
+    productTitle: row.product_title || "",
+    variantId: numericVariantId ? `gid://shopify/ProductVariant/${numericVariantId}` : null,
+    updatedAt: `${updatedParts.date} ${updatedParts.time}`,
+    date: updatedParts.date,
+  };
+}
+
+async function refreshInventoryCacheForBrand(credsDoc) {
+  const dbPassword = PipelineCreds.decrypt(credsDoc.db_password);
+  const pool = getPool({
+    host: credsDoc.db_host,
+    port: credsDoc.port,
+    user: credsDoc.db_user,
+    password: dbPassword,
+    database: credsDoc.db_database
   });
-  const json = await response.json();
-  if (json.errors) throw new Error(`Shopify GraphQL Error: ${JSON.stringify(json.errors)}`);
-  return json.data;
-}
 
-async function fetchSoldUnitsFromDb(pool, numericProductId, startDate, endDate) {
   const [rows] = await pool.query(
     `
-      SELECT COALESCE(SUM(line_item_quantity), 0) AS sold_units
-      FROM shopify_orders
-      WHERE created_date BETWEEN ? AND ?
-        AND product_id = ?
+      SELECT
+        product_id,
+        product_title,
+        variant_id,
+        sold_units_7d,
+        sold_units_30d,
+        sold_units_90d,
+        drr_7d,
+        drr_30d,
+        drr_90d,
+        doh_7d,
+        doh_30d,
+        doh_90d,
+        inventory_available,
+        updated_at
+      FROM top_products_inventory
+      WHERE variant_id IS NOT NULL
     `,
-    [startDate, endDate, numericProductId],
   );
 
-  const soldUnits = Number(rows?.[0]?.sold_units || 0);
-  return Number.isFinite(soldUnits) ? soldUnits : 0;
+  let cachedCount = 0;
+  for (const row of rows) {
+    const variantId = row.variant_id != null ? String(row.variant_id) : "";
+    if (!variantId) continue;
+
+    const cacheKey = `inventory:cache:${credsDoc.shop_name}:${variantId}`;
+    const payload = buildInventoryCachePayload(row);
+    await redis.set(cacheKey, JSON.stringify(payload), "EX", INVENTORY_CACHE_TTL_SECONDS);
+    cachedCount += 1;
+  }
+
+  logger.info(`[inventory-cache] Refreshed ${cachedCount} cache entries for ${credsDoc.shop_name}`);
 }
 
-// Background processing for inventory metrics
-async function processInventoryMetrics(data) {
-  const { 
-    shopName, accessToken, productId, variantId, sku, 
-    productTitle, variantTitle, inventoryQuantity, credsDoc 
-  } = data;
+async function refreshInventoryCacheForAllBrands() {
+  const archAuthDb = mongoose.connection.useDb("arch-auth", { useCache: true });
+  const creds = await archAuthDb
+    .model("PipelineCreds", PipelineCreds.schema)
+    .find({})
+    .lean();
 
-  logger.info(`[inventory] Background process started for ${shopName} - ${productId}`);
-
-  try {
-    const now = new Date();
-    const numericProductId = (productId || "").split("/").pop();
-    const numericVariantId = (variantId || "").split("/").pop();
-    const apiVersion = credsDoc?.api_version || process.env.SHOPIFY_API_VERSION || "2025-10";
-    const dbPassword = PipelineCreds.decrypt(credsDoc.db_password);
-    const pool = getPool({
-      host: credsDoc.db_host,
-      port: credsDoc.port,
-      user: credsDoc.db_user,
-      password: dbPassword,
-      database: credsDoc.db_database
-    });
-    const endDate = formatDateYmd(now);
-    const startDate7 = formatDateYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7));
-    const startDate30 = formatDateYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30));
-    const startDate90 = formatDateYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90));
-
-    // 1. Fetch sold units from the brand database
-    const sold7 = await fetchSoldUnitsFromDb(pool, numericProductId, startDate7, endDate);
-    const sold30 = await fetchSoldUnitsFromDb(pool, numericProductId, startDate30, endDate);
-    const sold90 = await fetchSoldUnitsFromDb(pool, numericProductId, startDate90, endDate);
-
-    // 2. Fetch Current Inventory Quantity
-    const productQuery = `
-      query getProduct($id: ID!) {
-        product(id: $id) {
-          variants(first: 50) {
-            edges {
-              node {
-                id
-                inventoryQuantity
-              }
-            }
-          }
-        }
-      }
-    `;
-    const productData = await shopifyGraphQL(shopName, accessToken, productQuery, { id: productId }, apiVersion);
-    const variantNode = productData.product.variants.edges.find(e => e.node.id === variantId);
-    const liveQty = variantNode ? variantNode.node.inventoryQuantity : Number(inventoryQuantity);
-
-    // 3. Calculate DRR and DOH
-    const drr7 = (sold7 / 7) || 0;
-    const drr30 = (sold30 / 30) || 0;
-    const drr90 = (sold90 / 90) || 0;
-
-    const doh7 = drr7 > 0 ? (liveQty / drr7) : 0;
-    const doh30 = drr30 > 0 ? (liveQty / drr30) : 0;
-    const doh90 = drr90 > 0 ? (liveQty / drr90) : 0;
-
-    const newMetrics = {
-      sold7, sold30, sold90,
-      drr7: Number(drr7.toFixed(4)), 
-      drr30: Number(drr30.toFixed(4)), 
-      drr90: Number(drr90.toFixed(4)),
-      doh7: Number(doh7.toFixed(4)), 
-      doh30: Number(doh30.toFixed(4)), 
-      doh90: Number(doh90.toFixed(4)),
-      liveQty
-    };
-
-    // 4. Cache Check - Comparison
-    const cacheKey = `inventory:cache:${shopName}:${variantId.split("/").pop()}`;
-    const cachedData = await redis.get(cacheKey);
-    let oldMetricsObj = null;
-    
-    if (cachedData) {
-      const oldMetrics = JSON.parse(cachedData);
-      oldMetricsObj = oldMetrics; // Save for alert push
-      // Remove non-metric fields for comparison
-      const { 
-        updatedAt: _u, date: _c, 
-        productId: _p, productTitle: _pt, variantId: _v,
-        ...oldCompare 
-      } = oldMetrics;
-      const isIdentical = JSON.stringify(newMetrics) === JSON.stringify(oldCompare);
-      
-      if (isIdentical) {
-        logger.info(`[inventory] Metrics for ${shopName}-${variantId} are identical. Skipping MySQL update.`);
-        return;
-      }
+  for (const credsDoc of creds) {
+    try {
+      await refreshInventoryCacheForBrand(credsDoc);
+    } catch (err) {
+      logger.error(`[inventory-cache] Failed to refresh cache for ${credsDoc.shop_name}: ${err.message}`);
     }
-
-    // Add IST timestamps for storage
-    const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-    const istFormatted = istTime.toISOString().replace('Z', '').replace('T', ' ').substring(0, 19);
-    const istDay = istTime.toISOString().split('T')[0];
-
-    const finalMetrics = {
-      ...newMetrics,
-      productId,
-      productTitle,
-      variantId,
-      updatedAt: istFormatted,
-      date: istDay
-    };
-
-    // Forward metrics to analytics service for threshold alerting
-    if (process.env.ANALYTICS_SERVICE_URL) {
-      try {
-        const payload = {
-          shop_domain: shopName,
-          product_id: productId,
-          product_title: productTitle,
-          variant_id: variantId,
-          date: istDay,
-          inventoryQty: newMetrics.liveQty,
-          old_inventoryQty: oldMetricsObj?.liveQty,
-          drr7: newMetrics.drr7,
-          old_drr7: oldMetricsObj?.drr7,
-          drr30: newMetrics.drr30,
-          old_drr30: oldMetricsObj?.drr30,
-          drr90: newMetrics.drr90,
-          old_drr90: oldMetricsObj?.drr90,
-          doh7: newMetrics.doh7,
-          old_doh7: oldMetricsObj?.doh7,
-          doh30: newMetrics.doh30,
-          old_doh30: oldMetricsObj?.doh30,
-          doh90: newMetrics.doh90,
-          old_doh90: oldMetricsObj?.doh90
-        };
-
-        // Note: Using global fetch here
-        await fetch(`${process.env.ANALYTICS_SERVICE_URL}/push/receive`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-pipeline-key": process.env.X_PIPELINE_KEY
-          },
-          body: JSON.stringify(payload)
-        });
-      } catch (err) {
-        logger.error(`[inventory] Failed to forward metrics to analytics service for ${shopName}-${productId}: ${err.message}`);
-      }
-    }
-
-    // 5. Persistence - MySQL Upsert
-    const upsertSql = `
-      INSERT INTO top_products_inventory (
-        product_id, product_title, variant_id, variant_title, sku, 
-        inventory_available, sold_units_7d, sold_units_30d, sold_units_90d, 
-        drr_7d, drr_30d, drr_90d, doh_7d, doh_30d, doh_90d, updated_at
-      ) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-      ON DUPLICATE KEY UPDATE 
-        product_title = VALUES(product_title),
-        variant_title = VALUES(variant_title),
-        sku = VALUES(sku),
-        inventory_available = VALUES(inventory_available),
-        sold_units_7d = VALUES(sold_units_7d),
-        sold_units_30d = VALUES(sold_units_30d),
-        sold_units_90d = VALUES(sold_units_90d),
-        drr_7d = VALUES(drr_7d),
-        drr_30d = VALUES(drr_30d),
-        drr_90d = VALUES(drr_90d),
-        doh_7d = VALUES(doh_7d),
-        doh_30d = VALUES(doh_30d),
-        doh_90d = VALUES(doh_90d),
-        updated_at = NOW()
-    `;
-
-    await pool.query(upsertSql, [
-      numericProductId, productTitle, numericVariantId, variantTitle, sku, 
-      liveQty, sold7, sold30, sold90, 
-      drr7, drr30, drr90, doh7, doh30, doh90
-    ]);
-
-    // Update Cache (7 Day TTL)
-    await redis.set(cacheKey, JSON.stringify(finalMetrics), "EX", 7 * 24 * 60 * 60);
-    logger.info(`[inventory] Successfully completed background processing for ${shopName} - ${productId}`);
-  } catch (err) {
-    logger.error(`[inventory] Background process failed for ${shopName}:`, err);
   }
 }
 
-app.post("/inventory", async (req, res) => {
-  const pipelineKey = req.headers["x-pipeline-key"];
-  if (pipelineKey !== process.env.X_PIPELINE_KEY) {
-    return res.status(401).json({ error: "Unauthorized: Invalid Pipeline Key" });
+let inventoryCacheRefreshInFlight = false;
+
+async function runInventoryCacheRefresh() {
+  if (inventoryCacheRefreshInFlight) {
+    logger.info("[inventory-cache] Refresh already running, skipping this schedule tick");
+    return;
   }
 
-  const { shop_domain, product_id, product_title, variant_id, variant_title, sku, inventory_quantity } = req.body;
-  
-  if (!shop_domain || !product_id || !variant_id) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
-
-  const shopName = shop_domain.replace(".myshopify.com", "");
-  const variantNumericId = variant_id.split("/").pop();
-  const lockKey = `inventory:lock:${shopName}:${variantNumericId}`;
-
+  inventoryCacheRefreshInFlight = true;
   try {
-    // 1. Rate Limiting Check (30 minutes)
-    const isLocked = await redis.get(lockKey);
-    if (isLocked) {
-      logger.info(`[inventory] Request ignored (rate limited) for ${shopName}-${variantNumericId}`);
-      return res.status(202).json({ message: "Request received but ignored due to 30-minute throttle window." });
-    }
-
-    // Set lock for 30 minutes
-    await redis.set(lockKey, "1", "EX", 30 * 60);
-
-    // 2. Fetch Credentials
-    const archAuthDb = mongoose.connection.useDb("arch-auth", { useCache: true });
-    const credsDoc = await archAuthDb
-      .model("PipelineCreds", PipelineCreds.schema)
-      .findOne({ shop_name: shopName })
-      .lean();
-
-    if (!credsDoc) {
-      logger.error(`[inventory] Credentials not found for shop: ${shopName}`);
-      return res.status(404).json({ error: "Credentials not found" });
-    }
-
-    const accessToken = PipelineCreds.decrypt(credsDoc.access_token);
-
-    // Initial response
-    res.status(202).json({ message: "Inventory metrics processing started in background." });
-
-    // Start background processing
-    processInventoryMetrics({
-      shopName,
-      accessToken,
-      productId: product_id,
-      variantId: variant_id,
-      sku,
-      productTitle: product_title,
-      variantTitle: variant_title,
-      inventoryQuantity: inventory_quantity,
-      credsDoc
-    }).catch(err => {
-      logger.error("[inventory] Unhandled background process error:", err);
-    });
-
+    logger.info("[inventory-cache] Refresh started");
+    await refreshInventoryCacheForAllBrands();
+    logger.info("[inventory-cache] Refresh completed");
   } catch (err) {
-    logger.error("[inventory] Request handling error:", err);
-    res.status(500).json({ error: "Internal Server Error" });
+    logger.error("[inventory-cache] Refresh failed:", err);
+  } finally {
+    inventoryCacheRefreshInFlight = false;
   }
-});
+}
 
 app.use(
   "/alerts",
@@ -827,6 +669,12 @@ async function start() {
   try {
     await mongoose.connect(MONGO_URI, { dbName: MONGO_DB });
     logger.info("[alerts-service] Mongo connected");
+    await runInventoryCacheRefresh();
+    setInterval(() => {
+      runInventoryCacheRefresh().catch((err) => {
+        logger.error("[inventory-cache] Scheduled refresh error:", err);
+      });
+    }, INVENTORY_CACHE_REFRESH_MS);
     const port = Number(process.env.PORT || 5005);
     app.listen(port, () => {
       logger.info(`[alerts-service] listening on :${port}`);

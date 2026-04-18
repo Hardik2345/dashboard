@@ -94,10 +94,6 @@ function buildMetricFilterExpression(field) {
       return "COALESCE(o.sales, 0)";
     case "cvr":
       return "(CASE WHEN s.sessions > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)";
-    case "drr":
-      return "COALESCE(tpi.drr_7d, 0)"; // Defaulting to 7d for filter if not specified otherwise
-    case "doh":
-      return "COALESCE(tpi.doh_7d, 0)";
     default:
       return "";
   }
@@ -192,20 +188,6 @@ function buildProductConditions(spec, baseAlias) {
   if (Array.isArray(spec.productTypes) && spec.productTypes.length > 0) {
     conditions.push(`m.product_type IN (?)`);
     replacements.push(spec.productTypes);
-  }
-
-  // Handle inventory filters if they target specific columns
-  for (const filter of spec.filters) {
-    const field = (filter.field || "").toString().toLowerCase();
-    if (field === "drr" || field === "doh") {
-      const col = field === "drr" ? `drr_${spec.inventoryPeriod}` : `doh_${spec.inventoryPeriod}`;
-      const operator = (filter.operator || "").toString().toLowerCase();
-      const value = Number(filter.value);
-      if ((operator === "gt" || operator === "lt") && !Number.isNaN(value)) {
-        conditions.push(`tpi.${col} ${operator === "gt" ? ">" : "<"} ?`);
-        replacements.push(value);
-      }
-    }
   }
 
   return {
@@ -351,14 +333,10 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
     `
     : "";
   const inventoryCol = `
-    COALESCE(tpi.drr_${spec.inventoryPeriod}, 0) AS drr,
-    COALESCE(tpi.doh_${spec.inventoryPeriod}, 0) AS doh,
-    tpi.variant_id,
-    tpi.updated_at
-  `;
-
-  const inventoryJoin = `
-    LEFT JOIN top_products_inventory tpi ON ${useMappingBase ? "m.product_id" : "s.product_id"} = tpi.product_id
+    NULL AS drr,
+    NULL AS doh,
+    NULL AS variant_id,
+    NULL AS updated_at
   `;
 
   const selectPrefix = useMappingBase
@@ -377,7 +355,6 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
       FROM product_landing_mapping m
       LEFT JOIN sessions_60d s ON m.landing_page_path = s.landing_page_path
       LEFT JOIN orders_60d o ON m.product_id = o.product_id
-      ${inventoryJoin}
       ${previousJoins}
     `
     : `
@@ -394,7 +371,6 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         ${previousSelect}
       FROM sessions_60d s
       LEFT JOIN orders_60d o ON s.product_id = o.product_id
-      ${inventoryJoin}
       ${previousJoins}
     `;
   const limitClause = pagination
@@ -414,18 +390,15 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
 
 function buildCountSql(spec, useMappingBase, whereClause) {
   const base = buildBaseCte(spec, false);
-  const joinOn = useMappingBase ? "m.product_id" : "s.product_id";
   const fromSql = useMappingBase
     ? `
       FROM product_landing_mapping m
       LEFT JOIN sessions_60d s ON m.landing_page_path = s.landing_page_path
       LEFT JOIN orders_60d o ON m.product_id = o.product_id
-      LEFT JOIN top_products_inventory tpi ON ${joinOn} = tpi.product_id
     `
     : `
       FROM sessions_60d s
       LEFT JOIN orders_60d o ON s.product_id = o.product_id
-      LEFT JOIN top_products_inventory tpi ON ${joinOn} = tpi.product_id
     `;
   return {
     sql: `
@@ -513,56 +486,93 @@ function buildCsvContent(rows, headers) {
   return lines.join("\n");
 }
 
+function extractNumericId(value, resourceName) {
+  if (value === null || value === undefined) return "";
+  const stringValue = String(value);
+  if (!resourceName) return stringValue;
+  const marker = `gid://shopify/${resourceName}/`;
+  return stringValue.startsWith(marker) ? stringValue.slice(marker.length) : stringValue;
+}
+
+function applyInventoryFilters(rows, filters) {
+  if (!Array.isArray(filters) || filters.length === 0) return rows;
+  return rows.filter((row) =>
+    filters.every((filter) => {
+      const field = (filter.field || "").toString().toLowerCase();
+      if (field !== "drr" && field !== "doh") return true;
+      const operator = (filter.operator || "").toString().toLowerCase();
+      const value = Number(filter.value);
+      if ((operator !== "gt" && operator !== "lt") || Number.isNaN(value)) return true;
+      const actual = Number(row[field] || 0);
+      return operator === "gt" ? actual > value : actual < value;
+    }),
+  );
+}
+
+function sortRows(rows, sortBy, sortDir) {
+  const factor = sortDir === "ASC" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const left = a?.[sortBy];
+    const right = b?.[sortBy];
+    if (left === right) return 0;
+    if (left === null || left === undefined) return 1;
+    if (right === null || right === undefined) return -1;
+    if (typeof left === "number" && typeof right === "number") {
+      return (left - right) * factor;
+    }
+    return String(left).localeCompare(String(right)) * factor;
+  });
+}
+
 function buildProductConversionService() {
   async function enrichWithRedis(rows, spec, resolveShopSubdomain) {
     if (!redisClient || !resolveShopSubdomain) return rows;
-    
-    const startD = new Date(spec.start);
-    const endD = new Date(spec.end);
-    const diffDays = Math.round((endD - startD) / 86400000);
-    
-    // User requested: if window is up to 7 days, fetch from Redis
-    if (diffDays > 7) return rows;
 
     const brandKey = spec.brandKey || "";
     const shopName = resolveShopSubdomain(brandKey);
     if (!shopName) return rows;
 
     const period = spec.inventoryPeriod.replace("d", ""); // "7", "30", "90"
-    
-    const variantIds = rows
-      .filter(r => r.variant_id)
-      .map(r => String(r.variant_id).split("/").pop());
-
-    if (variantIds.length === 0) return rows;
 
     try {
-      const keys = variantIds.map(vid => `inventory:cache:${shopName}:${vid}`);
-      const cachedValues = await redisClient.mget(keys);
-      
+      let cursor = "0";
+      const redisKeys = [];
+      do {
+        const result = await redisClient.scan(cursor, "MATCH", `inventory:cache:${shopName}:*`, "COUNT", 500);
+        cursor = result[0];
+        redisKeys.push(...result[1]);
+      } while (cursor !== "0");
+
+      if (redisKeys.length === 0) return rows;
+
+      const cachedValues = await redisClient.mget(redisKeys);
+
       const cacheMap = new Map();
-      cachedValues.forEach((val, i) => {
-        if (val) {
-          try {
-            cacheMap.set(variantIds[i], JSON.parse(val));
-          } catch (e) {
-            // ignore
-          }
+      cachedValues.forEach((val) => {
+        if (!val) return;
+        try {
+          const parsed = JSON.parse(val);
+          const productId = extractNumericId(parsed.productId, "Product");
+          if (!productId || cacheMap.has(productId)) return;
+          cacheMap.set(productId, parsed);
+        } catch (_err) {
+          // ignore invalid cache entries
         }
       });
 
       return rows.map(row => {
-        if (!row.variant_id) return row;
-        const vid = String(row.variant_id).split("/").pop();
-        const metrics = cacheMap.get(vid);
-        if (metrics) {
-          // Override with Redis values
-          row.drr = metrics[`drr${period}`] ?? row.drr;
-          row.doh = metrics[`doh${period}`] ?? row.doh;
-          row.updated_at = metrics.updatedAt || row.updated_at;
-          row.calculation_date = metrics.date || row.calculation_date;
-        }
-        return row;
+        const productId = extractNumericId(row.product_id);
+        const metrics = cacheMap.get(productId);
+        if (!metrics) return row;
+
+        return {
+          ...row,
+          drr: metrics[`drr${period}`] ?? row.drr,
+          doh: metrics[`doh${period}`] ?? row.doh,
+          variant_id: metrics.variantId || row.variant_id,
+          updated_at: metrics.updatedAt || row.updated_at,
+          calculation_date: metrics.date || row.calculation_date,
+        };
       });
     } catch (error) {
       console.error("[Redis Enrich Error]", error);
@@ -581,33 +591,27 @@ function buildProductConversionService() {
       built.whereClause,
       spec.sortCol,
       spec.sortDir,
-      {
-        page: spec.page,
-        pageSize: spec.pageSize,
-      },
     );
-    const countBuilt = buildCountSql(spec, useMappingBase, built.whereClause);
-
-    const [rowsRaw, countRows] = await Promise.all([
-      spec.conn.query(selectBuilt.sql, {
-        type: QueryTypes.SELECT,
-        replacements: [...selectBuilt.replacements, ...built.replacements],
-      }),
-      spec.conn.query(countBuilt.sql, {
-        type: QueryTypes.SELECT,
-        replacements: [...countBuilt.replacements, ...built.replacements],
-      }),
-    ]);
+    const rowsRaw = await spec.conn.query(selectBuilt.sql, {
+      type: QueryTypes.SELECT,
+      replacements: [...selectBuilt.replacements, ...built.replacements],
+    });
 
     const rows = normalizeRows(rowsRaw, hasCompareRange(spec));
     const enriched = await enrichWithRedis(rows, spec, spec.resolveShopSubdomain);
+    const filtered = applyInventoryFilters(enriched, spec.filters);
+    const sorted = sortRows(filtered, spec.sortBy, spec.sortDir);
+    const paged = sorted.slice(
+      (spec.page - 1) * spec.pageSize,
+      (spec.page - 1) * spec.pageSize + spec.pageSize,
+    );
 
     return {
       range: { start: spec.start, end: spec.end },
       page: spec.page,
       page_size: spec.pageSize,
-      total_count: Number(countRows?.[0]?.total_count || 0),
-      rows: enriched,
+      total_count: sorted.length,
+      rows: paged,
       sort: { by: spec.sortBy, dir: spec.sortDir.toLowerCase() },
     };
   }
@@ -628,6 +632,10 @@ function buildProductConversionService() {
       type: QueryTypes.SELECT,
       replacements: [...selectBuilt.replacements, ...built.replacements],
     });
+    const rows = normalizeRows(rowsRaw, hasCompareRange(spec));
+    const enriched = await enrichWithRedis(rows, spec, spec.resolveShopSubdomain);
+    const filtered = applyInventoryFilters(enriched, spec.filters);
+    const sorted = sortRows(filtered, spec.sortBy, spec.sortDir);
 
     const headers = buildCsvHeaders(spec.visibleColumns, hasCompareRange(spec));
     const dateTag =
@@ -635,7 +643,7 @@ function buildProductConversionService() {
     return {
       filename: `product_conversion_${dateTag}.csv`,
       headers,
-      csv: buildCsvContent(normalizeRows(rowsRaw, hasCompareRange(spec)), headers),
+      csv: buildCsvContent(sorted, headers),
     };
   }
 
