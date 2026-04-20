@@ -29,6 +29,38 @@ const getPipelineCredsById = async (brandId) => {
   return PipelineCreds.findOne({ brand_id: brandId }).lean();
 };
 
+const validateSpeedKey = async ({ brandKey, speedKey }) => {
+  const normalizedBrandKey = (brandKey || "").toString().trim().toUpperCase();
+  const presentedSpeedKey = (speedKey || "").toString().trim();
+
+  if (!normalizedBrandKey || !presentedSpeedKey) {
+    return { valid: false, reason: "missing_brand_or_speed_key" };
+  }
+
+  const doc = await PipelineCreds.findOne({
+    $or: [
+      { brand_tag: new RegExp(`^${normalizedBrandKey}$`, "i") },
+      { db_database: new RegExp(`^${normalizedBrandKey}$`, "i") },
+      { brand_name: new RegExp(`^${normalizedBrandKey}$`, "i") },
+    ],
+  }).lean();
+
+  if (!doc) {
+    return { valid: false, reason: "brand_not_found" };
+  }
+
+  const decryptedSpeedKey = PipelineCreds.decrypt(doc.speed_key || "");
+  if (!decryptedSpeedKey || decryptedSpeedKey !== presentedSpeedKey) {
+    return { valid: false, reason: "invalid_speed_key" };
+  }
+
+  return {
+    valid: true,
+    brandKey: (doc.brand_tag || normalizedBrandKey).toString().trim().toUpperCase(),
+    brandId: doc.brand_id,
+  };
+};
+
 /**
  * Updates an existing pipeline credentials record by ObjectId.
  * Uses .save() instead of .findOneAndUpdate() to trigger the pre-save
@@ -51,5 +83,6 @@ module.exports = {
   createPipelineCreds,
   getPipelineBrands,
   getPipelineCredsById,
+  validateSpeedKey,
   updatePipelineCredsById,
 };
