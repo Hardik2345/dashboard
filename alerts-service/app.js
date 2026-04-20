@@ -43,6 +43,7 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 const redis = require("./utils/redis");
 
 const INVENTORY_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
+const INVENTORY_EVENT_CACHE_TTL_SECONDS = 30 * 60;
 const INVENTORY_CACHE_REFRESH_MS = 30 * 60 * 1000;
 
 function toIstParts(dateValue) {
@@ -88,6 +89,24 @@ function buildInventoryCachePayload(row) {
     updatedAt: `${updatedParts.date} ${updatedParts.time}`,
     date: updatedParts.date,
   };
+}
+
+function requirePipelineKey(req, res, next) {
+  const pipelineKey = req.headers["x-pipeline-key"];
+  const expectedKey = process.env.X_PIPELINE_KEY;
+
+  if (!expectedKey || pipelineKey !== expectedKey) {
+    return res.status(401).json({ error: "unauthorized_pipeline_key" });
+  }
+
+  return next();
+}
+
+function normalizeBrandScope(shopDomain) {
+  return String(shopDomain || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]+/g, "-");
 }
 
 async function refreshInventoryCacheForBrand(credsDoc) {
@@ -185,6 +204,88 @@ app.use(
   }),
 );
 const Session = require("./models/session");
+
+app.post("/inventory", requirePipelineKey, async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const requiredFields = [
+      "shop_domain",
+      "product_id",
+      "product_title",
+      "variant_id",
+      "variant_title",
+      "sku",
+      "inventory_quantity",
+    ];
+
+    const missingFields = requiredFields.filter((field) => {
+      const value = payload[field];
+      return value == null || String(value).trim() === "";
+    });
+
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        error: "missing_required_fields",
+        fields: missingFields,
+      });
+    }
+
+    const cachePayload = {
+      ...payload,
+      inventory_changed: true,
+    };
+    const brandScope = normalizeBrandScope(payload.shop_domain);
+    const productScope = String(payload.product_id).trim();
+    const cacheKey = `product_inventory:${brandScope}`;
+    const cacheType = await redis.type(cacheKey);
+
+    if (cacheType === "string") {
+      const existingValue = await redis.get(cacheKey);
+
+      if (existingValue) {
+        try {
+          const parsed = JSON.parse(existingValue);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            const entries = Object.entries(parsed).map(([productId, eventPayload]) => [
+              productId,
+              JSON.stringify(eventPayload),
+            ]);
+
+            if (entries.length > 0) {
+              await redis.del(cacheKey);
+              await redis.hset(cacheKey, ...entries.flat());
+            } else {
+              await redis.del(cacheKey);
+            }
+          } else {
+            await redis.del(cacheKey);
+          }
+        } catch (parseError) {
+          logger.warn(
+            `[inventory] Failed to migrate existing cache for ${cacheKey}, resetting bucket`,
+            parseError,
+          );
+          await redis.del(cacheKey);
+        }
+      }
+    } else if (cacheType !== "none" && cacheType !== "hash") {
+      await redis.del(cacheKey);
+    }
+
+    await redis.hset(cacheKey, productScope, JSON.stringify(cachePayload));
+    await redis.expire(cacheKey, INVENTORY_EVENT_CACHE_TTL_SECONDS);
+
+    return res.status(202).json({
+      ok: true,
+      cacheKey,
+      productId: productScope,
+      ttlSeconds: INVENTORY_EVENT_CACHE_TTL_SECONDS,
+    });
+  } catch (err) {
+    logger.error("[inventory] Failed to cache inventory event:", err);
+    return res.status(500).json({ error: "failed_to_cache_inventory_event" });
+  }
+});
 
 app.post("/track", async (req, res) => {
   try {
