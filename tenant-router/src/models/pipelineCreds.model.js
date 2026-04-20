@@ -29,6 +29,21 @@ function encryptText(plain, key) {
   return iv.toString("base64") + ":" + encrypted;
 }
 
+function decryptText(encrypted, key) {
+  if (!encrypted || !encrypted.toString().includes(":")) return encrypted;
+  try {
+    const k = normalizeKey(key);
+    const [ivBase64, cipherBase64] = encrypted.split(":");
+    const iv = Buffer.from(ivBase64, "base64");
+    const decipher = crypto.createDecipheriv(ALGO, k, iv);
+    let decrypted = decipher.update(cipherBase64, "base64", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
+  } catch (_err) {
+    return encrypted;
+  }
+}
+
 const pipelineCredsSchema = new mongoose.Schema(
   {
     brand_id: {
@@ -125,5 +140,7 @@ pipelineCredsSchema.pre("save", async function () {
     this.speed_key = encryptText(this.speed_key);
   }
 });
+
+pipelineCredsSchema.statics.decrypt = decryptText;
 
 module.exports = mongoose.model("PipelineCreds", pipelineCredsSchema);

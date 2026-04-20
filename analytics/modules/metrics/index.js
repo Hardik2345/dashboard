@@ -44,13 +44,35 @@ function buildMetricsRouter(sequelize) {
   const protectedBrand = [requireTrustedPrincipal, brandContext];
   const authOrApiKey = createAuthOrApiKeyMiddleware(apiKeyAuth);
   const ensureBrandDb = (req, res, next) => brandContext(req, res, next);
+  const hasValidatedTopPdpsSpeedKey = (req) => req.headers['x-speed-key-validated'] === 'true';
+  const allowTopPdpsWithoutAuth = (req, res, next) => {
+    if (hasValidatedTopPdpsSpeedKey(req)) return next();
+    return authOrApiKey(req, res, next);
+  };
+  const ensureTopPdpsBrandDb = (req, res, next) => {
+    if (hasValidatedTopPdpsSpeedKey(req) && !req.user && !req.apiKey) {
+      req.user = {
+        id: 'top-pdps-bypass',
+        brandKey: (
+          req.headers['x-brand-id'] ||
+          req.query?.brand_key ||
+          ''
+        ).toString().trim().toUpperCase(),
+        role: 'public',
+        isAuthor: false,
+        permissions: [],
+      };
+      req.isAuthenticated = () => true;
+    }
+    return brandContext(req, res, next);
+  };
 
   router.get('/order-split', ...protectedBrand, split.orderSplit);
   router.get('/payment-sales-split', ...protectedBrand, split.paymentSalesSplit);
   router.get('/traffic-source-split', ...protectedBrand, split.trafficSourceSplit);
   router.get('/summary', requireTrustedPrincipal, authorizeBrandContext, summary.dashboardSummary);
   router.get('/summary-filter-options', requireTrustedPrincipal, authorizeBrandContext, summary.summaryFilterOptions);
-  router.get('/top-pdps', authOrApiKey, ensureBrandDb, product.topProductPages);
+  router.get('/top-pdps', allowTopPdpsWithoutAuth, ensureTopPdpsBrandDb, product.topProductPages);
   router.get('/top-products', authOrApiKey, ensureBrandDb, product.topProducts);
   router.get('/product-kpis', authOrApiKey, ensureBrandDb, product.productKpis);
   router.get('/hourly-trend', ...protectedBrand, trend.hourlyTrend);

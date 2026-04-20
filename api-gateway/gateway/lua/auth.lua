@@ -3,10 +3,72 @@ local jwks = require("jwks")
 local cjson = require("cjson")
 local hmac = require("resty.hmac")
 local resty_str = require("resty.string")
+local http = require("resty.http")
 
 local _M = {}
 
+local function validate_speed_key_for_top_pdps()
+    local uri = ngx.var.uri or ""
+    if uri ~= "/analytics/metrics/top-pdps" then
+        return false
+    end
+
+    local auth_header = ngx.req.get_headers()["Authorization"]
+    if not auth_header or auth_header == "" then
+        return false
+    end
+
+    local args = ngx.req.get_uri_args() or {}
+    local brand_key = tostring(args["brand_key"] or ""):upper()
+    if brand_key == "" then
+        return false
+    end
+
+    local pipeline_key = os.getenv("X_PIPELINE_KEY") or ""
+    if pipeline_key == "" then
+        ngx.log(ngx.ERR, "[speed-key] X_PIPELINE_KEY not configured")
+        return false
+    end
+
+    local httpc = http.new()
+    httpc:set_timeout(3000)
+
+    local res, err = httpc:request_uri("http://tenant-router:3004/tenant/pipeline/validate-speed-key", {
+        method = "POST",
+        headers = {
+            ["Content-Type"] = "application/json",
+            ["x-pipeline-key"] = pipeline_key,
+            ["Authorization"] = auth_header,
+        },
+        body = cjson.encode({
+            brand_key = brand_key,
+        }),
+    })
+
+    if not res then
+        ngx.log(ngx.ERR, "[speed-key] validation request failed: ", err or "unknown")
+        return false
+    end
+
+    if res.status ~= 200 then
+        return false
+    end
+
+    local ok, payload = pcall(cjson.decode, res.body or "{}")
+    if not ok or not payload or payload.valid ~= true then
+        return false
+    end
+
+    ngx.req.set_header("x-speed-key-validated", "true")
+    ngx.req.set_header("x-brand-id", tostring(payload.brand_key or brand_key):upper())
+    return true
+end
+
 function _M.authenticate()
+    if validate_speed_key_for_top_pdps() then
+        return
+    end
+
     -- 0. Check for Push Token Bypass (for notification receiver)
     local push_token = ngx.req.get_headers()["x-push-token"]
     local secret_push_token = os.getenv("PUSH_TOKEN") or "push@notify321"

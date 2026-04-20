@@ -112,6 +112,33 @@ router.get("/brands/:id", async (req, res) => {
   }
 });
 
+router.post("/validate-speed-key", async (req, res) => {
+  const authHeader = (req.headers.authorization || "").toString();
+  const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+  const speedKey = bearerMatch ? bearerMatch[1].trim() : "";
+  const brandKey = (req.body?.brand_key || req.query?.brand_key || "").toString();
+
+  try {
+    const result = await pipelineService.validateSpeedKey({
+      brandKey,
+      speedKey,
+    });
+
+    if (!result.valid) {
+      return res.status(401).json({ valid: false, reason: result.reason });
+    }
+
+    return res.status(200).json({
+      valid: true,
+      brand_key: result.brandKey,
+      brand_id: result.brandId,
+    });
+  } catch (err) {
+    console.error("[PipelineRoutes] Error validating speed key:", err);
+    return res.status(500).json({ valid: false, error: "internal_error" });
+  }
+});
+
 // PUT /pipeline/credentials/:id
 router.put("/credentials/:id", async (req, res) => {
   const { id } = req.params;
