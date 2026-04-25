@@ -351,7 +351,7 @@ function buildCachedSnapshot(cachedData = {}, returnsObj = {}, source = "cache")
 }
 
 function buildSummaryMetric(currentValue, previousValue, deltaCurrent = currentValue, deltaPrevious = previousValue) {
-  const diff = Number(currentValue || 0) - Number(previousValue || 0);
+  const diff = Number(deltaCurrent || 0) - Number(deltaPrevious || 0);
   const pct = computePercentDelta(Number(deltaCurrent || 0), Number(deltaPrevious || 0));
   return {
     value: Number(currentValue || 0),
@@ -1165,23 +1165,34 @@ function buildMetricsSnapshotService(deps = {}) {
     const useCompletedHourSummaryForUtm =
       !!getUtmAggregateSource(spec.filters, "daily") &&
       !!rowTwoCutoffCtx.currentRangeIncludesToday;
-    const { current, previous } = await getSnapshotPair({
+    const totalPair = await getSnapshotPair({
       conn: spec.conn,
       brandKey: spec.brandKey,
       currentRange: { start: spec.start, end: spec.end },
       previousRange: compareRange,
       filters: spec.filters,
-      cutoffTime,
-      currentCutoffHour: useCompletedHourSummaryForUtm
-        ? rowTwoCutoffCtx.cutoffHour
-        : null,
-      previousCutoffHour: useCompletedHourSummaryForUtm
-        ? rowTwoCutoffCtx.cutoffHour
-        : null,
     });
+    const { current, previous } = totalPair;
 
-    let deltaCurrent = current;
-    let deltaPrevious = previous;
+    const deltaPair = cutoffTime || useCompletedHourSummaryForUtm
+      ? await getSnapshotPair({
+          conn: spec.conn,
+          brandKey: spec.brandKey,
+          currentRange: { start: spec.start, end: spec.end },
+          previousRange: compareRange,
+          filters: spec.filters,
+          cutoffTime,
+          currentCutoffHour: useCompletedHourSummaryForUtm
+            ? rowTwoCutoffCtx.cutoffHour
+            : null,
+          previousCutoffHour: useCompletedHourSummaryForUtm
+            ? rowTwoCutoffCtx.cutoffHour
+            : null,
+        })
+      : totalPair;
+
+    let deltaCurrent = deltaPair.current;
+    let deltaPrevious = deltaPair.previous;
     if (spec.filters.sales_channel) {
       const { sales_channel, ...filtersWithoutChannel } = spec.filters;
       const pair = await getSnapshotPair({
@@ -1224,8 +1235,8 @@ function buildMetricsSnapshotService(deps = {}) {
           })
         : rowTwoComparison;
 
-    const currentRowTwo = rowTwoComparison?.current || current;
-    const previousRowTwo = rowTwoComparison?.previous || previous;
+    const currentRowTwo = current;
+    const previousRowTwo = previous;
     const deltaCurrentRowTwo = deltaRowTwoComparison?.current || deltaCurrent;
     const deltaPreviousRowTwo =
       deltaRowTwoComparison?.previous || deltaPrevious;

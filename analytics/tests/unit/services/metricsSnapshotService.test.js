@@ -132,6 +132,24 @@ describe("metricsSnapshotService", () => {
 
         if (
           sql.includes("FROM overall_summary") &&
+          sql.includes("current_total_orders")
+        ) {
+          return Promise.resolve([
+            {
+              current_total_orders: 14,
+              current_total_sales: 1400,
+              current_total_sessions: 120,
+              current_total_atc_sessions: 30,
+              previous_total_orders: 13,
+              previous_total_sales: 1300,
+              previous_total_sessions: 130,
+              previous_total_atc_sessions: 26,
+            },
+          ]);
+        }
+
+        if (
+          sql.includes("FROM overall_summary") &&
           sql.includes("SUM(COALESCE(adjusted_total_sessions, total_sessions))")
         ) {
           if (replacements[0] === "2026-03-31") {
@@ -194,21 +212,21 @@ describe("metricsSnapshotService", () => {
     });
 
     expect(response.metrics.total_sessions).toEqual({
-      value: 110,
-      previous: 100,
+      value: 120,
+      previous: 130,
       diff: 10,
       diff_pct: 10,
       direction: "up",
     });
     expect(response.metrics.total_atc_sessions).toEqual({
-      value: 28,
-      previous: 20,
+      value: 30,
+      previous: 26,
       diff: 8,
       diff_pct: 40,
       direction: "up",
     });
     expect(response.metrics.conversion_rate).toEqual({
-      value: 10.909090909090908,
+      value: 11.666666666666666,
       previous: 10,
       diff: 0.9090909090909083,
       diff_pct: 9.090909090909083,
@@ -379,6 +397,28 @@ describe("metricsSnapshotService", () => {
     const conn = {
       query: jest.fn().mockImplementation((sql, options = {}) => {
         if (
+          sql.includes("FROM utm_source_medium_daily") &&
+          sql.includes("current_total_orders")
+        ) {
+          return Promise.resolve([
+            {
+              current_total_orders: 15,
+              current_total_sales: 1500,
+              current_total_sessions: 150,
+              current_total_atc_sessions: 30,
+              current_cancelled_orders: 3,
+              current_refunded_orders: 0,
+              previous_total_orders: 12,
+              previous_total_sales: 960,
+              previous_total_sessions: 120,
+              previous_total_atc_sessions: 24,
+              previous_cancelled_orders: 2,
+              previous_refunded_orders: 0,
+            },
+          ]);
+        }
+
+        if (
           sql.includes("FROM utm_source_medium_hourly") &&
           sql.includes("current_total_orders")
         ) {
@@ -450,43 +490,43 @@ describe("metricsSnapshotService", () => {
     });
 
     expect(response.metrics.total_orders).toEqual({
-      value: 11,
-      previous: 10,
+      value: 15,
+      previous: 12,
       diff: 1,
       diff_pct: 10,
       direction: "up",
     });
     expect(response.metrics.total_sales).toEqual({
-      value: 1100,
-      previous: 900,
+      value: 1500,
+      previous: 960,
       diff: 200,
       diff_pct: 22.22222222222222,
       direction: "up",
     });
     expect(response.metrics.average_order_value).toEqual({
       value: 100,
-      previous: 90,
+      previous: 80,
       diff: 10,
       diff_pct: 11.11111111111111,
       direction: "up",
     });
     expect(response.metrics.cancelled_orders).toEqual({
-      value: 2,
-      previous: 1,
+      value: 3,
+      previous: 2,
       diff: 1,
       diff_pct: 100,
       direction: "up",
     });
     expect(response.metrics.total_sessions).toEqual({
-      value: 110,
-      previous: 100,
+      value: 150,
+      previous: 120,
       diff: 10,
       diff_pct: 10,
       direction: "up",
     });
     expect(response.metrics.total_atc_sessions).toEqual({
-      value: 22,
-      previous: 20,
+      value: 30,
+      previous: 24,
       diff: 2,
       diff_pct: 10,
       direction: "up",
