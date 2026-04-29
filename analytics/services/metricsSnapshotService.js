@@ -1235,8 +1235,8 @@ function buildMetricsSnapshotService(deps = {}) {
           })
         : rowTwoComparison;
 
-    const currentRowTwo = current;
-    const previousRowTwo = previous;
+    const currentRowTwo = rowTwoComparison?.current || current;
+    const previousRowTwo = rowTwoComparison?.previous || previous;
     const deltaCurrentRowTwo = deltaRowTwoComparison?.current || deltaCurrent;
     const deltaPreviousRowTwo =
       deltaRowTwoComparison?.previous || deltaPrevious;

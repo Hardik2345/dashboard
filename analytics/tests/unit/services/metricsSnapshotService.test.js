@@ -212,21 +212,21 @@ describe("metricsSnapshotService", () => {
     });
 
     expect(response.metrics.total_sessions).toEqual({
-      value: 120,
-      previous: 130,
+      value: 110,
+      previous: 100,
       diff: 10,
       diff_pct: 10,
       direction: "up",
     });
     expect(response.metrics.total_atc_sessions).toEqual({
-      value: 30,
-      previous: 26,
+      value: 28,
+      previous: 20,
       diff: 8,
       diff_pct: 40,
       direction: "up",
     });
     expect(response.metrics.conversion_rate).toEqual({
-      value: 11.666666666666666,
+      value: 10.909090909090908,
       previous: 10,
       diff: 0.9090909090909083,
       diff_pct: 9.090909090909083,
@@ -518,15 +518,15 @@ describe("metricsSnapshotService", () => {
       direction: "up",
     });
     expect(response.metrics.total_sessions).toEqual({
-      value: 150,
-      previous: 120,
+      value: 110,
+      previous: 100,
       diff: 10,
       diff_pct: 10,
       direction: "up",
     });
     expect(response.metrics.total_atc_sessions).toEqual({
-      value: 30,
-      previous: 24,
+      value: 22,
+      previous: 20,
       diff: 2,
       diff_pct: 10,
       direction: "up",
