@@ -76,6 +76,88 @@ describe("metricsReportService", () => {
       partial_percent: 0,
     });
     expect(response.sql_used).toContain("created_date");
+    expect(response.sql_used).toContain("utm_source = ?");
+    expect(conn.query.mock.calls[0][1].replacements).toEqual([
+      "2026-03-01",
+      "2026-03-02",
+      "sku-1",
+      "12:00:00",
+      "google",
+    ]);
+  });
+
+  test("returns UTM-filtered order split from daily aggregate tables", async () => {
+    const conn = {
+      query: jest.fn().mockResolvedValue([
+        {
+          cod_orders: 12,
+          prepaid_orders: 30,
+          partially_paid_orders: 3,
+        },
+      ]),
+    };
+
+    const service = buildMetricsReportService();
+    const response = await service.getOrderSplit({
+      conn,
+      start: "2026-03-01",
+      end: "2026-03-02",
+      filters: { utm_medium: "cpc", utm_campaign: "launch" },
+      includeSql: true,
+    });
+
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(conn.query.mock.calls[0][0]).toContain("FROM utm_medium_campaign_daily");
+    expect(conn.query.mock.calls[0][0]).toContain("SUM(ppcod_orders)");
+    expect(conn.query.mock.calls[0][1].replacements).toEqual([
+      "2026-03-01",
+      "2026-03-02",
+      "cpc",
+      "launch",
+    ]);
+    expect(response).toMatchObject({
+      cod_orders: 12,
+      prepaid_orders: 30,
+      partially_paid_orders: 3,
+      total_orders_from_split: 45,
+    });
+  });
+
+  test("returns UTM-filtered order split from hourly aggregate tables when hour_lte is explicit", async () => {
+    const conn = {
+      query: jest.fn().mockResolvedValue([
+        {
+          cod_orders: 8,
+          prepaid_orders: 20,
+          partially_paid_orders: 2,
+        },
+      ]),
+    };
+
+    const service = buildMetricsReportService();
+    const response = await service.getOrderSplit({
+      conn,
+      start: "2026-03-31",
+      end: "2026-03-31",
+      hourLte: 10,
+      filters: { utm_medium: "cpc", utm_campaign: "launch" },
+      includeSql: true,
+    });
+
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(conn.query.mock.calls[0][0]).toContain("FROM utm_medium_campaign_hourly");
+    expect(conn.query.mock.calls[0][0]).toContain("metric_hour <= ?");
+    expect(conn.query.mock.calls[0][1].replacements).toEqual([
+      "2026-03-31",
+      "2026-03-31",
+      10,
+      "cpc",
+      "launch",
+    ]);
+    expect(response).toMatchObject({
+      range: { start: "2026-03-31", end: "2026-03-31", hour_lte: 10 },
+      total_orders_from_split: 30,
+    });
   });
 
   test("returns order split from a single aggregate summary query when unfiltered", async () => {

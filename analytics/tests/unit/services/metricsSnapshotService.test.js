@@ -112,7 +112,7 @@ describe("metricsSnapshotService", () => {
     expect(response.points[11].metrics.sessions).toBe(0);
   });
 
-  test("uses completed-hour row-two cutoff semantics in dashboard summary", async () => {
+  test("keeps row-two main values current while using completed-hour delta semantics", async () => {
     const conn = {
       query: jest.fn().mockImplementation((sql, options = {}) => {
         const replacements = options.replacements || [];
@@ -212,26 +212,31 @@ describe("metricsSnapshotService", () => {
     });
 
     expect(response.metrics.total_sessions).toEqual({
-      value: 110,
-      previous: 100,
+      value: 120,
+      previous: 130,
       diff: 10,
       diff_pct: 10,
       direction: "up",
     });
     expect(response.metrics.total_atc_sessions).toEqual({
-      value: 28,
-      previous: 20,
+      value: 30,
+      previous: 26,
       diff: 8,
       diff_pct: 40,
       direction: "up",
     });
     expect(response.metrics.conversion_rate).toEqual({
-      value: 10.909090909090908,
+      value: 11.666666666666666,
       previous: 10,
       diff: 0.9090909090909083,
       diff_pct: 9.090909090909083,
       direction: "up",
     });
+    expect(response.metrics.atc_rate.value).toBeCloseTo(25);
+    expect(response.metrics.atc_rate.previous).toBeCloseTo(20);
+    expect(response.metrics.atc_rate.diff).toBeCloseTo(5.4545454545);
+    expect(response.metrics.atc_rate.diff_pct).toBeCloseTo(27.2727272727);
+    expect(response.metrics.atc_rate.direction).toBe("up");
   });
 
   test("builds summary filter options from a single query", async () => {
@@ -393,7 +398,7 @@ describe("metricsSnapshotService", () => {
     });
   });
 
-  test("uses completed-hour UTM hourly aggregates for all summary KPI cards", async () => {
+  test("uses UTM daily aggregates for main values and hourly aggregates for deltas", async () => {
     const conn = {
       query: jest.fn().mockImplementation((sql, options = {}) => {
         if (
@@ -518,15 +523,15 @@ describe("metricsSnapshotService", () => {
       direction: "up",
     });
     expect(response.metrics.total_sessions).toEqual({
-      value: 110,
-      previous: 100,
+      value: 150,
+      previous: 120,
       diff: 10,
       diff_pct: 10,
       direction: "up",
     });
     expect(response.metrics.total_atc_sessions).toEqual({
-      value: 22,
-      previous: 20,
+      value: 30,
+      previous: 24,
       diff: 2,
       diff_pct: 10,
       direction: "up",
@@ -534,6 +539,13 @@ describe("metricsSnapshotService", () => {
     expect(response.metrics.conversion_rate).toEqual({
       value: 10,
       previous: 10,
+      diff: 0,
+      diff_pct: 0,
+      direction: "flat",
+    });
+    expect(response.metrics.atc_rate).toEqual({
+      value: 20,
+      previous: 20,
       diff: 0,
       diff_pct: 0,
       direction: "flat",

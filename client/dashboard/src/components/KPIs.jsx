@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import Grid from "@mui/material/Grid2";
-import { Stack, Typography, Box, useTheme, useMediaQuery } from "@mui/material";
+import { Stack, Typography, Box, useTheme } from "@mui/material";
 import { GlassChip } from "./ui/GlassChip.jsx";
 import KPIStat from "./KPIStat.jsx";
 import { getDashboardSummary, getProductKpis } from "../lib/api.js";
@@ -37,7 +37,6 @@ export default function KPIs({
   compareMode = false,
 }) {
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const isDark = theme.palette.mode === "dark";
   const [loading, setLoading] = useState(true);
   const [deltaLoading, setDeltaLoading] = useState(true);
@@ -253,28 +252,9 @@ export default function KPIs({
             direction: m.refunded_orders?.direction ?? "flat",
           };
 
-          const currSessions = m.total_sessions?.value ?? 0;
-          const prevSessions = m.total_sessions?.previous ?? 0;
-          const currAtc = m.total_atc_sessions?.value ?? 0;
-          const prevAtc = m.total_atc_sessions?.previous ?? 0;
-          const currAtcRate = currSessions > 0 ? currAtc / currSessions : 0;
-          const prevAtcRate = prevSessions > 0 ? prevAtc / prevSessions : 0;
-          const atcRateDiff = currAtcRate - prevAtcRate;
-          const atcRateDiffPct =
-            prevAtcRate > 0
-              ? (atcRateDiff / prevAtcRate) * 100
-              : currAtcRate > 0
-                ? 100
-                : 0;
-
           const atcRateDelta = {
-            diff_pct: atcRateDiffPct,
-            direction:
-              atcRateDiff > 0.00001
-                ? "up"
-                : atcRateDiff < -0.00001
-                  ? "down"
-                  : "flat",
+            diff_pct: m.atc_rate?.diff_pct ?? 0,
+            direction: m.atc_rate?.direction ?? "flat",
           };
 
           // Extract previous (compare) values when available
@@ -285,9 +265,11 @@ export default function KPIs({
           const cmpSessions = m.total_sessions?.previous ?? null;
           const cmpAtcSessions = m.total_atc_sessions?.previous ?? null;
           const cmpAtcRate =
-            cmpSessions != null && cmpAtcSessions != null && cmpSessions > 0
-              ? cmpAtcSessions / cmpSessions
-              : null;
+            m.atc_rate?.previous != null
+              ? m.atc_rate.previous / 100
+              : cmpSessions != null && cmpAtcSessions != null && cmpSessions > 0
+                ? cmpAtcSessions / cmpSessions
+                : null;
           const prevCancelledRate =
             cmpOrders > 0
               ? (m.cancelled_orders?.previous ?? 0) / cmpOrders

@@ -1,12 +1,14 @@
 const { QueryTypes } = require("sequelize");
 const { shiftDays } = require("../shared/utils/date");
 const { buildWhereClause } = require("../shared/utils/sql");
+const { appendUtmWhere } = require("../shared/utils/filters");
+const { resolveUtmAggregateSource } = require("./metricsAggregateService");
 const {
   pad2,
   getNowIst,
   formatUtcDate,
   resolveCompareRange,
-  buildCompletedHourCutoffContext,
+  buildCompletedHourOrderCutoffTime,
 } = require("./metricsFoundation");
 
 const PAYMENT_TYPE_CASE_SQL = `
@@ -59,6 +61,38 @@ function buildClosedOpenTimestampRange(start, end, hourLte = null) {
     effectiveEnd,
     startTs,
     endTs: endTsExclusive.toISOString().slice(0, 19).replace("T", " "),
+  };
+}
+
+function computeOrderSplitPayload({
+  start,
+  end,
+  hourLte = null,
+  productId = "",
+  codOrders = 0,
+  prepaidOrders = 0,
+  partiallyPaidOrders = 0,
+  includeSql = false,
+  sql = "",
+}) {
+  const total = codOrders + prepaidOrders + partiallyPaidOrders;
+  return {
+    metric: "ORDER_SPLIT",
+    range: {
+      start: start || null,
+      end: end || null,
+      hour_lte: Number.isInteger(hourLte) ? hourLte : null,
+      ...(productId ? { product_id: productId } : {}),
+    },
+    cod_orders: codOrders,
+    prepaid_orders: prepaidOrders,
+    partially_paid_orders: partiallyPaidOrders,
+    total_orders_from_split: total,
+    cod_percent: total > 0 ? (codOrders / total) * 100 : 0,
+    prepaid_percent: total > 0 ? (prepaidOrders / total) * 100 : 0,
+    partially_paid_percent:
+      total > 0 ? (partiallyPaidOrders / total) * 100 : 0,
+    sql_used: includeSql ? sql : undefined,
   };
 }
 
@@ -176,6 +210,7 @@ function buildMetricsReportService() {
     }
 
     const isSingleDay = effectiveStart === effectiveEnd;
+    const useHourlyCutoff = Number.isInteger(hourLte);
     let whereSql = isSingleDay
       ? `WHERE created_date = ?`
       : `WHERE created_date >= ? AND created_date <= ?`;
@@ -187,6 +222,11 @@ function buildMetricsReportService() {
       whereSql += ` AND product_id = ?`;
       replacements.push(productId);
     }
+    if (useHourlyCutoff) {
+      whereSql += ` AND created_time < ?`;
+      replacements.push(buildCompletedHourOrderCutoffTime(hourLte));
+    }
+    whereSql = appendUtmWhere(whereSql, replacements, filters);
 
     const sql = `
       SELECT payment_type, SUM(max_price) AS sales
@@ -248,23 +288,19 @@ function buildMetricsReportService() {
     filters = {},
     includeSql = false,
   }) {
+    const effectiveStart = start || end;
+    const effectiveEnd = end || start;
+    const useHourlyCutoff = Number.isInteger(hourLte);
+
     if (productId) {
-      if (!start && !end) {
-        return {
-          metric: "ORDER_SPLIT",
-          range: { start: null, end: null, product_id: productId || "" },
-          cod_orders: 0,
-          prepaid_orders: 0,
-          partially_paid_orders: 0,
-          total_orders_from_split: 0,
-          cod_percent: 0,
-          prepaid_percent: 0,
-          partially_paid_percent: 0,
-        };
+      if (!effectiveStart || !effectiveEnd) {
+        return computeOrderSplitPayload({
+          start: effectiveStart,
+          end: effectiveEnd,
+          productId,
+        });
       }
 
-      const effectiveStart = start || end;
-      const effectiveEnd = end || start;
       const isSingleDay = effectiveStart === effectiveEnd;
       let whereSql = isSingleDay
         ? `WHERE created_date = ?`
@@ -277,6 +313,11 @@ function buildMetricsReportService() {
         whereSql += ` AND product_id = ?`;
         replacements.push(productId);
       }
+      if (useHourlyCutoff) {
+        whereSql += ` AND created_time < ?`;
+        replacements.push(buildCompletedHourOrderCutoffTime(hourLte));
+      }
+      whereSql = appendUtmWhere(whereSql, replacements, filters);
 
       const sql = `
         SELECT payment_type, COUNT(DISTINCT order_name) AS cnt
@@ -309,29 +350,57 @@ function buildMetricsReportService() {
         }
       }
 
-      const total = codOrders + prepaidOrders + partiallyPaidOrders;
-      return {
-        metric: "ORDER_SPLIT",
-        range: {
-          start: effectiveStart,
-          end: effectiveEnd,
-          hour_lte: null,
-          product_id: productId,
-        },
-        cod_orders: codOrders,
-        prepaid_orders: prepaidOrders,
-        partially_paid_orders: partiallyPaidOrders,
-        total_orders_from_split: total,
-        cod_percent: total > 0 ? (codOrders / total) * 100 : 0,
-        prepaid_percent: total > 0 ? (prepaidOrders / total) * 100 : 0,
-        partially_paid_percent:
-          total > 0 ? (partiallyPaidOrders / total) * 100 : 0,
-        sql_used: includeSql ? sql : undefined,
-      };
+      return computeOrderSplitPayload({
+        start: effectiveStart,
+        end: effectiveEnd,
+        hourLte: useHourlyCutoff ? hourLte : null,
+        productId,
+        codOrders,
+        prepaidOrders,
+        partiallyPaidOrders,
+        includeSql,
+        sql,
+      });
+    }
+
+    const aggregateSource = resolveUtmAggregateSource(
+      filters,
+      useHourlyCutoff ? "hourly" : "daily",
+    );
+    if (aggregateSource) {
+      let sql = `
+        SELECT
+          COALESCE(SUM(cod_orders), 0) AS cod_orders,
+          COALESCE(SUM(prepaid_orders), 0) AS prepaid_orders,
+          COALESCE(SUM(ppcod_orders), 0) AS partially_paid_orders
+        FROM ${aggregateSource.table}
+        WHERE metric_date >= ? AND metric_date <= ?
+      `;
+      const replacements = [effectiveStart, effectiveEnd];
+      if (useHourlyCutoff) {
+        sql += ` AND metric_hour <= ?`;
+        replacements.push(hourLte);
+      }
+      sql = appendUtmWhere(sql, replacements, aggregateSource.filters, true);
+
+      const [row] = await conn.query(sql, {
+        type: QueryTypes.SELECT,
+        replacements,
+      });
+
+      return computeOrderSplitPayload({
+        start: effectiveStart,
+        end: effectiveEnd,
+        hourLte: useHourlyCutoff ? hourLte : null,
+        codOrders: Number(row?.cod_orders || 0),
+        prepaidOrders: Number(row?.prepaid_orders || 0),
+        partiallyPaidOrders: Number(row?.partially_paid_orders || 0),
+        includeSql,
+        sql,
+      });
     }
 
     const { where, params } = buildWhereClause(start, end);
-    const useHourlyCutoff = Number.isInteger(hourLte);
     const sql = `
       SELECT
         COALESCE(SUM(cod_orders), 0) AS cod_orders,
@@ -348,24 +417,14 @@ function buildMetricsReportService() {
     const codOrders = Number(row?.cod_orders || 0);
     const prepaidOrders = Number(row?.prepaid_orders || 0);
     const partiallyPaidOrders = Number(row?.partially_paid_orders || 0);
-    const total = codOrders + prepaidOrders + partiallyPaidOrders;
-
-    return {
-      metric: "ORDER_SPLIT",
-      range: {
-        start: start || null,
-        end: end || null,
-        hour_lte: useHourlyCutoff ? hourLte : null,
-      },
-      cod_orders: codOrders,
-      prepaid_orders: prepaidOrders,
-      partially_paid_orders: partiallyPaidOrders,
-      total_orders_from_split: total,
-      cod_percent: total > 0 ? (codOrders / total) * 100 : 0,
-      prepaid_percent: total > 0 ? (prepaidOrders / total) * 100 : 0,
-      partially_paid_percent:
-        total > 0 ? (partiallyPaidOrders / total) * 100 : 0,
-    };
+    return computeOrderSplitPayload({
+      start,
+      end,
+      hourLte: useHourlyCutoff ? hourLte : null,
+      codOrders,
+      prepaidOrders,
+      partiallyPaidOrders,
+    });
   }
 
   async function getHourlySalesCompare({ conn, days, now = new Date() }) {
