@@ -362,6 +362,11 @@ function buildSummaryMetric(currentValue, previousValue, deltaCurrent = currentV
   };
 }
 
+function computeRatePercent(numerator, denominator) {
+  const den = Number(denominator || 0);
+  return den > 0 ? (Number(numerator || 0) / den) * 100 : 0;
+}
+
 async function getRowTwoComparisonSnapshots({
   conn,
   currentRange,
@@ -1235,8 +1240,6 @@ function buildMetricsSnapshotService(deps = {}) {
           })
         : rowTwoComparison;
 
-    const currentRowTwo = rowTwoComparison?.current || current;
-    const previousRowTwo = rowTwoComparison?.previous || previous;
     const deltaCurrentRowTwo = deltaRowTwoComparison?.current || deltaCurrent;
     const deltaPreviousRowTwo =
       deltaRowTwoComparison?.previous || deltaPrevious;
@@ -1265,22 +1268,34 @@ function buildMetricsSnapshotService(deps = {}) {
           deltaPrevious.average_order_value,
         ),
         conversion_rate: buildSummaryMetric(
-          currentRowTwo.conversion_rate_percent,
-          previousRowTwo.conversion_rate_percent,
+          current.conversion_rate_percent,
+          previous.conversion_rate_percent,
           deltaCurrentRowTwo.conversion_rate_percent,
           deltaPreviousRowTwo.conversion_rate_percent,
         ),
         total_sessions: buildSummaryMetric(
-          currentRowTwo.total_sessions,
-          previousRowTwo.total_sessions,
+          current.total_sessions,
+          previous.total_sessions,
           deltaCurrentRowTwo.total_sessions,
           deltaPreviousRowTwo.total_sessions,
         ),
         total_atc_sessions: buildSummaryMetric(
-          currentRowTwo.total_atc_sessions,
-          previousRowTwo.total_atc_sessions,
+          current.total_atc_sessions,
+          previous.total_atc_sessions,
           deltaCurrentRowTwo.total_atc_sessions,
           deltaPreviousRowTwo.total_atc_sessions,
+        ),
+        atc_rate: buildSummaryMetric(
+          computeRatePercent(current.total_atc_sessions, current.total_sessions),
+          computeRatePercent(previous.total_atc_sessions, previous.total_sessions),
+          computeRatePercent(
+            deltaCurrentRowTwo.total_atc_sessions,
+            deltaCurrentRowTwo.total_sessions,
+          ),
+          computeRatePercent(
+            deltaPreviousRowTwo.total_atc_sessions,
+            deltaPreviousRowTwo.total_sessions,
+          ),
         ),
         cancelled_orders: buildSummaryMetric(
           current.cancelled_orders,

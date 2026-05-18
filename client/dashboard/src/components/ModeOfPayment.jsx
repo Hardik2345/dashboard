@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, Typography, Skeleton, useTheme, Grid, Box } from '@mui/material';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Label } from 'recharts';
 import { getOrderSplit, getPaymentSalesSplit } from '../lib/api';
@@ -102,24 +102,36 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                 setPrevRange(prevRangeData);
 
                 const hourLte = getHourlyCutoffForTodayRange(start, end);
-                const sharedArgs = Number.isInteger(hourLte)
+                const compareArgs = Number.isInteger(hourLte)
                     ? { ...rest, hour_lte: hourLte }
                     : rest;
 
-                const [currOrders, currSales, prevOrders, prevSales] = await Promise.all([
-                    getOrderSplit({ start, end, ...sharedArgs }),
-                    getPaymentSalesSplit({ start, end, ...sharedArgs }),
-                    prevRangeData.start ? getOrderSplit({ start: prevRangeData.start, end: prevRangeData.end, ...sharedArgs }) : Promise.resolve({}),
-                    prevRangeData.start ? getPaymentSalesSplit({ start: prevRangeData.start, end: prevRangeData.end, ...sharedArgs }) : Promise.resolve({})
+                const [
+                    currOrders,
+                    currSales,
+                    currCompareOrders,
+                    currCompareSales,
+                    prevCompareOrders,
+                    prevCompareSales
+                ] = await Promise.all([
+                    getOrderSplit({ start, end, ...rest }),
+                    getPaymentSalesSplit({ start, end, ...rest }),
+                    Number.isInteger(hourLte) ? getOrderSplit({ start, end, ...compareArgs }) : Promise.resolve(null),
+                    Number.isInteger(hourLte) ? getPaymentSalesSplit({ start, end, ...compareArgs }) : Promise.resolve(null),
+                    prevRangeData.start ? getOrderSplit({ start: prevRangeData.start, end: prevRangeData.end, ...compareArgs }) : Promise.resolve({}),
+                    prevRangeData.start ? getPaymentSalesSplit({ start: prevRangeData.start, end: prevRangeData.end, ...compareArgs }) : Promise.resolve({})
                 ]);
 
                 if (cancelled) return;
 
                 // Process Quantity Data
-                const processMetric = (curr, prev, type) => {
+                const processMetric = (curr, compareCurr, comparePrev, type) => {
                     const isValue = type === METRIC_TYPES.VALUE;
                     const total = isValue ? curr.total : curr.total; // total_orders_from_split vs total_sales_from_split
-                    const prevTotal = isValue ? prev.total : prev.total;
+                    const comparisonCurrent = compareCurr || curr;
+                    const comparisonPrevious = comparePrev || {};
+                    const compareTotal = comparisonCurrent.total || 0;
+                    const prevTotal = comparisonPrevious.total || 0;
 
                     const segments = ['Prepaid', 'COD', 'Partial'].map(key => {
                         const valKey = isValue
@@ -127,13 +139,15 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                             : (key === 'Partial' ? 'partially_paid_orders' : `${key.toLowerCase()}_orders`);
 
                         const currVal = curr[valKey] || 0;
-                        const prevVal = prev[valKey] || 0;
+                        const compareCurrVal = comparisonCurrent[valKey] || 0;
+                        const prevVal = comparisonPrevious[valKey] || 0;
                         const currPct = total > 0 ? (currVal / total) * 100 : 0;
+                        const compareCurrPct = compareTotal > 0 ? (compareCurrVal / compareTotal) * 100 : 0;
                         const prevPct = prevTotal > 0 ? (prevVal / prevTotal) * 100 : 0;
                         // Delta is based on contribution share, not raw count/sales.
                         const delta = prevPct > 0
-                            ? ((currPct - prevPct) / prevPct) * 100
-                            : currPct > 0
+                            ? ((compareCurrPct - prevPct) / prevPct) * 100
+                            : compareCurrPct > 0
                                 ? 100
                                 : 0;
 
@@ -160,8 +174,8 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                     };
                 };
 
-                const qtyData = processMetric(currOrders, prevOrders, METRIC_TYPES.QUANTITY);
-                const valData = processMetric(currSales, prevSales, METRIC_TYPES.VALUE);
+                const qtyData = processMetric(currOrders, currCompareOrders, prevCompareOrders, METRIC_TYPES.QUANTITY);
+                const valData = processMetric(currSales, currCompareSales, prevCompareSales, METRIC_TYPES.VALUE);
 
                 setData({
                     quantity: qtyData.segments,
