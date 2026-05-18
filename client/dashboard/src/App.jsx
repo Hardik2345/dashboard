@@ -542,6 +542,25 @@ export default function App() {
     }
     return productSelection.label || "";
   }, [productSelection]);
+  const hasActiveProductFilter = useMemo(() => {
+    if (!productSelection) return false;
+    const products = Array.isArray(productSelection)
+      ? productSelection
+      : [productSelection];
+    return products.some((p) => p?.id);
+  }, [productSelection]);
+  const hasActiveUtmFilter = useMemo(() => {
+    const values = [
+      utm?.source,
+      utm?.medium,
+      utm?.campaign,
+      utm?.term,
+      utm?.content,
+    ];
+    return values.some((value) =>
+      Array.isArray(value) ? value.length > 0 : !!value,
+    );
+  }, [utm]);
 
   useEffect(() => {
     if (!isAuthor && viewerBrands.length) {
@@ -1489,10 +1508,6 @@ export default function App() {
 
   const handleProductChange = useCallback(
     (value) => {
-      // Reset UTMs when product changes
-      dispatch(
-        setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }),
-      );
       dispatch(setProductSelection(value || DEFAULT_PRODUCT_OPTION));
     },
     [dispatch],
@@ -2204,9 +2219,11 @@ export default function App() {
                         productOptions={productOptions}
                         productValue={productSelection}
                         onProductChange={handleProductChange}
+                        productDisabled={hasActiveUtmFilter}
                         productLoading={productOptionsLoading}
                         utm={utm}
                         onUtmChange={handleUtmChange}
+                        utmDisabled={hasActiveProductFilter}
                         salesChannel={salesChannel}
                         onSalesChannelChange={handleSalesChannelChange}
                         deviceType={deviceType}
@@ -2270,9 +2287,11 @@ export default function App() {
                       productOptions={productOptions}
                       productValue={productSelection}
                       onProductChange={handleProductChange}
+                      productDisabled={hasActiveUtmFilter}
                       productLoading={productOptionsLoading}
                       utm={utm}
                       onUtmChange={handleUtmChange}
+                      utmDisabled={hasActiveProductFilter}
                       salesChannel={salesChannel}
                       onSalesChannelChange={handleSalesChannelChange}
                       deviceType={deviceType}
@@ -2302,8 +2321,10 @@ export default function App() {
                   productOptions={productOptions}
                   productValue={productSelection}
                   onProductChange={handleProductChange}
+                  productDisabled={hasActiveUtmFilter}
                   utm={utm}
                   onUtmChange={handleUtmChange}
+                  utmDisabled={hasActiveProductFilter}
                   salesChannel={salesChannel}
                   onSalesChannelChange={handleSalesChannelChange}
                   deviceType={deviceType}

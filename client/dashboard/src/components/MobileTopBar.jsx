@@ -123,9 +123,11 @@ export default function MobileTopBar({
   productOptions = [],
   productValue = null,
   onProductChange,
+  productDisabled = false,
   productLoading = false,
   utm = {},
   onUtmChange,
+  utmDisabled = false,
   showUtmFilter = true,
   utmOptions = null, // Prop
   salesChannel = "",
@@ -494,6 +496,7 @@ export default function MobileTopBar({
                             onChange={(newVal) => {
                               onUtmChange && onUtmChange({ [field]: newVal });
                             }}
+                            disabled={utmDisabled}
                             sx={{ width: 140 }}
                             labelSx={{
                               fontSize: 12,
@@ -566,6 +569,7 @@ export default function MobileTopBar({
                     ) || { id: newId, label: newId, detail: "" };
                     if (onProductChange) onProductChange(selected);
                   }}
+                  disabled={productDisabled}
                   valueKey="id"
                   labelKey="label"
                   multiple={false}
