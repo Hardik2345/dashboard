@@ -21,6 +21,7 @@ import {
   Stack,
   TextField,
   InputAdornment,
+  Tooltip,
 } from "@mui/material";
 import {
   CalendarDays,
@@ -112,9 +113,11 @@ export default function UnifiedFilterBar({
   productOptions = [],
   productValue,
   onProductChange,
+  productDisabled = false,
   productLoading,
   utm = {},
   onUtmChange,
+  utmDisabled = false,
   salesChannel,
   onSalesChannelChange,
   deviceType,
@@ -432,6 +435,8 @@ export default function UnifiedFilterBar({
     (allowedFilters.salesChannel ||
       allowedFilters.deviceType ||
       allowedFilters.product);
+  const disabledUtmTooltip = "Clear product filter to use UTM filters";
+  const disabledProductTooltip = "Clear UTM filters to use product filter";
 
 
   return (
@@ -594,21 +599,26 @@ export default function UnifiedFilterBar({
                 }}
               >
                 {/* ... Source Button ... */}
-                <Button
-                  onClick={handleUtmSourceClick}
-                  endIcon={<ChevronDown size={14} />}
-                  sx={{
-                    ...utmButtonSx,
-                    color:
-                      (utm?.source?.length || 0) > 0
-                        ? "primary.main"
-                        : "text.secondary",
-                  }}
-                >
-                  <Box component="span" sx={utmLabelSx}>
-                    {utmSourceLabel}
-                  </Box>
-                </Button>
+                <Tooltip title={utmDisabled ? disabledUtmTooltip : ""}>
+                  <span>
+                    <Button
+                      onClick={handleUtmSourceClick}
+                      disabled={utmDisabled}
+                      endIcon={<ChevronDown size={14} />}
+                      sx={{
+                        ...utmButtonSx,
+                        color:
+                          (utm?.source?.length || 0) > 0
+                            ? "primary.main"
+                            : "text.secondary",
+                      }}
+                    >
+                      <Box component="span" sx={utmLabelSx}>
+                        {utmSourceLabel}
+                      </Box>
+                    </Button>
+                  </span>
+                </Tooltip>
 
                 <Divider
                   orientation="vertical"
@@ -623,21 +633,26 @@ export default function UnifiedFilterBar({
                 />
 
                 {/* ... Medium Button ... */}
-                <Button
-                  onClick={handleUtmMediumClick}
-                  endIcon={<ChevronDown size={14} />}
-                  sx={{
-                    ...utmButtonSx,
-                    color:
-                      (utm?.medium?.length || 0) > 0
-                        ? "primary.main"
-                        : "text.secondary",
-                  }}
-                >
-                  <Box component="span" sx={utmLabelSx}>
-                    {utmMediumLabel}
-                  </Box>
-                </Button>
+                <Tooltip title={utmDisabled ? disabledUtmTooltip : ""}>
+                  <span>
+                    <Button
+                      onClick={handleUtmMediumClick}
+                      disabled={utmDisabled}
+                      endIcon={<ChevronDown size={14} />}
+                      sx={{
+                        ...utmButtonSx,
+                        color:
+                          (utm?.medium?.length || 0) > 0
+                            ? "primary.main"
+                            : "text.secondary",
+                      }}
+                    >
+                      <Box component="span" sx={utmLabelSx}>
+                        {utmMediumLabel}
+                      </Box>
+                    </Button>
+                  </span>
+                </Tooltip>
 
                 <Divider
                   orientation="vertical"
@@ -652,21 +667,26 @@ export default function UnifiedFilterBar({
                 />
 
                 {/* ... Campaign Button ... */}
-                <Button
-                  onClick={handleUtmCampaignClick}
-                  endIcon={<ChevronDown size={14} />}
-                  sx={{
-                    ...utmButtonSx,
-                    color:
-                      (utm?.campaign?.length || 0) > 0
-                        ? "primary.main"
-                        : "text.secondary",
-                  }}
-                >
-                  <Box component="span" sx={utmLabelSx}>
-                    {utmCampaignLabel}
-                  </Box>
-                </Button>
+                <Tooltip title={utmDisabled ? disabledUtmTooltip : ""}>
+                  <span>
+                    <Button
+                      onClick={handleUtmCampaignClick}
+                      disabled={utmDisabled}
+                      endIcon={<ChevronDown size={14} />}
+                      sx={{
+                        ...utmButtonSx,
+                        color:
+                          (utm?.campaign?.length || 0) > 0
+                            ? "primary.main"
+                            : "text.secondary",
+                      }}
+                    >
+                      <Box component="span" sx={utmLabelSx}>
+                        {utmCampaignLabel}
+                      </Box>
+                    </Button>
+                  </span>
+                </Tooltip>
 
                 <Divider
                   orientation="vertical"
@@ -1496,7 +1516,10 @@ export default function UnifiedFilterBar({
 
           {/* PRODUCT Section */}
           {allowedFilters.product && (
-            <Accordion
+            <Tooltip title={productDisabled ? disabledProductTooltip : ""}>
+              <span>
+                <Accordion
+                  disabled={productDisabled}
               expanded={expandedAccordion === "product"}
               onChange={handleAccordionChange("product")}
               disableGutters
@@ -1646,7 +1669,9 @@ export default function UnifiedFilterBar({
                   )}
                 </List>
               </AccordionDetails>
-            </Accordion>
+                </Accordion>
+              </span>
+            </Tooltip>
           )}
 
           {/* UTM PARAMETERS Link (Moved to ball button) */}

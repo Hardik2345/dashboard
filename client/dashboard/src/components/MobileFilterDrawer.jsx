@@ -44,8 +44,10 @@ export default function MobileFilterDrawer({
   productOptions = [],
   productValue,
   onProductChange,
+  productDisabled = false,
   utm = {},
   onUtmChange,
+  utmDisabled = false,
   salesChannel = "",
   onSalesChannelChange,
   utmOptions: propUtmOptions,
@@ -284,6 +286,11 @@ export default function MobileFilterDrawer({
       return !!v;
     })
     .filter(Boolean).length;
+  const hasTempProductFilter = Array.isArray(tempProduct)
+    ? tempProduct.some((p) => p?.id)
+    : !!tempProduct?.id;
+  const isProductBlocked = productDisabled || activeUtmCount > 0;
+  const isUtmBlocked = utmDisabled || hasTempProductFilter;
 
   const handleClearAll = () => {
     if (onUtmChange) onUtmChange({ source: "", medium: "", campaign: "" });
@@ -589,6 +596,7 @@ export default function MobileFilterDrawer({
               {showProductFilter && (
                 <ListItemButton
                   onClick={() => setView("PRODUCT")}
+                  disabled={isProductBlocked}
                   sx={{ py: 2, justifyContent: "space-between" }}
                   divider
                 >
@@ -601,7 +609,9 @@ export default function MobileFilterDrawer({
                       Product
                     </Typography>
                     <Typography variant="body1" fontSize={14} fontWeight={500}>
-                      {Array.isArray(tempProduct)
+                      {isProductBlocked
+                        ? "Clear UTM filters first"
+                        : Array.isArray(tempProduct)
                         ? tempProduct.length > 1
                           ? `${tempProduct.length} Products`
                           : tempProduct[0]?.label || "All products"
@@ -641,6 +651,7 @@ export default function MobileFilterDrawer({
               {showUtmFilter && (
                 <ListItemButton
                   onClick={() => setView("UTM")}
+                  disabled={isUtmBlocked}
                   sx={{
                     py: 2,
                     justifyContent: "space-between",
@@ -676,6 +687,8 @@ export default function MobileFilterDrawer({
                     >
                       {isDateRangeOver30Days
                         ? "Unavailable for > 30 days"
+                        : isUtmBlocked
+                          ? "Clear product filter first"
                         : activeUtmCount > 0
                           ? `${activeUtmCount} Active`
                           : "All"}
@@ -817,6 +830,15 @@ export default function MobileFilterDrawer({
                         key={opt.id || "all"}
                         onClick={() => {
                           setTempProduct(opt);
+                          if (opt?.id) {
+                            setTempUtm({
+                              source: [],
+                              medium: [],
+                              campaign: [],
+                              term: [],
+                              content: [],
+                            });
+                          }
                           handleBack();
                         }}
                         selected={isSelected}
@@ -1069,6 +1091,13 @@ export default function MobileFilterDrawer({
                             // If current was string and not equal to opt, we make it array [current, opt]
 
                             setTempUtm({ ...tempUtm, [field]: newVal });
+                            if (Array.isArray(newVal) ? newVal.length > 0 : !!newVal) {
+                              setTempProduct({
+                                id: "",
+                                label: "All products",
+                                detail: "Whole store",
+                              });
+                            }
                             // handleBack(); // Keep open for multi-select
                           }}
                           selected={isSelected}

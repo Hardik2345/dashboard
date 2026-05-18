@@ -44,6 +44,19 @@ function loadInitialUtm() {
   return { source: [], medium: [], campaign: [], term: [], content: [] };
 }
 
+function hasSelectedProduct(selection) {
+  const items = Array.isArray(selection) ? selection : selection ? [selection] : [];
+  return items.some((p) => p?.id);
+}
+
+function hasActiveUtm(utm = {}) {
+  return ['source', 'medium', 'campaign', 'term', 'content'].some((key) => {
+    const value = utm?.[key];
+    if (Array.isArray(value)) return value.length > 0;
+    return !!value;
+  });
+}
+
 const filterSlice = createSlice({
   name: 'filters',
   initialState: {
@@ -105,9 +118,16 @@ const filterSlice = createSlice({
       if (state.productSelection.length === 0) {
         state.productSelection = [DEFAULT_PRODUCT_OPTION];
       }
+      if (hasSelectedProduct(state.productSelection)) {
+        state.utm = { source: [], medium: [], campaign: [], term: [], content: [] };
+      }
     },
     setUtm(state, action) {
-      state.utm = { ...state.utm, ...action.payload };
+      const nextUtm = { ...state.utm, ...action.payload };
+      state.utm = nextUtm;
+      if (hasActiveUtm(nextUtm)) {
+        state.productSelection = [DEFAULT_PRODUCT_OPTION];
+      }
     },
     setSalesChannel(state, action) {
       // Support array or string
