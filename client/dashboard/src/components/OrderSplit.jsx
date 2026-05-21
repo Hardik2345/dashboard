@@ -43,6 +43,7 @@ export default function OrderSplit({ query }) {
       utm_medium: query.utm_medium,
       utm_campaign: query.utm_campaign,
       sales_channel: query.sales_channel,
+      discount_code: query.discount_code,
       refreshKey,
     };
     getOrderSplit(params)
@@ -53,7 +54,7 @@ export default function OrderSplit({ query }) {
       })
       .catch(() => setLoading(false));
     return () => { cancelled = true; };
-  }, [query.start, query.end, brandKey, productId, refreshKey, query.utm_source, query.utm_medium, query.utm_campaign, query.sales_channel]);
+  }, [query.start, query.end, brandKey, productId, refreshKey, query.utm_source, query.utm_medium, query.utm_campaign, query.sales_channel, query.discount_code]);
 
   const empty = data.total === 0;
 

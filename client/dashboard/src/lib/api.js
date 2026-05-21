@@ -36,6 +36,8 @@ function appendBrandKey(params, source) {
   if (source?.utm_campaign) out.utm_campaign = source.utm_campaign;
   if (source?.product_id) out.product_id = source.product_id;
   if (source?.sales_channel) out.sales_channel = source.sales_channel;
+  if (source?.device_type) out.device_type = source.device_type;
+  if (source?.discount_code) out.discount_code = source.discount_code;
   if (source?.refreshKey) out.refreshKey = source.refreshKey;
   return out;
 }
@@ -780,6 +782,7 @@ export async function getHourlyTrend(args) {
   if (args.sales_channel) base.sales_channel = args.sales_channel;
   if (args.device_type) base.device_type = args.device_type;
   if (args.product_id) base.product_id = args.product_id;
+  if (args.discount_code) base.discount_code = args.discount_code;
   const params = appendBrandKey(base, args);
   const json = await getJSON("/metrics/hourly-trend", params);
   const comparison = json?.comparison;
@@ -815,6 +818,7 @@ export async function getDailyTrend(args) {
   if (args.sales_channel) base.sales_channel = args.sales_channel;
   if (args.device_type) base.device_type = args.device_type;
   if (args.product_id) base.product_id = args.product_id;
+  if (args.discount_code) base.discount_code = args.discount_code;
   const params = appendBrandKey(base, args);
   const json = await getJSON("/metrics/daily-trend", params);
   return {
@@ -839,6 +843,7 @@ export async function getMonthlyTrend(args) {
   if (args.sales_channel) base.sales_channel = args.sales_channel;
   if (args.device_type) base.device_type = args.device_type;
   if (args.product_id) base.product_id = args.product_id;
+  if (args.discount_code) base.discount_code = args.discount_code;
   const params = appendBrandKey(base, args);
   const json = await getJSON("/metrics/monthly-trend", params);
   return {
@@ -976,7 +981,6 @@ export async function deleteAlert(id) {
 export async function setAlertActive(id, isActive) {
   return doPost(`/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
 }
-
 
 
 

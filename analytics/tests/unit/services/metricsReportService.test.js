@@ -160,6 +160,75 @@ describe("metricsReportService", () => {
     });
   });
 
+  test("returns discount-filtered order split from discount payment daily table", async () => {
+    const conn = {
+      query: jest.fn().mockResolvedValue([
+        { payment_mode: "cod", orders: 5 },
+        { payment_mode: "prepaid", orders: 9 },
+        { payment_mode: "partially_paid", orders: 2 },
+      ]),
+    };
+
+    const service = buildMetricsReportService();
+    const response = await service.getOrderSplit({
+      conn,
+      start: "2026-03-01",
+      end: "2026-03-02",
+      filters: { discount_code: "SAVE10" },
+      includeSql: true,
+    });
+
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(conn.query.mock.calls[0][0]).toContain("FROM dashboard_discount_payment_daily");
+    expect(conn.query.mock.calls[0][1].replacements).toEqual([
+      "2026-03-01",
+      "2026-03-02",
+      "SAVE10",
+    ]);
+    expect(response).toMatchObject({
+      cod_orders: 5,
+      prepaid_orders: 9,
+      partially_paid_orders: 2,
+      total_orders_from_split: 16,
+    });
+  });
+
+  test("returns discount-filtered sales split from discount payment hourly table", async () => {
+    const conn = {
+      query: jest.fn().mockResolvedValue([
+        { payment_mode: "cod", sales: 500 },
+        { payment_mode: "prepaid", sales: 1500 },
+        { payment_mode: "partially_paid", sales: 250 },
+      ]),
+    };
+
+    const service = buildMetricsReportService();
+    const response = await service.getPaymentSalesSplit({
+      conn,
+      start: "2026-03-31",
+      end: "2026-03-31",
+      hourLte: 15,
+      filters: { discount_code: "SAVE10" },
+      includeSql: true,
+    });
+
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(conn.query.mock.calls[0][0]).toContain("FROM dashboard_discount_payment_hourly");
+    expect(conn.query.mock.calls[0][0]).toContain("hour <= ?");
+    expect(conn.query.mock.calls[0][1].replacements).toEqual([
+      "2026-03-31",
+      "2026-03-31",
+      15,
+      "SAVE10",
+    ]);
+    expect(response).toMatchObject({
+      cod_sales: 500,
+      prepaid_sales: 1500,
+      partial_sales: 250,
+      total_sales_from_split: 2250,
+    });
+  });
+
   test("returns order split from a single aggregate summary query when unfiltered", async () => {
     const conn = {
       query: jest.fn().mockResolvedValue([

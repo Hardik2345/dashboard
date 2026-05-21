@@ -12,6 +12,7 @@ function defaultRangeYesterdayToday() {
 }
 
 const UTM_KEY = 'pts_utm_filters_v1';
+const DISCOUNT_KEY = 'pts_discount_filter_v1';
 
 function loadInitialRange() {
   try {
@@ -44,6 +45,15 @@ function loadInitialUtm() {
   return { source: [], medium: [], campaign: [], term: [], content: [] };
 }
 
+function loadInitialDiscountCode() {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(DISCOUNT_KEY) : null;
+    return raw ? JSON.parse(raw) || '' : '';
+  } catch {
+    return '';
+  }
+}
+
 function hasSelectedProduct(selection) {
   const items = Array.isArray(selection) ? selection : selection ? [selection] : [];
   return items.some((p) => p?.id);
@@ -66,6 +76,7 @@ const filterSlice = createSlice({
     selectedMetric: DEFAULT_TREND_METRIC,
     productSelection: [DEFAULT_PRODUCT_OPTION],
     utm: loadInitialUtm(),
+    discountCode: loadInitialDiscountCode(),
     salesChannel: [],
     deviceType: [],
   },
@@ -152,8 +163,11 @@ const filterSlice = createSlice({
         state.deviceType = [];
       }
     },
+    setDiscountCode(state, action) {
+      state.discountCode = (action.payload || '').toString();
+    },
   },
 });
 
-export const { setRange, setCompareMode, setCompareDateRange, setSelectedMetric, setProductSelection, setUtm, setSalesChannel, setDeviceType } = filterSlice.actions;
+export const { setRange, setCompareMode, setCompareDateRange, setSelectedMetric, setProductSelection, setUtm, setSalesChannel, setDeviceType, setDiscountCode } = filterSlice.actions;
 export default filterSlice.reducer;

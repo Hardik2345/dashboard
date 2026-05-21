@@ -122,11 +122,14 @@ export default function UnifiedFilterBar({
   onSalesChannelChange,
   deviceType,
   onDeviceTypeChange,
+  discountCode = "",
+  onDiscountCodeChange,
   allowedFilters = {
     product: true,
     utm: true,
     salesChannel: true,
     deviceType: true,
+    discount: true,
   },
   utmOptions = {}, // Add prop
   onDownload, // Callback for download button
@@ -148,6 +151,7 @@ export default function UnifiedFilterBar({
   const [utmExpanded, setUtmExpanded] = useState(false); // Toggle visibility of UTM settings
   const [expandedAccordion, setExpandedAccordion] = useState("channel"); // Default expanded
   const [productSearch, setProductSearch] = useState("");
+  const [discountSearch, setDiscountSearch] = useState("");
   const [compareToggleAnchor, setCompareToggleAnchor] = useState(null);
 
   const handleAccordionChange = (panel) => (event, isExpanded) => {
@@ -271,6 +275,7 @@ export default function UnifiedFilterBar({
   const activeFilterCount = [
     ...(Array.isArray(salesChannel) ? salesChannel : [salesChannel]),
     ...(Array.isArray(deviceType) ? deviceType : []),
+    discountCode,
     ...(Array.isArray(productValue) ? productValue : [productValue])?.map(
       (p) => p?.id,
     ),
@@ -434,9 +439,14 @@ export default function UnifiedFilterBar({
     !hideAllExceptDate &&
     (allowedFilters.salesChannel ||
       allowedFilters.deviceType ||
+      allowedFilters.discount ||
       allowedFilters.product);
-  const disabledUtmTooltip = "Clear product filter to use UTM filters";
-  const disabledProductTooltip = "Clear UTM filters to use product filter";
+  const disabledUtmTooltip = discountCode
+    ? "Clear discount filter to use UTM filters"
+    : "Clear product filter to use UTM filters";
+  const disabledProductTooltip = discountCode
+    ? "Clear discount filter to use product filter"
+    : "Clear UTM filters to use product filter";
 
 
   return (
@@ -1514,6 +1524,152 @@ export default function UnifiedFilterBar({
             </Accordion>
           )}
 
+          {/* DISCOUNT CODE Section */}
+          {allowedFilters.discount && (
+            <Accordion
+              expanded={expandedAccordion === "discount"}
+              onChange={handleAccordionChange("discount")}
+              disableGutters
+              elevation={0}
+              sx={{
+                bgcolor: "transparent",
+                "&:before": { display: "none" },
+                borderBottom:
+                  expandedAccordion === "discount" ? "1px solid" : "none",
+                borderColor: isDark
+                  ? "rgba(255,255,255,0.1)"
+                  : "rgba(0,0,0,0.05)",
+              }}
+            >
+              <AccordionSummary
+                expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
+                sx={{
+                  px: 2,
+                  minHeight: 44,
+                  "& .MuiAccordionSummary-content": { my: 1 },
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontSize: "0.75rem",
+                    fontWeight: 700,
+                    color: "text.secondary",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  Discount Code
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails sx={{ px: 0, pb: 0, pt: 0 }}>
+                <Box sx={{ px: 2, pb: 1, pt: 0.5 }}>
+                  <TextField
+                    size="small"
+                    placeholder="Search discounts..."
+                    fullWidth
+                    value={discountSearch}
+                    onChange={(e) => setDiscountSearch(e.target.value)}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <Search size={14} />
+                        </InputAdornment>
+                      ),
+                      endAdornment: discountSearch && (
+                        <InputAdornment position="end">
+                          <IconButton
+                            size="small"
+                            onClick={() => setDiscountSearch("")}
+                          >
+                            <X size={14} />
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                      sx: { fontSize: "0.8rem", borderRadius: "8px" },
+                    }}
+                  />
+                </Box>
+                <List
+                  dense
+                  sx={{
+                    maxHeight: 220,
+                    overflowY: "auto",
+                    py: 0,
+                    borderTop: "1px solid",
+                    borderColor: isDark
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(0,0,0,0.05)",
+                  }}
+                >
+                  {discountCode && (
+                    <ListItemButton
+                      dense
+                      onClick={() => onDiscountCodeChange?.("")}
+                      sx={{ px: 2, py: 0.5 }}
+                    >
+                      <ListItemText
+                        primary="Clear discount"
+                        primaryTypographyProps={{
+                          fontSize: "0.85rem",
+                          color: "error.main",
+                          fontWeight: 600,
+                        }}
+                      />
+                    </ListItemButton>
+                  )}
+                  {(utmOptions?.discount_codes || [])
+                    .filter((code) =>
+                      code.toLowerCase().includes(discountSearch.toLowerCase()),
+                    )
+                    .map((code) => {
+                      const isSelected = discountCode === code;
+                      return (
+                        <ListItemButton
+                          key={code}
+                          dense
+                          onClick={() => onDiscountCodeChange?.(isSelected ? "" : code)}
+                          sx={{
+                            px: 2,
+                            py: 0.5,
+                            "&:hover": {
+                              bgcolor: isDark
+                                ? "rgba(255,255,255,0.05)"
+                                : "rgba(0,0,0,0.03)",
+                            },
+                          }}
+                        >
+                          <Checkbox
+                            edge="start"
+                            checked={isSelected}
+                            tabIndex={-1}
+                            disableRipple
+                            size="small"
+                            sx={{ py: 0 }}
+                          />
+                          <ListItemText
+                            primary={code}
+                            primaryTypographyProps={{
+                              fontSize: "0.85rem",
+                              fontWeight: isSelected ? 600 : 400,
+                              noWrap: true,
+                            }}
+                          />
+                        </ListItemButton>
+                      );
+                    })}
+                  {(!utmOptions?.discount_codes ||
+                    utmOptions.discount_codes.length === 0) && (
+                    <Box sx={{ p: 2, textAlign: "center" }}>
+                      <Typography variant="caption" color="text.secondary">
+                        No discounts found
+                      </Typography>
+                    </Box>
+                  )}
+                </List>
+              </AccordionDetails>
+            </Accordion>
+          )}
+
           {/* PRODUCT Section */}
           {allowedFilters.product && (
             <Tooltip title={productDisabled ? disabledProductTooltip : ""}>
@@ -1693,6 +1849,7 @@ export default function UnifiedFilterBar({
               onSalesChannelChange([]);
               onDeviceTypeChange([]);
               onProductChange(null);
+              onDiscountCodeChange?.("");
               handleFilterClose();
             }}
             sx={{

@@ -20,9 +20,10 @@ export default function KPIStat({
   compareValue,
   compareFormatter,
   invertDeltaColor = false,
+  unavailable = false,
 }) {
   const theme = useTheme();
-  const clickable = typeof onSelect === "function";
+  const clickable = typeof onSelect === "function" && !unavailable;
 
   const handleKeyDown = (event) => {
     if (!clickable) return;
@@ -132,9 +133,9 @@ export default function KPIStat({
               }}
             >
               <Typography variant="h5" sx={{ fontWeight: 700 }}>
-                {formatter ? formatter(value) : value}
+                {unavailable ? "-" : formatter ? formatter(value) : value}
               </Typography>
-              {compareValue != null && (
+              {!unavailable && compareValue != null && (
                 <Typography
                   variant="body2"
                   color="text.secondary"
@@ -148,7 +149,7 @@ export default function KPIStat({
                       : compareValue}
                 </Typography>
               )}
-              {hint && !compareValue && (
+              {hint && !compareValue && !unavailable && (
                 <Typography variant="caption" color="text.secondary">
                   {hint}
                 </Typography>
@@ -168,7 +169,7 @@ export default function KPIStat({
             >
               {deltaLoading ? (
                 <Skeleton variant="text" width={60} height={20} />
-              ) : delta && typeof delta.value === "number" ? (
+              ) : !unavailable && delta && typeof delta.value === "number" ? (
                 <>
                   {delta.direction === "up" ? (
                     <TrendingUpIcon

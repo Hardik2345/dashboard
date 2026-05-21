@@ -239,15 +239,18 @@ describe("metricsSnapshotService", () => {
     expect(response.metrics.atc_rate.direction).toBe("up");
   });
 
-  test("builds summary filter options from a single query", async () => {
+  test("builds summary filter options with discount codes", async () => {
     const conn = {
-      query: jest.fn().mockResolvedValue([
-        {
-          utm_source: "google",
-          utm_medium: "cpc",
-          utm_campaign: "launch",
-        },
-      ]),
+      query: jest
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            utm_source: "google",
+            utm_medium: "cpc",
+            utm_campaign: "launch",
+          },
+        ])
+        .mockResolvedValueOnce([{ discount_code: "SAVE10" }]),
     };
     const service = buildMetricsSnapshotService();
 
@@ -257,9 +260,10 @@ describe("metricsSnapshotService", () => {
       end: "2026-03-31",
     });
 
-    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(conn.query).toHaveBeenCalledTimes(2);
     expect(result).toEqual({
       sales_channel: [],
+      discount_codes: ["SAVE10"],
       utm_tree: {
         google: {
           mediums: {
@@ -587,6 +591,131 @@ describe("metricsSnapshotService", () => {
     expect(response.points[10].metrics.sales).toBe(120);
     expect(response.points[11].metrics.orders).toBe(4);
     expect(response.comparison.points[10].metrics.sessions).toBe(50);
+  });
+
+  test("uses discount daily aggregates for summary and marks unsupported KPIs unavailable", async () => {
+    const conn = {
+      query: jest.fn().mockResolvedValue([
+        {
+          current_total_orders: 12,
+          current_total_sales: 1200,
+          previous_total_orders: 10,
+          previous_total_sales: 900,
+        },
+      ]),
+    };
+
+    const service = buildMetricsSnapshotService({
+      now: () => new Date("2026-03-20T06:30:00Z"),
+    });
+    const response = await service.getDashboardSummary({
+      conn,
+      brandKey: "PTS",
+      start: "2026-03-10",
+      end: "2026-03-15",
+      compareStart: "2026-03-04",
+      compareEnd: "2026-03-09",
+      filters: { discount_code: "SAVE10" },
+    });
+
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(conn.query.mock.calls[0][0]).toContain("FROM dashboard_discount_daily");
+    expect(response.metrics.total_orders.value).toBe(12);
+    expect(response.metrics.total_sales.value).toBe(1200);
+    expect(response.metrics.average_order_value.value).toBe(100);
+    expect(response.metrics.total_sessions).toMatchObject({
+      value: null,
+      unavailable: true,
+    });
+    expect(response.metrics.conversion_rate).toMatchObject({
+      value: null,
+      unavailable: true,
+    });
+  });
+
+  test("uses discount hourly aggregates for today summary deltas", async () => {
+    const conn = {
+      query: jest.fn().mockImplementation((sql, options = {}) => {
+        if (sql.includes("FROM dashboard_discount_daily")) {
+          return Promise.resolve([
+            {
+              current_total_orders: 15,
+              current_total_sales: 1500,
+              previous_total_orders: 12,
+              previous_total_sales: 960,
+            },
+          ]);
+        }
+        if (sql.includes("FROM dashboard_discount_hourly")) {
+          expect(options.replacements).toContain(11);
+          return Promise.resolve([
+            {
+              current_total_orders: 11,
+              current_total_sales: 1100,
+              previous_total_orders: 10,
+              previous_total_sales: 900,
+            },
+          ]);
+        }
+        throw new Error(`Unexpected SQL: ${sql}`);
+      }),
+    };
+
+    const service = buildMetricsSnapshotService({
+      now: () => new Date("2026-03-31T06:30:00Z"),
+    });
+    const response = await service.getDashboardSummary({
+      conn,
+      brandKey: "PTS",
+      start: "2026-03-31",
+      end: "2026-03-31",
+      compareStart: null,
+      compareEnd: null,
+      filters: { discount_code: "SAVE10" },
+    });
+
+    expect(conn.query.mock.calls[0][0]).toContain("FROM dashboard_discount_daily");
+    expect(conn.query.mock.calls[1][0]).toContain("FROM dashboard_discount_hourly");
+    expect(response.metrics.total_orders).toMatchObject({
+      value: 15,
+      previous: 12,
+      diff: 1,
+      diff_pct: 10,
+    });
+    expect(response.metrics.average_order_value.diff_pct).toBeCloseTo(11.111111);
+  });
+
+  test("uses discount hourly aggregate table for hourly trends", async () => {
+    const conn = {
+      query: jest
+        .fn()
+        .mockResolvedValueOnce([
+          { date: "2026-03-31", hour: 10, sales: 120, orders: 3, sessions: 0, atc: 0 },
+        ])
+        .mockResolvedValueOnce([]),
+    };
+
+    const service = buildMetricsSnapshotService({
+      now: () => new Date("2026-03-31T06:30:00Z"),
+    });
+    const response = await service.getTrend(
+      {
+        conn,
+        brandKey: "PTS",
+        start: "2026-03-31",
+        end: "2026-03-31",
+        compareStart: "2026-03-30",
+        compareEnd: "2026-03-30",
+        aggregate: "",
+        filters: { discount_code: "SAVE10" },
+      },
+      "hourly",
+    );
+
+    expect(conn.query).toHaveBeenCalledTimes(2);
+    expect(conn.query.mock.calls[0][0]).toContain("FROM dashboard_discount_hourly");
+    expect(response.points[10].metrics.sales).toBe(120);
+    expect(response.points[10].metrics.orders).toBe(3);
   });
 
   test("keeps term/content UTM filters on the legacy raw summary path", async () => {

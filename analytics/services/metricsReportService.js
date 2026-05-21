@@ -2,7 +2,11 @@ const { QueryTypes } = require("sequelize");
 const { shiftDays } = require("../shared/utils/date");
 const { buildWhereClause } = require("../shared/utils/sql");
 const { appendUtmWhere } = require("../shared/utils/filters");
-const { resolveUtmAggregateSource } = require("./metricsAggregateService");
+const {
+  resolveUtmAggregateSource,
+  resolveDiscountAggregateSource,
+  appendDiscountWhere,
+} = require("./metricsAggregateService");
 const {
   pad2,
   getNowIst,
@@ -211,6 +215,59 @@ function buildMetricsReportService() {
 
     const isSingleDay = effectiveStart === effectiveEnd;
     const useHourlyCutoff = Number.isInteger(hourLte);
+
+    const discountSource = resolveDiscountAggregateSource(
+      filters,
+      useHourlyCutoff ? "hourly" : "daily",
+    );
+    if (discountSource && !productId) {
+      let sql = `
+        SELECT
+          payment_mode,
+          COALESCE(SUM(gross_revenue), 0) AS sales
+        FROM ${useHourlyCutoff ? "dashboard_discount_payment_hourly" : "dashboard_discount_payment_daily"}
+        WHERE date >= ? AND date <= ?
+      `;
+      const replacements = [effectiveStart, effectiveEnd];
+      if (useHourlyCutoff) {
+        sql += ` AND hour <= ?`;
+        replacements.push(hourLte);
+      }
+      sql = appendDiscountWhere(sql, replacements, filters);
+      sql += ` GROUP BY payment_mode`;
+
+      const rows = await conn.query(sql, {
+        type: QueryTypes.SELECT,
+        replacements,
+      });
+
+      let codSales = 0;
+      let prepaidSales = 0;
+      let partialSales = 0;
+      for (const row of rows) {
+        if (row.payment_mode === "cod") codSales = Number(row.sales || 0);
+        if (row.payment_mode === "prepaid") prepaidSales = Number(row.sales || 0);
+        if (row.payment_mode === "partially_paid") partialSales = Number(row.sales || 0);
+      }
+      const total = codSales + prepaidSales + partialSales;
+      return {
+        metric: "PAYMENT_SPLIT_SALES",
+        range: {
+          start: effectiveStart,
+          end: effectiveEnd,
+          hour_lte: useHourlyCutoff ? hourLte : null,
+        },
+        cod_sales: codSales,
+        prepaid_sales: prepaidSales,
+        partial_sales: partialSales,
+        total_sales_from_split: total,
+        cod_percent: total > 0 ? (codSales / total) * 100 : 0,
+        prepaid_percent: total > 0 ? (prepaidSales / total) * 100 : 0,
+        partial_percent: total > 0 ? (partialSales / total) * 100 : 0,
+        sql_used: includeSql ? sql : undefined,
+      };
+    }
+
     let whereSql = isSingleDay
       ? `WHERE created_date = ?`
       : `WHERE created_date >= ? AND created_date <= ?`;
@@ -355,6 +412,54 @@ function buildMetricsReportService() {
         end: effectiveEnd,
         hourLte: useHourlyCutoff ? hourLte : null,
         productId,
+        codOrders,
+        prepaidOrders,
+        partiallyPaidOrders,
+        includeSql,
+        sql,
+      });
+    }
+
+    const discountSource = resolveDiscountAggregateSource(
+      filters,
+      useHourlyCutoff ? "hourly" : "daily",
+    );
+    if (discountSource && !productId) {
+      let sql = `
+        SELECT
+          payment_mode,
+          COALESCE(SUM(total_orders), 0) AS orders
+        FROM ${useHourlyCutoff ? "dashboard_discount_payment_hourly" : "dashboard_discount_payment_daily"}
+        WHERE date >= ? AND date <= ?
+      `;
+      const replacements = [effectiveStart, effectiveEnd];
+      if (useHourlyCutoff) {
+        sql += ` AND hour <= ?`;
+        replacements.push(hourLte);
+      }
+      sql = appendDiscountWhere(sql, replacements, filters);
+      sql += ` GROUP BY payment_mode`;
+
+      const rows = await conn.query(sql, {
+        type: QueryTypes.SELECT,
+        replacements,
+      });
+
+      let codOrders = 0;
+      let prepaidOrders = 0;
+      let partiallyPaidOrders = 0;
+      for (const row of rows) {
+        if (row.payment_mode === "cod") codOrders = Number(row.orders || 0);
+        if (row.payment_mode === "prepaid") prepaidOrders = Number(row.orders || 0);
+        if (row.payment_mode === "partially_paid") {
+          partiallyPaidOrders = Number(row.orders || 0);
+        }
+      }
+
+      return computeOrderSplitPayload({
+        start: effectiveStart,
+        end: effectiveEnd,
+        hourLte: useHourlyCutoff ? hourLte : null,
         codOrders,
         prepaidOrders,
         partiallyPaidOrders,

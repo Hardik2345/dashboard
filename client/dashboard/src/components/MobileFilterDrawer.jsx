@@ -61,6 +61,9 @@ export default function MobileFilterDrawer({
   deviceType = [],
   onDeviceTypeChange,
   showDeviceType = true,
+  discountCode = "",
+  onDiscountCodeChange,
+  showDiscountFilter = true,
 
   showProductTypeFilter = false,
   productTypes = [],
@@ -72,6 +75,7 @@ export default function MobileFilterDrawer({
   const [tempUtm, setTempUtm] = useState(utm);
   const [tempSalesChannel, setTempSalesChannel] = useState(salesChannel);
   const [tempDeviceType, setTempDeviceType] = useState(deviceType);
+  const [tempDiscountCode, setTempDiscountCode] = useState(discountCode);
 
   // Product Type State
   const [tempProductTypes, setTempProductTypes] = useState(productTypes || []);
@@ -95,10 +99,11 @@ export default function MobileFilterDrawer({
       setTempUtm(utm);
       setTempSalesChannel(salesChannel);
       setTempDeviceType(deviceType);
+      setTempDiscountCode(discountCode);
       setTempProductTypes(productTypes || []);
       setView("ROOT");
     }
-  }, [open, brandKey, productValue, utm, salesChannel, deviceType]); // Removed productTypes to prevent reset loop
+  }, [open, brandKey, productValue, utm, salesChannel, deviceType, discountCode]); // Removed productTypes to prevent reset loop
 
   // Fetch Product Types
   useEffect(() => {
@@ -158,7 +163,7 @@ export default function MobileFilterDrawer({
 
   const handleBack = () => {
     if (
-      ["BRAND", "PRODUCT", "UTM", "SALES_CHANNEL", "DEVICE_TYPE"].includes(view)
+      ["BRAND", "PRODUCT", "UTM", "SALES_CHANNEL", "DEVICE_TYPE", "DISCOUNT"].includes(view)
     ) {
       setView("ROOT");
     } else if (["UTM_SOURCE", "UTM_MEDIUM", "UTM_CAMPAIGN"].includes(view)) {
@@ -207,6 +212,8 @@ export default function MobileFilterDrawer({
         return "Sales Channel";
       case "DEVICE_TYPE":
         return "Device Type";
+      case "DISCOUNT":
+        return "Discount Code";
       default:
         return "Filters";
     }
@@ -298,6 +305,7 @@ export default function MobileFilterDrawer({
       onProductChange({ id: "", label: "All products", detail: "Whole store" });
     if (onSalesChannelChange) onSalesChannelChange("");
     if (onDeviceTypeChange) onDeviceTypeChange([]);
+    if (onDiscountCodeChange) onDiscountCodeChange("");
     onClose();
   };
 
@@ -307,6 +315,7 @@ export default function MobileFilterDrawer({
     if (onUtmChange) onUtmChange(tempUtm);
     if (onSalesChannelChange) onSalesChannelChange(tempSalesChannel);
     if (onDeviceTypeChange) onDeviceTypeChange(tempDeviceType);
+    if (onDiscountCodeChange) onDiscountCodeChange(tempDiscountCode);
     if (onProductTypeChange) onProductTypeChange(tempProductTypes);
     onClose();
   };
@@ -379,7 +388,8 @@ export default function MobileFilterDrawer({
         (Array.isArray(salesChannel)
           ? salesChannel.length > 0
           : salesChannel) ||
-        (Array.isArray(deviceType) ? deviceType.length > 0 : deviceType)) && (
+        (Array.isArray(deviceType) ? deviceType.length > 0 : deviceType) ||
+        discountCode) && (
         <Fade in={true} timeout={500}>
           <Box
             sx={{
@@ -502,6 +512,23 @@ export default function MobileFilterDrawer({
                       onDelete={() => {
                         if (onDeviceTypeChange) onDeviceTypeChange([]);
                         setTempDeviceType([]);
+                      }}
+                      size="small"
+                      isDark={isDark}
+                      sx={{ borderRadius: "9999px" }}
+                    />
+                  </div>
+                </Grow>
+              )}
+              {/* Discount Chip */}
+              {discountCode && (
+                <Grow in={true}>
+                  <div>
+                    <GlassChip
+                      label={`Discount: ${discountCode}`}
+                      onDelete={() => {
+                        if (onDiscountCodeChange) onDiscountCodeChange("");
+                        setTempDiscountCode("");
                       }}
                       size="small"
                       isDark={isDark}
@@ -692,6 +719,29 @@ export default function MobileFilterDrawer({
                         : activeUtmCount > 0
                           ? `${activeUtmCount} Active`
                           : "All"}
+                    </Typography>
+                  </Box>
+                  <ChevronRightIcon color="action" />
+                </ListItemButton>
+              )}
+
+              {/* Discount Code Item */}
+              {showDiscountFilter && (
+                <ListItemButton
+                  onClick={() => setView("DISCOUNT")}
+                  sx={{ py: 2, justifyContent: "space-between" }}
+                  divider
+                >
+                  <Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ fontSize: 12 }}
+                    >
+                      Discount Code
+                    </Typography>
+                    <Typography variant="body1" fontSize={14} fontWeight={500}>
+                      {tempDiscountCode || "All"}
                     </Typography>
                   </Box>
                   <ChevronRightIcon color="action" />
@@ -1121,6 +1171,56 @@ export default function MobileFilterDrawer({
                 })()}
               </List>
             </Box>
+          )}
+
+          {/* DISCOUNT VIEW */}
+          {view === "DISCOUNT" && (
+            <List disablePadding>
+              <ListItemButton
+                onClick={() => {
+                  setTempDiscountCode("");
+                  handleBack();
+                }}
+                selected={!tempDiscountCode}
+                sx={{ py: 1.5 }}
+              >
+                <ListItemText primary="All" />
+                {!tempDiscountCode && (
+                  <CheckIcon fontSize="small" color="primary" />
+                )}
+              </ListItemButton>
+              {(utmOptions?.discount_codes || []).map((code) => (
+                <ListItemButton
+                  key={code}
+                  onClick={() => {
+                    setTempDiscountCode(code);
+                    setTempProduct({ id: "", label: "All products", detail: "Whole store" });
+                    setTempUtm({ source: [], medium: [], campaign: [], term: [], content: [] });
+                    setTempSalesChannel("");
+                    setTempDeviceType([]);
+                    handleBack();
+                  }}
+                  selected={tempDiscountCode === code}
+                  sx={{ py: 1.5 }}
+                >
+                  <ListItemText
+                    primary={code}
+                    primaryTypographyProps={{ noWrap: true }}
+                  />
+                  {tempDiscountCode === code && (
+                    <CheckIcon fontSize="small" color="primary" />
+                  )}
+                </ListItemButton>
+              ))}
+              {(!utmOptions?.discount_codes ||
+                utmOptions.discount_codes.length === 0) && (
+                <Box sx={{ p: 2, textAlign: "center" }}>
+                  <Typography variant="body2" color="text.secondary">
+                    No discounts found
+                  </Typography>
+                </Box>
+              )}
+            </List>
           )}
 
           {/* SALES CHANNEL VIEW */}

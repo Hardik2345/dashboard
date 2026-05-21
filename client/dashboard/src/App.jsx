@@ -91,6 +91,7 @@ import {
   setUtm,
   setSalesChannel,
   setDeviceType,
+  setDiscountCode,
 } from "./state/slices/filterSlice.js";
 import MobileTopBar from "./components/MobileTopBar.jsx";
 const MobileFilterDrawer = lazy(
@@ -205,6 +206,7 @@ export default function App() {
     selectedMetric,
     productSelection,
     utm,
+    discountCode,
     salesChannel,
     deviceType,
   } = useAppSelector((state) => state.filters);
@@ -583,6 +585,7 @@ export default function App() {
     if (utm?.campaign) base.utm_campaign = utm.campaign;
     if (utm?.term) base.utm_term = utm.term;
     if (utm?.content) base.utm_content = utm.content;
+    if (discountCode) base.discount_code = discountCode;
 
     // Arrays allowed here
     if (salesChannel) base.sales_channel = salesChannel;
@@ -618,6 +621,7 @@ export default function App() {
     authorRefreshKey,
     productSelection,
     utm,
+    discountCode,
     salesChannel,
     deviceType,
   ]);
@@ -1489,13 +1493,20 @@ export default function App() {
   const handleSelectMetric = useCallback(
     (metricKey) => {
       if (!metricKey) return;
+      if (
+        discountCode &&
+        !["orders", "sales", "aov"].includes(metricKey)
+      ) {
+        dispatch(setSelectedMetric("sales"));
+        return;
+      }
       dispatch(
         setSelectedMetric(
           TREND_METRICS.has(metricKey) ? metricKey : DEFAULT_TREND_METRIC,
         ),
       );
     },
-    [dispatch],
+    [dispatch, discountCode],
   );
 
   const handleRangeChange = useCallback(
@@ -1509,6 +1520,7 @@ export default function App() {
   const handleProductChange = useCallback(
     (value) => {
       dispatch(setProductSelection(value || DEFAULT_PRODUCT_OPTION));
+      dispatch(setDiscountCode(""));
     },
     [dispatch],
   );
@@ -1517,6 +1529,7 @@ export default function App() {
     (val) => {
       // Simply dispatch the new UTM object; multiselect logic is handled in the components
       dispatch(setUtm(val));
+      dispatch(setDiscountCode(""));
     },
     [dispatch],
   );
@@ -1524,6 +1537,7 @@ export default function App() {
   const handleSalesChannelChange = useCallback(
     (val) => {
       dispatch(setSalesChannel(val));
+      dispatch(setDiscountCode(""));
     },
     [dispatch],
   );
@@ -1531,6 +1545,21 @@ export default function App() {
   const handleDeviceTypeChange = useCallback(
     (val) => {
       dispatch(setDeviceType(val));
+      dispatch(setDiscountCode(""));
+    },
+    [dispatch],
+  );
+
+  const handleDiscountCodeChange = useCallback(
+    (val) => {
+      const next = val || "";
+      dispatch(setDiscountCode(next));
+      if (next) {
+        dispatch(setProductSelection(DEFAULT_PRODUCT_OPTION));
+        dispatch(setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }));
+        dispatch(setSalesChannel([]));
+        dispatch(setDeviceType([]));
+      }
     },
     [dispatch],
   );
@@ -1725,6 +1754,23 @@ export default function App() {
       // Ignore
     }
   }, [utm]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("pts_discount_filter_v1", JSON.stringify(discountCode || ""));
+    } catch {
+      // Ignore
+    }
+  }, [discountCode]);
+
+  useEffect(() => {
+    if (
+      discountCode &&
+      !["orders", "sales", "aov"].includes(selectedMetric)
+    ) {
+      dispatch(setSelectedMetric("sales"));
+    }
+  }, [discountCode, selectedMetric, dispatch]);
 
   // Centralized UTM clearing for > 30 days
   useEffect(() => {
@@ -2219,20 +2265,23 @@ export default function App() {
                         productOptions={productOptions}
                         productValue={productSelection}
                         onProductChange={handleProductChange}
-                        productDisabled={hasActiveUtmFilter}
+                        productDisabled={hasActiveUtmFilter || !!discountCode}
                         productLoading={productOptionsLoading}
                         utm={utm}
                         onUtmChange={handleUtmChange}
-                        utmDisabled={hasActiveProductFilter}
+                        utmDisabled={hasActiveProductFilter || !!discountCode}
                         salesChannel={salesChannel}
                         onSalesChannelChange={handleSalesChannelChange}
                         deviceType={deviceType}
                         onDeviceTypeChange={handleDeviceTypeChange}
+                        discountCode={discountCode}
+                        onDiscountCodeChange={handleDiscountCodeChange}
                         allowedFilters={{
                           product: hasPermission("product_filter"),
                           utm: hasPermission("utm_filter"),
                           salesChannel: hasPermission("sales_channel_filter"),
                           deviceType: hasPermission("device_type_filter"),
+                          discount: true,
                         }}
                         utmOptions={utmOptions}
                         onDownload={handleDownloadSnapshot}
@@ -2287,17 +2336,20 @@ export default function App() {
                       productOptions={productOptions}
                       productValue={productSelection}
                       onProductChange={handleProductChange}
-                      productDisabled={hasActiveUtmFilter}
+                      productDisabled={hasActiveUtmFilter || !!discountCode}
                       productLoading={productOptionsLoading}
                       utm={utm}
                       onUtmChange={handleUtmChange}
-                      utmDisabled={hasActiveProductFilter}
+                      utmDisabled={hasActiveProductFilter || !!discountCode}
                       salesChannel={salesChannel}
                       onSalesChannelChange={handleSalesChannelChange}
                       deviceType={deviceType}
                       onDeviceTypeChange={handleDeviceTypeChange}
+                      discountCode={discountCode}
+                      onDiscountCodeChange={handleDiscountCodeChange}
                       showUtmFilter={hasPermission("utm_filter")}
                       showSalesChannel={hasPermission("sales_channel_filter")}
+                      showDiscountFilter={true}
                       utmOptions={utmOptions}
                       isAuthor={isAuthor}
                     />
@@ -2321,14 +2373,17 @@ export default function App() {
                   productOptions={productOptions}
                   productValue={productSelection}
                   onProductChange={handleProductChange}
-                  productDisabled={hasActiveUtmFilter}
+                  productDisabled={hasActiveUtmFilter || !!discountCode}
                   utm={utm}
                   onUtmChange={handleUtmChange}
-                  utmDisabled={hasActiveProductFilter}
+                  utmDisabled={hasActiveProductFilter || !!discountCode}
                   salesChannel={salesChannel}
                   onSalesChannelChange={handleSalesChannelChange}
                   deviceType={deviceType}
                   onDeviceTypeChange={handleDeviceTypeChange}
+                  discountCode={discountCode}
+                  onDiscountCodeChange={handleDiscountCodeChange}
+                  showDiscountFilter={true}
                   utmOptions={utmOptions}
                   dateRange={normalizedRange}
                   isDark={darkMode === "dark"}
