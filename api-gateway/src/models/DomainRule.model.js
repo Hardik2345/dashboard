@@ -28,6 +28,7 @@ const DomainRuleSchema = new mongoose.Schema({
       'inventory_panel',
       'product_filter',
       'utm_filter',
+      'discount_filter',
       'web_vitals',
       'payment_split_order',
       'payment_split_sales',
