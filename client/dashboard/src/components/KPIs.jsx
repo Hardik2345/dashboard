@@ -55,6 +55,7 @@ export default function KPIs({
   const utmCampaign = query?.utm_campaign;
   const salesChannel = query?.sales_channel;
   const deviceType = query?.device_type;
+  const discountCode = query?.discount_code;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
 
@@ -159,6 +160,7 @@ export default function KPIs({
             utm_campaign: utmCampaign,
             sales_channel: salesChannel,
             device_type: deviceType,
+            discount_code: discountCode,
           }
         : {
             start,
@@ -169,6 +171,7 @@ export default function KPIs({
             utm_campaign: utmCampaign,
             sales_channel: salesChannel,
             device_type: deviceType,
+            discount_code: discountCode,
           };
       if (compareStart && compareEnd) {
         base.compare_start = compareStart;
@@ -191,6 +194,12 @@ export default function KPIs({
           const aov = { aov: m.average_order_value?.value ?? 0 };
           const sessions = m.total_sessions?.value ?? 0;
           const atcSessions = m.total_atc_sessions?.value ?? 0;
+          const unavailable = {
+            sessions: !!m.total_sessions?.unavailable,
+            atc: !!m.total_atc_sessions?.unavailable || !!m.atc_rate?.unavailable,
+            cvr: !!m.conversion_rate?.unavailable,
+            returns: !!m.cancelled_orders?.unavailable || !!m.refunded_orders?.unavailable,
+          };
 
           const returnsData = {
             cancelled_orders: m.cancelled_orders?.value ?? 0,
@@ -306,6 +315,7 @@ export default function KPIs({
             prevAtcRate: cmpAtcRate,
             prevCancelledRate,
             prevRefundedRate,
+            unavailable,
           }));
           setLoading(false);
           setDeltaLoading(false);
@@ -335,6 +345,7 @@ export default function KPIs({
     utmCampaign,
     salesChannel,
     deviceType,
+    discountCode,
     compareStart,
     compareEnd,
   ]);
@@ -367,6 +378,10 @@ export default function KPIs({
     formatUTM("campaign", utmCampaign, utmOptions) && {
       label: formatUTM("campaign", utmCampaign, utmOptions),
       key: "campaign",
+    },
+    discountCode && {
+      label: `discount: ${discountCode}`,
+      key: "discount",
     },
   ].filter(Boolean);
 
@@ -672,6 +687,7 @@ export default function KPIs({
                     ? (data.returnsData?.cancelled_rate ?? 0)
                     : (data.returnsData?.refunded_rate ?? 0)
                 }
+                unavailable={data.unavailable?.returns}
                 loading={loading}
                 deltaLoading={deltaLoading}
                 formatter={(v) => nfPct.format(v)}
@@ -720,6 +736,7 @@ export default function KPIs({
               <KPIStat
                 label="Total Sessions"
                 value={totalSessions}
+                unavailable={data.unavailable?.sessions}
                 loading={loading}
                 deltaLoading={deltaLoading}
                 formatter={(v) => nfInt.format(v)}
@@ -732,7 +749,9 @@ export default function KPIs({
                     : undefined
                 }
                 onSelect={
-                  onSelectMetric ? () => onSelectMetric("sessions") : undefined
+                  onSelectMetric && !data.unavailable?.sessions
+                    ? () => onSelectMetric("sessions")
+                    : undefined
                 }
                 selected={selectedMetric === "sessions"}
                 compareValue={
@@ -828,6 +847,7 @@ export default function KPIs({
                       : 0
                     : totalAtcSessions
                 }
+                unavailable={data.unavailable?.atc}
                 loading={loading}
                 deltaLoading={deltaLoading}
                 formatter={
@@ -849,7 +869,7 @@ export default function KPIs({
                       : undefined
                 }
                 onSelect={
-                  onSelectMetric
+                  onSelectMetric && !data.unavailable?.atc
                     ? () => onSelectMetric(atcMode === "R" ? "atc_rate" : "atc")
                     : undefined
                 }
@@ -888,6 +908,7 @@ export default function KPIs({
             <KPIStat
               label="Conversion Rate"
               value={data.cvr?.cvr ?? 0}
+              unavailable={data.unavailable?.cvr}
               loading={loading}
               deltaLoading={deltaLoading}
               formatter={(v) => nfPct.format(v)}
@@ -900,7 +921,9 @@ export default function KPIs({
                   : undefined
               }
               onSelect={
-                onSelectMetric ? () => onSelectMetric("cvr") : undefined
+                onSelectMetric && !data.unavailable?.cvr
+                  ? () => onSelectMetric("cvr")
+                  : undefined
               }
               selected={selectedMetric === "cvr"}
               compareValue={

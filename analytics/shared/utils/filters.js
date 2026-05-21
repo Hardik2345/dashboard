@@ -32,6 +32,11 @@ function extractUtmParam(val) {
   return null;
 }
 
+function extractSingleParam(val) {
+  const values = normalizeFilterValues(val);
+  return values.length > 0 ? values[0] : null;
+}
+
 // ── Clause builders ────────────────────────────────────────────────────────────
 
 function buildDeviceTypeUserAgentClause(deviceType, column = "user_agent") {
@@ -155,6 +160,7 @@ function extractFilters(req) {
     sales_channel,
     device_type,
     product_id,
+    discount_code,
   } = req.query;
 
   // Suppress UTM filters for date ranges exceeding 30 days to prevent heavy queries.
@@ -169,6 +175,7 @@ function extractFilters(req) {
     sales_channel: extractUtmParam(sales_channel),
     device_type: extractUtmParam(device_type),
     product_id: extractUtmParam(product_id),
+    discount_code: extractSingleParam(discount_code),
   };
 }
 
@@ -178,5 +185,6 @@ module.exports = {
   buildDeviceTypeUserAgentClause,
   hasUtmFilters,
   extractUtmParam,
+  extractSingleParam,
   extractFilters,
 };

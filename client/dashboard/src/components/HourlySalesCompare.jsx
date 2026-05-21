@@ -173,6 +173,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
   const salesChannel = query?.sales_channel;
   const deviceType = query?.device_type;
   const productId = query?.product_id;
+  const discountCode = query?.discount_code;
   const compare = query?.compare;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
@@ -200,7 +201,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
     setLoading(true);
 
     const loadData = async () => {
-      const utmParams = { utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, device_type: deviceType, product_id: productId };
+      const utmParams = { utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, device_type: deviceType, product_id: productId, discount_code: discountCode };
       const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
 
       // Determine view mode based on range if strict logic needed, but user wants dropdown.
@@ -280,7 +281,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
 
     loadData();
     return () => { cancelled = true; };
-  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, productId, compare, compareStart, compareEnd]);
+  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, productId, discountCode, compare, compareStart, compareEnd]);
 
   const toggleLine = (line) => {
     setVisibleLines(prev =>
