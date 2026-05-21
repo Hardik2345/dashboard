@@ -1772,6 +1772,12 @@ export default function App() {
     }
   }, [discountCode, selectedMetric, dispatch]);
 
+  useEffect(() => {
+    if (!isAuthor && !hasPermission("discount_filter") && discountCode) {
+      dispatch(setDiscountCode(""));
+    }
+  }, [isAuthor, hasPermission, discountCode, dispatch]);
+
   // Centralized UTM clearing for > 30 days
   useEffect(() => {
     if (!start || !end) return;
@@ -2198,6 +2204,7 @@ export default function App() {
                   showSidebar ||
                   hasPermission("product_filter") ||
                   hasPermission("utm_filter") ||
+                  hasPermission("discount_filter") ||
                   hasPermission("sales_channel_filter") ||
                   hasPermission("device_type_filter") ||
                   showMultipleBrands
@@ -2281,7 +2288,7 @@ export default function App() {
                           utm: hasPermission("utm_filter"),
                           salesChannel: hasPermission("sales_channel_filter"),
                           deviceType: hasPermission("device_type_filter"),
-                          discount: true,
+                          discount: hasPermission("discount_filter"),
                         }}
                         utmOptions={utmOptions}
                         onDownload={handleDownloadSnapshot}
@@ -2349,7 +2356,7 @@ export default function App() {
                       onDiscountCodeChange={handleDiscountCodeChange}
                       showUtmFilter={hasPermission("utm_filter")}
                       showSalesChannel={hasPermission("sales_channel_filter")}
-                      showDiscountFilter={true}
+                      showDiscountFilter={hasPermission("discount_filter")}
                       utmOptions={utmOptions}
                       isAuthor={isAuthor}
                     />
@@ -2383,7 +2390,7 @@ export default function App() {
                   onDeviceTypeChange={handleDeviceTypeChange}
                   discountCode={discountCode}
                   onDiscountCodeChange={handleDiscountCodeChange}
-                  showDiscountFilter={true}
+                  showDiscountFilter={hasPermission("discount_filter")}
                   utmOptions={utmOptions}
                   dateRange={normalizedRange}
                   isDark={darkMode === "dark"}
