@@ -71,6 +71,7 @@ const GlassChip = ({ label, size = "small", isDark }) => (
 
 const PERMISSION_OPTIONS = [
   "all",
+  "bundles_panel",
   "inventory_panel",
   "product_filter",
   "utm_filter",

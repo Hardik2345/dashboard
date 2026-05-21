@@ -9,6 +9,7 @@ const logger = require("./shared/utils/logger");
 const { sequelize } = require("./shared/db/mainSequelize");
 const { buildMetricsRouter } = require("./modules/metrics");
 const { buildProductConversionRouter } = require("./modules/product-conversion");
+const { buildBundlesRouter } = require("./modules/bundles");
 const { buildExternalRouter } = require("./modules/external");
 const { buildUploadsRouter } = require("./modules/uploads");
 const { buildApiKeysRouter } = require("./modules/api-keys");
@@ -47,6 +48,7 @@ app.get("/", (_req, res) => {
 
 app.use("/metrics", buildMetricsRouter(sequelize));
 app.use("/metrics", buildProductConversionRouter());
+app.use("/metrics", buildBundlesRouter());
 app.use("/external", buildExternalRouter());
 app.use("/", buildUploadsRouter());
 app.use("/", buildApiKeysRouter(sequelize));
