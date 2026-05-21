@@ -42,6 +42,7 @@ import {
 const MOBILE_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { id: "product-conversion", label: "Funnels", icon: Filter },
+  { id: "bundles", label: "Bundles", icon: Table2 },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "alerts", label: "Alerts", icon: Bell },
   { id: "tenant-setup", label: "Tenant Setup", icon: Store },
@@ -132,6 +133,7 @@ const ProductConversionTable = lazy(
   () => import("./components/ProductConversionTable.jsx"),
 );
 const InventoryTable = lazy(() => import("./components/InventoryTable.jsx"));
+const BundlesPanel = lazy(() => import("./components/BundlesPanel.jsx"));
 const AuthorBrandForm = lazy(() => import("./components/AuthorBrandForm.jsx"));
 const AuthorBrandList = lazy(() => import("./components/AuthorBrandList.jsx"));
 const AlertsAdmin = lazy(() => import("./components/AlertsAdmin.jsx"));
@@ -494,12 +496,18 @@ export default function App() {
     return hasPermission("inventory_panel");
   }, [hasPermission, isAuthor]);
 
+  const canAccessBundlesPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("bundles_panel");
+  }, [hasPermission, isAuthor]);
+
   const accessibleTabs = useMemo(() => {
     if (isAuthor) return null;
     const tabs = ["dashboard"];
+    if (canAccessBundlesPanel) tabs.push("bundles");
     if (canAccessInventoryPanel) tabs.push("inventory");
     return tabs;
-  }, [canAccessInventoryPanel, isAuthor]);
+  }, [canAccessBundlesPanel, canAccessInventoryPanel, isAuthor]);
 
   useEffect(() => {
     if (!initialized) return;
@@ -511,7 +519,15 @@ export default function App() {
         // Ignore storage write errors
       }
     }
-  }, [authorTab, canAccessInventoryPanel, initialized]);
+    if (authorTab === "bundles" && !canAccessBundlesPanel) {
+      setAuthorTab("dashboard");
+      try {
+        localStorage.setItem("author_active_tab_v1", "dashboard");
+      } catch {
+        // Ignore storage write errors
+      }
+    }
+  }, [authorTab, canAccessBundlesPanel, canAccessInventoryPanel, initialized]);
 
   const showSidebar = isAuthor || (accessibleTabs && accessibleTabs.length > 1);
 
@@ -2795,6 +2811,27 @@ export default function App() {
                         >
                           <Typography variant="body2" color="text.secondary">
                             Select a brand to view inventory metrics.
+                          </Typography>
+                        </Paper>
+                      ))}
+
+                    {canAccessBundlesPanel &&
+                      authorTab === "bundles" &&
+                      (hasBrand ? (
+                        <Suspense fallback={<SectionFallback count={2} height={280} />}>
+                          <BundlesPanel
+                            brandKey={activeBrandKey}
+                            initialStartDate={start}
+                            initialEndDate={end}
+                          />
+                        </Suspense>
+                      ) : (
+                        <Paper
+                          variant="outlined"
+                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to view bundle metrics.
                           </Typography>
                         </Paper>
                       ))}

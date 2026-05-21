@@ -480,6 +480,61 @@ export async function exportProductConversionCsv(args) {
   }
 }
 
+export async function getBundleOptions(args, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+    },
+    args,
+  );
+  const res = await doGet("/metrics/bundles/options", params, {
+    signal: options.signal,
+  });
+  if (res.error) return { error: true, bundles: [] };
+  return {
+    error: false,
+    bundles: Array.isArray(res.data?.bundles) ? res.data.bundles : [],
+  };
+}
+
+export async function getBundleSummary(args, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+    },
+    args,
+  );
+  const res = await doGet("/metrics/bundles/summary", params, {
+    signal: options.signal,
+  });
+  if (res.error) return { error: true, rows: [] };
+  return {
+    error: false,
+    rows: Array.isArray(res.data?.rows) ? res.data.rows : [],
+  };
+}
+
+export async function getBundleProducts(args, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+      bundle_product_id: args.bundle_product_id || args.bundleProductId,
+    },
+    args,
+  );
+  const res = await doGet("/metrics/bundles/products", params, {
+    signal: options.signal,
+  });
+  if (res.error) return { error: true, rows: [] };
+  return {
+    error: false,
+    rows: Array.isArray(res.data?.rows) ? res.data.rows : [],
+  };
+}
+
 export async function getOrderSplit(args) {
   const params = appendBrandKey(
     {

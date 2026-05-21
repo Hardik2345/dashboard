@@ -17,6 +17,7 @@ const BrandMembershipSchema = new mongoose.Schema({
     default: ["all"],
     enum: [
       "all",
+      "bundles_panel",
       "inventory_panel",
       "product_filter",
       "utm_filter",
