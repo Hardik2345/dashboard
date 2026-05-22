@@ -6,16 +6,14 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   CircularProgress,
   Divider,
-  FormControl,
   Grow,
   List,
   ListItemButton,
   ListItemText,
-  MenuItem,
   Popover as MuiPopover,
-  Select,
   Stack,
   Table,
   TableBody,
@@ -25,15 +23,19 @@ import {
   TablePagination,
   TableRow,
   TableSortLabel,
+  TextField,
   Typography,
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import KeyboardArrowLeft from "@mui/icons-material/KeyboardArrowLeft";
 import KeyboardArrowRight from "@mui/icons-material/KeyboardArrowRight";
+import InputAdornment from "@mui/material/InputAdornment";
 import { useTheme } from "@mui/material/styles";
 import { AppProvider } from "@shopify/polaris";
 import { DatePicker } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
+import SearchIcon from "@mui/icons-material/Search";
+import CloseIcon from "@mui/icons-material/Close";
 import { getBundleOptions, getBundleProducts, getBundleSummary } from "../lib/api.js";
 
 const DATE_PRESETS = [
@@ -63,6 +65,7 @@ const DATE_PRESETS = [
     ],
   },
 ];
+const ALL_BUNDLES_VALUE = "__all__";
 
 function formatDate(value) {
   return dayjs(value).format("YYYY-MM-DD");
@@ -463,11 +466,14 @@ export default function BundlesPanel({
   initialEndDate,
 }) {
   const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
   const today = dayjs().startOf("day");
   const [startDate, setStartDate] = useState(dayjs(initialStartDate || today).startOf("day"));
   const [endDate, setEndDate] = useState(dayjs(initialEndDate || initialStartDate || today).startOf("day"));
   const [bundleOptions, setBundleOptions] = useState([]);
-  const [selectedBundleId, setSelectedBundleId] = useState("");
+  const [selectedBundleIds, setSelectedBundleIds] = useState([ALL_BUNDLES_VALUE]);
+  const [bundleAnchorEl, setBundleAnchorEl] = useState(null);
+  const [bundleSearchText, setBundleSearchText] = useState("");
   const [summaryRows, setSummaryRows] = useState([]);
   const [productRows, setProductRows] = useState([]);
   const [optionsStatus, setOptionsStatus] = useState("idle");
@@ -493,6 +499,33 @@ export default function BundlesPanel({
 
   const start = useMemo(() => formatDate(startDate), [startDate]);
   const end = useMemo(() => formatDate(endDate), [endDate]);
+  const bundleFilterOptions = useMemo(
+    () => [
+      { bundle_product_id: ALL_BUNDLES_VALUE, bundle_name: "All" },
+      ...bundleOptions,
+    ],
+    [bundleOptions],
+  );
+  const effectiveBundleIds = useMemo(() => {
+    if (selectedBundleIds.includes(ALL_BUNDLES_VALUE)) {
+      return bundleOptions.map((bundle) => bundle.bundle_product_id).filter(Boolean);
+    }
+    return selectedBundleIds.filter(Boolean);
+  }, [bundleOptions, selectedBundleIds]);
+  const selectedSpecificBundles = useMemo(
+    () =>
+      bundleOptions.filter((bundle) =>
+        selectedBundleIds.includes(bundle.bundle_product_id),
+      ),
+    [bundleOptions, selectedBundleIds],
+  );
+  const filteredBundleFilterOptions = useMemo(() => {
+    if (!bundleSearchText.trim()) return bundleFilterOptions;
+    const lower = bundleSearchText.trim().toLowerCase();
+    return bundleFilterOptions.filter((bundle) =>
+      String(bundle.bundle_name || "").toLowerCase().includes(lower),
+    );
+  }, [bundleFilterOptions, bundleSearchText]);
 
   useEffect(() => {
     if (!brandKey) return;
@@ -512,7 +545,7 @@ export default function BundlesPanel({
         if (!active || controller.signal.aborted) return;
         if (result.error) {
           setBundleOptions([]);
-          setSelectedBundleId("");
+          setSelectedBundleIds([ALL_BUNDLES_VALUE]);
           setOptionsError("Failed to load bundle options.");
           setOptionsStatus("failed");
           return;
@@ -523,17 +556,25 @@ export default function BundlesPanel({
         setOptionsError("");
         setOptionsStatus("succeeded");
 
-        setSelectedBundleId((current) => {
-          if (current && nextBundles.some((bundle) => bundle.bundle_product_id === current)) {
-            return current;
+        setSelectedBundleIds((current) => {
+          if (!Array.isArray(current) || current.length === 0) {
+            return [ALL_BUNDLES_VALUE];
           }
-          return nextBundles[0]?.bundle_product_id || "";
+          if (current.includes(ALL_BUNDLES_VALUE)) {
+            return [ALL_BUNDLES_VALUE];
+          }
+          const validSelections = current.filter((bundleId) =>
+            nextBundles.some((bundle) => bundle.bundle_product_id === bundleId),
+          );
+          return validSelections.length > 0
+            ? validSelections
+            : [ALL_BUNDLES_VALUE];
         });
       })
       .catch(() => {
         if (!active || controller.signal.aborted) return;
         setBundleOptions([]);
-        setSelectedBundleId("");
+        setSelectedBundleIds([ALL_BUNDLES_VALUE]);
         setOptionsError("Failed to load bundle options.");
         setOptionsStatus("failed");
       });
@@ -569,7 +610,7 @@ export default function BundlesPanel({
   }, [brandKey, start, end]);
 
   useEffect(() => {
-    if (!brandKey || !selectedBundleId) {
+    if (!brandKey || effectiveBundleIds.length === 0) {
       setProductRows([]);
       setProductsStatus("idle");
       setProductsError("");
@@ -586,7 +627,7 @@ export default function BundlesPanel({
         brand_key: brandKey,
         start,
         end,
-        bundle_product_id: selectedBundleId,
+        bundle_product_id: effectiveBundleIds,
       },
       { signal: controller.signal },
     )
@@ -614,7 +655,7 @@ export default function BundlesPanel({
       active = false;
       controller.abort();
     };
-  }, [brandKey, selectedBundleId, start, end]);
+  }, [brandKey, effectiveBundleIds, start, end]);
 
   const sortedProductRows = useMemo(
     () => sortRows(productRows, productSortBy, productSortDir),
@@ -623,11 +664,6 @@ export default function BundlesPanel({
   const sortedSummaryRows = useMemo(
     () => sortRows(summaryRows, summarySortBy, summarySortDir),
     [summaryRows, summarySortBy, summarySortDir],
-  );
-
-  const selectedBundle = useMemo(
-    () => bundleOptions.find((bundle) => bundle.bundle_product_id === selectedBundleId) || null,
-    [bundleOptions, selectedBundleId],
   );
 
   const productColumns = useMemo(
@@ -672,9 +708,67 @@ export default function BundlesPanel({
     setSummaryPage(0);
   }, []);
 
-  const productEmptyMessage = selectedBundleId
-    ? "No products found for the selected bundle and date range."
-    : "Select a bundle to view its product breakdown.";
+  const handleBundleSelectionChange = useCallback((nextSelection) => {
+    const values = Array.isArray(nextSelection) ? nextSelection : [];
+    if (values.length === 0) {
+      setSelectedBundleIds([ALL_BUNDLES_VALUE]);
+      setProductPage(0);
+      return;
+    }
+
+    const hasAll = values.includes(ALL_BUNDLES_VALUE);
+    if (hasAll) {
+      const previousHadAll = selectedBundleIds.includes(ALL_BUNDLES_VALUE);
+      const specificValues = values.filter((value) => value !== ALL_BUNDLES_VALUE);
+      setSelectedBundleIds(
+        previousHadAll && specificValues.length > 0
+          ? specificValues
+          : [ALL_BUNDLES_VALUE],
+      );
+      setProductPage(0);
+      return;
+    }
+
+    setSelectedBundleIds(values);
+    setProductPage(0);
+  }, [selectedBundleIds]);
+
+  const bundleRenderValue = useCallback((selected) => {
+    const values = Array.isArray(selected) ? selected : [];
+    if (values.length === 0 || values.includes(ALL_BUNDLES_VALUE)) {
+      return "All";
+    }
+    const labels = values
+      .map((value) =>
+        bundleOptions.find((bundle) => bundle.bundle_product_id === value)?.bundle_name || value,
+      )
+      .filter(Boolean);
+    if (labels.length <= 2) {
+      return labels.join(", ");
+    }
+    return `${labels.length} selected`;
+  }, [bundleOptions]);
+  const bundleFilterLabel = useMemo(
+    () => bundleRenderValue(selectedBundleIds),
+    [bundleRenderValue, selectedBundleIds],
+  );
+
+  const productTableTitle = useMemo(() => {
+    if (selectedBundleIds.includes(ALL_BUNDLES_VALUE)) {
+      return "All Bundle Products";
+    }
+    if (selectedSpecificBundles.length === 1) {
+      return `${selectedSpecificBundles[0].bundle_name} Products`;
+    }
+    if (selectedSpecificBundles.length > 1) {
+      return "Selected Bundle Products";
+    }
+    return "Bundle Products";
+  }, [selectedBundleIds, selectedSpecificBundles]);
+
+  const productEmptyMessage = effectiveBundleIds.length > 0
+    ? "No products found for the selected bundles and date range."
+    : "No bundles available for the selected date range.";
 
   return (
     <Stack spacing={2}>
@@ -694,29 +788,145 @@ export default function BundlesPanel({
             gap: 1,
             flexDirection: { xs: "column", sm: "row" },
             width: { xs: "100%", md: "auto" },
+            alignItems: { xs: "stretch", sm: "center" },
           }}
         >
-          <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 260 } }}>
-            <Select
-              displayEmpty
-              value={selectedBundleId}
-              onChange={(event) => {
-                setSelectedBundleId(event.target.value);
-                setProductPage(0);
-              }}
-              disabled={optionsStatus === "loading" || bundleOptions.length === 0}
-              sx={{ borderRadius: 2 }}
+          <Box sx={{ minWidth: { xs: "100%", sm: 300 } }}>
+            <Typography
+              variant="caption"
+              sx={{ px: 1.5, pb: 0.5, display: "block", color: "text.secondary" }}
             >
-              <MenuItem value="" disabled>
-                {bundleOptions.length ? "Select bundle" : "No bundles available"}
-              </MenuItem>
-              {bundleOptions.map((bundle) => (
-                <MenuItem key={bundle.bundle_product_id} value={bundle.bundle_product_id}>
-                  {bundle.bundle_name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+              Bundle
+            </Typography>
+            <Button
+              variant="outlined"
+              onClick={(event) => setBundleAnchorEl(event.currentTarget)}
+              disabled={optionsStatus === "loading" || bundleOptions.length === 0}
+              sx={{
+                width: "100%",
+                minHeight: 40,
+                px: 2,
+                borderRadius: 999,
+                textTransform: "none",
+                justifyContent: "space-between",
+                color: "text.primary",
+                borderColor: "divider",
+                bgcolor: "background.paper",
+              }}
+            >
+              <Typography variant="body2" noWrap sx={{ fontWeight: 600, color: "inherit" }}>
+                {bundleFilterLabel}
+              </Typography>
+              <Typography variant="body2" sx={{ color: "text.secondary", ml: 1 }}>
+                {bundleAnchorEl ? "^" : "v"}
+              </Typography>
+            </Button>
+            <MuiPopover
+              open={Boolean(bundleAnchorEl)}
+              anchorEl={bundleAnchorEl}
+              onClose={() => {
+                setBundleAnchorEl(null);
+                setBundleSearchText("");
+              }}
+              anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+              transformOrigin={{ vertical: "top", horizontal: "left" }}
+              PaperProps={{
+                sx: {
+                  mt: 1,
+                  width: 320,
+                  borderRadius: 3,
+                  overflow: "hidden",
+                  backdropFilter: "blur(12px)",
+                  backgroundColor: isDark
+                    ? "rgba(30, 30, 30, 0.78)"
+                    : "rgba(255, 255, 255, 0.9)",
+                  border: "1px solid",
+                  borderColor: isDark
+                    ? "rgba(255, 255, 255, 0.1)"
+                    : "rgba(0, 0, 0, 0.05)",
+                  boxShadow: isDark
+                    ? "0 8px 32px rgba(0, 0, 0, 0.5)"
+                    : "0 8px 32px rgba(0, 0, 0, 0.1)",
+                },
+              }}
+            >
+              <Box sx={{ p: 1.25, pb: 1 }}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  placeholder="Search"
+                  value={bundleSearchText}
+                  onChange={(event) => setBundleSearchText(event.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon fontSize="small" color="action" />
+                      </InputAdornment>
+                    ),
+                    endAdornment: bundleSearchText ? (
+                      <InputAdornment position="end">
+                        <CloseIcon
+                          fontSize="small"
+                          sx={{ cursor: "pointer", fontSize: 16 }}
+                          onClick={() => setBundleSearchText("")}
+                        />
+                      </InputAdornment>
+                    ) : null,
+                  }}
+                />
+              </Box>
+              <Divider />
+              <List
+                sx={{
+                  py: 0,
+                  maxHeight: 360,
+                  overflowY: "auto",
+                }}
+              >
+                {filteredBundleFilterOptions.map((bundle) => {
+                  const bundleId = bundle.bundle_product_id;
+                  const isChecked = selectedBundleIds.includes(bundleId);
+                  return (
+                    <ListItemButton
+                      key={bundleId}
+                      onClick={() => {
+                        const nextSelection = isChecked
+                          ? selectedBundleIds.filter((value) => value !== bundleId)
+                          : [...selectedBundleIds, bundleId];
+                        handleBundleSelectionChange(nextSelection);
+                      }}
+                      dense
+                      sx={{ py: 0.75 }}
+                    >
+                      <Checkbox
+                        checked={isChecked}
+                        size="small"
+                        disableRipple
+                        sx={{
+                          p: 0.5,
+                          mr: 1,
+                        }}
+                      />
+                      <ListItemText
+                        primary={bundle.bundle_name}
+                        primaryTypographyProps={{
+                          fontSize: "0.95rem",
+                          noWrap: true,
+                        }}
+                      />
+                    </ListItemButton>
+                  );
+                })}
+                {filteredBundleFilterOptions.length === 0 && (
+                  <Box sx={{ p: 2, textAlign: "center" }}>
+                    <Typography variant="body2" color="text.secondary">
+                      No bundles found
+                    </Typography>
+                  </Box>
+                )}
+              </List>
+            </MuiPopover>
+          </Box>
 
           <DateRangePicker
             startDate={startDate}
@@ -724,6 +934,7 @@ export default function BundlesPanel({
             onApply={(nextStart, nextEnd) => {
               setStartDate(nextStart);
               setEndDate(nextEnd);
+              setSelectedBundleIds([ALL_BUNDLES_VALUE]);
               setProductPage(0);
               setSummaryPage(0);
             }}
@@ -734,7 +945,7 @@ export default function BundlesPanel({
       {optionsError && <Alert severity="error">{optionsError}</Alert>}
 
       <DataTable
-        title={selectedBundle ? `${selectedBundle.bundle_name} Products` : "Bundle Products"}
+        title={productTableTitle}
         columns={productColumns}
         rows={sortedProductRows}
         status={productsStatus}

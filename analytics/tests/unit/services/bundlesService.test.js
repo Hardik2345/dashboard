@@ -23,6 +23,30 @@ describe("bundlesService", () => {
     expect(normalized.body.error).toBe("bundle_product_id required");
   });
 
+  test("normalizeBundleRequest accepts multiple bundle_product_id values", () => {
+    const normalized = normalizeBundleRequest({
+      start: "2026-05-01",
+      end: "2026-05-03",
+      bundle_product_id: ["111", "222"],
+    });
+
+    expect(normalized.ok).toBe(true);
+    expect(normalized.spec.bundleProductIds).toEqual(["111", "222"]);
+    expect(normalized.spec.bundleProductId).toBe("111");
+  });
+
+  test("normalizeBundleRequest accepts bundle_product_ids JSON payload", () => {
+    const normalized = normalizeBundleRequest({
+      start: "2026-05-01",
+      end: "2026-05-03",
+      bundle_product_ids: JSON.stringify(["333", "444"]),
+    });
+
+    expect(normalized.ok).toBe(true);
+    expect(normalized.spec.bundleProductIds).toEqual(["333", "444"]);
+    expect(normalized.spec.bundleProductId).toBe("333");
+  });
+
   test("getBundleOptions excludes inactive bundles via query", async () => {
     const conn = { query: jest.fn().mockResolvedValue([]) };
     const service = buildBundlesService();
@@ -77,14 +101,17 @@ describe("bundlesService", () => {
       conn,
       start: "2026-05-01",
       end: "2026-05-03",
-      bundleProductId: "8417496367300",
+      bundleProductIds: ["8417496367300", "8395644993732"],
     });
 
+    const sql = conn.query.mock.calls[0][0];
     const [, options] = conn.query.mock.calls[0];
+    expect(sql).toContain("p.bundle_product_id IN (?, ?)");
     expect(options.replacements).toEqual([
       "2026-05-01",
       "2026-05-03",
       "8417496367300",
+      "8395644993732",
     ]);
   });
 });

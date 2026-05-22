@@ -10,11 +10,31 @@ function normalizeBundleRequest(query = {}, options = {}) {
     return range;
   }
 
-  const bundleProductId = (query.bundle_product_id || "")
-    .toString()
-    .trim();
+  let rawBundleProductIds = [];
+  if (typeof query.bundle_product_ids === "string" && query.bundle_product_ids.trim()) {
+    try {
+      const parsed = JSON.parse(query.bundle_product_ids);
+      if (Array.isArray(parsed)) {
+        rawBundleProductIds = parsed;
+      }
+    } catch {
+      rawBundleProductIds = query.bundle_product_ids.split(",");
+    }
+  }
 
-  if (options.requireBundleProductId && !bundleProductId) {
+  if (rawBundleProductIds.length === 0) {
+    rawBundleProductIds = Array.isArray(query.bundle_product_id)
+      ? query.bundle_product_id
+      : query.bundle_product_id
+        ? [query.bundle_product_id]
+        : [];
+  }
+
+  const bundleProductIds = rawBundleProductIds
+    .map((value) => (value || "").toString().trim())
+    .filter(Boolean);
+
+  if (options.requireBundleProductId && bundleProductIds.length === 0) {
     return {
       ok: false,
       status: 400,
@@ -27,7 +47,8 @@ function normalizeBundleRequest(query = {}, options = {}) {
     spec: {
       start: range.data.start,
       end: range.data.end,
-      bundleProductId,
+      bundleProductId: bundleProductIds[0] || "",
+      bundleProductIds,
       brandKey: (query.brand_key || "").toString().trim().toUpperCase(),
     },
   };
@@ -96,7 +117,15 @@ function buildBundlesService() {
     };
   }
 
-  async function getBundleProducts({ conn, start, end, bundleProductId }) {
+  async function getBundleProducts({ conn, start, end, bundleProductIds = [] }) {
+    const filteredBundleIds = Array.isArray(bundleProductIds)
+      ? bundleProductIds.filter(Boolean)
+      : [];
+    if (filteredBundleIds.length === 0) {
+      return { rows: [] };
+    }
+
+    const bundlePlaceholders = filteredBundleIds.map(() => "?").join(", ");
     const sql = `
       SELECT
         p.child_product_sku,
@@ -105,13 +134,13 @@ function buildBundlesService() {
         COALESCE(SUM(p.allocated_sales), 0) AS sales
       FROM bundle_product_daily_rollup p
       WHERE p.date >= ? AND p.date <= ?
-        AND p.bundle_product_id = ?
+        AND p.bundle_product_id IN (${bundlePlaceholders})
       GROUP BY p.child_product_sku, p.child_product_title
       ORDER BY orders DESC, sales DESC, p.child_product_title ASC
     `;
 
     const rows = await conn.query(sql, {
-      replacements: [start, end, bundleProductId],
+      replacements: [start, end, ...filteredBundleIds],
       type: QueryTypes.SELECT,
     });
 

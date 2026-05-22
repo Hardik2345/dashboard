@@ -517,11 +517,18 @@ export async function getBundleSummary(args, options = {}) {
 }
 
 export async function getBundleProducts(args, options = {}) {
+  const bundleProductIds = args.bundle_product_id || args.bundleProductId || [];
+  const normalizedBundleProductIds = Array.isArray(bundleProductIds)
+    ? bundleProductIds
+    : [bundleProductIds].filter(Boolean);
   const params = appendBrandKey(
     {
       start: args.start,
       end: args.end,
-      bundle_product_id: args.bundle_product_id || args.bundleProductId,
+      bundle_product_id: normalizedBundleProductIds[0],
+      bundle_product_ids: normalizedBundleProductIds.length > 0
+        ? JSON.stringify(normalizedBundleProductIds)
+        : undefined,
     },
     args,
   );
