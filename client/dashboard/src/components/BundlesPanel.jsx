@@ -677,7 +677,7 @@ export default function BundlesPanel({
   const productColumns = useMemo(
     () => [
       { id: "child_product_title", label: "Product Name", sortable: true },
-      { id: "orders", label: "Orders", sortable: true, align: "right" },
+      { id: "orders", label: "Allocated Orders", sortable: true, align: "right" },
       { id: "sales", label: "Sales", sortable: true, align: "right" },
     ],
     [],
@@ -971,17 +971,25 @@ export default function BundlesPanel({
             </MuiPopover>
           </Box>
 
-          <DateRangePicker
-            startDate={startDate}
-            endDate={endDate}
-            onApply={(nextStart, nextEnd) => {
-              setStartDate(nextStart);
-              setEndDate(nextEnd);
-              setSelectedBundleIds([ALL_BUNDLES_VALUE]);
-              setProductPage(0);
-              setSummaryPage(0);
-            }}
-          />
+          <Box sx={{ minWidth: { xs: "100%", sm: 200 } }}>
+            <Typography
+              variant="caption"
+              sx={{ px: 1.5, pb: 0.5, display: "block", color: "transparent" }}
+            >
+              Date
+            </Typography>
+            <DateRangePicker
+              startDate={startDate}
+              endDate={endDate}
+              onApply={(nextStart, nextEnd) => {
+                setStartDate(nextStart);
+                setEndDate(nextEnd);
+                setSelectedBundleIds([ALL_BUNDLES_VALUE]);
+                setProductPage(0);
+                setSummaryPage(0);
+              }}
+            />
+          </Box>
         </Box>
       </Box>
 
