@@ -154,11 +154,58 @@ function buildBundlesService() {
     };
   }
 
+  function escapeCsv(value) {
+    if (value === null || value === undefined) return "";
+    const stringValue = String(value);
+    if (/[",\n]/.test(stringValue)) {
+      return `"${stringValue.replace(/"/g, '""')}"`;
+    }
+    return stringValue;
+  }
+
+  async function getBundleSummaryCsv({ conn, start, end }) {
+    const data = await getBundleSummary({ conn, start, end });
+    const headers = ["bundle_product_id", "bundle_name", "orders", "sales"];
+    const lines = [headers.join(",")];
+    for (const row of data.rows) {
+      const values = headers.map((header) => {
+        if (header === "bundle_name") return escapeCsv(row[header]);
+        return row[header];
+      });
+      lines.push(values.join(","));
+    }
+    const dateTag = start === end ? start : `${start}_to_${end}`;
+    return {
+      filename: `bundle_summary_${dateTag}.csv`,
+      csv: lines.join("\n"),
+    };
+  }
+
+  async function getBundleProductsCsv({ conn, start, end, bundleProductIds = [] }) {
+    const data = await getBundleProducts({ conn, start, end, bundleProductIds });
+    const headers = ["child_product_sku", "child_product_title", "orders", "sales"];
+    const lines = [headers.join(",")];
+    for (const row of data.rows) {
+      const values = headers.map((header) => {
+        if (header === "child_product_title" || header === "child_product_sku") return escapeCsv(row[header]);
+        return row[header];
+      });
+      lines.push(values.join(","));
+    }
+    const dateTag = start === end ? start : `${start}_to_${end}`;
+    return {
+      filename: `bundle_products_${dateTag}.csv`,
+      csv: lines.join("\n"),
+    };
+  }
+
   return {
     normalizeBundleRequest,
     getBundleOptions,
     getBundleSummary,
+    getBundleSummaryCsv,
     getBundleProducts,
+    getBundleProductsCsv,
   };
 }
 

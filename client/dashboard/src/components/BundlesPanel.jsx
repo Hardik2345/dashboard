@@ -36,7 +36,7 @@ import { DatePicker } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
-import { getBundleOptions, getBundleProducts, getBundleSummary } from "../lib/api.js";
+import { getBundleOptions, getBundleProducts, getBundleSummary, exportBundleSummaryCsv, exportBundleProductsCsv } from "../lib/api.js";
 
 const DATE_PRESETS = [
   {
@@ -314,6 +314,8 @@ function DateRangePicker({ startDate, endDate, onApply }) {
               }}
               selected={selectedRange}
               allowRange
+              disableDatesBefore={dayjs().subtract(30, 'day').toDate()}
+              disableDatesAfter={dayjs().endOf('day').toDate()}
             />
           </Box>
         </Box>
@@ -324,6 +326,7 @@ function DateRangePicker({ startDate, endDate, onApply }) {
 
 function DataTable({
   title,
+  action,
   columns,
   rows,
   status,
@@ -345,12 +348,15 @@ function DataTable({
 
   return (
     <Stack spacing={1}>
-      <Typography
-        variant="h6"
-        sx={{ fontWeight: 700, color: "text.primary" }}
-      >
-        {title}
-      </Typography>
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <Typography
+          variant="h6"
+          sx={{ fontWeight: 700, color: "text.primary" }}
+        >
+          {title}
+        </Typography>
+        {action}
+      </Box>
 
       <Card variant="outlined" sx={{ overflow: "hidden" }}>
         <CardContent sx={{ p: 0, position: "relative" }}>
@@ -490,6 +496,8 @@ export default function BundlesPanel({
   const [summaryPage, setSummaryPage] = useState(0);
   const [productRowsPerPage, setProductRowsPerPage] = useState(10);
   const [summaryRowsPerPage, setSummaryRowsPerPage] = useState(10);
+  const [exportingSummary, setExportingSummary] = useState(false);
+  const [exportingProducts, setExportingProducts] = useState(false);
 
   useEffect(() => {
     if (!initialStartDate || !initialEndDate) return;
@@ -770,6 +778,41 @@ export default function BundlesPanel({
     ? "No products found for the selected bundles and date range."
     : "No bundles available for the selected date range.";
 
+  const handleExportSummary = async () => {
+    setExportingSummary(true);
+    const resp = await exportBundleSummaryCsv({
+      brand_key: brandKey,
+      start,
+      end,
+    });
+    setExportingSummary(false);
+    if (resp.error || !resp.blob) return;
+    const url = URL.createObjectURL(resp.blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = resp.filename || "bundle_summary.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportProducts = async () => {
+    setExportingProducts(true);
+    const resp = await exportBundleProductsCsv({
+      brand_key: brandKey,
+      start,
+      end,
+      bundle_product_id: effectiveBundleIds,
+    });
+    setExportingProducts(false);
+    if (resp.error || !resp.blob) return;
+    const url = URL.createObjectURL(resp.blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = resp.filename || "bundle_products.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <Stack spacing={2}>
       <Box
@@ -946,6 +989,20 @@ export default function BundlesPanel({
 
       <DataTable
         title={productTableTitle}
+        action={
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={handleExportProducts}
+            disabled={productsStatus === "loading" || exportingProducts}
+          >
+            {exportingProducts ? (
+              <CircularProgress size={20} color="inherit" />
+            ) : (
+              "Export CSV"
+            )}
+          </Button>
+        }
         columns={productColumns}
         rows={sortedProductRows}
         status={productsStatus}
@@ -970,6 +1027,20 @@ export default function BundlesPanel({
 
       <DataTable
         title="Overall Snapshot"
+        action={
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={handleExportSummary}
+            disabled={summaryStatus === "loading" || exportingSummary}
+          >
+            {exportingSummary ? (
+              <CircularProgress size={20} color="inherit" />
+            ) : (
+              "Export CSV"
+            )}
+          </Button>
+        }
         columns={summaryColumns}
         rows={sortedSummaryRows}
         status={summaryStatus}

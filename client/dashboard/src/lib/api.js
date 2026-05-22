@@ -516,6 +516,36 @@ export async function getBundleSummary(args, options = {}) {
   };
 }
 
+export async function exportBundleSummaryCsv(args) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+    },
+    args,
+  );
+  const dateSuffix = formatDateRangeSuffix(params.start, params.end);
+  const fallbackName = dateSuffix
+    ? `bundle_summary_${dateSuffix}.csv`
+    : "bundle_summary.csv";
+  const url = `${resolveApiBase()}/metrics/bundles/summary/export${qs(params)}`;
+  try {
+    const res = await fetch(url, {
+      credentials: "include",
+      headers: { ...authHeaders() },
+    });
+    if (!res.ok) return { error: true, status: res.status };
+    const blob = await res.blob();
+    const fromHeader = filenameFromDisposition(
+      res.headers.get("Content-Disposition"),
+    );
+    return { error: false, blob, filename: fromHeader || fallbackName };
+  } catch (e) {
+    console.error("API error bundles summary csv", e);
+    return { error: true };
+  }
+}
+
 export async function getBundleProducts(args, options = {}) {
   const bundleProductIds = args.bundle_product_id || args.bundleProductId || [];
   const normalizedBundleProductIds = Array.isArray(bundleProductIds)
@@ -540,6 +570,44 @@ export async function getBundleProducts(args, options = {}) {
     error: false,
     rows: Array.isArray(res.data?.rows) ? res.data.rows : [],
   };
+}
+
+export async function exportBundleProductsCsv(args) {
+  const bundleProductIds = args.bundle_product_id || args.bundleProductId || [];
+  const normalizedBundleProductIds = Array.isArray(bundleProductIds)
+    ? bundleProductIds
+    : [bundleProductIds].filter(Boolean);
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+      bundle_product_id: normalizedBundleProductIds[0],
+      bundle_product_ids: normalizedBundleProductIds.length > 0
+        ? JSON.stringify(normalizedBundleProductIds)
+        : undefined,
+    },
+    args,
+  );
+  const dateSuffix = formatDateRangeSuffix(params.start, params.end);
+  const fallbackName = dateSuffix
+    ? `bundle_products_${dateSuffix}.csv`
+    : "bundle_products.csv";
+  const url = `${resolveApiBase()}/metrics/bundles/products/export${qs(params)}`;
+  try {
+    const res = await fetch(url, {
+      credentials: "include",
+      headers: { ...authHeaders() },
+    });
+    if (!res.ok) return { error: true, status: res.status };
+    const blob = await res.blob();
+    const fromHeader = filenameFromDisposition(
+      res.headers.get("Content-Disposition"),
+    );
+    return { error: false, blob, filename: fromHeader || fallbackName };
+  } catch (e) {
+    console.error("API error bundles products csv", e);
+    return { error: true };
+  }
 }
 
 export async function getOrderSplit(args) {
