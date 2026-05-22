@@ -9,7 +9,9 @@ function buildBundlesRouter() {
 
   router.get("/bundles/options", requirePermission("bundles_panel"), brandContext, controller.options);
   router.get("/bundles/summary", requirePermission("bundles_panel"), brandContext, controller.summary);
+  router.get("/bundles/summary/export", requirePermission("bundles_panel"), brandContext, controller.summaryCsv);
   router.get("/bundles/products", requirePermission("bundles_panel"), brandContext, controller.products);
+  router.get("/bundles/products/export", requirePermission("bundles_panel"), brandContext, controller.productsCsv);
 
   return router;
 }
