@@ -208,13 +208,13 @@ function DateRangePicker({ startDate, endDate, onApply }) {
         tabIndex={0}
         sx={{
           px: 1.25,
-          height: 36,
+          height: 40,
           minWidth: { xs: "100%", sm: 200 },
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           cursor: "pointer",
-          borderRadius: 2,
+          borderRadius: 999,
           userSelect: "none",
           textAlign: "center",
           border: "1px solid",
@@ -788,7 +788,7 @@ export default function BundlesPanel({
             gap: 1,
             flexDirection: { xs: "column", sm: "row" },
             width: { xs: "100%", md: "auto" },
-            alignItems: { xs: "stretch", sm: "center" },
+            alignItems: { xs: "stretch", sm: "flex-end" },
           }}
         >
           <Box sx={{ minWidth: { xs: "100%", sm: 300 } }}>
