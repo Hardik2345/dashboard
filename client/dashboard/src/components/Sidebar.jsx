@@ -15,6 +15,7 @@ import {
   Store,
   Table2,
   Bell,
+  FileText,
   LogOut,
   Filter,
   Package,
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const DRAWER_WIDTH = 260;
+const MotionDiv = motion.div;
 
 const AVATAR_COLORS = [
   "#F44336",
@@ -68,6 +70,7 @@ const NAV_ITEMS = [
       { id: "bundles", label: "Bundles", icon: Table2 },
       { id: "inventory", label: "Inventory", icon: Package },
       { id: "alerts", label: "Alerts", icon: Bell },
+      { id: "reports", label: "Reports", icon: FileText },
     ],
   },
   {
@@ -258,7 +261,7 @@ export default function Sidebar({
   return (
     <AnimatePresence>
       {open && (
-        <motion.div
+        <MotionDiv
           initial={isMobile ? false : { x: -DRAWER_WIDTH }}
           animate={{ x: 0 }}
           exit={{ x: -DRAWER_WIDTH }}
@@ -285,7 +288,7 @@ export default function Sidebar({
           >
             <NavContent />
           </Box>
-        </motion.div>
+        </MotionDiv>
       )}
     </AnimatePresence>
   );

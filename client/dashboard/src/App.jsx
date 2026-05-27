@@ -37,6 +37,7 @@ import {
   Store,
   Filter,
   Package,
+  FileText,
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
@@ -45,6 +46,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "bundles", label: "Bundles", icon: Table2 },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "alerts", label: "Alerts", icon: Bell },
+  { id: "reports", label: "Reports", icon: FileText },
   { id: "tenant-setup", label: "Tenant Setup", icon: Store },
   //  { id: "notifications-log", label: "Logs", icon: Bell },
   { id: "access", label: "Access", icon: ShieldCheck },
@@ -137,6 +139,7 @@ const BundlesPanel = lazy(() => import("./components/BundlesPanel.jsx"));
 const AuthorBrandForm = lazy(() => import("./components/AuthorBrandForm.jsx"));
 const AuthorBrandList = lazy(() => import("./components/AuthorBrandList.jsx"));
 const AlertsAdmin = lazy(() => import("./components/AlertsAdmin.jsx"));
+const ReportingAdmin = lazy(() => import("./components/ReportingAdmin.jsx"));
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format("YYYY-MM-DD") : undefined;
@@ -2315,6 +2318,7 @@ export default function App() {
                   {!isMobile &&
                     authorTab !== "dashboard" &&
                     authorTab !== "alerts" &&
+                    authorTab !== "reports" &&
                     authorTab !== "access" &&
                     authorTab !== "notifications-log" &&
                     authorTab !== "tenant-setup" &&
@@ -2900,6 +2904,22 @@ export default function App() {
                         >
                           <Typography variant="body2" color="text.secondary">
                             Add at least one brand to start configuring alerts.
+                          </Typography>
+                        </Paper>
+                      ))}
+
+                    {isAuthor && authorTab === "reports" &&
+                      (hasBrand ? (
+                        <Suspense fallback={<SectionFallback count={2} height={260} />}>
+                          <ReportingAdmin defaultBrandKey={authorBrandKey} />
+                        </Suspense>
+                      ) : (
+                        <Paper
+                          variant="outlined"
+                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to configure reports.
                           </Typography>
                         </Paper>
                       ))}

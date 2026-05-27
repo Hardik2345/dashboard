@@ -181,6 +181,22 @@ export async function doPut(path, body) {
   }
 }
 
+export async function doPatch(path, body) {
+  const url = `${API_BASE}${path}`;
+  try {
+    const res = await fetchWithAuth(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: true, status: res.status, data: json };
+    return { error: false, data: json };
+  } catch {
+    return { error: true };
+  }
+}
+
 export async function doDelete(path) {
   const url = `${API_BASE}${path}`;
   try {
@@ -197,6 +213,87 @@ export async function doDelete(path) {
   } catch {
     return { error: true };
   }
+}
+
+// ---- Reporting service -----------------------------------------------------
+export async function listReportDefinitions() {
+  return doGet("/reports/definitions");
+}
+
+export async function createReportDefinition(payload) {
+  return doPost("/reports/definitions", payload);
+}
+
+export async function updateReportDefinition(id, payload) {
+  return doPatch(`/reports/definitions/${encodeURIComponent(id)}`, payload);
+}
+
+export async function pauseReportDefinition(id) {
+  return doPost(`/reports/definitions/${encodeURIComponent(id)}/pause`);
+}
+
+export async function resumeReportDefinition(id) {
+  return doPost(`/reports/definitions/${encodeURIComponent(id)}/resume`);
+}
+
+export async function previewReportDefinition(id, payload = {}) {
+  return doPost(`/reports/definitions/${encodeURIComponent(id)}/preview`, payload);
+}
+
+export async function runReportNow(id, payload = {}) {
+  return doPost(`/reports/definitions/${encodeURIComponent(id)}/run-now`, payload);
+}
+
+export async function listReportRuns() {
+  return doGet("/reports/runs");
+}
+
+export async function getReportRun(id) {
+  return doGet(`/reports/runs/${encodeURIComponent(id)}`);
+}
+
+export async function approveReportRun(id) {
+  return doPost(`/reports/runs/${encodeURIComponent(id)}/approve`);
+}
+
+export async function rejectReportRun(id, reason = "") {
+  return doPost(`/reports/runs/${encodeURIComponent(id)}/reject`, { reason });
+}
+
+export async function resendReportRun(id) {
+  return doPost(`/reports/runs/${encodeURIComponent(id)}/resend`);
+}
+
+export async function listTaskCategories() {
+  return doGet("/reports/task-categories");
+}
+
+export async function createTaskCategory(payload) {
+  return doPost("/reports/task-categories", payload);
+}
+
+export async function updateTaskCategory(id, payload) {
+  return doPatch(`/reports/task-categories/${encodeURIComponent(id)}`, payload);
+}
+
+export async function deleteTaskCategory(id) {
+  return doDelete(`/reports/task-categories/${encodeURIComponent(id)}`);
+}
+
+export async function listLoggedTasks(params = {}) {
+  return doGet("/reports/logged-tasks", params);
+}
+
+export async function createLoggedTask(payload) {
+  return doPost("/reports/logged-tasks", payload);
+}
+
+export async function updateLoggedTask(id, payload) {
+  return doPatch(`/reports/logged-tasks/${encodeURIComponent(id)}`, payload);
+}
+
+export async function deleteLoggedTask(id) {
+  return doDelete(`/reports/logged-tasks/${encodeURIComponent(id)}`);
 }
 
 // ---- Auth helpers -----------------------------------------------------------
@@ -1010,7 +1107,7 @@ export async function listAuthorBrands() {
   const res = await doGet("/tenant/brands");
   if (res.error) return res;
   // data is { "1": "PTS", "2": "BBB" }
-  const brands = Object.entries(res.data || {}).map(([num, id]) => ({
+  const brands = Object.values(res.data || {}).map((id) => ({
     key: id.toString().toUpperCase()
   }));
   return { error: false, data: { brands } };
@@ -1036,8 +1133,5 @@ export async function deleteAlert(id) {
 export async function setAlertActive(id, isActive) {
   return doPost(`/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
 }
-
-
-
 
 

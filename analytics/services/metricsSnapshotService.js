@@ -386,6 +386,28 @@ function buildSummaryMetric(currentValue, previousValue, deltaCurrent = currentV
   };
 }
 
+function buildZeroBaselineSafeSummaryMetric(
+  currentValue,
+  previousValue,
+  deltaCurrent = currentValue,
+  deltaPrevious = previousValue,
+) {
+  const currentDeltaValue = Number(deltaCurrent || 0);
+  const previousDeltaValue = Number(deltaPrevious || 0);
+  const diff = currentDeltaValue - previousDeltaValue;
+  if (previousDeltaValue <= 0) {
+    return {
+      value: Number(currentValue || 0),
+      previous: Number(previousValue || 0),
+      diff,
+      diff_pct: null,
+      direction: diff > 0.0001 ? "up" : diff < -0.0001 ? "down" : "flat",
+      baseline_unavailable: true,
+    };
+  }
+  return buildSummaryMetric(currentValue, previousValue, deltaCurrent, deltaPrevious);
+}
+
 function buildUnavailableSummaryMetric() {
   return {
     value: null,
@@ -1357,24 +1379,30 @@ function buildMetricsSnapshotService(deps = {}) {
       range: { start: spec.start, end: spec.end },
       prev_range: compareRange,
       metrics: {
-        total_orders: buildSummaryMetric(
-          current.total_orders,
-          previous.total_orders,
-          deltaCurrent.total_orders,
-          deltaPrevious.total_orders,
-        ),
-        total_sales: buildSummaryMetric(
-          current.total_sales,
-          previous.total_sales,
-          deltaCurrent.total_sales,
-          deltaPrevious.total_sales,
-        ),
-        average_order_value: buildSummaryMetric(
-          current.average_order_value,
-          previous.average_order_value,
-          deltaCurrent.average_order_value,
-          deltaPrevious.average_order_value,
-        ),
+        total_orders: (discountActive
+          ? buildZeroBaselineSafeSummaryMetric
+          : buildSummaryMetric)(
+            current.total_orders,
+            previous.total_orders,
+            deltaCurrent.total_orders,
+            deltaPrevious.total_orders,
+          ),
+        total_sales: (discountActive
+          ? buildZeroBaselineSafeSummaryMetric
+          : buildSummaryMetric)(
+            current.total_sales,
+            previous.total_sales,
+            deltaCurrent.total_sales,
+            deltaPrevious.total_sales,
+          ),
+        average_order_value: (discountActive
+          ? buildZeroBaselineSafeSummaryMetric
+          : buildSummaryMetric)(
+            current.average_order_value,
+            previous.average_order_value,
+            deltaCurrent.average_order_value,
+            deltaPrevious.average_order_value,
+          ),
         conversion_rate: discountActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(

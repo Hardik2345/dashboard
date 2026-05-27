@@ -200,6 +200,13 @@ export default function KPIs({
             cvr: !!m.conversion_rate?.unavailable,
             returns: !!m.cancelled_orders?.unavailable || !!m.refunded_orders?.unavailable,
           };
+          const toDelta = (metric) =>
+            typeof metric?.diff_pct === "number"
+              ? {
+                  diff_pct: metric.diff_pct,
+                  direction: metric.direction ?? "flat",
+                }
+              : null;
 
           const returnsData = {
             cancelled_orders: m.cancelled_orders?.value ?? 0,
@@ -227,44 +234,16 @@ export default function KPIs({
             total_orders: orders.value,
           };
 
-          const ordersDelta = {
-            diff_pct: m.total_orders?.diff_pct ?? 0,
-            direction: m.total_orders?.direction ?? "flat",
-          };
-          const salesDelta = {
-            diff_pct: m.total_sales?.diff_pct ?? 0,
-            direction: m.total_sales?.direction ?? "flat",
-          };
-          const aovDelta = {
-            diff_pct: m.average_order_value?.diff_pct ?? 0,
-            direction: m.average_order_value?.direction ?? "flat",
-          };
-          const cvrDelta = {
-            diff_pct: m.conversion_rate?.diff_pct ?? 0,
-            diff_pp: m.conversion_rate?.diff_pp,
-            direction: m.conversion_rate?.direction ?? "flat",
-          };
-          const sessDelta = {
-            diff_pct: m.total_sessions?.diff_pct ?? 0,
-            direction: m.total_sessions?.direction ?? "flat",
-          };
-          const atcDelta = {
-            diff_pct: m.total_atc_sessions?.diff_pct ?? 0,
-            direction: m.total_atc_sessions?.direction ?? "flat",
-          };
-          const cancelledRateDelta = {
-            diff_pct: m.cancelled_orders?.diff_pct ?? 0,
-            direction: m.cancelled_orders?.direction ?? "flat",
-          };
-          const refundedRateDelta = {
-            diff_pct: m.refunded_orders?.diff_pct ?? 0,
-            direction: m.refunded_orders?.direction ?? "flat",
-          };
-
-          const atcRateDelta = {
-            diff_pct: m.atc_rate?.diff_pct ?? 0,
-            direction: m.atc_rate?.direction ?? "flat",
-          };
+          const ordersDelta = toDelta(m.total_orders);
+          const salesDelta = toDelta(m.total_sales);
+          const aovDelta = toDelta(m.average_order_value);
+          const cvrDelta = toDelta(m.conversion_rate);
+          if (cvrDelta) cvrDelta.diff_pp = m.conversion_rate?.diff_pp;
+          const sessDelta = toDelta(m.total_sessions);
+          const atcDelta = toDelta(m.total_atc_sessions);
+          const cancelledRateDelta = toDelta(m.cancelled_orders);
+          const refundedRateDelta = toDelta(m.refunded_orders);
+          const atcRateDelta = toDelta(m.atc_rate);
 
           // Extract previous (compare) values when available
           const cmpOrders = m.total_orders?.previous ?? null;

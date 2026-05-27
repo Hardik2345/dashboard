@@ -92,6 +92,22 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
 
+      // Reporting service
+      '/api/reports': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
+      // Public report approval links
+      '/api/report-approval': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
       // Push Notifications
       '/api/push': {
         target: 'http://localhost:8081',
@@ -166,6 +182,22 @@ export default defineConfig({
         target: 'http://localhost:8081',
         // target: 'https://api.trytechit.co/main',
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
+      // Reporting service
+      '/api/reports': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
+      // Public report approval links
+      '/api/report-approval': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
 

@@ -22,6 +22,10 @@ services:
         condition: service_healthy
       analytics-service:
         condition: service_healthy
+      reporting-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - saas-net
@@ -151,6 +155,44 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+
+  reporting-service:
+    container_name: reporting-service-main
+    build:
+      context: ./reporting-service
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+      - ./reporting-service/.env
+    environment:
+      PORT: 4020
+      NODE_ENV: production
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - saas-net
+      - shared-net
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:4020/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-main
+    restart: unless-stopped
+    networks:
+      - saas-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
 
 networks:
