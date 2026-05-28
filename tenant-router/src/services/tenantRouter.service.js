@@ -1,6 +1,11 @@
 const cdsService = require("./cds.service");
 const cache = require("../cache/inMemoryCache");
 const {
+  recordTenantRouteResolve,
+  recordTenantRouteStaleServed,
+  recordTenantRouteUnavailable,
+} = require("../observability");
+const {
   TenantNotFoundError,
   TenantSuspendedError,
   RoutingUnavailableError,
@@ -22,6 +27,7 @@ const resolveTenant = async (brandId) => {
   const cachedTenant = cache.get(brandId);
   if (cachedTenant) {
     console.log(`[TenantRouter] Cache HIT (Active) for brand: ${brandId}`);
+    recordTenantRouteResolve("cache_hit");
     return validateAndReturn(cachedTenant, brandId);
   }
 
@@ -45,15 +51,20 @@ const resolveTenant = async (brandId) => {
       console.warn(
         `[TenantRouter] Serving STALE metadata for brand ${brandId} due to CDS failure`,
       );
+      recordTenantRouteStaleServed(brandId);
+      recordTenantRouteResolve("stale");
       return validateAndReturn(staleTenant, brandId);
     }
 
+    recordTenantRouteUnavailable(brandId);
+    recordTenantRouteResolve("unavailable");
     throw new RoutingUnavailableError();
   }
 
   // 3. Handle Result
   if (!tenant) {
     console.warn(`[TenantRouter] Brand not found in CDS: ${brandId}`);
+    recordTenantRouteResolve("not_found");
     // Optional: could cache "NOT FOUND" but prompt says "No cache entry created" for unknown brands
     throw new TenantNotFoundError(brandId);
   }
@@ -63,6 +74,7 @@ const resolveTenant = async (brandId) => {
     console.warn(
       `[TenantRouter] Tenant ${brandId} status is ${tenant.status}. NOT caching.`,
     );
+    recordTenantRouteResolve("suspended");
     // "Suspended brands MUST NOT be cached"
     throw new TenantSuspendedError(brandId);
   }
@@ -70,6 +82,7 @@ const resolveTenant = async (brandId) => {
   // 5. Update Cache (Only Active Tenants)
   console.log(`[TenantRouter] Updating cache for brand: ${brandId}`);
   cache.set(brandId, tenant);
+  recordTenantRouteResolve("success");
 
   return validateAndReturn(tenant, brandId);
 };

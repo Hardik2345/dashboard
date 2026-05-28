@@ -6,6 +6,11 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const logger = require("./shared/utils/logger");
+const {
+  initObservability,
+  sentryErrorMiddleware,
+  captureError,
+} = require("./observability");
 const { sequelize } = require("./shared/db/mainSequelize");
 const { buildMetricsRouter } = require("./modules/metrics");
 const { buildProductConversionRouter } = require("./modules/product-conversion");
@@ -19,6 +24,7 @@ const { buildNotificationsRouter } = require("./modules/notifications");
 const app = express();
 app.set("trust proxy", 1);
 app.use(helmet());
+initObservability(app);
 
 app.get("/health", (_req, res) => res.json({ ok: true, service: "analytics" }));
 
@@ -54,6 +60,12 @@ app.use("/", buildUploadsRouter());
 app.use("/", buildApiKeysRouter(sequelize));
 app.use("/shopify", buildShopifyRouter(sequelize));
 app.use("/notifications", buildNotificationsRouter());
+app.use(sentryErrorMiddleware);
+// eslint-disable-next-line no-unused-vars
+app.use((err, _req, res, _next) => {
+  logger.error("[analytics] unhandled route error", err);
+  return res.status(500).json({ error: "Internal Server Error" });
+});
 
 async function init() {
   await sequelize.authenticate();
@@ -71,6 +83,7 @@ async function init() {
     require("./config/brands")
       .fetchBrandIds()
       .catch((err) => {
+        captureError(err, null, { type: "startup_brand_ids" });
         logger.warn("Failed to load dynamic brand IDs on startup", {
           error: err.message,
         });

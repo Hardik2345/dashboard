@@ -1,6 +1,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const app = require('./app');
+const { recordMongoConnectionError, captureError } = require('./observability');
 
 const PORT = process.env.PORT || 4010;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/datum_sessions';
@@ -9,9 +10,15 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/datum_sess
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(MONGO_URI);
+    mongoose.connection.on('error', (error) => {
+      recordMongoConnectionError();
+      captureError(error, null, { type: 'mongo_connection' });
+    });
 
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
+    recordMongoConnectionError();
+    captureError(error, null, { type: 'startup_mongo' });
     console.error(`Error connecting to MongoDB: ${error.message}`);
     process.exit(1);
   }

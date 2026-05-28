@@ -5,6 +5,11 @@ const GlobalUser = require('../models/GlobalUser.model');
 const crypto = require('crypto');
 const AdminUserService = require('../services/adminUser.service');
 const AdminDomainRuleService = require('../services/adminDomainRule.service');
+const {
+    recordAuthLogin,
+    recordAuthRefresh,
+    captureError,
+} = require('../observability');
 
 const RAW_COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'lax').toString().trim().toLowerCase();
 const COOKIE_SAMESITE = (RAW_COOKIE_SAMESITE === 'none' || RAW_COOKIE_SAMESITE === 'lax' || RAW_COOKIE_SAMESITE === 'strict')
@@ -30,6 +35,7 @@ exports.login = async (req, res) => {
         logger.info('AuthController', 'Login request received', { email, ip: req.ip });
 
         const result = await AuthService.login(req.body.email, req.body.password, req.headers['user-agent']);
+        recordAuthLogin('success');
 
         logger.info('AuthController', 'Login success, setting cookie', {
             origin: req.headers.origin,
@@ -45,6 +51,10 @@ exports.login = async (req, res) => {
             user: result.user
         });
     } catch (err) {
+        recordAuthLogin(err.message === 'Invalid credentials' ? 'invalid_credentials' : 'error');
+        if (err.message !== 'Invalid credentials') {
+            captureError(err, req, { type: 'auth_login' });
+        }
         logger.error('AuthController', 'Login error', { error: err.message });
         if (err.message === 'Invalid credentials') return res.status(401).json({ error: 'Invalid credentials' });
         if (err.message === 'User suspended') return res.status(403).json({ error: 'User suspended' });
@@ -102,10 +112,12 @@ exports.refresh = async (req, res) => {
                 headers: !!req.headers['x-refresh-token'],
                 ip: req.ip
             });
+            recordAuthRefresh('missing_token');
             return res.status(401).json({ error: 'Refresh token required' });
         }
 
         const result = await AuthService.refresh(refreshToken);
+        recordAuthRefresh('success');
 
         logger.info('AuthController', 'Refresh success, setting cookie', {
             origin: req.headers.origin,
@@ -119,6 +131,16 @@ exports.refresh = async (req, res) => {
             refresh_token: result.refreshToken
         });
     } catch (err) {
+        const refreshResult =
+            err.message === 'Token reused - Security Alert' || err.message === 'Token reuse detected'
+                ? 'token_reuse'
+                : err.message === 'Invalid token' || err.message === 'Token expired'
+                    ? 'invalid_token'
+                    : 'error';
+        recordAuthRefresh(refreshResult);
+        if (refreshResult === 'token_reuse' || refreshResult === 'error') {
+            captureError(err, req, { type: 'auth_refresh', result: refreshResult });
+        }
         logger.error('AuthController', 'Refresh error', { error: err.message });
         // "Revoked token -> 401", "Expired token -> 401", "User suspended -> 403"
         if (err.message === 'Token reuse detected' || err.message === 'Token reused - Security Alert') return res.status(401).json({ error: 'Token revoked' });

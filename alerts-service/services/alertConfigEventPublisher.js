@@ -2,6 +2,10 @@ const logger = require('../utils/logger');
 const { normalizeAlertConfigEvent } = require('./alertConfigEventNormalizer');
 const { buildRabbitMqTopicPublisher } = require('./rabbitmqTopicPublisher');
 const { buildDslConfigEventBridge } = require('./dslConfigEventBridge');
+const {
+  recordAlertConfigPublish,
+  captureError,
+} = require('../observability');
 
 const EVENT_ROUTING_KEYS = Object.freeze({
   'alert.config.created': 'alerts.config.created',
@@ -31,7 +35,19 @@ function buildAlertConfigEventPublisher(options = {}) {
       correlationId,
     });
 
-    await transport.publish({ routingKey, message: event });
+    try {
+      await transport.publish({ routingKey, message: event });
+      recordAlertConfigPublish('rabbitmq', 'success');
+    } catch (err) {
+      recordAlertConfigPublish('rabbitmq', 'failure');
+      captureError(err, null, {
+        type: 'alert_config_publish',
+        target: 'rabbitmq',
+        eventType,
+        alertId: event.alertId,
+      });
+      throw err;
+    }
     log.info('[alerts-events] published alert config event', {
       eventType,
       routingKey,
@@ -43,6 +59,7 @@ function buildAlertConfigEventPublisher(options = {}) {
     try {
       const dslResult = await dslBridge.sendConfigEventToDsl(event);
       if (!dslResult?.skipped) {
+        recordAlertConfigPublish('dsl', 'success');
         log.info('[alerts-events] dsl fan-out completed', {
           eventType,
           alertId: event.alertId,
@@ -53,6 +70,13 @@ function buildAlertConfigEventPublisher(options = {}) {
         });
       }
     } catch (err) {
+      recordAlertConfigPublish('dsl', 'failure');
+      captureError(err, null, {
+        type: 'alert_config_publish',
+        target: 'dsl',
+        eventType,
+        alertId: event.alertId,
+      });
       log.error('[alerts-events] dsl fan-out failed after broker publish', {
         eventType,
         alertId: event.alertId,

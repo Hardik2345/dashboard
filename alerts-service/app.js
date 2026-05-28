@@ -6,6 +6,15 @@ const helmet = require("helmet");
 const mongoose = require("mongoose");
 
 const logger = require("./utils/logger");
+const {
+  initObservability,
+  sentryErrorMiddleware,
+  captureError,
+  recordInventoryCacheRefreshSuccess,
+  recordInventoryCacheRefreshFailure,
+  recordInventoryEventIngest,
+  recordMongoConnectionError,
+} = require("./observability");
 const { getBrands } = require("./config/brands");
 const { buildAlertsRouter } = require("./routes/alerts");
 const { requireAuthor } = require("./middlewares/auth");
@@ -28,6 +37,7 @@ const app = express();
 app.use(helmet());
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+initObservability(app);
 
 // --- Mongo Connection --------------------------------------------------------
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017";
@@ -166,7 +176,13 @@ async function refreshInventoryCacheForAllBrands() {
   for (const credsDoc of creds) {
     try {
       await refreshInventoryCacheForBrand(credsDoc);
+      recordInventoryCacheRefreshSuccess(credsDoc.shop_name);
     } catch (err) {
+      recordInventoryCacheRefreshFailure(credsDoc.shop_name);
+      captureError(err, null, {
+        type: "inventory_cache_refresh",
+        brand: credsDoc.shop_name,
+      });
       logger.error(`[inventory-cache] Failed to refresh cache for ${credsDoc.shop_name}: ${err.message}`);
     }
   }
@@ -186,6 +202,7 @@ async function runInventoryCacheRefresh() {
     await refreshInventoryCacheForAllBrands();
     logger.info("[inventory-cache] Refresh completed");
   } catch (err) {
+    captureError(err, null, { type: "inventory_cache_refresh_global" });
     logger.error("[inventory-cache] Refresh failed:", err);
   } finally {
     inventoryCacheRefreshInFlight = false;
@@ -274,6 +291,7 @@ app.post("/inventory", requirePipelineKey, async (req, res) => {
 
     await redis.hset(cacheKey, productScope, JSON.stringify(cachePayload));
     await redis.expire(cacheKey, INVENTORY_EVENT_CACHE_TTL_SECONDS);
+    recordInventoryEventIngest("success");
 
     return res.status(202).json({
       ok: true,
@@ -282,6 +300,8 @@ app.post("/inventory", requirePipelineKey, async (req, res) => {
       ttlSeconds: INVENTORY_EVENT_CACHE_TTL_SECONDS,
     });
   } catch (err) {
+    recordInventoryEventIngest("error");
+    captureError(err, req, { type: "inventory_event_ingest" });
     logger.error("[inventory] Failed to cache inventory event:", err);
     return res.status(500).json({ error: "failed_to_cache_inventory_event" });
   }
@@ -767,10 +787,16 @@ app.put("/push/notifications/read", async (req, res) => {
   }
 });
 
+app.use(sentryErrorMiddleware);
+
 // ---- Start ------------------------------------------------------------------
 async function start() {
   try {
     await mongoose.connect(MONGO_URI, { dbName: MONGO_DB });
+    mongoose.connection.on("error", (err) => {
+      recordMongoConnectionError();
+      captureError(err, null, { type: "mongo_connection" });
+    });
     logger.info("[alerts-service] Mongo connected");
     await runInventoryCacheRefresh();
     setInterval(() => {
@@ -787,11 +813,15 @@ async function start() {
       );
     });
   } catch (err) {
+    recordMongoConnectionError();
+    captureError(err, null, { type: "startup" });
     console.error("Failed to start alerts-service", err);
     process.exit(1);
   }
 }
 
-start();
+if (require.main === module) {
+  start();
+}
 
-module.exports = { app, mongoose, Alert, AlertChannel, BrandAlertChannel };
+module.exports = { app, start, mongoose, Alert, AlertChannel, BrandAlertChannel };

@@ -4,6 +4,7 @@
 const mysql = require('mysql2/promise');
 const mysqlCore = require('mysql2');
 const { QueryTypes } = require('sequelize');
+const { recordMysqlConnectionError, captureError } = require('../../observability');
 
 const POOL_MAX = Number(process.env.BRAND_POOL_MAX || 5);
 const POOL_IDLE = Number(process.env.BRAND_POOL_IDLE || 600_000);
@@ -46,7 +47,17 @@ function ensurePool(route) {
 }
 
 async function runQuery(pool, route, sql, options = {}) {
-  const conn = await pool.getConnection();
+  let conn;
+  try {
+    conn = await pool.getConnection();
+  } catch (err) {
+    recordMysqlConnectionError(route.brandId || route.dbName || 'unknown');
+    captureError(err, null, {
+      type: 'mysql_connection',
+      brand: route.brandId || route.dbName || 'unknown',
+    });
+    throw err;
+  }
   try {
     if (!conn.__tzSet) {
       try {

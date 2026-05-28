@@ -9,6 +9,7 @@
     "import:otp-verified": "node scripts/import-otp-verified.js"
   },
   "dependencies": {
+    "@sentry/node": "^10.54.0",
     "amqplib": "^0.10.5",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -18,6 +19,7 @@
     "ioredis": "^5.4.1",
     "mongoose": "^8.6.3",
     "mysql2": "^3.22.0",
+    "prom-client": "^15.1.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -7,11 +7,17 @@ import { Provider } from 'react-redux';
 import { store } from './state/store.js';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { initFrontendObservability } from './observability.js';
+import ObservabilityErrorBoundary from './components/ObservabilityErrorBoundary.jsx';
+
+initFrontendObservability();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <Provider store={store}>
-      <App />
+      <ObservabilityErrorBoundary>
+        <App />
+      </ObservabilityErrorBoundary>
       <ToastContainer position="top-center" delay={5000} />
     </Provider>
   </StrictMode>,

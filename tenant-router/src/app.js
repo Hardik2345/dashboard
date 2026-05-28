@@ -3,10 +3,15 @@ const express = require("express");
 const tenantRoutes = require("./routes/tenant.routes");
 const pipelineRoutes = require("./routes/pipeline.routes");
 const { TenantError } = require("./utils/errors");
+const {
+  initObservability,
+  sentryErrorMiddleware,
+} = require("./observability");
 
 const app = express();
 
 app.use(express.json());
+initObservability(app);
 
 // Routes
 app.use("/tenant", tenantRoutes);
@@ -18,6 +23,7 @@ app.get("/health", (req, res) => {
 });
 
 // Centralized Error Handler
+app.use(sentryErrorMiddleware);
 app.use((err, req, res, _next) => {
   if (err instanceof TenantError) {
     return res.status(err.statusCode).json({ error: err.code });
