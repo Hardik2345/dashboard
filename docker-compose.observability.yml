@@ -1,0 +1,75 @@
+version: "3.9"
+
+services:
+  alloy:
+    image: grafana/alloy:latest
+    container_name: grafana-alloy-main
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    env_file:
+      - .env
+    environment:
+      METRICS_AUTH_TOKEN: ${METRICS_AUTH_TOKEN}
+      GRAFANA_CLOUD_PROMETHEUS_REMOTE_WRITE_URL: ${GRAFANA_CLOUD_PROMETHEUS_REMOTE_WRITE_URL}
+      GRAFANA_CLOUD_PROMETHEUS_USERNAME: ${GRAFANA_CLOUD_PROMETHEUS_USERNAME}
+      GRAFANA_CLOUD_API_TOKEN: ${GRAFANA_CLOUD_API_TOKEN}
+      GRAFANA_CLOUD_LOKI_URL: ${GRAFANA_CLOUD_LOKI_URL}
+      GRAFANA_CLOUD_LOKI_USERNAME: ${GRAFANA_CLOUD_LOKI_USERNAME}
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    ports:
+      - "12345:12345"
+    networks:
+      - saas-net
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter-main
+    command:
+      - --path.rootfs=/host
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - saas-net
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor-main
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - saas-net
+    restart: unless-stopped
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    container_name: nginx-exporter-main
+    command:
+      - --nginx.scrape-uri=http://api-gateway:18080/nginx_status
+    networks:
+      - saas-net
+    restart: unless-stopped
+
+volumes:
+  alloy-data:
+
+networks:
+  saas-net:
+    external: true
+    name: saas-net-main

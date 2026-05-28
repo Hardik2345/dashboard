@@ -1,4 +1,5 @@
 const mysql = require('mysql2/promise');
+const { recordMysqlConnectionError, captureError } = require('../observability');
 
 const pools = new Map();
 
@@ -18,6 +19,15 @@ function getPool(config) {
     enableKeepAlive: true,
     keepAliveInitialDelay: 0,
     ssl: { rejectUnauthorized: false }
+  });
+  pool.on('connection', (conn) => {
+    conn.on('error', (err) => {
+      recordMysqlConnectionError(config.database || 'unknown');
+      captureError(err, null, {
+        type: 'mysql_connection',
+        brand: config.database || 'unknown',
+      });
+    });
   });
 
   pools.set(key, pool);

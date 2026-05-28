@@ -1,5 +1,11 @@
 const admin = require("firebase-admin");
 const path = require("path");
+const {
+  recordFcmSend,
+  setFcmRegisteredTokens,
+  recordFcmInvalidTokensRemoved,
+  captureError,
+} = require("../observability");
 
 // Use stdout/stderr directly so FCM logs are always visible even in production
 // (logger.js silences all console.* in NODE_ENV=production)
@@ -38,6 +44,7 @@ try {
  */
 async function sendToAll(mongooseConnection, title, body, data = {}) {
   if (!firebaseInitialized || !admin.apps.length) {
+    recordFcmSend("not_configured");
     fcmErr(
       "FCM not configured (initialized=" +
         firebaseInitialized +
@@ -52,10 +59,12 @@ async function sendToAll(mongooseConnection, title, body, data = {}) {
     const fcmTokensCollection = mongooseConnection.collection("fcm_tokens");
     const tokensDoc = await fcmTokensCollection.find({}).toArray();
     const tokens = tokensDoc.map((doc) => doc.token).filter(Boolean);
+    setFcmRegisteredTokens(tokens.length);
 
     fcmLog("Found", tokens.length, "FCM token(s). Sending:", title);
 
     if (tokens.length === 0) {
+      recordFcmSend("zero_tokens");
       fcmLog("No FCM tokens registered, skipping dispatch");
       return;
     }
@@ -98,6 +107,8 @@ async function sendToAll(mongooseConnection, title, body, data = {}) {
         ", Failure=" +
         response.failureCount,
     );
+    if (response.successCount > 0) recordFcmSend("success");
+    if (response.failureCount > 0) recordFcmSend("failure");
 
     // Log individual failures for debugging
     if (response.failureCount > 0) {
@@ -120,10 +131,14 @@ async function sendToAll(mongooseConnection, title, body, data = {}) {
 
       if (failedTokens.length > 0) {
         await fcmTokensCollection.deleteMany({ token: { $in: failedTokens } });
+        recordFcmInvalidTokensRemoved(failedTokens.length);
+        setFcmRegisteredTokens(Math.max(0, tokens.length - failedTokens.length));
         fcmLog("Cleaned up", failedTokens.length, "invalid FCM tokens");
       }
     }
   } catch (err) {
+    recordFcmSend("error");
+    captureError(err, null, { type: "fcm_send" });
     fcmErr("Error sending FCM messages:", err.message || err);
     throw err;
   }

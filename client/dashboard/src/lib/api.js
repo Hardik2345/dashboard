@@ -1,3 +1,5 @@
+import { captureApiFailure } from "../observability.js";
+
 function resolveApiBase() {
   const envBase = (import.meta.env.VITE_API_BASE || "").trim();
   if (!envBase) return "/api";
@@ -40,6 +42,10 @@ function appendBrandKey(params, source) {
   if (source?.discount_code) out.discount_code = source.discount_code;
   if (source?.refreshKey) out.refreshKey = source.refreshKey;
   return out;
+}
+
+function captureFailure(path, details = {}) {
+  captureApiFailure(path, details);
 }
 
 function formatDateRangeSuffix(start, end) {
@@ -128,9 +134,14 @@ async function getJSON(path, params) {
   const url = `${API_BASE}${path}${qs(params || {})}`;
   try {
     const res = await fetchWithAuth(url);
-    if (!res.ok) throw new Error(`${res.status}`);
+    if (!res.ok) {
+      const err = new Error(`${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
     return await res.json();
   } catch (e) {
+    captureFailure(path, { status: e?.status, method: "GET", brandKey: params?.brand_key });
     console.error("API error", path, e);
     return { __error: true };
   }
@@ -142,9 +153,13 @@ export async function doGet(path, params, options = {}) {
   try {
     const res = await fetchWithAuth(url, { signal: options.signal });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) return { error: true, status: res.status, data: json };
+    if (!res.ok) {
+      captureFailure(path, { status: res.status, method: "GET", brandKey: params?.brand_key });
+      return { error: true, status: res.status, data: json };
+    }
     return { error: false, data: json };
   } catch {
+    captureFailure(path, { method: "GET", brandKey: params?.brand_key });
     return { error: true };
   }
 }
@@ -158,9 +173,13 @@ export async function doPost(path, body) {
       body: JSON.stringify(body || {}),
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) return { error: true, status: res.status, data: json };
+    if (!res.ok) {
+      captureFailure(path, { status: res.status, method: "POST", brandKey: body?.brand_key });
+      return { error: true, status: res.status, data: json };
+    }
     return { error: false, data: json };
   } catch {
+    captureFailure(path, { method: "POST", brandKey: body?.brand_key });
     return { error: true };
   }
 }
@@ -174,9 +193,13 @@ export async function doPut(path, body) {
       body: JSON.stringify(body || {}),
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) return { error: true, status: res.status, data: json };
+    if (!res.ok) {
+      captureFailure(path, { status: res.status, method: "PUT", brandKey: body?.brand_key });
+      return { error: true, status: res.status, data: json };
+    }
     return { error: false, data: json };
   } catch {
+    captureFailure(path, { method: "PUT", brandKey: body?.brand_key });
     return { error: true };
   }
 }
@@ -192,9 +215,13 @@ export async function doDelete(path) {
     } catch {
       // Ignore empty JSON bodies on delete
     }
-    if (!res.ok) return { error: true, status: res.status, data: json };
+    if (!res.ok) {
+      captureFailure(path, { status: res.status, method: "DELETE" });
+      return { error: true, status: res.status, data: json };
+    }
     return { error: false, data: json };
   } catch {
+    captureFailure(path, { method: "DELETE" });
     return { error: true };
   }
 }
@@ -1111,8 +1138,6 @@ export async function deleteAlert(id) {
 export async function setAlertActive(id, isActive) {
   return doPost(`/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
 }
-
-
 
 
 

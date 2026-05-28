@@ -4,6 +4,10 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const sessionRoutes = require('./routes/sessionRoutes');
+const {
+  initObservability,
+  sentryErrorMiddleware,
+} = require('./observability');
 
 const app = express();
 
@@ -16,6 +20,7 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(morgan('dev'));
+initObservability(app);
 
 // Rate limiting for the sessions endpoint
 const sessionsLimiter = rateLimit({
@@ -33,6 +38,7 @@ app.get('/health', (req, res) => {
 });
 
 // Error handler
+app.use(sentryErrorMiddleware);
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({

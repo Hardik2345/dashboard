@@ -1,6 +1,10 @@
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const authRoutes = require('./routes/auth.routes');
+const {
+    initObservability,
+    sentryErrorMiddleware,
+} = require('./observability');
 
 const app = express();
 
@@ -8,6 +12,7 @@ app.set('trust proxy', 1);
 
 app.use(express.json());
 app.use(cookieParser());
+initObservability(app);
 
 // Basic CORS with credentials support (configure via env)
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || '')
@@ -46,6 +51,7 @@ app.use('/auth', authRoutes);
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
 // Standard error handler
+app.use(sentryErrorMiddleware);
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
     console.error(err.stack);

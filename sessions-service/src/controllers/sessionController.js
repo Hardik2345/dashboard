@@ -1,5 +1,6 @@
 const Session = require('../models/Session');
 const { getClientIp } = require('../utils/ip');
+const { recordSessionCreate, captureError } = require('../observability');
 
 const SESSION_WINDOW_MINUTES = parseInt(process.env.SESSION_WINDOW_MINUTES || '30', 10);
 
@@ -29,6 +30,7 @@ exports.createSession = async (req, res) => {
 
     // Basic validation
     if (!sessionId || !userId || !email || !startedAt) {
+      recordSessionCreate('validation_error');
       return res.status(400).json({
         success: false,
         message: 'Missing required fields: sessionId, userId, email, startedAt'
@@ -37,6 +39,7 @@ exports.createSession = async (req, res) => {
 
     const startedAtDate = new Date(startedAt);
     if (isNaN(startedAtDate.getTime())) {
+      recordSessionCreate('validation_error');
       return res.status(400).json({
         success: false,
         message: 'Invalid startedAt timestamp'
@@ -46,6 +49,7 @@ exports.createSession = async (req, res) => {
     // Check for existing session ID (uniqueness)
     const existingById = await Session.findOne({ sessionId });
     if (existingById) {
+      recordSessionCreate('duplicate');
       return res.status(409).json({
         success: false,
         message: 'Duplicate sessionId'
@@ -62,6 +66,7 @@ exports.createSession = async (req, res) => {
 
       if (diffMins < SESSION_WINDOW_MINUTES) {
         console.log(`[SessionController] Ignoring duplicate session for ${userId}. Last update was ${diffMins}m ago.`);
+        recordSessionCreate('ignored');
         return res.status(200).json({
           success: true,
           ignored: true,
@@ -96,6 +101,7 @@ exports.createSession = async (req, res) => {
 
 
     await newSession.save();
+    recordSessionCreate('success');
     console.log(`[SessionController] Session ${sessionId} saved successfully for brand ${finalBrand}.`);
 
     return res.status(201).json({
@@ -105,6 +111,8 @@ exports.createSession = async (req, res) => {
     });
 
   } catch (error) {
+    recordSessionCreate('error');
+    captureError(error, req, { type: 'session_create' });
     console.error('[SessionController] Error creating session:', error);
     return res.status(500).json({
       success: false,

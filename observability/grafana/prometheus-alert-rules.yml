@@ -1,0 +1,159 @@
+groups:
+  - name: production-core-critical
+    interval: 30s
+    rules:
+      - alert: ServiceDownCritical
+        expr: up{job=~"auth-service|analytics-service|alerts-service|tenant-router|sessions-service|api-gateway"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          pagerduty_service: production-platform-critical
+        annotations:
+          summary: "Core service scrape is down: {{ $labels.job }}"
+
+      - alert: High5xxRateCritical
+        expr: |
+          (
+            sum by (service) (rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum by (service) (rate(http_requests_total[5m]))
+          ) > 0.02
+          and
+          sum by (service) (increase(http_requests_total[5m])) >= 20
+        for: 5m
+        labels:
+          severity: critical
+          pagerduty_service: production-platform-critical
+        annotations:
+          summary: "High 5xx rate on {{ $labels.service }}"
+
+      - alert: HighLatencyWarning
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (service, le) (rate(http_request_duration_seconds_bucket[10m]))
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 latency on {{ $labels.service }}"
+
+      - alert: AuthLoginFailureSpikeCritical
+        expr: |
+          increase(auth_login_total{result="error"}[5m]) > 5
+          or
+          increase(auth_refresh_total{result=~"error|invalid_token"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: critical
+          pagerduty_service: production-platform-critical
+        annotations:
+          summary: "Auth login or refresh failures spiking"
+
+      - alert: AuthTokenReuseCritical
+        expr: increase(auth_token_reuse_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          pagerduty_service: security-critical
+        annotations:
+          summary: "Refresh token reuse detected"
+
+      - alert: TenantRoutingUnavailableCritical
+        expr: increase(tenant_route_unavailable_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+          pagerduty_service: production-platform-critical
+        annotations:
+          summary: "Tenant routing unavailable for {{ $labels.brand_key }}"
+
+      - alert: TenantServingStaleWarning
+        expr: increase(tenant_route_stale_served_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tenant-router served stale metadata for {{ $labels.brand_key }}"
+
+      - alert: FCMDeliveryCritical
+        expr: |
+          (
+            sum(rate(fcm_send_total{result=~"failure|error|not_configured"}[10m]))
+            /
+            sum(rate(fcm_send_total[10m]))
+          ) > 0.25
+          or
+          increase(fcm_send_total{result=~"error|not_configured"}[10m]) > 0
+        for: 10m
+        labels:
+          severity: critical
+          pagerduty_service: alert-delivery-critical
+        annotations:
+          summary: "FCM delivery failure rate is high"
+
+      - alert: FCMZeroTokensWarning
+        expr: fcm_registered_tokens == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No FCM tokens registered"
+
+      - alert: InventoryCacheStaleCritical
+        expr: time() - max(inventory_cache_refresh_last_success_timestamp_seconds) > 2700
+        for: 5m
+        labels:
+          severity: critical
+          pagerduty_service: production-platform-critical
+        annotations:
+          summary: "Inventory cache has not refreshed successfully for 45 minutes"
+
+      - alert: InventoryCacheBrandFailureWarning
+        expr: increase(inventory_cache_refresh_failures_total[30m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Inventory cache refresh failed for {{ $labels.brand }}"
+
+      - alert: DBOrRedisUnavailableCritical
+        expr: |
+          increase(mongo_connection_errors_total[3m]) > 0
+          or increase(mysql_connection_errors_total[3m]) > 0
+          or increase(redis_connection_errors_total[3m]) > 0
+        for: 3m
+        labels:
+          severity: critical
+          pagerduty_service: production-platform-critical
+        annotations:
+          summary: "Database or Redis connectivity errors detected"
+
+      - alert: ContainerRestartCritical
+        expr: changes(container_start_time_seconds{name=~".*-main"}[10m]) > 2
+        for: 0m
+        labels:
+          severity: critical
+          pagerduty_service: production-platform-critical
+        annotations:
+          summary: "Container restarted repeatedly: {{ $labels.name }}"
+
+      - alert: HostResourceWarning
+        expr: |
+          (
+            1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})
+          ) > 0.80
+          or
+          (
+            1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+          ) > 0.85
+          or
+          (
+            1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[15m]))
+          ) > 0.90
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host resource usage is high"

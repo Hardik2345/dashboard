@@ -68,6 +68,7 @@ import {
 } from "./lib/api.js";
 import { initializeSessionTracking } from "./lib/sessionTracker.js";
 import { isRangeOver30DaysInclusive } from "./lib/dateRange.js";
+import { setFrontendUserContext } from "./observability.js";
 
 import { TextField, Button, Paper, Typography, Chip } from "@mui/material";
 import axios from "axios";
@@ -426,6 +427,10 @@ export default function App() {
       (user?.brandKey || "").toString().trim().toUpperCase() ||
       viewerBrands[0] ||
       "";
+
+  useEffect(() => {
+    setFrontendUserContext(user, activeBrandKey);
+  }, [user, activeBrandKey]);
 
   // Session Tracking Initialization
   useEffect(() => {

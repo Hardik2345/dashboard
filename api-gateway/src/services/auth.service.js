@@ -259,6 +259,7 @@ class AuthService {
                     userId: tokenDoc.user_id,
                     revokedAt: tokenDoc.revoked_at
                 });
+                require('../observability').recordAuthTokenReuse();
                 await this.revokeChain(tokenDoc._id);
                 throw new Error('Token reused - Security Alert');
             }
