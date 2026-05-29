@@ -8,8 +8,8 @@ Create these outside the repo:
 
 - Sentry Cloud projects: `dashboard-frontend`, `api-gateway-auth`, `analytics-service`, `alerts-service`, `tenant-router`, `sessions-service`.
 - Grafana Cloud stack with Prometheus remote-write and Loki credentials.
-- PagerDuty services: `Production Platform Critical`, `Security Critical`, `Alert Delivery Critical`.
-- Slack channels: `#prod-alerts-critical`, `#prod-alerts-warning`, `#prod-observability`.
+- Grafana Cloud email contact point: `prod-critical-email`.
+- Optional Slack channels: `#prod-alerts-critical`, `#prod-alerts-warning`, `#prod-observability`.
 
 ## Required Environment Variables
 
@@ -49,6 +49,16 @@ Set for the Alloy collector:
 - `GRAFANA_CLOUD_LOKI_USERNAME`
 - `METRICS_AUTH_TOKEN`
 
+Set for Grafana alert rule provisioning:
+
+- `GRAFANA_STACK_URL`
+- `GRAFANA_SERVICE_ACCOUNT_TOKEN`
+- `GRAFANA_PROMETHEUS_DATASOURCE_UID` (optional if the stack has one Prometheus data source)
+- `GRAFANA_ORG_ID=1`
+- `GRAFANA_ALERT_FOLDER_UID`
+- `GRAFANA_ALERT_FOLDER_TITLE`
+- `GRAFANA_INCLUDE_WARNING_ALERTS=false`
+
 Values:
 
 - `GRAFANA_CLOUD_PROMETHEUS_REMOTE_WRITE_URL`: Grafana Cloud Prometheus remote-write endpoint.
@@ -57,6 +67,11 @@ Values:
 - `GRAFANA_CLOUD_LOKI_URL`: Grafana Cloud Loki push endpoint.
 - `GRAFANA_CLOUD_LOKI_USERNAME`: Grafana Cloud Loki instance/user id.
 - `METRICS_AUTH_TOKEN`: same token used by app services.
+- `GRAFANA_STACK_URL`: your stack URL, for example `https://your-stack.grafana.net`.
+- `GRAFANA_SERVICE_ACCOUNT_TOKEN`: Grafana service account token with alerting provisioning permissions.
+- `GRAFANA_PROMETHEUS_DATASOURCE_UID`: Prometheus data source UID; leave blank only if the script can auto-detect it.
+- `GRAFANA_ORG_ID`: usually `1` in Grafana Cloud.
+- `GRAFANA_INCLUDE_WARNING_ALERTS`: keep `false` until warning alerts have a non-email route.
 
 Set for the frontend build:
 
@@ -91,24 +106,17 @@ Values:
 1. Create or open your Grafana Cloud stack.
 2. Create a Cloud Access Policy token that can publish metrics and logs.
 3. Copy Prometheus remote-write URL, Prometheus username, Loki URL, and Loki username into the root `.env`.
-4. Import or recreate `grafana/prometheus-alert-rules.yml` as Grafana managed alert rules.
-5. Create contact points for Slack and PagerDuty.
-6. Create notification policies:
-   - `severity=critical` -> PagerDuty + `#prod-alerts-critical`
-   - `severity=warning` -> `#prod-alerts-warning`
-   - `pagerduty_service=production-platform-critical` -> Production Platform Critical
-   - `pagerduty_service=security-critical` -> Security Critical
-   - `pagerduty_service=alert-delivery-critical` -> Alert Delivery Critical
+4. Create the `prod-critical-email` contact point.
+5. Create a notification policy route:
+   - `severity=critical` -> `prod-critical-email`
+6. Leave warning alerts unrouted unless a non-email route exists.
+7. Create a Grafana service account token for alert rule provisioning.
+8. Apply the converted Grafana-managed rules:
 
-### PagerDuty
-
-1. Create services:
-   - `Production Platform Critical`
-   - `Security Critical`
-   - `Alert Delivery Critical`
-2. Add Grafana as an Events API integration for each service.
-3. Copy integration keys into Grafana contact points.
-4. Test each contact point with a non-production test alert.
+```sh
+node observability/grafana/apply-alert-rules.mjs --dry-run
+node observability/grafana/apply-alert-rules.mjs
+```
 
 ### Slack
 
@@ -149,13 +157,13 @@ Alloy scrapes protected `/metrics` endpoints, node-exporter, and cAdvisor, then 
 
 ## Alerts
 
-`grafana/prometheus-alert-rules.yml` defines the first production alert set. Import or translate these into Grafana Cloud managed alerts, then route labels as follows:
+`grafana/prometheus-alert-rules.yml` defines the Prometheus-style source alert set.
+`grafana/grafana-managed-alert-rules.json` is the converted Grafana-managed source consumed by `grafana/apply-alert-rules.mjs`.
 
-- `severity=critical`: PagerDuty + `#prod-alerts-critical`
-- `severity=warning`: `#prod-alerts-warning`
-- `pagerduty_service=production-platform-critical`: `Production Platform Critical`
-- `pagerduty_service=security-critical`: `Security Critical`
-- `pagerduty_service=alert-delivery-critical`: `Alert Delivery Critical`
+By default, the apply script provisions only critical alerts. This avoids warning email floods while the root notification policy still has an email fallback. Set `GRAFANA_INCLUDE_WARNING_ALERTS=true` only after warnings have a quiet route.
+
+- `severity=critical`: `prod-critical-email`
+- `severity=warning`: Grafana UI only for now, or optional Slack later
 
 ## Uptime Checks
 

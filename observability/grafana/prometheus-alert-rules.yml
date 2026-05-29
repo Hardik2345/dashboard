@@ -7,7 +7,6 @@ groups:
         for: 2m
         labels:
           severity: critical
-          pagerduty_service: production-platform-critical
         annotations:
           summary: "Core service scrape is down: {{ $labels.job }}"
 
@@ -23,7 +22,6 @@ groups:
         for: 5m
         labels:
           severity: critical
-          pagerduty_service: production-platform-critical
         annotations:
           summary: "High 5xx rate on {{ $labels.service }}"
 
@@ -47,7 +45,6 @@ groups:
         for: 5m
         labels:
           severity: critical
-          pagerduty_service: production-platform-critical
         annotations:
           summary: "Auth login or refresh failures spiking"
 
@@ -56,7 +53,6 @@ groups:
         for: 0m
         labels:
           severity: critical
-          pagerduty_service: security-critical
         annotations:
           summary: "Refresh token reuse detected"
 
@@ -65,7 +61,6 @@ groups:
         for: 2m
         labels:
           severity: critical
-          pagerduty_service: production-platform-critical
         annotations:
           summary: "Tenant routing unavailable for {{ $labels.brand_key }}"
 
@@ -89,7 +84,6 @@ groups:
         for: 10m
         labels:
           severity: critical
-          pagerduty_service: alert-delivery-critical
         annotations:
           summary: "FCM delivery failure rate is high"
 
@@ -106,7 +100,6 @@ groups:
         for: 5m
         labels:
           severity: critical
-          pagerduty_service: production-platform-critical
         annotations:
           summary: "Inventory cache has not refreshed successfully for 45 minutes"
 
@@ -126,7 +119,6 @@ groups:
         for: 3m
         labels:
           severity: critical
-          pagerduty_service: production-platform-critical
         annotations:
           summary: "Database or Redis connectivity errors detected"
 
@@ -135,7 +127,6 @@ groups:
         for: 0m
         labels:
           severity: critical
-          pagerduty_service: production-platform-critical
         annotations:
           summary: "Container restarted repeatedly: {{ $labels.name }}"
 
