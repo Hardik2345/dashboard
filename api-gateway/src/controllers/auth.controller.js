@@ -47,7 +47,6 @@ exports.login = async (req, res) => {
         logger.info('AuthController', 'Login response sent', { email });
         res.json({
             access_token: result.accessToken,
-            refresh_token: result.refreshToken,
             user: result.user
         });
     } catch (err) {
@@ -81,7 +80,6 @@ exports.signup = async (req, res) => {
         logger.info('AuthController', 'Signup success', { email, brand: primary_brand_id });
         res.status(201).json({
             access_token: result.accessToken,
-            refresh_token: result.refreshToken,
             user: {
                 id: result.user._id,
                 email: result.user.email,
@@ -102,14 +100,11 @@ exports.signup = async (req, res) => {
 exports.refresh = async (req, res) => {
     try {
         logger.info('AuthController', 'Refresh request received', { ip: req.ip });
-        // Prefer explicit token from body/header for PWA clients where cookie updates can be unreliable.
-        const refreshToken = req.body.refresh_token || req.headers['x-refresh-token'] || req.cookies.refresh_token;
+        const refreshToken = req.cookies.refresh_token;
 
         if (!refreshToken) {
-            logger.warn('AuthController', 'Refresh failed - No refresh_token found in cookies, body, or headers', {
+            logger.warn('AuthController', 'Refresh failed - No refresh_token found', {
                 cookies: Object.keys(req.cookies || {}),
-                body: !!req.body.refresh_token,
-                headers: !!req.headers['x-refresh-token'],
                 ip: req.ip
             });
             recordAuthRefresh('missing_token');
@@ -127,8 +122,7 @@ exports.refresh = async (req, res) => {
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
         logger.info('AuthController', 'Refresh success');
         res.json({
-            access_token: result.accessToken,
-            refresh_token: result.refreshToken
+            access_token: result.accessToken
         });
     } catch (err) {
         const refreshResult =
@@ -142,6 +136,7 @@ exports.refresh = async (req, res) => {
             captureError(err, req, { type: 'auth_refresh', result: refreshResult });
         }
         logger.error('AuthController', 'Refresh error', { error: err.message });
+        res.clearCookie('refresh_token', { ...COOKIE_OPTIONS, maxAge: 0 });
         // "Revoked token -> 401", "Expired token -> 401", "User suspended -> 403"
         if (err.message === 'Token reuse detected' || err.message === 'Token reused - Security Alert') return res.status(401).json({ error: 'Token revoked' });
         if (err.message === 'Invalid token' || err.message === 'Token expired') return res.status(401).json({ error: 'Token invalid or expired' });
@@ -154,7 +149,7 @@ exports.refresh = async (req, res) => {
 exports.logout = async (req, res) => {
     try {
         logger.info('AuthController', 'Logout request received');
-        const refreshToken = req.body.refresh_token || req.headers['x-refresh-token'] || req.cookies.refresh_token;
+        const refreshToken = req.cookies.refresh_token;
         if (refreshToken) {
             await AuthService.logout(refreshToken);
         }
@@ -444,7 +439,6 @@ exports.googleCallback = async (req, res) => {
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
         const payload = {
             access_token: result.accessToken,
-            refresh_token: result.refreshToken,
             user: {
                 id: result.user._id,
                 email: result.user.email,
@@ -457,7 +451,6 @@ exports.googleCallback = async (req, res) => {
         if (redirect) {
             const redirectUrl = new URL(redirect);
             redirectUrl.searchParams.set('access_token', payload.access_token);
-            redirectUrl.searchParams.set('refresh_token', payload.refresh_token);
             redirectUrl.searchParams.set('email', payload.user.email);
             return res.redirect(redirectUrl.toString());
         }
