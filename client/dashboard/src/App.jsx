@@ -80,6 +80,7 @@ import {
   fetchCurrentUser,
   loginUser,
   logoutUser,
+  resetAuthState,
 } from "./state/slices/authSlice.js";
 import { setBrand } from "./state/slices/brandSlice.js";
 import {
@@ -1899,12 +1900,9 @@ export default function App() {
     // Check for access_token in URL (OAuth callback)
     const params = new URLSearchParams(window.location.search);
     const token = params.get("access_token");
-    const refreshToken = params.get("refresh_token");
     if (token) {
       window.localStorage.setItem("gateway_access_token", token);
-      if (refreshToken) {
-        window.localStorage.setItem("gateway_refresh_token", refreshToken);
-      }
+      window.localStorage.removeItem("gateway_refresh_token");
       // Clean URL
       window.history.replaceState({}, document.title, window.location.pathname);
     }
@@ -1916,6 +1914,14 @@ export default function App() {
     if (brandParam) {
       dispatch(setBrand(brandParam.toUpperCase()));
     }
+  }, [dispatch]);
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      dispatch(resetAuthState());
+    };
+    window.addEventListener("auth:session-expired", handleSessionExpired);
+    return () => window.removeEventListener("auth:session-expired", handleSessionExpired);
   }, [dispatch]);
 
   // Session Expiry Notification - DISABLED per user request

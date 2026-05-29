@@ -75,29 +75,33 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+function clearStoredAuth() {
+  window.localStorage.removeItem("gateway_access_token");
+  window.localStorage.removeItem("gateway_refresh_token");
+  window.dispatchEvent(new Event("auth:session-expired"));
+}
+
 async function refreshAccessToken() {
   try {
-    const refreshToken = window.localStorage.getItem("gateway_refresh_token");
     const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(refreshToken ? { "x-refresh-token": refreshToken } : {}),
       },
       credentials: "include",
-      body: JSON.stringify({ refresh_token: refreshToken }), // Send in body as fallback
+      body: JSON.stringify({}),
     });
     const json = await res.json();
     if (!res.ok || !json.access_token) {
+      clearStoredAuth();
       return false;
     }
     window.localStorage.setItem("gateway_access_token", json.access_token);
-    if (json.refresh_token) {
-      window.localStorage.setItem("gateway_refresh_token", json.refresh_token);
-    }
+    window.localStorage.removeItem("gateway_refresh_token");
     return true;
   } catch (err) {
     console.error("Failed to refresh token", err);
+    clearStoredAuth();
     return false;
   }
 }
@@ -239,9 +243,7 @@ export async function login(email, password) {
     if (!res.ok || !json.access_token)
       return { error: true, status: res.status, data: json };
     window.localStorage.setItem("gateway_access_token", json.access_token);
-    if (json.refresh_token) {
-      window.localStorage.setItem("gateway_refresh_token", json.refresh_token);
-    }
+    window.localStorage.removeItem("gateway_refresh_token");
     return { error: false, data: json };
   } catch {
     return { error: true };
@@ -250,8 +252,7 @@ export async function login(email, password) {
 
 export async function logout() {
   try {
-    window.localStorage.removeItem("gateway_access_token");
-    window.localStorage.removeItem("gateway_refresh_token");
+    clearStoredAuth();
     await fetch(`${API_BASE}/auth/logout`, {
       method: "POST",
       headers: authHeaders(),
@@ -1138,6 +1139,5 @@ export async function deleteAlert(id) {
 export async function setAlertActive(id, isActive) {
   return doPost(`/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
 }
-
 
 
