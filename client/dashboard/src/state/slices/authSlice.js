@@ -50,6 +50,15 @@ const authSlice = createSlice({
     setUser(state, action) {
       state.user = action.payload || null;
     },
+    clearAuthState(state) {
+      state.user = null;
+      state.expiresAt = null;
+      state.initialized = true;
+      state.meStatus = 'idle';
+      state.loginStatus = 'idle';
+      state.loginError = null;
+      state.logoutStatus = 'idle';
+    },
     resetAuthState() {
       return initialState;
     },
@@ -99,5 +108,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { setUser, resetAuthState } = authSlice.actions;
+export const { setUser, clearAuthState, resetAuthState } = authSlice.actions;
 export default authSlice.reducer;

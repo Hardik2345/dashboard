@@ -9,15 +9,18 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { initFrontendObservability } from './observability.js';
 import ObservabilityErrorBoundary from './components/ObservabilityErrorBoundary.jsx';
+import { BrowserRouter } from 'react-router-dom';
 
 initFrontendObservability();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <Provider store={store}>
-      <ObservabilityErrorBoundary>
-        <App />
-      </ObservabilityErrorBoundary>
+      <BrowserRouter>
+        <ObservabilityErrorBoundary>
+          <App />
+        </ObservabilityErrorBoundary>
+      </BrowserRouter>
       <ToastContainer position="top-center" delay={5000} />
     </Provider>
   </StrictMode>,
