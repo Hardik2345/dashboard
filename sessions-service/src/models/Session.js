@@ -46,6 +46,10 @@ const sessionSchema = new mongoose.Schema({
   timezone: {
     type: String
   },
+  route: {
+    type: String,
+    default: null
+  },
   ipAddress: {
     type: String
   },

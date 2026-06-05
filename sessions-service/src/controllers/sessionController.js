@@ -25,7 +25,8 @@ exports.createSession = async (req, res) => {
       platform,
       screenWidth,
       screenHeight,
-      timezone
+      timezone,
+      route
     } = req.body;
 
     // Basic validation
@@ -96,6 +97,7 @@ exports.createSession = async (req, res) => {
       screenWidth,
       screenHeight,
       timezone,
+      route,
       ipAddress
     });
 

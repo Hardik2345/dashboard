@@ -25,6 +25,7 @@ function getBrowserMetadata() {
     screenWidth: window.screen.width,
     screenHeight: window.screen.height,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    route: window.location.pathname || "/",
   };
 }
 

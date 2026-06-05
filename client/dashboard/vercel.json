@@ -11,6 +11,14 @@
       "source": "/api/(.*)",
       "destination": "/api/proxy?path=$1"
     },
+    { "source": "/dashboard", "destination": "/" },
+    { "source": "/funnels", "destination": "/" },
+    { "source": "/bundles", "destination": "/" },
+    { "source": "/inventory", "destination": "/" },
+    { "source": "/alerts", "destination": "/" },
+    { "source": "/access-control", "destination": "/" },
+    { "source": "/configurations", "destination": "/" },
+    { "source": "/tenant-setup", "destination": "/" },
     { "source": "/login", "destination": "/" },
     { "source": "/unauthorized", "destination": "/" }
   ],

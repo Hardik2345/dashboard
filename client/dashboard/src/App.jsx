@@ -7,6 +7,7 @@ import {
   lazy,
 } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useLocation, useNavigate } from "react-router-dom";
 import dayjs from "dayjs";
 import { AppProvider } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
@@ -51,6 +52,50 @@ const MOBILE_NAV_ITEMS = [
   { id: "traffic-split-config", label: "Traffic Config", icon: Table2 },
   //  { id: 'brands', label: 'Setup', icon: Store },
 ];
+
+const TAB_ROUTE_MAP = {
+  dashboard: "/dashboard",
+  "product-conversion": "/funnels",
+  bundles: "/bundles",
+  inventory: "/inventory",
+  alerts: "/alerts",
+  access: "/access-control",
+  "traffic-split-config": "/configurations",
+  "tenant-setup": "/tenant-setup",
+};
+
+const ROUTE_TAB_MAP = Object.fromEntries(
+  Object.entries(TAB_ROUTE_MAP).map(([tabId, path]) => [path, tabId]),
+);
+
+function normalizeRoutePath(pathname) {
+  if (!pathname) return "/";
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    return pathname.slice(0, -1).toLowerCase();
+  }
+  return pathname.toLowerCase();
+}
+
+function getTabFromPathname(pathname) {
+  return ROUTE_TAB_MAP[normalizeRoutePath(pathname)] || null;
+}
+
+function getPathForTab(tabId) {
+  return TAB_ROUTE_MAP[tabId] || TAB_ROUTE_MAP.dashboard;
+}
+
+function getSanitizedSearch(search) {
+  const params = new URLSearchParams(search || "");
+  params.delete("access_token");
+  const next = params.toString();
+  return next ? `?${next}` : "";
+}
+
+function isPublicPath(pathname) {
+  const normalized = normalizeRoutePath(pathname);
+  return normalized === "/login" || normalized === "/unauthorized";
+}
+
 const TenantSetupForm = lazy(() => import("./components/TenantSetupForm.jsx"));
 const LogsPanel = lazy(() => import("./components/LogsPanel.jsx"));
 
@@ -80,7 +125,7 @@ import {
   fetchCurrentUser,
   loginUser,
   logoutUser,
-  resetAuthState,
+  clearAuthState,
 } from "./state/slices/authSlice.js";
 import { setBrand } from "./state/slices/brandSlice.js";
 import {
@@ -197,6 +242,8 @@ function loadInitialThemeMode() {
 }
 
 export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const authState = useAppSelector((state) => state.auth);
   const globalBrandKey = useAppSelector((state) => state.brand.brand);
@@ -260,6 +307,11 @@ export default function App() {
 
   // Initialize tab checking storage; guard against invalid reads
   const [authorTab, setAuthorTab] = useState(() => {
+    const routeTab =
+      typeof window !== "undefined"
+        ? getTabFromPathname(window.location.pathname)
+        : null;
+    if (routeTab) return routeTab;
     try {
       const stored =
         localStorage.getItem("author_active_tab_v1") || "dashboard";
@@ -292,6 +344,14 @@ export default function App() {
 
   // Track navigation direction for transitions
   const [direction, setDirection] = useState(0);
+  const currentRouteTab = useMemo(
+    () => getTabFromPathname(location.pathname),
+    [location.pathname],
+  );
+  const sanitizedSearch = useMemo(
+    () => getSanitizedSearch(location.search),
+    [location.search],
+  );
 
   // Animation variants for page content
   const pageVariants = {
@@ -518,22 +578,33 @@ export default function App() {
   useEffect(() => {
     if (!initialized) return;
     if (authorTab === "inventory" && !canAccessInventoryPanel) {
-      setAuthorTab("dashboard");
-      try {
-        localStorage.setItem("author_active_tab_v1", "dashboard");
-      } catch {
-        // Ignore storage write errors
-      }
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP.dashboard,
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
     }
     if (authorTab === "bundles" && !canAccessBundlesPanel) {
-      setAuthorTab("dashboard");
-      try {
-        localStorage.setItem("author_active_tab_v1", "dashboard");
-      } catch {
-        // Ignore storage write errors
-      }
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP.dashboard,
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
     }
-  }, [authorTab, canAccessBundlesPanel, canAccessInventoryPanel, initialized]);
+  }, [
+    authorTab,
+    canAccessBundlesPanel,
+    canAccessInventoryPanel,
+    initialized,
+    location.search,
+    sanitizedSearch,
+    navigate,
+  ]);
 
   const showSidebar = isAuthor || (accessibleTabs && accessibleTabs.length > 1);
 
@@ -1395,23 +1466,81 @@ export default function App() {
     handleAuthorBrandChange,
   ]);
 
+  useEffect(() => {
+    const normalizedPath = normalizeRoutePath(location.pathname);
+
+    if (!user && isPublicPath(normalizedPath)) {
+      return;
+    }
+
+    if (normalizedPath === "/") {
+      navigate(
+        {
+          pathname: user ? TAB_ROUTE_MAP.dashboard : "/login",
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
+
+    if (!currentRouteTab) {
+      navigate(
+        {
+          pathname: user ? TAB_ROUTE_MAP.dashboard : "/login",
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+    }
+  }, [currentRouteTab, location.pathname, sanitizedSearch, navigate, user]);
+
+  useEffect(() => {
+    if (!currentRouteTab) return;
+    setAuthorTab((prev) => (prev === currentRouteTab ? prev : currentRouteTab));
+    try {
+      localStorage.setItem("author_active_tab_v1", currentRouteTab);
+    } catch {
+      // Ignore storage write errors
+    }
+  }, [currentRouteTab]);
+
   // Persist tab state only for authors
   useEffect(() => {
     // Wait until initialized to decide if we should reset tab
-    if (initialized && !isAuthor && (!accessibleTabs || !accessibleTabs.includes(authorTab))) {
-      setAuthorTab("dashboard");
+    if (
+      initialized &&
+      !isAuthor &&
+      (!accessibleTabs || !accessibleTabs.includes(authorTab))
+    ) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP.dashboard,
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
     }
 
     // Guard against legacy tab state that no longer exists
     if (initialized && authorTab === "adjustments") {
-      setAuthorTab("dashboard");
-      try {
-        localStorage.setItem("author_active_tab_v1", "dashboard");
-      } catch {
-        // ignore storage issues
-      }
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP.dashboard,
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
     }
-  }, [isAuthor, initialized, authorTab]);
+  }, [
+    isAuthor,
+    initialized,
+    authorTab,
+    accessibleTabs,
+    sanitizedSearch,
+    navigate,
+  ]);
 
   useEffect(() => {
     // Only authors or users with product_filter permission should see/use product filters; reset for everyone else.
@@ -1607,24 +1736,28 @@ export default function App() {
   const handleSidebarOpen = useCallback(() => setSidebarOpen(true), []);
   const handleSidebarClose = useCallback(() => setSidebarOpen(false), []);
   const handleSidebarTabChange = useCallback((tabId) => {
-    setAuthorTab((prev) => {
-      const oldIndex = MOBILE_NAV_ITEMS.findIndex((item) => item.id === prev);
-      const newIndex = MOBILE_NAV_ITEMS.findIndex((item) => item.id === tabId);
+    const oldIndex = MOBILE_NAV_ITEMS.findIndex((item) => item.id === authorTab);
+    const newIndex = MOBILE_NAV_ITEMS.findIndex((item) => item.id === tabId);
 
-      if (oldIndex !== -1 && newIndex !== -1) {
-        setDirection(newIndex > oldIndex ? 1 : -1);
-      } else {
-        setDirection(0);
-      }
-      return tabId;
-    });
+    if (oldIndex !== -1 && newIndex !== -1) {
+      setDirection(newIndex > oldIndex ? 1 : -1);
+    } else {
+      setDirection(0);
+    }
 
     try {
       localStorage.setItem("author_active_tab_v1", tabId);
     } catch {
       // Ignore storage write errors
     }
-  }, []);
+    navigate(
+      {
+        pathname: getPathForTab(tabId),
+        search: sanitizedSearch,
+      },
+      { replace: false },
+    );
+  }, [authorTab, sanitizedSearch, navigate]);
 
   const handleToggleDarkMode = useCallback(() => {
     setDarkMode((prev) => {
@@ -1904,7 +2037,10 @@ export default function App() {
       window.localStorage.setItem("gateway_access_token", token);
       window.localStorage.removeItem("gateway_refresh_token");
       // Clean URL
-      window.history.replaceState({}, document.title, window.location.pathname);
+      params.delete("access_token");
+      const nextSearch = params.toString() ? `?${params.toString()}` : "";
+      const nextUrl = `${window.location.pathname}${nextSearch}${window.location.hash}`;
+      window.history.replaceState({}, document.title, nextUrl);
     }
 
     dispatch(fetchCurrentUser());
@@ -1918,11 +2054,18 @@ export default function App() {
 
   useEffect(() => {
     const handleSessionExpired = () => {
-      dispatch(resetAuthState());
+      dispatch(clearAuthState());
+      navigate(
+        {
+          pathname: "/login",
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
     };
     window.addEventListener("auth:session-expired", handleSessionExpired);
     return () => window.removeEventListener("auth:session-expired", handleSessionExpired);
-  }, [dispatch]);
+  }, [dispatch, navigate, sanitizedSearch]);
 
   // Session Expiry Notification - DISABLED per user request
   // useEffect(() => {
@@ -1976,7 +2119,19 @@ export default function App() {
     } catch (err) {
       console.warn("FCM unregister on logout failed:", err);
     }
-    dispatch(logoutUser());
+    try {
+      localStorage.setItem("author_active_tab_v1", "dashboard");
+    } catch {
+      // Ignore storage write errors
+    }
+    await dispatch(logoutUser());
+    navigate(
+      {
+        pathname: "/login",
+        search: sanitizedSearch,
+      },
+      { replace: true },
+    );
   }
 
   if (!initialized) return null;
