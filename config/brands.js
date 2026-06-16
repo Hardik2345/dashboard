@@ -12,6 +12,9 @@ const DEFAULT_BRAND_IDS = Object.freeze({
   TMC: 3,
   AJMAL: 4,
   NEULIFE: 5,
+  VAMA: 6,
+  TENX: 7,
+  SHYLENEW: 8,
 });
 
 function normalizeDomain(d) {
