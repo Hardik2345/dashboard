@@ -156,6 +156,9 @@ const Footer = lazy(() => import("./components/Footer.jsx"));
 const KPIs = lazy(() => import("./components/KPIs.jsx"));
 const FunnelChart = lazy(() => import("./components/charts/FunnelChart.jsx"));
 const ModeOfPayment = lazy(() => import("./components/ModeOfPayment.jsx"));
+const PaymentSplitTrend = lazy(
+  () => import("./components/PaymentSplitTrend.jsx"),
+);
 const OrderSplit = lazy(() => import("./components/OrderSplit.jsx"));
 const PaymentSalesSplit = lazy(
   () => import("./components/PaymentSalesSplit.jsx"),
@@ -2831,7 +2834,12 @@ export default function App() {
                             </Grid>
                             {(hasPermission("payment_split_order") ||
                               hasPermission("payment_split_sales")) && (
-                              <ModeOfPayment query={generalMetricsQuery} />
+                              <>
+                                <ModeOfPayment query={generalMetricsQuery} />
+                                <PaymentSplitTrend
+                                  query={generalMetricsQuery}
+                                />
+                              </>
                             )}
                             {hasPermission("traffic_split") && (
                               <TrafficSourceSplit
