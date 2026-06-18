@@ -798,12 +798,6 @@ async function start() {
       captureError(err, null, { type: "mongo_connection" });
     });
     logger.info("[alerts-service] Mongo connected");
-    await runInventoryCacheRefresh();
-    setInterval(() => {
-      runInventoryCacheRefresh().catch((err) => {
-        logger.error("[inventory-cache] Scheduled refresh error:", err);
-      });
-    }, INVENTORY_CACHE_REFRESH_MS);
     const port = Number(process.env.PORT || 5005);
     app.listen(port, () => {
       logger.info(`[alerts-service] listening on :${port}`);
@@ -811,6 +805,18 @@ async function start() {
         "[alerts-service] brands loaded:",
         Object.keys(getBrands()).join(", ") || "(none)",
       );
+
+      // Warm inventory cache in the background so service health is not blocked
+      // on cross-brand DB/Redis work during container startup.
+      runInventoryCacheRefresh().catch((err) => {
+        logger.error("[inventory-cache] Initial refresh error:", err);
+      });
+
+      setInterval(() => {
+        runInventoryCacheRefresh().catch((err) => {
+          logger.error("[inventory-cache] Scheduled refresh error:", err);
+        });
+      }, INVENTORY_CACHE_REFRESH_MS);
     });
   } catch (err) {
     recordMongoConnectionError();
