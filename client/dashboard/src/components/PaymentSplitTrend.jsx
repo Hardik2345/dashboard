@@ -23,9 +23,9 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LabelList,
 } from "recharts";
 import { getOrderSplit, getPaymentSalesSplit } from "../lib/api.js";
+import { formatInrAmount, useInrCurrency } from "../lib/currency.js";
 
 const MAIN_COLOR = "#10b981";
 const COLORS = {
@@ -42,19 +42,8 @@ const TOOLTIP_VALUE_COLORS = [
   "#c77dff",
 ];
 
-const nfCurrency0 = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  maximumFractionDigits: 0,
-});
 const nfInt0 = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 0,
-});
-const nfCompactCurrency = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  notation: "compact",
-  maximumFractionDigits: 1,
 });
 const nfCompactInt = new Intl.NumberFormat("en-IN", {
   notation: "compact",
@@ -88,8 +77,13 @@ const METRIC_CONFIG = {
   },
   sales: {
     label: "Sales",
-    formatter: (value) => nfCurrency0.format(value || 0),
-    compactFormatter: (value) => nfCompactCurrency.format(value || 0),
+    formatter: (value) =>
+      formatInrAmount(value || 0, { maximumFractionDigits: 0 }),
+    compactFormatter: (value) =>
+      formatInrAmount(value || 0, {
+        notation: "compact",
+        maximumFractionDigits: 1,
+      }),
   },
 };
 
@@ -206,11 +200,7 @@ function buildTooltipRows(payload = [], chartMode, formatter) {
       const rawKey = dataKey.includes("Pct")
         ? dataKey.replace("Pct", "")
         : dataKey;
-      const percentKey = dataKey.includes("Pct")
-        ? dataKey
-        : `${dataKey}Pct`;
       const rawValue = Number(entry.payload?.[rawKey] || 0);
-      const percentValue = Number(entry.payload?.[percentKey] || 0);
       return {
         color: entry.color || entry.fill || entry.stroke,
         name,
@@ -296,14 +286,20 @@ const TrendTooltip = ({ active, payload, label, formatter, chartMode }) => {
 
 function BarPercentText({ x, y, width, height, value }) {
   const percent = Number(value || 0);
-  if (!Number.isFinite(percent) || percent <= 0 || width <= 0 || height <= 0) {
+  if (!Number.isFinite(percent) || percent <= 0) {
     return null;
   }
 
+  const safeWidth = Number(width || 0);
+  const safeHeight = Number(height || 0);
+  const safeX = Number(x || 0);
+  const safeY = Number(y || 0);
+  if (safeWidth <= 0 || safeHeight <= 0) return null;
+
   return (
     <text
-      x={x + width / 2}
-      y={y + Math.max(14, height / 2)}
+      x={safeX + safeWidth / 2}
+      y={safeY + Math.max(14, safeHeight / 2)}
       textAnchor="middle"
       fill="#ffffff"
       fontSize="10"
@@ -339,6 +335,7 @@ export default memo(function PaymentSplitTrend({ query }) {
   const discountCode = query?.discount_code;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
+  const { convertAmount } = useInrCurrency(brandKey, end);
 
   const config = METRIC_CONFIG[metric] || METRIC_CONFIG.orders;
   const selectedSeries = SERIES.filter((series) =>
@@ -421,38 +418,38 @@ export default memo(function PaymentSplitTrend({ query }) {
               const currentPrepaid =
                 metric === "orders"
                   ? Number(point.orders?.prepaid_orders || 0)
-                  : Number(point.sales?.prepaid_sales || 0);
+                  : convertAmount(point.sales?.prepaid_sales || 0);
               const currentCod =
                 metric === "orders"
                   ? Number(point.orders?.cod_orders || 0)
-                  : Number(point.sales?.cod_sales || 0);
+                  : convertAmount(point.sales?.cod_sales || 0);
               const currentPartial =
                 metric === "orders"
                   ? Number(point.orders?.partially_paid_orders || 0)
-                  : Number(point.sales?.partial_sales || 0);
+                  : convertAmount(point.sales?.partial_sales || 0);
               const currentTotal =
                 metric === "orders"
                   ? Number(point.orders?.total || 0)
-                  : Number(point.sales?.total || 0);
+                  : convertAmount(point.sales?.total || 0);
               const comparisonPrepaid = previousPoints[index]
                 ? metric === "orders"
                   ? Number(previousPoints[index].orders?.prepaid_orders || 0)
-                  : Number(previousPoints[index].sales?.prepaid_sales || 0)
+                  : convertAmount(previousPoints[index].sales?.prepaid_sales || 0)
                 : 0;
               const comparisonCod = previousPoints[index]
                 ? metric === "orders"
                   ? Number(previousPoints[index].orders?.cod_orders || 0)
-                  : Number(previousPoints[index].sales?.cod_sales || 0)
+                  : convertAmount(previousPoints[index].sales?.cod_sales || 0)
                 : 0;
               const comparisonPartial = previousPoints[index]
                 ? metric === "orders"
                   ? Number(previousPoints[index].orders?.partially_paid_orders || 0)
-                  : Number(previousPoints[index].sales?.partial_sales || 0)
+                  : convertAmount(previousPoints[index].sales?.partial_sales || 0)
                 : 0;
               const comparisonTotal = previousPoints[index]
                 ? metric === "orders"
                   ? Number(previousPoints[index].orders?.total || 0)
-                  : Number(previousPoints[index].sales?.total || 0)
+                  : convertAmount(previousPoints[index].sales?.total || 0)
                 : 0;
 
               return {
@@ -513,6 +510,7 @@ export default memo(function PaymentSplitTrend({ query }) {
     discountCode,
     compareStart,
     compareEnd,
+    convertAmount,
   ]);
 
   const toggleBar = (bar) => {
@@ -530,6 +528,10 @@ export default memo(function PaymentSplitTrend({ query }) {
       return [...prev, seriesKey];
     });
   };
+
+  const renderBarPercentLabel = (dataKey) => (props) => (
+    <BarPercentText {...props} value={props?.payload?.[dataKey]} />
+  );
 
   return (
     <Card
@@ -881,14 +883,12 @@ export default memo(function PaymentSplitTrend({ query }) {
                       fill={alpha(series.color, 0.45)}
                       radius={[4, 4, 0, 0]}
                       maxBarSize={28}
-                    >
-                      {showBarPercentLabels && (
-                        <LabelList
-                          dataKey={series.comparisonPctKey}
-                          content={(props) => <BarPercentText {...props} />}
-                        />
-                      )}
-                    </Bar>
+                      label={
+                        showBarPercentLabels
+                          ? renderBarPercentLabel(series.comparisonPctKey)
+                          : false
+                      }
+                    />
                   ))}
                   {selectedSeries.map((series) => (
                     <Bar
@@ -899,14 +899,12 @@ export default memo(function PaymentSplitTrend({ query }) {
                       fill={series.color}
                       radius={[4, 4, 0, 0]}
                       maxBarSize={28}
-                    >
-                      {showBarPercentLabels && (
-                        <LabelList
-                          dataKey={series.currentPctKey}
-                          content={(props) => <BarPercentText {...props} />}
-                        />
-                      )}
-                    </Bar>
+                      label={
+                        showBarPercentLabels
+                          ? renderBarPercentLabel(series.currentPctKey)
+                          : false
+                      }
+                    />
                   ))}
                 </BarChart>
               )}

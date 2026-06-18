@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, Typography, Skeleton, useTheme, Grid, Box } from '@mui/material';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Label } from 'recharts';
+import { Card, CardContent, Typography, Skeleton, useTheme, Box } from '@mui/material';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { getOrderSplit, getPaymentSalesSplit } from '../lib/api';
 import dayjs from 'dayjs';
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react';
+import { formatInrAmount, useInrCurrency } from '../lib/currency.js';
 
 const COLORS = {
-    Prepaid: '#2cc995', // Teal/Green
-    Partial: '#8da399', // Greyish Teal
-    COD: '#1f5748', // Dark Green
+    Prepaid: '#2cc995',
+    Partial: '#8da399',
+    COD: '#1f5748',
 };
 
 const LABELS = {
@@ -44,7 +45,6 @@ const CustomTooltip = ({ active, payload }) => {
     return null;
 };
 
-// Helper to calculate previous period
 function getPreviousRange(start, end) {
     if (!start || !end) return { start: null, end: null };
     const s = dayjs(start);
@@ -64,13 +64,10 @@ function getHourlyCutoffForTodayRange(start, end) {
     const IST_OFFSET_MIN = 330;
     const nowIst = new Date(Date.now() + IST_OFFSET_MIN * 60 * 1000);
     const todayIst = `${nowIst.getUTCFullYear()}-${String(nowIst.getUTCMonth() + 1).padStart(2, '0')}-${String(nowIst.getUTCDate()).padStart(2, '0')}`;
-    const rangeStart = start;
-    const rangeEnd = end;
-    const includesToday = rangeStart <= todayIst && rangeEnd >= todayIst;
+    const includesToday = start <= todayIst && end >= todayIst;
 
     if (!includesToday) return null;
 
-    // Compare completed hours only to avoid partial-hour noise.
     return Math.max(0, nowIst.getUTCHours() - 1);
 }
 
@@ -79,6 +76,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
     const isDark = theme.palette.mode === 'dark';
     const [loading, setLoading] = useState(true);
     const [prevRange, setPrevRange] = useState(null);
+    const { convertAmount } = useInrCurrency(query?.brand_key, query?.end);
     const [data, setData] = useState({
         quantity: [],
         value: [],
@@ -124,52 +122,51 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
 
                 if (cancelled) return;
 
-                // Process Quantity Data
                 const processMetric = (curr, compareCurr, comparePrev, type) => {
                     const isValue = type === METRIC_TYPES.VALUE;
-                    const total = isValue ? curr.total : curr.total; // total_orders_from_split vs total_sales_from_split
+                    const total = Number(curr?.total || 0);
                     const comparisonCurrent = compareCurr || curr;
                     const comparisonPrevious = comparePrev || {};
-                    const compareTotal = comparisonCurrent.total || 0;
-                    const prevTotal = comparisonPrevious.total || 0;
+                    const compareTotal = Number(comparisonCurrent?.total || 0);
+                    const prevTotal = Number(comparisonPrevious?.total || 0);
 
-                    const segments = ['Prepaid', 'COD', 'Partial'].map(key => {
+                    const segments = ['Prepaid', 'COD', 'Partial'].map((key) => {
                         const valKey = isValue
                             ? (key === 'Partial' ? 'partial_sales' : `${key.toLowerCase()}_sales`)
                             : (key === 'Partial' ? 'partially_paid_orders' : `${key.toLowerCase()}_orders`);
 
-                        const currVal = curr[valKey] || 0;
-                        const compareCurrVal = comparisonCurrent[valKey] || 0;
-                        const prevVal = comparisonPrevious[valKey] || 0;
+                        const currVal = Number(curr?.[valKey] || 0);
+                        const compareCurrVal = Number(comparisonCurrent?.[valKey] || 0);
+                        const prevVal = Number(comparisonPrevious?.[valKey] || 0);
                         const currPct = total > 0 ? (currVal / total) * 100 : 0;
                         const compareCurrPct = compareTotal > 0 ? (compareCurrVal / compareTotal) * 100 : 0;
                         const prevPct = prevTotal > 0 ? (prevVal / prevTotal) * 100 : 0;
-                        // Delta is based on contribution share, not raw count/sales.
                         const delta = prevPct > 0
                             ? ((compareCurrPct - prevPct) / prevPct) * 100
                             : compareCurrPct > 0
                                 ? 100
                                 : 0;
 
+                        const displayValue = isValue ? convertAmount(currVal) : currVal;
+
                         return {
                             name: LABELS[key],
-                            value: currVal,
+                            value: displayValue,
                             percent: currPct.toFixed(1),
                             delta: Math.round(delta),
                             color: COLORS[key],
                             formattedValue: isValue
-                                ? (currVal >= 100000 ? `₹${(currVal / 100000).toFixed(2)}L` : `₹${(currVal / 1000).toFixed(1)}K`)
+                                ? formatInrAmount(displayValue, { notation: 'compact', maximumFractionDigits: 1 })
                                 : currVal.toLocaleString()
                         };
                     });
 
-                    // Sort order: Prepaid, Partial, COD (to match visual design roughly)
-                    // Actually, let's keep consistent order: Prepaid, Partial, COD
+                    const displayTotal = isValue ? convertAmount(total) : total;
                     return {
                         segments,
-                        total,
+                        total: displayTotal,
                         formattedTotal: isValue
-                            ? (total >= 100000 ? `${(total / 100000).toFixed(2)}L` : `${(total / 1000).toFixed(1)}K`)
+                            ? formatInrAmount(displayTotal, { notation: 'compact', maximumFractionDigits: 1 })
                             : total.toLocaleString()
                     };
                 };
@@ -185,9 +182,8 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                     rawTotalQuantity: qtyData.total,
                     rawTotalValue: valData.total
                 });
-
             } catch (err) {
-                console.error("Failed to load payment split", err);
+                console.error('Failed to load payment split', err);
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -196,7 +192,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
         fetchData();
 
         return () => { cancelled = true; };
-    }, [query.start, query.end, query.brand_key, query.product_id, query.refreshKey, query.utm_source, query.utm_medium, query.utm_campaign, query.sales_channel, query.discount_code]);
+    }, [query.start, query.end, query.brand_key, query.product_id, query.refreshKey, query.utm_source, query.utm_medium, query.utm_campaign, query.sales_channel, query.discount_code, convertAmount]);
 
     const renderChart = (title, chartData, totalLabel, rawTotal) => (
         <div className="flex flex-col items-center flex-1 min-w-[250px]">
@@ -219,17 +215,17 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                         <RechartsTooltip content={<CustomTooltip />} wrapperStyle={{ zIndex: 1000 }} />
                     </PieChart>
                 </ResponsiveContainer>
-                {/* Center Text Overlay alternative if Label doesn't behave */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     <span className="text-xs text-muted-foreground">{title === 'By Order count' ? 'Total Orders' : 'Total Sales'}</span>
                     <span className="text-2xl font-bold dark:text-white text-gray-900">{totalLabel}</span>
                 </div>
             </div>
 
-            {/* Always visible chips */}
             <div className="flex flex-col gap-2 w-full mt-6 max-w-[240px]">
                 {chartData.map((entry, index) => {
-                    const pctLabel = entry.percent !== undefined ? Number(entry.percent).toFixed(1) : (rawTotal > 0 ? ((entry.value / rawTotal) * 100).toFixed(1) : '0.0');
+                    const pctLabel = entry.percent !== undefined
+                        ? Number(entry.percent).toFixed(1)
+                        : (rawTotal > 0 ? ((entry.value / rawTotal) * 100).toFixed(1) : '0.0');
                     return (
                         <div key={index} className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50 dark:bg-white/[0.04] border border-gray-100 dark:border-white/[0.08] transition-colors">
                             <div className="flex items-center gap-2.5">
@@ -257,8 +253,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 1 }}>
                     <Box sx={{ flex: '1 1 auto', minWidth: '150px' }}>
                         <Typography variant="h6" component="div" sx={{ mb: 0.5, fontSize: '1rem', fontWeight: 600 }}>
-                            Mode of Payment 
-                            {/* <span className="text-muted-foreground text-sm font-normal">(excluding cancelled orders)</span> */}
+                            Mode of Payment
                         </Typography>
                     </Box>
 

@@ -9,12 +9,11 @@ import {
   Legend,
 } from 'chart.js';
 import { getPaymentSalesSplit } from '../lib/api.js';
+import { formatInrAmount, useInrCurrency } from '../lib/currency.js';
 
 ChartJS.register(ArcElement, ChartTooltip, Legend);
 
 const nfPct1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
-const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
-const nfCurrencyCompact = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', notation: 'compact', maximumFractionDigits: 1 });
 
 export default function PaymentSalesSplit({ query }) {
   const theme = useTheme();
@@ -24,6 +23,7 @@ export default function PaymentSalesSplit({ query }) {
   const brandKey = query?.brand_key;
   const refreshKey = query?.refreshKey;
   const productId = query?.product_id || '';
+  const { convertAmount } = useInrCurrency(brandKey, query?.end);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,12 +52,16 @@ export default function PaymentSalesSplit({ query }) {
   }, [query.start, query.end, brandKey, productId, refreshKey, query.utm_source, query.utm_medium, query.utm_campaign, query.sales_channel, query.discount_code]);
 
   const empty = data.total === 0;
+  const convertedCodSales = convertAmount(data.cod_sales);
+  const convertedPrepaidSales = convertAmount(data.prepaid_sales);
+  const convertedPartialSales = convertAmount(data.partial_sales);
+  const convertedTotal = convertAmount(data.total);
 
   const chartData = {
     labels: ['COD', 'Prepaid', 'Partially paid'],
     datasets: [
       {
-        data: [data.cod_sales, data.prepaid_sales, data.partial_sales],
+        data: [convertedCodSales, convertedPrepaidSales, convertedPartialSales],
         // Darken partial slice slightly for better contrast (emerald-300)
         backgroundColor: ['#f59e0b', '#10b981', '#6ee7b7'],
         borderWidth: 0,
@@ -81,8 +85,8 @@ export default function PaymentSalesSplit({ query }) {
           label: (ctx) => {
             const label = ctx.label;
             const raw = ctx.parsed;
-            const pct = data.total > 0 ? (raw / data.total) * 100 : 0;
-            return `${label}: ${nfCurrency0.format(raw)} (${nfPct1.format(pct)}%)`;
+            const pct = convertedTotal > 0 ? (raw / convertedTotal) * 100 : 0;
+            return `${label}: ${formatInrAmount(raw, { maximumFractionDigits: 0 })} (${nfPct1.format(pct)}%)`;
           }
         }
       }
@@ -112,19 +116,19 @@ export default function PaymentSalesSplit({ query }) {
             >
               <GlassChip
                 size="small"
-                label={`COD ${nfPct1.format(data.cod_percent)}% (${nfCurrencyCompact.format(data.cod_sales)})`}
+                label={`COD ${nfPct1.format(data.cod_percent)}% (${formatInrAmount(convertedCodSales, { notation: 'compact', maximumFractionDigits: 1 })})`}
                 color="warning"
                 isDark={isDark}
               />
               <GlassChip
                 size="small"
-                label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${nfCurrencyCompact.format(data.prepaid_sales)})`}
+                label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${formatInrAmount(convertedPrepaidSales, { notation: 'compact', maximumFractionDigits: 1 })})`}
                 color="success"
                 isDark={isDark}
               />
               <GlassChip
                 size="small"
-                label={`Partial ${nfPct1.format(data.partial_percent)}% (${nfCurrencyCompact.format(data.partial_sales)})`}
+                label={`Partial ${nfPct1.format(data.partial_percent)}% (${formatInrAmount(convertedPartialSales, { notation: 'compact', maximumFractionDigits: 1 })})`}
                 color="primary"
                 isDark={isDark}
               />
