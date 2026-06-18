@@ -71,6 +71,7 @@ import {
 } from "../state/slices/productConversionSlice.js";
 
 import { exportProductConversionCsv, getProductTypes } from "../lib/api.js";
+import { formatInrAmount, useInrCurrency } from "../lib/currency.js";
 import { useTheme } from "@mui/material/styles";
 import { validateFilter } from "../lib/filterValidation.js";
 import { GlassChip } from "./ui/GlassChip.jsx";
@@ -117,6 +118,13 @@ const DATE_PRESETS = [
 
 function formatNumber(val) {
   return Number(val || 0).toLocaleString();
+}
+
+function formatCurrency(val, convertAmount) {
+  return formatInrAmount(convertAmount(val || 0), {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function formatPercent(val) {
@@ -1632,6 +1640,7 @@ export default function ProductConversionTable({
     pageTypes,
     inventoryPeriod,
   } = productState;
+  const { convertAmount } = useInrCurrency(brandKey, end);
   const [exporting, setExporting] = useState(false);
   const [localSearch, setLocalSearch] = useState(productState.search || "");
 
@@ -1676,7 +1685,12 @@ export default function ProductConversionTable({
         format: formatPercent,
       },
       { id: "orders", label: "Orders", align: "right" },
-      { id: "sales", label: "Sales", align: "right" },
+      {
+        id: "sales",
+        label: "Sales",
+        align: "right",
+        format: (val) => formatCurrency(val, convertAmount),
+      },
       { id: "cvr", label: "CVR", align: "right", format: formatPercent },
       {
         id: "drr",
@@ -1691,7 +1705,7 @@ export default function ProductConversionTable({
         format: (val) => (val !== null ? formatNumber(val) : "-"),
       },
     ],
-    [productState.inventoryPeriod],
+    [productState.inventoryPeriod, convertAmount],
   );
 
   const isGranularMode = useMemo(() => {

@@ -4,19 +4,10 @@ import { Stack, Typography, Box, useTheme } from "@mui/material";
 import { GlassChip } from "./ui/GlassChip.jsx";
 import KPIStat from "./KPIStat.jsx";
 import { getDashboardSummary, getProductKpis } from "../lib/api.js";
+import { formatInrAmount, useInrCurrency } from "../lib/currency.js";
 import useWebVitals from "../hooks/useWebVitals.js";
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
-const nfMoney = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  maximumFractionDigits: 0,
-});
-const nfMoney2 = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  maximumFractionDigits: 0, // Changed to 0 decimals per design image
-});
 const nfPct = new Intl.NumberFormat(undefined, {
   style: "percent",
   maximumFractionDigits: 2,
@@ -58,6 +49,7 @@ export default function KPIs({
   const discountCode = query?.discount_code;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
+  const { convertAmount } = useInrCurrency(brandKey, end);
 
   // Web Vitals Hook
   const webVitalsData = useWebVitals(query, "Performance");
@@ -548,12 +540,12 @@ export default function KPIs({
                 }
                 value={
                   revenueMode === "G"
-                    ? (data.sales?.value ?? 0)
-                    : (data.sales?.value ?? 0) / 1.18
+                    ? convertAmount(data.sales?.value ?? 0)
+                    : convertAmount(data.sales?.value ?? 0) / 1.18
                 }
                 loading={loading}
                 deltaLoading={deltaLoading}
-                formatter={(v) => nfMoney.format(v)}
+                formatter={(v) => formatInrAmount(v, { maximumFractionDigits: 0 })}
                 delta={
                   data.salesDelta
                     ? {
@@ -570,11 +562,13 @@ export default function KPIs({
                 compareValue={
                   compareMode && data.prevSales != null
                     ? revenueMode === "G"
-                      ? data.prevSales
-                      : data.prevSales / 1.18
+                      ? convertAmount(data.prevSales)
+                      : convertAmount(data.prevSales) / 1.18
                     : undefined
                 }
-                compareFormatter={(v) => nfMoney.format(v)}
+                compareFormatter={(v) =>
+                  formatInrAmount(v, { maximumFractionDigits: 0 })
+                }
               />
             </Grid>
             <Grid
@@ -583,10 +577,10 @@ export default function KPIs({
             >
               <KPIStat
                 label="Average order value"
-                value={data.aov?.aov ?? 0}
+                value={convertAmount(data.aov?.aov ?? 0)}
                 loading={loading}
                 deltaLoading={deltaLoading}
-                formatter={(v) => nfMoney2.format(v)}
+                formatter={(v) => formatInrAmount(v, { maximumFractionDigits: 0 })}
                 delta={
                   data.aovDelta
                     ? {
@@ -600,9 +594,13 @@ export default function KPIs({
                 }
                 selected={selectedMetric === "aov"}
                 compareValue={
-                  compareMode && data.prevAov != null ? data.prevAov : undefined
+                  compareMode && data.prevAov != null
+                    ? convertAmount(data.prevAov)
+                    : undefined
                 }
-                compareFormatter={(v) => nfMoney2.format(v)}
+                compareFormatter={(v) =>
+                  formatInrAmount(v, { maximumFractionDigits: 0 })
+                }
               />
             </Grid>
             <Grid

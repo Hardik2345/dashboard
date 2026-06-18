@@ -5,14 +5,11 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Cell, LabelList
 } from 'recharts';
-import { getHourlyTrend, getDailyTrend, getMonthlyTrend, getHourlySalesSummary } from '../lib/api.js';
+import { getHourlyTrend, getDailyTrend, getMonthlyTrend } from '../lib/api.js';
+import { formatInrAmount, useInrCurrency } from '../lib/currency.js';
 
-const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
-const nfCurrency2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 2 });
-
-const nfCompactCurrency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', notation: 'compact', maximumFractionDigits: 1 });
 const nfCompactInt = new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 });
 
 // Design color: Emerald/Greenish for the main line
@@ -23,61 +20,7 @@ const nfCompactInt = new Intl.NumberFormat('en-IN', { notation: 'compact', maxim
 const MAIN_COLOR = '#10b981'; // Emerald 500
 const PREV_COLOR = '#9ca3af'; // Gray 400
 
-const METRIC_CONFIG = {
-  aov: {
-    label: 'Avg Order Value',
-    accessor: (metrics) => {
-      const sales = Number(metrics?.sales || 0);
-      const orders = Number(metrics?.orders || 0);
-      return orders > 0 ? sales / orders : 0;
-    },
-    formatter: (value) => nfCurrency2.format(value || 0),
-    compactFormatter: (value) => nfCompactCurrency.format(value || 0),
-  },
-  orders: {
-    label: 'Total Orders',
-    accessor: (metrics) => metrics?.orders ?? 0,
-    formatter: (value) => nfInt0.format(value || 0),
-    compactFormatter: (value) => nfCompactInt.format(value || 0),
-  },
-  sales: {
-    label: 'Total Revenue', // Changed to match "Total Revenue" in KPI
-    accessor: (metrics) => metrics?.sales ?? 0,
-    formatter: (value) => nfCurrency0.format(value || 0),
-    compactFormatter: (value) => nfCompactCurrency.format(value || 0),
-  },
-  sessions: {
-    label: 'Total Sessions',
-    accessor: (metrics) => metrics?.sessions ?? 0,
-    formatter: (value) => nfInt0.format(value || 0),
-    compactFormatter: (value) => nfCompactInt.format(value || 0),
-  },
-  cvr: {
-    label: 'Conversion Rate',
-    accessor: (metrics) => metrics?.cvr_ratio ?? 0,
-    formatter: (value) => nfPercent1.format(value || 0),
-    compactFormatter: (value) => nfPercent1.format(value || 0),
-  },
-  atc: {
-    label: 'ATC Sessions',
-    accessor: (metrics) => metrics?.atc ?? 0,
-    formatter: (value) => nfInt0.format(value || 0),
-    compactFormatter: (value) => nfCompactInt.format(value || 0),
-  },
-  atc_rate: {
-    label: 'ATC Rate',
-    accessor: (metrics) => {
-      const atc = Number(metrics?.atc || 0);
-      const sessions = Number(metrics?.sessions || 0);
-      return sessions > 0 ? atc / sessions : 0;
-    },
-    formatter: (value) => nfPercent1.format(value || 0),
-    compactFormatter: (value) => nfPercent1.format(value || 0),
-  },
-};
-
 const CustomTooltip = ({ active, payload, label, formatter }) => {
-  const theme = useTheme();
   if (!active || !payload || !payload.length) return null;
 
   return (
@@ -177,8 +120,64 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
   const compare = query?.compare;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
+  const { convertAmount } = useInrCurrency(brandKey, end);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
+  const metricConfig = {
+    aov: {
+      label: 'Avg Order Value',
+      accessor: (metrics) => {
+        const sales = convertAmount(metrics?.sales || 0);
+        const orders = Number(metrics?.orders || 0);
+        return orders > 0 ? sales / orders : 0;
+      },
+      formatter: (value) => formatInrAmount(value || 0, { maximumFractionDigits: 2 }),
+      compactFormatter: (value) =>
+        formatInrAmount(value || 0, { notation: 'compact', maximumFractionDigits: 1 }),
+    },
+    orders: {
+      label: 'Total Orders',
+      accessor: (metrics) => metrics?.orders ?? 0,
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    sales: {
+      label: 'Total Revenue',
+      accessor: (metrics) => convertAmount(metrics?.sales ?? 0),
+      formatter: (value) => formatInrAmount(value || 0, { maximumFractionDigits: 0 }),
+      compactFormatter: (value) =>
+        formatInrAmount(value || 0, { notation: 'compact', maximumFractionDigits: 1 }),
+    },
+    sessions: {
+      label: 'Total Sessions',
+      accessor: (metrics) => metrics?.sessions ?? 0,
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    cvr: {
+      label: 'Conversion Rate',
+      accessor: (metrics) => metrics?.cvr_ratio ?? 0,
+      formatter: (value) => nfPercent1.format(value || 0),
+      compactFormatter: (value) => nfPercent1.format(value || 0),
+    },
+    atc: {
+      label: 'ATC Sessions',
+      accessor: (metrics) => metrics?.atc ?? 0,
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    atc_rate: {
+      label: 'ATC Rate',
+      accessor: (metrics) => {
+        const atc = Number(metrics?.atc || 0);
+        const sessions = Number(metrics?.sessions || 0);
+        return sessions > 0 ? atc / sessions : 0;
+      },
+      formatter: (value) => nfPercent1.format(value || 0),
+      compactFormatter: (value) => nfPercent1.format(value || 0),
+    },
+  };
 
   const daysInRange = useMemo(() => {
     if (!start || !end) return 0;
@@ -202,7 +201,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
 
     const loadData = async () => {
       const utmParams = { utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, device_type: deviceType, product_id: productId, discount_code: discountCode };
-      const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+      const configNext = metricConfig[metric] || metricConfig.sales;
 
       // Determine view mode based on range if strict logic needed, but user wants dropdown.
       // We will respect `viewMode` state.
@@ -281,7 +280,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
 
     loadData();
     return () => { cancelled = true; };
-  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, productId, discountCode, compare, compareStart, compareEnd]);
+  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, productId, discountCode, compare, compareStart, compareEnd, convertAmount]);
 
   const toggleLine = (line) => {
     setVisibleLines(prev =>
@@ -289,7 +288,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
     );
   };
 
-  const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+  const config = metricConfig[metric] || metricConfig.sales;
 
   return (
     <Card elevation={0} sx={{
