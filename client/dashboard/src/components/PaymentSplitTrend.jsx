@@ -16,6 +16,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import {
   BarChart,
   Bar,
+  LabelList,
   LineChart,
   Line,
   XAxis,
@@ -124,6 +125,33 @@ function getInclusiveDayCount(start, end) {
       (endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000),
     ) + 1
   );
+}
+
+function getPercentAxisMax(chartData, selectedSeries, visibleBars) {
+  const percentKeys = [];
+
+  if (visibleBars.includes("comparison")) {
+    percentKeys.push(...selectedSeries.map((series) => series.comparisonPctKey));
+  }
+  if (visibleBars.includes("primary")) {
+    percentKeys.push(...selectedSeries.map((series) => series.currentPctKey));
+  }
+
+  if (percentKeys.length === 0 || !Array.isArray(chartData) || chartData.length === 0) {
+    return 100;
+  }
+
+  let maxPercent = 0;
+  for (const point of chartData) {
+    for (const key of percentKeys) {
+      const value = Number(point?.[key] || 0);
+      if (Number.isFinite(value) && value > maxPercent) {
+        maxPercent = value;
+      }
+    }
+  }
+
+  return Math.max(1, Math.ceil(maxPercent));
 }
 
 function resolveComparisonRange(start, end, compareStart, compareEnd) {
@@ -284,33 +312,6 @@ const TrendTooltip = ({ active, payload, label, formatter, chartMode }) => {
   );
 };
 
-function BarPercentText({ x, y, width, height, value }) {
-  const percent = Number(value || 0);
-  if (!Number.isFinite(percent) || percent <= 0) {
-    return null;
-  }
-
-  const safeWidth = Number(width || 0);
-  const safeHeight = Number(height || 0);
-  const safeX = Number(x || 0);
-  const safeY = Number(y || 0);
-  if (safeWidth <= 0 || safeHeight <= 0) return null;
-
-  return (
-    <text
-      x={safeX + safeWidth / 2}
-      y={safeY + Math.max(14, safeHeight / 2)}
-      textAnchor="middle"
-      fill="#ffffff"
-      fontSize="10"
-      fontWeight="700"
-      style={{ pointerEvents: "none" }}
-    >
-      {`${Math.round(percent)}%`}
-    </text>
-  );
-}
-
 export default memo(function PaymentSplitTrend({ query }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -341,7 +342,15 @@ export default memo(function PaymentSplitTrend({ query }) {
   const selectedSeries = SERIES.filter((series) =>
     selectedSeriesKeys.includes(series.key),
   );
-  const showBarPercentLabels = getInclusiveDayCount(start, end) <= 7;
+  const selectedDayCount = getInclusiveDayCount(start, end);
+  const showBarPercentLabels = isMobile
+    ? selectedDayCount <= 8
+    : selectedDayCount <= 15;
+  const percentAxisMax = getPercentAxisMax(
+    chartData,
+    selectedSeries,
+    visibleBars,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -529,8 +538,19 @@ export default memo(function PaymentSplitTrend({ query }) {
     });
   };
 
-  const renderBarPercentLabel = (dataKey) => (props) => (
-    <BarPercentText {...props} value={props?.payload?.[dataKey]} />
+  const renderBarPercentLabel = (dataKey) => (
+    <LabelList
+      dataKey={dataKey}
+      position="top"
+      offset={10}
+      fill={theme.palette.text.primary}
+      fontSize={10}
+      fontWeight={700}
+      formatter={(value) => {
+        const percent = Number(value || 0);
+        return Number.isFinite(percent) && percent > 0 ? `${Math.round(percent)}%` : "";
+      }}
+    />
   );
 
   return (
@@ -801,7 +821,7 @@ export default memo(function PaymentSplitTrend({ query }) {
                     tickFormatter={formatPercent}
                     tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
                     width={60}
-                    domain={[0, 100]}
+                    domain={[0, percentAxisMax]}
                   />
                   <Tooltip
                     allowEscapeViewBox={{ x: true, y: true }}
@@ -841,7 +861,7 @@ export default memo(function PaymentSplitTrend({ query }) {
               ) : (
                 <BarChart
                   data={chartData}
-                  margin={{ top: 25, right: 32, left: 32, bottom: 5 }}
+                  margin={{ top: 40, right: 32, left: 32, bottom: 5 }}
                   barGap={0}
                 >
                   <CartesianGrid
@@ -865,7 +885,7 @@ export default memo(function PaymentSplitTrend({ query }) {
                     tickFormatter={formatPercent}
                     tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
                     width={60}
-                    domain={[0, 100]}
+                    domain={[0, percentAxisMax]}
                   />
                   <Tooltip
                     allowEscapeViewBox={{ x: true, y: true }}
@@ -883,12 +903,10 @@ export default memo(function PaymentSplitTrend({ query }) {
                       fill={alpha(series.color, 0.45)}
                       radius={[4, 4, 0, 0]}
                       maxBarSize={28}
-                      label={
-                        showBarPercentLabels
-                          ? renderBarPercentLabel(series.comparisonPctKey)
-                          : false
-                      }
-                    />
+                    >
+                      {showBarPercentLabels &&
+                        renderBarPercentLabel(series.comparisonPctKey)}
+                    </Bar>
                   ))}
                   {selectedSeries.map((series) => (
                     <Bar
@@ -899,12 +917,10 @@ export default memo(function PaymentSplitTrend({ query }) {
                       fill={series.color}
                       radius={[4, 4, 0, 0]}
                       maxBarSize={28}
-                      label={
-                        showBarPercentLabels
-                          ? renderBarPercentLabel(series.currentPctKey)
-                          : false
-                      }
-                    />
+                    >
+                      {showBarPercentLabels &&
+                        renderBarPercentLabel(series.currentPctKey)}
+                    </Bar>
                   ))}
                 </BarChart>
               )}
