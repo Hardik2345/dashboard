@@ -1,12 +1,17 @@
 import { useEffect, useState, useMemo } from "react";
 import Grid from "@mui/material/Grid2";
 import { Stack, Typography, Box, useTheme } from "@mui/material";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import Skeleton from "@mui/material/Skeleton";
 import { GlassChip } from "./ui/GlassChip.jsx";
 import KPIStat from "./KPIStat.jsx";
 import { getDashboardSummary, getProductKpis } from "../lib/api.js";
 import { formatInrAmount, useInrCurrency } from "../lib/currency.js";
+import useWebVitals from "../hooks/useWebVitals.js";
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+const nfFloat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const nfPct = new Intl.NumberFormat(undefined, {
   style: "percent",
   maximumFractionDigits: 2,
@@ -23,6 +28,7 @@ export default function KPIs({
   utmOptions, // Prop from App
   showRow = null, // null for both, 1 for row 1, 2 for row 2
   compareMode = false,
+  showWebVitals = true,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
@@ -47,6 +53,17 @@ export default function KPIs({
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
   const { convertAmount } = useInrCurrency(brandKey, end);
+  const todayIst = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Asia/Kolkata",
+  });
+  const webVitalsData = useWebVitals(
+    {
+      ...query,
+      start: todayIst,
+      end: todayIst,
+    },
+    "PERFORMANCE",
+  );
 
   const scopeLabel = useMemo(() => {
     if (!isProductScoped) return "All products";
@@ -211,6 +228,7 @@ export default function KPIs({
           const funnel = {
             total_sessions: sessions,
             total_atc_sessions: atcSessions,
+            total_ci_events: m.total_ci_events?.value ?? 0,
             total_orders: orders.value,
           };
 
@@ -389,6 +407,7 @@ export default function KPIs({
       deltas: {
         sessions: data.sessDelta || null,
         atc: data.atcDelta || null,
+        ci: data.ciDelta || null,
         orders: data.cvrDelta || null,
       },
       loading: loading || deltaLoading,
@@ -731,7 +750,7 @@ export default function KPIs({
           showRow === "mobile_top") && (
           <>
             <Grid
-              size={{ xs: 6, sm: 6, md: 3 }}
+              size={{ xs: 6, sm: 6, md: showWebVitals ? 3 : 4 }}
               sx={{ order: { xs: 5, md: 0 } }}
             >
               <KPIStat
@@ -764,7 +783,7 @@ export default function KPIs({
               />
             </Grid>
             <Grid
-              size={{ xs: 6, sm: 6, md: 3 }}
+              size={{ xs: 6, sm: 6, md: showWebVitals ? 3 : 4 }}
               sx={{ order: { xs: 6, md: 0 } }}
             >
               <KPIStat
@@ -897,13 +916,13 @@ export default function KPIs({
           </>
         )}
 
-        {/* Row 2 split: Conversion and Checkout Initiated */}
+        {/* Row 2 split: Conversion */}
         {(showRow === null ||
           showRow === 2 ||
           showRow === "web_perf_cvr" ||
           showRow === "mobile_top") && (
           <Grid
-            size={{ xs: 6, sm: 6, md: 3 }}
+            size={{ xs: 6, sm: 6, md: showWebVitals ? 3 : 4 }}
             sx={{ order: { xs: 4, md: 0 } }}
           >
             <KPIStat
@@ -936,40 +955,76 @@ export default function KPIs({
             />
           </Grid>
         )}
-
-        {(showRow === null ||
-          showRow === 2 ||
-          showRow === "web_perf_cvr" ||
-          showRow === "mobile_bottom") && (
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <KPIStat
-              label="Checkout Initiated Events"
-              centerOnMobile={true}
-              value={data.total_ci_events?.value ?? 0}
-              loading={loading}
-              deltaLoading={deltaLoading}
-              formatter={(v) => nfInt.format(v)}
-              delta={
-                data.ciDelta
-                  ? {
-                      value: data.ciDelta.diff_pct,
-                      direction: data.ciDelta.direction,
-                    }
-                  : undefined
-              }
-              compareValue={
-                compareMode && data.prevCiEvents != null
-                  ? data.prevCiEvents
-                  : undefined
-              }
-              compareFormatter={(v) => nfInt.format(v)}
-              onSelect={
-                onSelectMetric ? () => onSelectMetric("ci_events") : undefined
-              }
-              selected={selectedMetric === "ci_events"}
-            />
-          </Grid>
-        )}
+        {(showRow === null || showRow === 2 || showRow === "mobile_top") &&
+          showWebVitals && (
+            <Grid
+              size={{ xs: 12, sm: 6, md: 3 }}
+              sx={{ order: { xs: 8, md: 0 } }}
+            >
+              <Card
+                elevation={0}
+                sx={{
+                  height: "100%",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  bgcolor: "background.paper",
+                  boxShadow:
+                    "0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)",
+                }}
+              >
+                <CardContent
+                  sx={{
+                    minHeight: 110,
+                    p: { xs: 1.25, md: 1.5 },
+                    "&:last-child": { pb: { xs: 1.25, md: 1.5 } },
+                    display: "grid",
+                    placeItems: "center",
+                    textAlign: "center",
+                  }}
+                >
+                  {webVitalsData.loading ? (
+                    <Box sx={{ width: "100%" }}>
+                      <Skeleton
+                        variant="text"
+                        width={150}
+                        sx={{ mx: "auto", mb: 1 }}
+                      />
+                      <Skeleton
+                        variant="text"
+                        width={90}
+                        height={44}
+                        sx={{ mx: "auto", mb: 1 }}
+                      />
+                      <Skeleton
+                        variant="text"
+                        width={140}
+                        sx={{ mx: "auto" }}
+                      />
+                    </Box>
+                  ) : (
+                    <Box>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mb: 1 }}
+                      >
+                        Web Performance(Avg)
+                      </Typography>
+                      <Typography
+                        variant="h5"
+                        sx={{ fontWeight: 700, lineHeight: 1, mb: 1 }}
+                      >
+                        {nfFloat.format(webVitalsData.performanceAvg ?? 0)}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Today's performance score
+                      </Typography>
+                    </Box>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+          )}
       </Grid>
     </>
   );

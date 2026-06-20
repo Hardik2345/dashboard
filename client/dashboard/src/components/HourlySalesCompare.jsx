@@ -279,10 +279,10 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
   return (
     <Card elevation={0} sx={{
       borderRadius: isMobile ? 2 : 3,
-      height: isMobile ? 'auto' : '310px',
-      minHeight: isMobile ? '340px' : '310px'
+      height: isMobile ? 'auto' : '380px',
+      minHeight: isMobile ? '340px' : '380px'
     }}>
-      <CardContent sx={{ minHeight: 260, display: 'flex', flexDirection: 'column', px: 2, py: 3 }}>
+      <CardContent sx={{ minHeight: 330, display: 'flex', flexDirection: 'column', px: 2, py: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
           <Stack spacing={1}>
             <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
@@ -371,13 +371,13 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
         </Box>
 
         {loading ? (
-          <Skeleton variant="rounded" width="100%" height={200} />
+          <Skeleton variant="rounded" width="100%" height={270} />
         ) : chartData.length === 0 ? (
           <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Typography variant="body2" color="text.secondary">No data available.</Typography>
           </Box>
         ) : (
-          <Box sx={{ width: '100%', height: 200 }}>
+          <Box sx={{ width: '100%', height: 270, flexGrow: 1 }}>
             <ResponsiveContainer width="100%" height="100%">
               {viewMode === 'hourly' ? (
                 <AreaChart data={chartData} margin={{ top: 25, right: 20, left: 15, bottom: 5 }}>

@@ -448,13 +448,18 @@ function buildDiscountSnapshotPayload(metrics = {}, source = "db") {
   };
 }
 
-function buildCachedSnapshot(cachedData = {}, returnsObj = {}, source = "cache") {
+function buildCachedSnapshot(
+  cachedData = {},
+  returnsObj = {},
+  source = "cache",
+  totalCiEvents = 0,
+) {
   return {
     total_orders: Number(cachedData.total_orders || 0),
     total_sales: Number(cachedData.total_sales || 0),
     total_sessions: Number(cachedData.total_sessions || 0),
     total_atc_sessions: Number(cachedData.total_atc_sessions || 0),
-    total_ci_events: 0,
+    total_ci_events: Number(totalCiEvents || 0),
     average_order_value: Number(cachedData.average_order_value || 0),
     conversion_rate: Number(cachedData.conversion_rate || 0) / 100,
     conversion_rate_percent: Number(cachedData.conversion_rate || 0),
@@ -1148,8 +1153,16 @@ function buildMetricsSnapshotService(deps = {}) {
     const { start, end } = range;
 
     if (cachedData && isCacheEligible(range, filters, cutoffTime)) {
-      const returnsObj = await getReturnsSnapshot(conn, start, end, filters);
-      return buildCachedSnapshot(cachedData, returnsObj, "cache+db_returns");
+      const [returnsObj, totalCiEvents] = await Promise.all([
+        getReturnsSnapshot(conn, start, end, filters),
+        queryCheckoutInitiatedTotals(conn, start, end),
+      ]);
+      return buildCachedSnapshot(
+        cachedData,
+        returnsObj,
+        "cache+db_returns",
+        totalCiEvents,
+      );
     }
 
     if (getDiscountAggregateSource(filters, cutoffTime ? "hourly" : "daily")) {
