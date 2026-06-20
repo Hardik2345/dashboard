@@ -173,9 +173,6 @@ const HourlySalesCompare = lazy(
   () => import("./components/HourlySalesCompare.jsx"),
 );
 const WebVitals = lazy(() => import("./components/WebVitals.jsx"));
-const WebPerformancePanel = lazy(
-  () => import("./components/WebPerformancePanel.jsx"),
-);
 const AccessControlCard = lazy(
   () => import("./components/AccessControlCard.jsx"),
 );
@@ -201,7 +198,6 @@ const TREND_METRICS = new Set([
   "sessions",
   "cvr",
   "atc",
-  "ci_events",
   "atc_rate",
   "aov",
 ]);
@@ -1926,6 +1922,12 @@ export default function App() {
   }, [discountCode]);
 
   useEffect(() => {
+    if (selectedMetric === "ci_events") {
+      dispatch(setSelectedMetric("sales"));
+    }
+  }, [selectedMetric, dispatch]);
+
+  useEffect(() => {
     if (
       discountCode &&
       !["orders", "sales", "aov"].includes(selectedMetric)
@@ -2003,6 +2005,7 @@ export default function App() {
           const stats = {
             total_sessions: m.total_sessions?.value ?? 0,
             total_atc_sessions: m.total_atc_sessions?.value ?? 0,
+            total_ci_events: m.total_ci_events?.value ?? 0,
             total_orders: m.total_orders?.value ?? 0,
           };
           const deltas = {
@@ -2013,6 +2016,10 @@ export default function App() {
             atc: {
               diff_pct: m.total_atc_sessions?.diff_pct,
               direction: m.total_atc_sessions?.direction,
+            },
+            ci: {
+              diff_pct: m.total_ci_events?.diff_pct,
+              direction: m.total_ci_events?.direction,
             },
             orders: {
               diff_pct: m.total_orders?.diff_pct,
@@ -2689,24 +2696,12 @@ export default function App() {
                                         metric={selectedMetric}
                                       />
                                     </Grid>
-                                    {isMobile && (
-                                        <Grid size={{ xs: 12 }}>
-                                          <KPIs
-                                            query={trendMetricsQuery}
-                                            selectedMetric={selectedMetric}
-                                            onSelectMetric={handleSelectMetric}
-                                            productId={selectedProductIds}
-                                            productLabel={selectedProductLabel}
-                                            utmOptions={utmOptions}
-                                            showRow="mobile_bottom"
-                                            showWebVitals={hasPermission("web_vitals")}
-                                          />
-                                        </Grid>
-                                      )}
                                     {hasPermission("web_vitals") && (
                                       <Grid size={{ xs: 12, md: 3 }}>
-                                        <WebPerformancePanel
+                                        <WebVitals
                                           query={generalMetricsQuery}
+                                          metric={webVitalsMetric}
+                                          onMetricChange={setWebVitalsMetric}
                                         />
                                       </Grid>
                                     )}
@@ -2761,6 +2756,19 @@ export default function App() {
                                                   ?.diff_pct
                                                   ? Number(
                                                       funnelData.deltas.atc
+                                                        .diff_pct,
+                                                    ).toFixed(1)
+                                                  : undefined,
+                                              },
+                                              {
+                                                label: "Checkout Initiated",
+                                                value:
+                                                  funnelData.stats
+                                                    .total_ci_events || 0,
+                                                change: funnelData.deltas?.ci
+                                                  ?.diff_pct
+                                                  ? Number(
+                                                      funnelData.deltas.ci
                                                         .diff_pct,
                                                     ).toFixed(1)
                                                   : undefined,
@@ -2834,48 +2842,12 @@ export default function App() {
                               </Grid>
                             </Grid>
                             {(hasPermission("payment_split_order") ||
-                              hasPermission("payment_split_sales")) ? (
-                              <Box
-                                sx={{
-                                  display: "flex",
-                                  flexDirection: { xs: "column", md: "row" },
-                                  gap: { xs: 2, md: 0 },
-                                  alignItems: "stretch",
-                                }}
-                              >
-                                <Box sx={{ flex: 1, minWidth: 0, display: "flex" }}>
+                              hasPermission("payment_split_sales")) && (
+                              <Grid container spacing={2}>
+                                <Grid size={{ xs: 12 }}>
                                   <ModeOfPayment query={generalMetricsQuery} />
-                                </Box>
-                                {hasPermission("web_vitals") && (
-                                  <Box
-                                    sx={{
-                                      width: { xs: "100%", md: 370 },
-                                      display: "flex",
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    <WebVitals
-                                      query={generalMetricsQuery}
-                                      metric={webVitalsMetric}
-                                      onMetricChange={setWebVitalsMetric}
-                                      sx={{ width: "100%" }}
-                                    />
-                                  </Box>
-                                )}
-                              </Box>
-                            ) : (
-                              hasPermission("web_vitals") && (
-                                <Grid container spacing={2}>
-                                  <Grid size={{ xs: 12, md: 4 }} sx={{ display: "flex" }}>
-                                    <WebVitals
-                                      query={generalMetricsQuery}
-                                      metric={webVitalsMetric}
-                                      onMetricChange={setWebVitalsMetric}
-                                      sx={{ width: "100%" }}
-                                    />
-                                  </Grid>
                                 </Grid>
-                              )
+                              </Grid>
                             )}
                             {(hasPermission("payment_split_order") ||
                               hasPermission("payment_split_sales")) && (
@@ -2966,6 +2938,16 @@ export default function App() {
                                       change: funnelData.deltas?.atc?.diff_pct
                                         ? Number(
                                             funnelData.deltas.atc.diff_pct,
+                                          ).toFixed(1)
+                                        : undefined,
+                                    },
+                                    {
+                                      label: "Checkout Initiated",
+                                      value:
+                                        funnelData.stats.total_ci_events || 0,
+                                      change: funnelData.deltas?.ci?.diff_pct
+                                        ? Number(
+                                            funnelData.deltas.ci.diff_pct,
                                           ).toFixed(1)
                                         : undefined,
                                     },
