@@ -195,7 +195,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
     }, [query.start, query.end, query.brand_key, query.product_id, query.refreshKey, query.utm_source, query.utm_medium, query.utm_campaign, query.sales_channel, query.discount_code, convertAmount]);
 
     const renderChart = (title, chartData, totalLabel, rawTotal) => (
-        <div className="flex flex-col items-center flex-1 min-w-[250px]">
+        <div className="flex flex-col items-center flex-1 min-w-0">
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{title}</Typography>
             <div className="relative w-full h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -221,7 +221,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                 </div>
             </div>
 
-            <div className="flex flex-col gap-2 w-full mt-6 max-w-[240px]">
+            <div className="flex flex-col gap-2 w-full mt-6 px-2 md:px-4">
                 {chartData.map((entry, index) => {
                     const pctLabel = entry.percent !== undefined
                         ? Number(entry.percent).toFixed(1)
@@ -248,7 +248,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
     const isToday = query?.end ? dayjs(query.end).isSame(dayjs(), 'day') : false;
 
     return (
-        <Card elevation={0} sx={{ height: '100%', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+        <Card elevation={0} sx={{ width: '100%', height: '100%', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
             <CardContent>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 1 }}>
                     <Box sx={{ flex: '1 1 auto', minWidth: '150px' }}>
@@ -278,9 +278,9 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
 
                 {loading ? (
                     <div className="mt-4">
-                        <div className="flex flex-wrap justify-around gap-8">
+                        <div className="flex flex-col gap-8 md:flex-row md:items-start md:gap-6">
                             {[1, 2].map((i) => (
-                                <div key={i} className="flex flex-col items-center flex-1 min-w-[250px]">
+                                <div key={i} className="flex flex-col items-center flex-1 min-w-0">
                                     <Skeleton variant="text" width={100} sx={{ mb: 2, borderRadius: 1 }} />
                                     <Skeleton variant="circular" width={176} height={176} />
                                 </div>
@@ -289,7 +289,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                     </div>
                 ) : (
                     <div className="mt-4">
-                        <div className="flex flex-wrap justify-around gap-8">
+                        <div className="flex flex-col gap-8 md:flex-row md:items-start md:gap-6">
                             {renderChart('By Order count', data.quantity, data.totalQuantity, data.rawTotalQuantity)}
                             {renderChart('By Sales', data.value, data.totalValue, data.rawTotalValue)}
                         </div>

@@ -173,6 +173,9 @@ const HourlySalesCompare = lazy(
   () => import("./components/HourlySalesCompare.jsx"),
 );
 const WebVitals = lazy(() => import("./components/WebVitals.jsx"));
+const WebPerformancePanel = lazy(
+  () => import("./components/WebPerformancePanel.jsx"),
+);
 const AccessControlCard = lazy(
   () => import("./components/AccessControlCard.jsx"),
 );
@@ -198,6 +201,7 @@ const TREND_METRICS = new Set([
   "sessions",
   "cvr",
   "atc",
+  "ci_events",
   "atc_rate",
   "aov",
 ]);
@@ -976,9 +980,9 @@ export default function App() {
           value: totalOrders > 0 ? (refundedOrders / totalOrders) * 100 : 0,
         },
         {
-          name: "Web Performance(Avg)",
-          key: "web_performance_avg",
-          value: Number(webVitals?.performance?.current_avg || 0),
+          name: "Checkout Initiated Events",
+          key: "checkout_initiated_events",
+          value: Number(metrics?.total_ci_events?.value || 0),
         },
       ];
 
@@ -2685,8 +2689,7 @@ export default function App() {
                                         metric={selectedMetric}
                                       />
                                     </Grid>
-                                    {isMobile &&
-                                      hasPermission("web_vitals") && (
+                                    {isMobile && (
                                         <Grid size={{ xs: 12 }}>
                                           <KPIs
                                             query={trendMetricsQuery}
@@ -2696,16 +2699,14 @@ export default function App() {
                                             productLabel={selectedProductLabel}
                                             utmOptions={utmOptions}
                                             showRow="mobile_bottom"
-                                            showWebVitals={true}
+                                            showWebVitals={hasPermission("web_vitals")}
                                           />
                                         </Grid>
                                       )}
                                     {hasPermission("web_vitals") && (
                                       <Grid size={{ xs: 12, md: 3 }}>
-                                        <WebVitals
+                                        <WebPerformancePanel
                                           query={generalMetricsQuery}
-                                          metric={webVitalsMetric}
-                                          onMetricChange={setWebVitalsMetric}
                                         />
                                       </Grid>
                                     )}
@@ -2833,13 +2834,58 @@ export default function App() {
                               </Grid>
                             </Grid>
                             {(hasPermission("payment_split_order") ||
+                              hasPermission("payment_split_sales")) ? (
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  flexDirection: { xs: "column", md: "row" },
+                                  gap: { xs: 2, md: 0 },
+                                  alignItems: "stretch",
+                                }}
+                              >
+                                <Box sx={{ flex: 1, minWidth: 0, display: "flex" }}>
+                                  <ModeOfPayment query={generalMetricsQuery} />
+                                </Box>
+                                {hasPermission("web_vitals") && (
+                                  <Box
+                                    sx={{
+                                      width: { xs: "100%", md: 370 },
+                                      display: "flex",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    <WebVitals
+                                      query={generalMetricsQuery}
+                                      metric={webVitalsMetric}
+                                      onMetricChange={setWebVitalsMetric}
+                                      sx={{ width: "100%" }}
+                                    />
+                                  </Box>
+                                )}
+                              </Box>
+                            ) : (
+                              hasPermission("web_vitals") && (
+                                <Grid container spacing={2}>
+                                  <Grid size={{ xs: 12, md: 4 }} sx={{ display: "flex" }}>
+                                    <WebVitals
+                                      query={generalMetricsQuery}
+                                      metric={webVitalsMetric}
+                                      onMetricChange={setWebVitalsMetric}
+                                      sx={{ width: "100%" }}
+                                    />
+                                  </Grid>
+                                </Grid>
+                              )
+                            )}
+                            {(hasPermission("payment_split_order") ||
                               hasPermission("payment_split_sales")) && (
-                              <>
-                                <ModeOfPayment query={generalMetricsQuery} />
-                                <PaymentSplitTrend
-                                  query={generalMetricsQuery}
-                                />
-                              </>
+                              <Grid container spacing={2}>
+                                <Grid size={{ xs: 12 }}>
+                                  <PaymentSplitTrend
+                                    query={generalMetricsQuery}
+                                  />
+                                </Grid>
+                              </Grid>
                             )}
                             {hasPermission("traffic_split") && (
                               <TrafficSourceSplit

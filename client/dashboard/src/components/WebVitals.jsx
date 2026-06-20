@@ -51,7 +51,12 @@ const StatBox = ({ children, sx = {} }) => {
   );
 };
 
-const WebVitals = ({ query, metric: metricProp = "FCP", onMetricChange }) => {
+const WebVitals = ({
+  query,
+  metric: metricProp = "FCP",
+  onMetricChange,
+  sx = {},
+}) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const [localMetric, setLocalMetric] = useState(metricProp);
@@ -67,7 +72,7 @@ const WebVitals = ({ query, metric: metricProp = "FCP", onMetricChange }) => {
   const { topPages, loading } = useWebVitals(query, metric);
 
   return (
-    <StatBox sx={{ height: { xs: "auto", md: "310px" } }}>
+    <StatBox sx={{ height: "100%", minHeight: { xs: 320, md: 0 }, ...sx }}>
       <Box
         sx={{
           display: "flex",
