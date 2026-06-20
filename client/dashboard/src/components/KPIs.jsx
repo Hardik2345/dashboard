@@ -5,14 +5,12 @@ import { GlassChip } from "./ui/GlassChip.jsx";
 import KPIStat from "./KPIStat.jsx";
 import { getDashboardSummary, getProductKpis } from "../lib/api.js";
 import { formatInrAmount, useInrCurrency } from "../lib/currency.js";
-import useWebVitals from "../hooks/useWebVitals.js";
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPct = new Intl.NumberFormat(undefined, {
   style: "percent",
   maximumFractionDigits: 2,
 });
-const nfFloat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 
 export default function KPIs({
   query,
@@ -24,7 +22,6 @@ export default function KPIs({
   productLabel,
   utmOptions, // Prop from App
   showRow = null, // null for both, 1 for row 1, 2 for row 2
-  showWebVitals = true,
   compareMode = false,
 }) {
   const theme = useTheme();
@@ -50,9 +47,6 @@ export default function KPIs({
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
   const { convertAmount } = useInrCurrency(brandKey, end);
-
-  // Web Vitals Hook
-  const webVitalsData = useWebVitals(query, "Performance");
 
   const scopeLabel = useMemo(() => {
     if (!isProductScoped) return "All products";
@@ -184,6 +178,7 @@ export default function KPIs({
           const orders = { value: m.total_orders?.value ?? 0 };
           const sales = { value: m.total_sales?.value ?? 0 };
           const aov = { aov: m.average_order_value?.value ?? 0 };
+          const totalCiEvents = { value: m.total_ci_events?.value ?? 0 };
           const sessions = m.total_sessions?.value ?? 0;
           const atcSessions = m.total_atc_sessions?.value ?? 0;
           const unavailable = {
@@ -244,6 +239,10 @@ export default function KPIs({
             diff_pct: m.total_atc_sessions?.diff_pct ?? 0,
             direction: m.total_atc_sessions?.direction ?? "flat",
           };
+          const ciDelta = {
+            diff_pct: m.total_ci_events?.diff_pct ?? 0,
+            direction: m.total_ci_events?.direction ?? "flat",
+          };
           const cancelledRateDelta = {
             diff_pct: m.cancelled_orders?.diff_pct ?? 0,
             direction: m.cancelled_orders?.direction ?? "flat",
@@ -265,6 +264,7 @@ export default function KPIs({
           const cmpCvr = m.conversion_rate?.previous ?? null;
           const cmpSessions = m.total_sessions?.previous ?? null;
           const cmpAtcSessions = m.total_atc_sessions?.previous ?? null;
+          const cmpCiEvents = m.total_ci_events?.previous ?? null;
           const cmpAtcRate =
             m.atc_rate?.previous != null
               ? m.atc_rate.previous / 100
@@ -285,6 +285,7 @@ export default function KPIs({
             orders,
             sales,
             aov,
+            total_ci_events: totalCiEvents,
             cvr,
             funnel,
             returnsData,
@@ -294,6 +295,7 @@ export default function KPIs({
             cvrDelta,
             sessDelta,
             atcDelta,
+            ciDelta,
             atcRateDelta,
             cancelledRateDelta,
             refundedRateDelta,
@@ -304,6 +306,7 @@ export default function KPIs({
             prevCvr: cmpCvr,
             prevSessions: cmpSessions,
             prevAtcSessions: cmpAtcSessions,
+            prevCiEvents: cmpCiEvents,
             prevAtcRate: cmpAtcRate,
             prevCancelledRate,
             prevRefundedRate,
@@ -728,7 +731,7 @@ export default function KPIs({
           showRow === "mobile_top") && (
           <>
             <Grid
-              size={{ xs: 6, sm: 6, md: showWebVitals ? 3 : 4 }}
+              size={{ xs: 6, sm: 6, md: 3 }}
               sx={{ order: { xs: 5, md: 0 } }}
             >
               <KPIStat
@@ -761,7 +764,7 @@ export default function KPIs({
               />
             </Grid>
             <Grid
-              size={{ xs: 6, sm: 6, md: showWebVitals ? 3 : 4 }}
+              size={{ xs: 6, sm: 6, md: 3 }}
               sx={{ order: { xs: 6, md: 0 } }}
             >
               <KPIStat
@@ -894,13 +897,13 @@ export default function KPIs({
           </>
         )}
 
-        {/* Row 2 split: Web Performance and CVR */}
+        {/* Row 2 split: Conversion and Checkout Initiated */}
         {(showRow === null ||
           showRow === 2 ||
           showRow === "web_perf_cvr" ||
           showRow === "mobile_top") && (
           <Grid
-            size={{ xs: 6, sm: 6, md: showWebVitals ? 3 : 4 }}
+            size={{ xs: 6, sm: 6, md: 3 }}
             sx={{ order: { xs: 4, md: 0 } }}
           >
             <KPIStat
@@ -937,29 +940,36 @@ export default function KPIs({
         {(showRow === null ||
           showRow === 2 ||
           showRow === "web_perf_cvr" ||
-          showRow === "mobile_bottom") &&
-          showWebVitals && (
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <KPIStat
-                label="Web Performance(Avg)"
-                centerOnMobile={true}
-                value={webVitalsData.performanceAvg ?? 0}
-                loading={webVitalsData.loading}
-                deltaLoading={webVitalsData.loading}
-                formatter={(v) => nfFloat.format(v)}
-                delta={
-                  webVitalsData.performanceChange !== null
-                    ? {
-                        value: webVitalsData.performanceChange,
-                        direction:
-                          webVitalsData.performanceChange > 0 ? "up" : "down",
-                      }
-                    : undefined
-                }
-                selected={false}
-              />
-            </Grid>
-          )}
+          showRow === "mobile_bottom") && (
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <KPIStat
+              label="Checkout Initiated Events"
+              centerOnMobile={true}
+              value={data.total_ci_events?.value ?? 0}
+              loading={loading}
+              deltaLoading={deltaLoading}
+              formatter={(v) => nfInt.format(v)}
+              delta={
+                data.ciDelta
+                  ? {
+                      value: data.ciDelta.diff_pct,
+                      direction: data.ciDelta.direction,
+                    }
+                  : undefined
+              }
+              compareValue={
+                compareMode && data.prevCiEvents != null
+                  ? data.prevCiEvents
+                  : undefined
+              }
+              compareFormatter={(v) => nfInt.format(v)}
+              onSelect={
+                onSelectMetric ? () => onSelectMetric("ci_events") : undefined
+              }
+              selected={selectedMetric === "ci_events"}
+            />
+          </Grid>
+        )}
       </Grid>
     </>
   );
