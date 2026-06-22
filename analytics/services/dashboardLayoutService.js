@@ -119,22 +119,42 @@ function mergeVisibleOrder(existingLayout, submittedVisibleOrder, editableIds) {
 function buildDashboardLayoutService({ model }) {
   return {
     async getLayoutForUser(userId) {
-      const row = await model.findOne({
-        where: { user_id: String(userId), page_name: DASHBOARD_PAGE_NAME },
-      });
+      const query = {
+        userId: String(userId),
+        pageName: DASHBOARD_PAGE_NAME,
+      };
+      const row = await model.findOne(query);
+      const connection = model?.db || model?.collection?.conn;
 
       if (!row) {
+        if (typeof model?.collection?.name === "string") {
+          // Temporary trace for Mongo layout lookup visibility.
+          console.log("[dashboard-layout] mongo get miss", {
+            dbName: connection?.name,
+            collection: model.collection.name,
+            query,
+          });
+        }
         return normalizeStoredLayout();
       }
 
-      return normalizeStoredLayout(row.layout_json);
+      if (typeof model?.collection?.name === "string") {
+        console.log("[dashboard-layout] mongo get hit", {
+          dbName: connection?.name,
+          collection: model.collection.name,
+          query,
+        });
+      }
+      return normalizeStoredLayout(row.layoutJson);
     },
 
     async saveLayoutForUser(userId, user, payload = {}) {
-      const existingRow = await model.findOne({
-        where: { user_id: String(userId), page_name: DASHBOARD_PAGE_NAME },
-      });
-      const existingLayout = normalizeStoredLayout(existingRow?.layout_json);
+      const query = {
+        userId: String(userId),
+        pageName: DASHBOARD_PAGE_NAME,
+      };
+      const existingRow = await model.findOne(query);
+      const existingLayout = normalizeStoredLayout(existingRow?.layoutJson);
       const editable = getEditableWidgetIds(user);
 
       const nextLayout = {
@@ -153,11 +173,36 @@ function buildDashboardLayoutService({ model }) {
 
       const normalizedNext = normalizeStoredLayout(nextLayout);
 
-      await model.upsert({
-        user_id: String(userId),
-        page_name: DASHBOARD_PAGE_NAME,
-        layout_json: normalizedNext,
-      });
+      const writeResult = await model.findOneAndUpdate(
+        query,
+        {
+          $set: {
+            layoutJson: normalizedNext,
+            updatedAt: new Date(),
+          },
+          $setOnInsert: {
+            createdAt: new Date(),
+          },
+        },
+        {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true,
+        },
+      );
+      const connection = model?.db || model?.collection?.conn;
+
+      if (typeof model?.collection?.name === "string") {
+        console.log("[dashboard-layout] mongo save", {
+          dbName: connection?.name,
+          collection: model.collection.name,
+          query,
+          hadExistingLayout: Boolean(existingRow),
+          savedDesktopCount: normalizedNext.desktop.length,
+          savedMobileCount: normalizedNext.mobile.length,
+          documentId: writeResult?._id?.toString?.() || null,
+        });
+      }
 
       return normalizedNext;
     },

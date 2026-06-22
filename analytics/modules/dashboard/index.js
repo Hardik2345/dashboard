@@ -1,14 +1,15 @@
 const express = require("express");
 const { requirePermission } = require("../../shared/middleware/identityEdge");
+const DashboardLayout = require("../../shared/db/models/DashboardLayout.mongo");
 const {
   buildDashboardLayoutService,
 } = require("../../services/dashboardLayoutService");
 const logger = require("../../shared/utils/logger");
 
-function buildDashboardRouter(sequelize) {
+function buildDashboardRouter(deps = {}) {
   const router = express.Router();
   const service = buildDashboardLayoutService({
-    model: sequelize.models.dashboard_layouts,
+    model: deps.layoutModel || deps.models?.dashboard_layouts || DashboardLayout,
   });
 
   router.get(

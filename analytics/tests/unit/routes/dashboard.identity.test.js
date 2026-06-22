@@ -10,11 +10,11 @@ describe("dashboard layout router identity edge", () => {
     const { buildDashboardRouter } = require("../../../modules/dashboard");
     const model = {
       findOne: jest.fn().mockResolvedValue(null),
-      upsert: jest.fn().mockResolvedValue([{}, true]),
+      findOneAndUpdate: jest.fn().mockResolvedValue({}),
       ...overrides,
     };
     return {
-      router: buildDashboardRouter({ models: { dashboard_layouts: model } }),
+      router: buildDashboardRouter({ layoutModel: model }),
       model,
     };
   }
