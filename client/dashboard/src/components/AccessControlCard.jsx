@@ -80,6 +80,7 @@ const PERMISSION_OPTIONS = [
   "payment_split_order",
   "payment_split_sales",
   "traffic_split",
+  "dashboard_layout_customize",
   "sales_channel_filter",
   "device_type_filter",
   "sessions_drop_off_funnel",
