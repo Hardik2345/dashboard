@@ -213,7 +213,10 @@ export default function DashboardLayoutEditor({
     setActiveId(active.id);
   };
 
-  const handleDragOver = ({ active, over }) => {
+  const handleDragOver = () => {};
+
+  const handleDragEnd = ({ active, over }) => {
+    setActiveId(null);
     if (!over || active.id === over.id) return;
     setCurrentItems((items) => {
       const oldIndex = items.indexOf(active.id);
@@ -223,11 +226,6 @@ export default function DashboardLayoutEditor({
       }
       return arrayMove(items, oldIndex, newIndex);
     });
-  };
-
-  const handleDragEnd = ({ active, over }) => {
-    setActiveId(null);
-    if (!over || active.id === over.id) return;
   };
 
   const handleDragCancel = () => {
