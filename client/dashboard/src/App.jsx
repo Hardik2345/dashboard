@@ -31,7 +31,7 @@ import Header from "./components/Header.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import SidebarToggle from "./components/ui/SidebarToggle.jsx";
 import { AnimeNavBar } from "./components/ui/AnimeNavBar.jsx";
-import DashboardLayoutEditor from "./components/DashboardLayoutEditor.jsx";
+import InlineDashboardLayoutEditor from "./components/InlineDashboardLayoutEditor.jsx";
 
 import {
   LayoutGrid,
@@ -355,11 +355,12 @@ export default function App() {
   const [utmOptions, setUtmOptions] = useState(null);
   const [webVitalsMetric, setWebVitalsMetric] = useState("FCP");
   const [trafficSplitRules, setTrafficSplitRules] = useState([]);
-  const [layoutEditorOpen, setLayoutEditorOpen] = useState(false);
+  const [layoutEditMode, setLayoutEditMode] = useState(false);
   const [dashboardLayout, setDashboardLayout] = useState(() =>
     normalizeDashboardLayout(),
   );
   const [previewDashboardLayout, setPreviewDashboardLayout] = useState(null);
+  const [isSavingDashboardLayout, setIsSavingDashboardLayout] = useState(false);
 
   // Track navigation direction for transitions
   const [direction, setDirection] = useState(0);
@@ -688,6 +689,15 @@ export default function App() {
     () => normalizeDashboardLayout(previewDashboardLayout || dashboardLayout),
     [dashboardLayout, previewDashboardLayout],
   );
+
+  const isDashboardLayoutDirty = useMemo(() => {
+    const preview = normalizeDashboardLayout(previewDashboardLayout || dashboardLayout);
+    const saved = normalizeDashboardLayout(dashboardLayout);
+    return (
+      preview.desktop.join("|") !== saved.desktop.join("|")
+      || preview.mobile.join("|") !== saved.mobile.join("|")
+    );
+  }, [dashboardLayout, previewDashboardLayout]);
 
   const hasActiveProductFilter = useMemo(() => {
     if (!productSelection) return false;
@@ -2086,79 +2096,59 @@ export default function App() {
     ],
   );
 
-  const renderedDashboardWidgets = useMemo(() => {
-    const viewport = isMobile ? "mobile" : "desktop";
-    const ids = isMobile ? visibleMobileWidgetIds : visibleDesktopWidgetIds;
-    const registry = isMobile ? mobileWidgetRegistry : desktopWidgetRegistry;
-    const trailingAnchorIds =
-      viewport === "desktop"
-        ? ["kpi_trend"]
-        : visibleMobileWidgetIds.includes("top_pages")
-          ? ["top_pages"]
-          : ["kpi_trend"];
-    const anchorIndex = ids.reduce((lastMatch, id, index) => {
-      return trailingAnchorIds.includes(id) ? index : lastMatch;
-    }, -1);
-
-    return ids.flatMap((widgetId, index) => {
-      const nodes = [
-        <motion.div
-          key={widgetId}
-          layout
-          transition={{ type: "spring", stiffness: 380, damping: 34 }}
-          style={{ width: "100%" }}
-        >
-          {registry[widgetId]}
-        </motion.div>,
-      ];
-      if (index === anchorIndex) {
-        nodes.push(
-          <motion.div
-            key={`${widgetId}-extras`}
-            layout
-            transition={{ type: "spring", stiffness: 380, damping: 34 }}
-            style={{ width: "100%" }}
-          >
-            {renderDashboardExtras()}
-          </motion.div>,
-        );
-      }
-      return nodes;
-    });
-  }, [
-    desktopWidgetRegistry,
-    isMobile,
-    mobileWidgetRegistry,
-    renderDashboardExtras,
-    visibleDesktopWidgetIds,
-    visibleMobileWidgetIds,
-  ]);
-
   const handleSaveDashboardLayout = useCallback(async (draftLayout) => {
     const payload = {
       desktop: draftLayout.desktop,
       mobile: draftLayout.mobile,
     };
+    setIsSavingDashboardLayout(true);
     const res = await saveDashboardLayout(payload);
+    setIsSavingDashboardLayout(false);
     if (res.error) return;
     setDashboardLayout(normalizeDashboardLayout(res.data));
     setPreviewDashboardLayout(null);
-    setLayoutEditorOpen(false);
+    setLayoutEditMode(false);
   }, []);
 
   const handleOpenLayoutEditor = useCallback(() => {
+    if (layoutEditMode) return;
     setPreviewDashboardLayout(normalizeDashboardLayout(dashboardLayout));
-    setLayoutEditorOpen(true);
-  }, [dashboardLayout]);
+    setLayoutEditMode(true);
+  }, [dashboardLayout, layoutEditMode]);
 
   const handleCloseLayoutEditor = useCallback(() => {
     setPreviewDashboardLayout(null);
-    setLayoutEditorOpen(false);
+    setLayoutEditMode(false);
   }, []);
 
-  const handlePreviewDashboardLayout = useCallback((draftLayout) => {
-    setPreviewDashboardLayout(normalizeDashboardLayout(draftLayout));
-  }, []);
+  const handleInlineDashboardReorder = useCallback((nextVisibleIds) => {
+    const viewport = isMobile ? "mobile" : "desktop";
+    setPreviewDashboardLayout((prev) => {
+      const base = normalizeDashboardLayout(prev || dashboardLayout);
+      return normalizeDashboardLayout({
+        ...base,
+        [viewport]: nextVisibleIds,
+      });
+    });
+  }, [dashboardLayout, isMobile]);
+
+  const handleResetDashboardLayout = useCallback(() => {
+    const viewport = isMobile ? "mobile" : "desktop";
+    setPreviewDashboardLayout((prev) => {
+      const base = normalizeDashboardLayout(prev || dashboardLayout);
+      return normalizeDashboardLayout({
+        ...base,
+        [viewport]: [...DASHBOARD_LAYOUT_DEFAULTS[viewport]],
+      });
+    });
+  }, [dashboardLayout, isMobile]);
+
+  const activeWidgetIds = isMobile ? visibleMobileWidgetIds : visibleDesktopWidgetIds;
+  const activeWidgetRegistry = isMobile ? mobileWidgetRegistry : desktopWidgetRegistry;
+  const extraAfterId = isMobile
+    ? (visibleMobileWidgetIds.includes("top_pages") ? "top_pages" : "kpi_trend")
+    : "kpi_trend";
+  const dashboardExtrasNode = renderDashboardExtras();
 
   const glassStyles = useMemo(
     () => ({
@@ -3054,9 +3044,19 @@ export default function App() {
                     {authorTab === "dashboard" &&
                       (hasBrand ? (
                         <Suspense fallback={<SectionFallback count={5} />}>
-                          <Stack spacing={{ xs: 1, md: 1 }}>
-                            {renderedDashboardWidgets}
-                          </Stack>
+                          <InlineDashboardLayoutEditor
+                            isEditing={layoutEditMode}
+                            itemIds={activeWidgetIds}
+                            renderWidget={(widgetId) => activeWidgetRegistry[widgetId]}
+                            extraAfterId={extraAfterId}
+                            extras={dashboardExtrasNode}
+                            onOrderChange={handleInlineDashboardReorder}
+                            onSave={() => handleSaveDashboardLayout(effectiveDashboardLayout)}
+                            onCancel={handleCloseLayoutEditor}
+                            onReset={handleResetDashboardLayout}
+                            isDirty={isDashboardLayoutDirty}
+                            isSaving={isSavingDashboardLayout}
+                          />
                         </Suspense>
                       ) : (
                         <Paper
@@ -3308,17 +3308,6 @@ export default function App() {
             <Suspense fallback={null}>
               <Footer />
             </Suspense>
-            {canCustomizeDashboardLayout && (
-              <DashboardLayoutEditor
-                open={layoutEditorOpen}
-                onClose={handleCloseLayoutEditor}
-                onSave={handleSaveDashboardLayout}
-                onPreviewChange={handlePreviewDashboardLayout}
-                initialLayout={previewDashboardLayout || dashboardLayout}
-                visibleDesktopIds={visibleDesktopWidgetIds}
-                visibleMobileIds={visibleMobileWidgetIds}
-              />
-            )}
           </Box>
         </Box>
         {isMobile && mobileNavItems.length > 1 && (

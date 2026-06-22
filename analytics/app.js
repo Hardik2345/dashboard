@@ -11,6 +11,7 @@ const {
   sentryErrorMiddleware,
   captureError,
 } = require("./observability");
+const { connectMongo } = require("./shared/db/mongo");
 const { sequelize } = require("./shared/db/mainSequelize");
 const { buildMetricsRouter } = require("./modules/metrics");
 const { buildProductConversionRouter } = require("./modules/product-conversion");
@@ -56,7 +57,7 @@ app.get("/", (_req, res) => {
 app.use("/metrics", buildMetricsRouter(sequelize));
 app.use("/metrics", buildProductConversionRouter());
 app.use("/metrics", buildBundlesRouter());
-app.use("/dashboard", buildDashboardRouter(sequelize));
+app.use("/dashboard", buildDashboardRouter());
 app.use("/external", buildExternalRouter());
 app.use("/", buildUploadsRouter());
 app.use("/", buildApiKeysRouter(sequelize));
@@ -71,17 +72,11 @@ app.use((err, _req, res, _next) => {
 
 async function init() {
   await sequelize.authenticate();
+  await connectMongo();
   try {
     await sequelize.models.api_keys.sync();
   } catch (err) {
     logger.warn("API keys sync skipped", { error: err?.message || String(err) });
-  }
-  try {
-    await sequelize.models.dashboard_layouts.sync();
-  } catch (err) {
-    logger.warn("Dashboard layouts sync skipped", {
-      error: err?.message || String(err),
-    });
   }
 
   const port = process.env.PORT || 3000;

@@ -73,11 +73,11 @@ describe("dashboardLayoutService", () => {
   });
 
   test("saveLayoutForUser creates normalized persisted layout and preserves hidden widgets", async () => {
-    const upsert = jest.fn().mockResolvedValue([{}, true]);
+    const findOneAndUpdate = jest.fn().mockResolvedValue({});
     const findOne = jest
       .fn()
       .mockResolvedValueOnce({
-        layout_json: {
+        layoutJson: {
           version: 1,
           desktop: ["legacy_hidden", ...DEFAULT_DESKTOP_LAYOUT],
           mobile: ["legacy_hidden", ...DEFAULT_MOBILE_LAYOUT],
@@ -85,7 +85,7 @@ describe("dashboardLayoutService", () => {
       });
 
     const service = buildDashboardLayoutService({
-      model: { findOne, upsert },
+      model: { findOne, findOneAndUpdate },
     });
 
     const result = await service.saveLayoutForUser(
@@ -109,15 +109,30 @@ describe("dashboardLayoutService", () => {
       "legacy_hidden",
       "payment_trend",
       "payment_split",
+      "top_pages",
       "kpi_cards",
       "kpi_trend",
-      "top_pages",
       "traffic_split",
     ]);
-    expect(upsert).toHaveBeenCalledWith({
-      user_id: "user-1",
-      page_name: "dashboard",
-      layout_json: result,
-    });
+    expect(findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        userId: "user-1",
+        pageName: "dashboard",
+      },
+      {
+        $set: {
+          layoutJson: result,
+          updatedAt: expect.any(Date),
+        },
+        $setOnInsert: {
+          createdAt: expect.any(Date),
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+      },
+    );
   });
 });
