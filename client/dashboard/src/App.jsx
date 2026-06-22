@@ -21,6 +21,8 @@ import {
   Divider,
   Alert,
   Skeleton,
+  IconButton,
+  Tooltip,
   useTheme,
   useMediaQuery,
 } from "@mui/material";
@@ -29,6 +31,7 @@ import Header from "./components/Header.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import SidebarToggle from "./components/ui/SidebarToggle.jsx";
 import { AnimeNavBar } from "./components/ui/AnimeNavBar.jsx";
+import DashboardLayoutEditor from "./components/DashboardLayoutEditor.jsx";
 
 import {
   LayoutGrid,
@@ -38,6 +41,7 @@ import {
   Store,
   Filter,
   Package,
+  Grip,
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
@@ -108,12 +112,19 @@ import {
   getOrderSplit,
   getPaymentSalesSplit,
   getTrafficSourceSplit,
+  getDashboardLayout,
   doPost,
   doDelete,
+  saveDashboardLayout,
 } from "./lib/api.js";
 import { initializeSessionTracking } from "./lib/sessionTracker.js";
 import { isRangeOver30DaysInclusive } from "./lib/dateRange.js";
 import { setFrontendUserContext } from "./observability.js";
+import {
+  DASHBOARD_LAYOUT_DEFAULTS,
+  getVisibleDashboardWidgetIds,
+  normalizeDashboardLayout,
+} from "./lib/dashboardLayout.js";
 
 import { TextField, Button, Paper, Typography, Chip } from "@mui/material";
 import axios from "axios";
@@ -344,6 +355,11 @@ export default function App() {
   const [utmOptions, setUtmOptions] = useState(null);
   const [webVitalsMetric, setWebVitalsMetric] = useState("FCP");
   const [trafficSplitRules, setTrafficSplitRules] = useState([]);
+  const [layoutEditorOpen, setLayoutEditorOpen] = useState(false);
+  const [dashboardLayout, setDashboardLayout] = useState(() =>
+    normalizeDashboardLayout(),
+  );
+  const [previewDashboardLayout, setPreviewDashboardLayout] = useState(null);
 
   // Track navigation direction for transitions
   const [direction, setDirection] = useState(0);
@@ -559,6 +575,9 @@ export default function App() {
     },
     [isAuthor, viewerPermissions],
   );
+  const canCustomizeDashboardLayout = hasPermission(
+    "dashboard_layout_customize",
+  );
 
   const canAccessInventoryPanel = useMemo(() => {
     if (isAuthor) return true;
@@ -640,6 +659,36 @@ export default function App() {
     }
     return productSelection.label || "";
   }, [productSelection]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!initialized || !user || !canCustomizeDashboardLayout) {
+      setDashboardLayout(normalizeDashboardLayout());
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    getDashboardLayout().then((res) => {
+      if (cancelled) return;
+      if (res.error) {
+        setDashboardLayout(normalizeDashboardLayout());
+        return;
+      }
+      setDashboardLayout(normalizeDashboardLayout(res.data));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialized, user, canCustomizeDashboardLayout]);
+
+  const effectiveDashboardLayout = useMemo(
+    () => normalizeDashboardLayout(previewDashboardLayout || dashboardLayout),
+    [dashboardLayout, previewDashboardLayout],
+  );
+
   const hasActiveProductFilter = useMemo(() => {
     if (!productSelection) return false;
     const products = Array.isArray(productSelection)
@@ -1787,6 +1836,330 @@ export default function App() {
     });
   }, []);
 
+  const visibleDesktopWidgetIds = useMemo(
+    () =>
+      getVisibleDashboardWidgetIds({
+        viewport: "desktop",
+        layout: effectiveDashboardLayout,
+        hasPermission,
+      }),
+    [effectiveDashboardLayout, hasPermission],
+  );
+
+  const visibleMobileWidgetIds = useMemo(
+    () =>
+      getVisibleDashboardWidgetIds({
+        viewport: "mobile",
+        layout: effectiveDashboardLayout,
+        hasPermission,
+      }),
+    [effectiveDashboardLayout, hasPermission],
+  );
+
+  const renderDashboardExtras = useCallback(() => {
+    return (
+      <>
+        {!isAuthor &&
+          hasPermission("sessions_drop_off_funnel") &&
+          (funnelData?.stats ? (
+            <Suspense
+              fallback={
+                <Skeleton variant="rounded" width="100%" height={250} />
+              }
+            >
+              <Box sx={{ mt: 2 }}>
+                <Typography
+                  variant="subtitle2"
+                  color="text.secondary"
+                  sx={{ mb: 1.5, fontWeight: 500, ml: 1 }}
+                >
+                  Sessions Drop-off Funnel
+                </Typography>
+                <FunnelChart
+                  data={[
+                    {
+                      label: "Sessions",
+                      value: funnelData.stats.total_sessions || 0,
+                      change: funnelData.deltas?.sessions?.diff_pct
+                        ? Number(funnelData.deltas.sessions.diff_pct).toFixed(1)
+                        : undefined,
+                    },
+                    {
+                      label: "Add to Cart",
+                      value: funnelData.stats.total_atc_sessions || 0,
+                      change: funnelData.deltas?.atc?.diff_pct
+                        ? Number(funnelData.deltas.atc.diff_pct).toFixed(1)
+                        : undefined,
+                    },
+                    {
+                      label: "Checkout Initiated",
+                      value: funnelData.stats.total_ci_events || 0,
+                      change: funnelData.deltas?.ci?.diff_pct
+                        ? Number(funnelData.deltas.ci.diff_pct).toFixed(1)
+                        : undefined,
+                    },
+                    {
+                      label: "Orders",
+                      value: funnelData.stats.total_orders || 0,
+                      change:
+                        funnelData.deltas?.orders?.diff_pct ||
+                        funnelData.deltas?.orders?.diff_pp
+                          ? Number(
+                              funnelData.deltas?.orders?.diff_pct ||
+                                funnelData.deltas?.orders?.diff_pp,
+                            ).toFixed(1)
+                          : undefined,
+                    },
+                  ]}
+                  height={250}
+                />
+              </Box>
+            </Suspense>
+          ) : (
+            <Skeleton variant="rounded" width="100%" height={290} />
+          ))}
+
+        {!isAuthor && hasPermission("product_conversion") && (
+          <Box sx={{ mt: 3 }}>
+            <Typography
+              variant="subtitle2"
+              color="text.secondary"
+              sx={{ mb: 1.5, fontWeight: 500, ml: 1 }}
+            >
+              Product Performance
+            </Typography>
+            <Suspense
+              fallback={
+                <Skeleton variant="rounded" width="100%" height={300} />
+              }
+            >
+              <ProductConversionTable
+                brandKey={activeBrandKey}
+                showCompareMode={hasPermission("compare_mode")}
+                isAuthor={isAuthor}
+                permissions={viewerPermissions}
+              />
+            </Suspense>
+          </Box>
+        )}
+      </>
+    );
+  }, [
+    activeBrandKey,
+    funnelData,
+    hasPermission,
+    isAuthor,
+    viewerPermissions,
+  ]);
+
+  const desktopWidgetRegistry = useMemo(
+    () => ({
+      kpi_cards: (
+        <Stack spacing={{ xs: 1, md: 1 }}>
+          <KPIs
+            query={trendMetricsQuery}
+            selectedMetric={selectedMetric}
+            onSelectMetric={handleSelectMetric}
+            onFunnelData={handleFunnelData}
+            productId={selectedProductIds}
+            productLabel={selectedProductLabel}
+            utmOptions={utmOptions}
+            showRow={1}
+            showWebVitals={hasPermission("web_vitals")}
+            compareMode={compareMode}
+          />
+          <KPIs
+            query={trendMetricsQuery}
+            selectedMetric={selectedMetric}
+            onSelectMetric={handleSelectMetric}
+            productId={selectedProductIds}
+            productLabel={selectedProductLabel}
+            utmOptions={utmOptions}
+            showRow={2}
+            showWebVitals={hasPermission("web_vitals")}
+            compareMode={compareMode}
+          />
+        </Stack>
+      ),
+      kpi_trend: (
+        <Grid container spacing={2}>
+          <Grid
+            size={{
+              xs: 12,
+              md: hasPermission("web_vitals") ? 9 : 12,
+            }}
+          >
+            <HourlySalesCompare
+              query={trendMetricsQuery}
+              metric={selectedMetric}
+            />
+          </Grid>
+          {hasPermission("web_vitals") && (
+            <Grid size={{ xs: 12, md: 3 }}>
+              <WebVitals
+                query={generalMetricsQuery}
+                metric={webVitalsMetric}
+                onMetricChange={setWebVitalsMetric}
+              />
+            </Grid>
+          )}
+        </Grid>
+      ),
+      payment_split: <ModeOfPayment query={generalMetricsQuery} />,
+      payment_trend: <PaymentSplitTrend query={generalMetricsQuery} />,
+      traffic_split: (
+        <TrafficSourceSplit
+          query={generalMetricsQuery}
+          compareMode={compareMode}
+          mappingRules={trafficSplitRules}
+        />
+      ),
+    }),
+    [
+      compareMode,
+      generalMetricsQuery,
+      handleFunnelData,
+      handleSelectMetric,
+      hasPermission,
+      selectedMetric,
+      selectedProductIds,
+      selectedProductLabel,
+      trafficSplitRules,
+      trendMetricsQuery,
+      utmOptions,
+      webVitalsMetric,
+    ],
+  );
+
+  const mobileWidgetRegistry = useMemo(
+    () => ({
+      kpi_cards: (
+        <KPIs
+          query={trendMetricsQuery}
+          selectedMetric={selectedMetric}
+          onSelectMetric={handleSelectMetric}
+          onFunnelData={handleFunnelData}
+          productId={selectedProductIds}
+          productLabel={selectedProductLabel}
+          utmOptions={utmOptions}
+          showRow="mobile_top"
+          showWebVitals={hasPermission("web_vitals")}
+          compareMode={compareMode}
+        />
+      ),
+      kpi_trend: (
+        <HourlySalesCompare
+          query={trendMetricsQuery}
+          metric={selectedMetric}
+        />
+      ),
+      top_pages: (
+        <WebVitals
+          query={generalMetricsQuery}
+          metric={webVitalsMetric}
+          onMetricChange={setWebVitalsMetric}
+        />
+      ),
+      payment_split: <ModeOfPayment query={generalMetricsQuery} />,
+      payment_trend: <PaymentSplitTrend query={generalMetricsQuery} />,
+      traffic_split: (
+        <TrafficSourceSplit
+          query={generalMetricsQuery}
+          compareMode={compareMode}
+          mappingRules={trafficSplitRules}
+        />
+      ),
+    }),
+    [
+      compareMode,
+      generalMetricsQuery,
+      handleFunnelData,
+      handleSelectMetric,
+      hasPermission,
+      selectedMetric,
+      selectedProductIds,
+      selectedProductLabel,
+      trafficSplitRules,
+      trendMetricsQuery,
+      utmOptions,
+      webVitalsMetric,
+    ],
+  );
+
+  const renderedDashboardWidgets = useMemo(() => {
+    const viewport = isMobile ? "mobile" : "desktop";
+    const ids = isMobile ? visibleMobileWidgetIds : visibleDesktopWidgetIds;
+    const registry = isMobile ? mobileWidgetRegistry : desktopWidgetRegistry;
+    const trailingAnchorIds =
+      viewport === "desktop"
+        ? ["kpi_trend"]
+        : visibleMobileWidgetIds.includes("top_pages")
+          ? ["top_pages"]
+          : ["kpi_trend"];
+    const anchorIndex = ids.reduce((lastMatch, id, index) => {
+      return trailingAnchorIds.includes(id) ? index : lastMatch;
+    }, -1);
+
+    return ids.flatMap((widgetId, index) => {
+      const nodes = [
+        <motion.div
+          key={widgetId}
+          layout
+          transition={{ type: "spring", stiffness: 380, damping: 34 }}
+          style={{ width: "100%" }}
+        >
+          {registry[widgetId]}
+        </motion.div>,
+      ];
+      if (index === anchorIndex) {
+        nodes.push(
+          <motion.div
+            key={`${widgetId}-extras`}
+            layout
+            transition={{ type: "spring", stiffness: 380, damping: 34 }}
+            style={{ width: "100%" }}
+          >
+            {renderDashboardExtras()}
+          </motion.div>,
+        );
+      }
+      return nodes;
+    });
+  }, [
+    desktopWidgetRegistry,
+    isMobile,
+    mobileWidgetRegistry,
+    renderDashboardExtras,
+    visibleDesktopWidgetIds,
+    visibleMobileWidgetIds,
+  ]);
+
+  const handleSaveDashboardLayout = useCallback(async (draftLayout) => {
+    const payload = {
+      desktop: draftLayout.desktop,
+      mobile: draftLayout.mobile,
+    };
+    const res = await saveDashboardLayout(payload);
+    if (res.error) return;
+    setDashboardLayout(normalizeDashboardLayout(res.data));
+    setPreviewDashboardLayout(null);
+    setLayoutEditorOpen(false);
+  }, []);
+
+  const handleOpenLayoutEditor = useCallback(() => {
+    setPreviewDashboardLayout(normalizeDashboardLayout(dashboardLayout));
+    setLayoutEditorOpen(true);
+  }, [dashboardLayout]);
+
+  const handleCloseLayoutEditor = useCallback(() => {
+    setPreviewDashboardLayout(null);
+    setLayoutEditorOpen(false);
+  }, []);
+
+  const handlePreviewDashboardLayout = useCallback((draftLayout) => {
+    setPreviewDashboardLayout(normalizeDashboardLayout(draftLayout));
+  }, []);
+
   const glassStyles = useMemo(
     () => ({
       backdropFilter: "blur(12px)",
@@ -2405,7 +2778,14 @@ export default function App() {
                   hasPermission("device_type_filter") ||
                   showMultipleBrands
                 }
+                showCustomizeButton={
+                  isMobile &&
+                  authorTab === "dashboard" &&
+                  hasBrand &&
+                  canCustomizeDashboardLayout
+                }
                 onFilterClick={() => setMobileFilterOpen(true)}
+                onCustomizeLayoutClick={handleOpenLayoutEditor}
               />
             </Box>
 
@@ -2488,6 +2868,28 @@ export default function App() {
                         }}
                         utmOptions={utmOptions}
                         onDownload={handleDownloadSnapshot}
+                        children={
+                          canCustomizeDashboardLayout ? (
+                            <Tooltip title="Customize Layout">
+                              <IconButton
+                                size="small"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  handleOpenLayoutEditor();
+                                }}
+                                sx={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: "10px",
+                                  color: "text.secondary",
+                                }}
+                              >
+                                <Grip size={16} />
+                              </IconButton>
+                            </Tooltip>
+                          ) : null
+                        }
                       />
                     </Box>
                   )}
@@ -2653,219 +3055,7 @@ export default function App() {
                       (hasBrand ? (
                         <Suspense fallback={<SectionFallback count={5} />}>
                           <Stack spacing={{ xs: 1, md: 1 }}>
-                            {/* Row 1 KPIs - Full Width (Updates with Multiselect) */}
-                            <KPIs
-                              query={trendMetricsQuery}
-                              selectedMetric={selectedMetric}
-                              onSelectMetric={handleSelectMetric}
-                              onFunnelData={handleFunnelData}
-                              productId={selectedProductIds}
-                              productLabel={selectedProductLabel}
-                              utmOptions={utmOptions}
-                              showRow={isMobile ? "mobile_top" : 1}
-                              showWebVitals={hasPermission("web_vitals")}
-                              compareMode={compareMode}
-                            />
-
-                            <Grid container spacing={2}>
-                              {/* Left Column: Row 2 KPIs + Trend Graph */}
-                              <Grid size={{ xs: 12 }}>
-                                <Stack spacing={{ xs: 1, md: 1 }}>
-                                  <KPIs
-                                    query={trendMetricsQuery}
-                                    selectedMetric={selectedMetric}
-                                    onSelectMetric={handleSelectMetric}
-                                    productId={selectedProductIds}
-                                    productLabel={selectedProductLabel}
-                                    utmOptions={utmOptions}
-                                    showRow={isMobile ? "none" : 2}
-                                    showWebVitals={hasPermission("web_vitals")}
-                                    compareMode={compareMode}
-                                  />
-                                  <Grid container spacing={2} sx={{ mt: 2 }}>
-                                    <Grid
-                                      size={{
-                                        xs: 12,
-                                        md: hasPermission("web_vitals")
-                                          ? 9
-                                          : 12,
-                                      }}
-                                    >
-                                      <HourlySalesCompare
-                                        query={trendMetricsQuery}
-                                        metric={selectedMetric}
-                                      />
-                                    </Grid>
-                                    {hasPermission("web_vitals") && (
-                                      <Grid size={{ xs: 12, md: 3 }}>
-                                        <WebVitals
-                                          query={generalMetricsQuery}
-                                          metric={webVitalsMetric}
-                                          onMetricChange={setWebVitalsMetric}
-                                        />
-                                      </Grid>
-                                    )}
-                                  </Grid>
-
-                                  {/* Funnel Chart - Inline for viewers with permission only */}
-                                  {!isAuthor &&
-                                    hasPermission("sessions_drop_off_funnel") &&
-                                    (funnelData?.stats ? (
-                                      <Suspense
-                                        fallback={
-                                          <Skeleton
-                                            variant="rounded"
-                                            width="100%"
-                                            height={250}
-                                          />
-                                        }
-                                      >
-                                        <Box sx={{ mt: 2 }}>
-                                          <Typography
-                                            variant="subtitle2"
-                                            color="text.secondary"
-                                            sx={{
-                                              mb: 1.5,
-                                              fontWeight: 500,
-                                              ml: 1,
-                                            }}
-                                          >
-                                            Sessions Drop-off Funnel
-                                          </Typography>
-                                          <FunnelChart
-                                            data={[
-                                              {
-                                                label: "Sessions",
-                                                value:
-                                                  funnelData.stats
-                                                    .total_sessions || 0,
-                                                change: funnelData.deltas
-                                                  ?.sessions?.diff_pct
-                                                  ? Number(
-                                                      funnelData.deltas.sessions
-                                                        .diff_pct,
-                                                    ).toFixed(1)
-                                                  : undefined,
-                                              },
-                                              {
-                                                label: "Add to Cart",
-                                                value:
-                                                  funnelData.stats
-                                                    .total_atc_sessions || 0,
-                                                change: funnelData.deltas?.atc
-                                                  ?.diff_pct
-                                                  ? Number(
-                                                      funnelData.deltas.atc
-                                                        .diff_pct,
-                                                    ).toFixed(1)
-                                                  : undefined,
-                                              },
-                                              {
-                                                label: "Checkout Initiated",
-                                                value:
-                                                  funnelData.stats
-                                                    .total_ci_events || 0,
-                                                change: funnelData.deltas?.ci
-                                                  ?.diff_pct
-                                                  ? Number(
-                                                      funnelData.deltas.ci
-                                                        .diff_pct,
-                                                    ).toFixed(1)
-                                                  : undefined,
-                                              },
-                                              {
-                                                label: "Orders",
-                                                value:
-                                                  funnelData.stats
-                                                    .total_orders || 0,
-                                                change:
-                                                  funnelData.deltas?.orders
-                                                    ?.diff_pct ||
-                                                  funnelData.deltas?.orders
-                                                    ?.diff_pp
-                                                    ? Number(
-                                                        funnelData.deltas
-                                                          ?.orders?.diff_pct ||
-                                                          funnelData.deltas
-                                                            ?.orders?.diff_pp,
-                                                      ).toFixed(1)
-                                                    : undefined,
-                                              },
-                                            ]}
-                                            height={250}
-                                          />
-                                        </Box>
-                                      </Suspense>
-                                    ) : (
-                                      <Skeleton
-                                        variant="rounded"
-                                        width="100%"
-                                        height={290}
-                                      />
-                                    ))}
-
-                                  {!isAuthor &&
-                                    hasPermission("product_conversion") && (
-                                      <Box sx={{ mt: 3 }}>
-                                        <Typography
-                                          variant="subtitle2"
-                                          color="text.secondary"
-                                          sx={{
-                                            mb: 1.5,
-                                            fontWeight: 500,
-                                            ml: 1,
-                                          }}
-                                        >
-                                          Product Performance
-                                        </Typography>
-                                        <Suspense
-                                          fallback={
-                                            <Skeleton
-                                              variant="rounded"
-                                              width="100%"
-                                              height={300}
-                                            />
-                                          }
-                                        >
-                                          <ProductConversionTable
-                                            brandKey={activeBrandKey}
-                                            showCompareMode={hasPermission(
-                                              "compare_mode",
-                                            )}
-                                            isAuthor={isAuthor}
-                                            permissions={viewerPermissions}
-                                          />
-                                        </Suspense>
-                                      </Box>
-                                    )}
-                                </Stack>
-                              </Grid>
-                            </Grid>
-                            {(hasPermission("payment_split_order") ||
-                              hasPermission("payment_split_sales")) && (
-                              <Grid container spacing={2}>
-                                <Grid size={{ xs: 12 }}>
-                                  <ModeOfPayment query={generalMetricsQuery} />
-                                </Grid>
-                              </Grid>
-                            )}
-                            {(hasPermission("payment_split_order") ||
-                              hasPermission("payment_split_sales")) && (
-                              <Grid container spacing={2}>
-                                <Grid size={{ xs: 12 }}>
-                                  <PaymentSplitTrend
-                                    query={generalMetricsQuery}
-                                  />
-                                </Grid>
-                              </Grid>
-                            )}
-                            {hasPermission("traffic_split") && (
-                              <TrafficSourceSplit
-                                query={generalMetricsQuery}
-                                compareMode={compareMode}
-                                mappingRules={trafficSplitRules}
-                              />
-                            )}
+                            {renderedDashboardWidgets}
                           </Stack>
                         </Suspense>
                       ) : (
@@ -3118,6 +3308,17 @@ export default function App() {
             <Suspense fallback={null}>
               <Footer />
             </Suspense>
+            {canCustomizeDashboardLayout && (
+              <DashboardLayoutEditor
+                open={layoutEditorOpen}
+                onClose={handleCloseLayoutEditor}
+                onSave={handleSaveDashboardLayout}
+                onPreviewChange={handlePreviewDashboardLayout}
+                initialLayout={previewDashboardLayout || dashboardLayout}
+                visibleDesktopIds={visibleDesktopWidgetIds}
+                visibleMobileIds={visibleMobileWidgetIds}
+              />
+            )}
           </Box>
         </Box>
         {isMobile && mobileNavItems.length > 1 && (

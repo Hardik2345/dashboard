@@ -1108,6 +1108,16 @@ export async function getLastUpdatedPTS(arg = undefined) {
   }
 }
 
+export async function getDashboardLayout() {
+  const res = await doGet("/dashboard/layout");
+  if (res.error) return res;
+  return { error: false, data: res.data };
+}
+
+export async function saveDashboardLayout(payload) {
+  return doPost("/dashboard/layout", payload);
+}
+
 // Author brands helper (list)
 export async function listAuthorBrands() {
   const res = await doGet("/tenant/brands");

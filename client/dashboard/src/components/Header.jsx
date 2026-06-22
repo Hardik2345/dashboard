@@ -9,6 +9,7 @@ import {
   Tooltip,
   Typography,
   Card,
+  ButtonBase,
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import dayjs from "dayjs";
@@ -23,6 +24,7 @@ import {
   LayoutGrid,
   SlidersHorizontal,
   LogOut,
+  Grip,
   PanelLeft, // Added
 } from "lucide-react";
 import SkyToggle from "./ui/SkyToggle.jsx";
@@ -38,6 +40,8 @@ export default function Header({
   onFilterClick,
   onTabChange, // Added
   showFilterButton = false,
+  showCustomizeButton = false,
+  onCustomizeLayoutClick,
   isAdmin = false,
   brandKey = "",
 }) {
@@ -290,6 +294,33 @@ export default function Header({
                 >
                   <SlidersHorizontal size={18} />
                 </IconButton>
+              )}
+
+              {showCustomizeButton && (
+                <Tooltip title="Customize Layout">
+                <ButtonBase
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onCustomizeLayoutClick?.();
+                  }}
+                  sx={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: "8px",
+                    color: darkMode ? "#f0f0f0" : "inherit",
+                    bgcolor: darkMode
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(0,0,0,0.05)",
+                    border: "1px solid",
+                    borderColor: darkMode
+                      ? "rgba(255,255,255,0.1)"
+                      : "rgba(0,0,0,0.1)",
+                  }}
+                >
+                  <Grip size={18} />
+                </ButtonBase>
+                </Tooltip>
               )}
 
               <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />

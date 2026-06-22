@@ -39,6 +39,7 @@ describe("analytics app boundary", () => {
     expect(routePaths).toContain("/product-conversion/export");
     expect(routePaths).toContain("/product-types");
     expect(routePaths).toContain("/hourly-sales-summary");
+    expect(routePaths).toContain("/layout");
     expect(routePaths).toContain("/last-updated/pts");
     expect(routePaths).toContain("/qr-scans");
     expect(routePaths).toContain("/upload");

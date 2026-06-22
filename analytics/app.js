@@ -20,6 +20,7 @@ const { buildUploadsRouter } = require("./modules/uploads");
 const { buildApiKeysRouter } = require("./modules/api-keys");
 const { buildShopifyRouter } = require("./modules/shopify");
 const { buildNotificationsRouter } = require("./modules/notifications");
+const { buildDashboardRouter } = require("./modules/dashboard");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -55,6 +56,7 @@ app.get("/", (_req, res) => {
 app.use("/metrics", buildMetricsRouter(sequelize));
 app.use("/metrics", buildProductConversionRouter());
 app.use("/metrics", buildBundlesRouter());
+app.use("/dashboard", buildDashboardRouter(sequelize));
 app.use("/external", buildExternalRouter());
 app.use("/", buildUploadsRouter());
 app.use("/", buildApiKeysRouter(sequelize));
@@ -73,6 +75,13 @@ async function init() {
     await sequelize.models.api_keys.sync();
   } catch (err) {
     logger.warn("API keys sync skipped", { error: err?.message || String(err) });
+  }
+  try {
+    await sequelize.models.dashboard_layouts.sync();
+  } catch (err) {
+    logger.warn("Dashboard layouts sync skipped", {
+      error: err?.message || String(err),
+    });
   }
 
   const port = process.env.PORT || 3000;
