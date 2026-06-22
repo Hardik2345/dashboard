@@ -173,6 +173,9 @@ const HourlySalesCompare = lazy(
   () => import("./components/HourlySalesCompare.jsx"),
 );
 const WebVitals = lazy(() => import("./components/WebVitals.jsx"));
+const WebPerformancePanel = lazy(
+  () => import("./components/WebPerformancePanel.jsx"),
+);
 const AccessControlCard = lazy(
   () => import("./components/AccessControlCard.jsx"),
 );
@@ -198,6 +201,7 @@ const TREND_METRICS = new Set([
   "sessions",
   "cvr",
   "atc",
+  "ci_events",
   "atc_rate",
   "aov",
 ]);
@@ -1649,7 +1653,7 @@ export default function App() {
       if (!metricKey) return;
       if (
         discountCode &&
-        !["orders", "sales", "aov"].includes(metricKey)
+        !["orders", "sales", "aov", "ci_events"].includes(metricKey)
       ) {
         dispatch(setSelectedMetric("sales"));
         return;
@@ -1922,15 +1926,9 @@ export default function App() {
   }, [discountCode]);
 
   useEffect(() => {
-    if (selectedMetric === "ci_events") {
-      dispatch(setSelectedMetric("sales"));
-    }
-  }, [selectedMetric, dispatch]);
-
-  useEffect(() => {
     if (
       discountCode &&
-      !["orders", "sales", "aov"].includes(selectedMetric)
+      !["orders", "sales", "aov", "ci_events"].includes(selectedMetric)
     ) {
       dispatch(setSelectedMetric("sales"));
     }
@@ -2663,7 +2661,7 @@ export default function App() {
                               productLabel={selectedProductLabel}
                               utmOptions={utmOptions}
                               showRow={isMobile ? "mobile_top" : 1}
-                              showWebVitals={hasPermission("web_vitals")}
+                              showWebVitals={false}
                               compareMode={compareMode}
                             />
 
@@ -2679,7 +2677,7 @@ export default function App() {
                                     productLabel={selectedProductLabel}
                                     utmOptions={utmOptions}
                                     showRow={isMobile ? "none" : 2}
-                                    showWebVitals={hasPermission("web_vitals")}
+                                    showWebVitals={false}
                                     compareMode={compareMode}
                                   />
                                   <Grid container spacing={2} sx={{ mt: 2 }}>
@@ -2698,10 +2696,8 @@ export default function App() {
                                     </Grid>
                                     {hasPermission("web_vitals") && (
                                       <Grid size={{ xs: 12, md: 3 }}>
-                                        <WebVitals
+                                        <WebPerformancePanel
                                           query={generalMetricsQuery}
-                                          metric={webVitalsMetric}
-                                          onMetricChange={setWebVitalsMetric}
                                         />
                                       </Grid>
                                     )}
@@ -2842,12 +2838,38 @@ export default function App() {
                               </Grid>
                             </Grid>
                             {(hasPermission("payment_split_order") ||
-                              hasPermission("payment_split_sales")) && (
-                              <Grid container spacing={2}>
-                                <Grid size={{ xs: 12 }}>
+                              hasPermission("payment_split_sales")) ? (
+                              <Grid container spacing={2} alignItems="stretch">
+                                <Grid
+                                  size={{
+                                    xs: 12,
+                                    md: hasPermission("web_vitals") ? 8 : 12,
+                                  }}
+                                >
                                   <ModeOfPayment query={generalMetricsQuery} />
                                 </Grid>
+                                {hasPermission("web_vitals") && (
+                                  <Grid size={{ xs: 12, md: 4 }}>
+                                    <WebVitals
+                                      query={generalMetricsQuery}
+                                      metric={webVitalsMetric}
+                                      onMetricChange={setWebVitalsMetric}
+                                    />
+                                  </Grid>
+                                )}
                               </Grid>
+                            ) : (
+                              hasPermission("web_vitals") && (
+                                <Grid container spacing={2}>
+                                  <Grid size={{ xs: 12, md: 4 }}>
+                                    <WebVitals
+                                      query={generalMetricsQuery}
+                                      metric={webVitalsMetric}
+                                      onMetricChange={setWebVitalsMetric}
+                                    />
+                                  </Grid>
+                                </Grid>
+                              )
                             )}
                             {(hasPermission("payment_split_order") ||
                               hasPermission("payment_split_sales")) && (
