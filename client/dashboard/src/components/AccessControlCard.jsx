@@ -76,6 +76,8 @@ const PERMISSION_OPTIONS = [
   "product_filter",
   "utm_filter",
   "discount_filter",
+  "dashboard_layout_customize",
+  "ci_events",
   "web_vitals",
   "payment_split_order",
   "payment_split_sales",

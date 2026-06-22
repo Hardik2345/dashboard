@@ -1651,6 +1651,10 @@ export default function App() {
   const handleSelectMetric = useCallback(
     (metricKey) => {
       if (!metricKey) return;
+      if (metricKey === "ci_events" && !hasPermission("ci_events")) {
+        dispatch(setSelectedMetric("sales"));
+        return;
+      }
       if (
         discountCode &&
         !["orders", "sales", "aov", "ci_events"].includes(metricKey)
@@ -1664,7 +1668,7 @@ export default function App() {
         ),
       );
     },
-    [dispatch, discountCode],
+    [dispatch, discountCode, hasPermission],
   );
 
   const handleRangeChange = useCallback(
@@ -1924,6 +1928,12 @@ export default function App() {
       // Ignore
     }
   }, [discountCode]);
+
+  useEffect(() => {
+    if (selectedMetric === "ci_events" && !hasPermission("ci_events")) {
+      dispatch(setSelectedMetric("sales"));
+    }
+  }, [selectedMetric, hasPermission, dispatch]);
 
   useEffect(() => {
     if (
@@ -2662,6 +2672,7 @@ export default function App() {
                               utmOptions={utmOptions}
                               showRow={isMobile ? "mobile_top" : 1}
                               showWebVitals={false}
+                              showCiEvents={hasPermission("ci_events")}
                               compareMode={compareMode}
                             />
 
@@ -2678,6 +2689,7 @@ export default function App() {
                                     utmOptions={utmOptions}
                                     showRow={isMobile ? "none" : 2}
                                     showWebVitals={false}
+                                    showCiEvents={hasPermission("ci_events")}
                                     compareMode={compareMode}
                                   />
                                   <Grid container spacing={2} sx={{ mt: 2 }}>
@@ -2743,9 +2755,9 @@ export default function App() {
                                                     ).toFixed(1)
                                                   : undefined,
                                               },
-                                              {
-                                                label: "Add to Cart",
-                                                value:
+                                          {
+                                            label: "Add to Cart",
+                                            value:
                                                   funnelData.stats
                                                     .total_atc_sessions || 0,
                                                 change: funnelData.deltas?.atc
@@ -2756,19 +2768,24 @@ export default function App() {
                                                     ).toFixed(1)
                                                   : undefined,
                                               },
-                                              {
-                                                label: "Checkout Initiated",
-                                                value:
-                                                  funnelData.stats
-                                                    .total_ci_events || 0,
-                                                change: funnelData.deltas?.ci
-                                                  ?.diff_pct
-                                                  ? Number(
-                                                      funnelData.deltas.ci
-                                                        .diff_pct,
-                                                    ).toFixed(1)
-                                                  : undefined,
-                                              },
+                                              ...(hasPermission("ci_events")
+                                                ? [
+                                                    {
+                                                      label:
+                                                        "Checkout Initiated",
+                                                      value:
+                                                        funnelData.stats
+                                                          .total_ci_events || 0,
+                                                      change: funnelData
+                                                        .deltas?.ci?.diff_pct
+                                                        ? Number(
+                                                            funnelData.deltas
+                                                              .ci.diff_pct,
+                                                          ).toFixed(1)
+                                                        : undefined,
+                                                    },
+                                                  ]
+                                                : []),
                                               {
                                                 label: "Orders",
                                                 value:
@@ -2963,16 +2980,22 @@ export default function App() {
                                           ).toFixed(1)
                                         : undefined,
                                     },
-                                    {
-                                      label: "Checkout Initiated",
-                                      value:
-                                        funnelData.stats.total_ci_events || 0,
-                                      change: funnelData.deltas?.ci?.diff_pct
-                                        ? Number(
-                                            funnelData.deltas.ci.diff_pct,
-                                          ).toFixed(1)
-                                        : undefined,
-                                    },
+                                    ...(hasPermission("ci_events")
+                                      ? [
+                                          {
+                                            label: "Checkout Initiated",
+                                            value:
+                                              funnelData.stats.total_ci_events ||
+                                              0,
+                                            change: funnelData.deltas?.ci
+                                              ?.diff_pct
+                                              ? Number(
+                                                  funnelData.deltas.ci.diff_pct,
+                                                ).toFixed(1)
+                                              : undefined,
+                                          },
+                                        ]
+                                      : []),
                                     {
                                       label: "Orders",
                                       value: funnelData.stats.total_orders || 0,
