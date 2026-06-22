@@ -914,12 +914,13 @@ export default function KPIs({
               />
             </Grid>
             <Grid
-              size={{ xs: 6, sm: 6, md: 3 }}
+              size={{ xs: 12, sm: 6, md: 3 }}
               sx={{ order: { xs: 7, md: 0 } }}
             >
               <KPIStat
                 label="Checkout Initiated Events"
                 value={data.total_ci_events?.value ?? 0}
+                centerOnMobile={true}
                 loading={loading}
                 deltaLoading={deltaLoading}
                 formatter={(v) => nfInt.format(v)}
