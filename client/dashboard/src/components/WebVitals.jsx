@@ -51,7 +51,12 @@ const StatBox = ({ children, sx = {} }) => {
   );
 };
 
-const WebVitals = ({ query, metric: metricProp = "FCP", onMetricChange }) => {
+const WebVitals = ({
+  query,
+  metric: metricProp = "FCP",
+  onMetricChange,
+  sx = {},
+}) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const [localMetric, setLocalMetric] = useState(metricProp);
@@ -67,7 +72,14 @@ const WebVitals = ({ query, metric: metricProp = "FCP", onMetricChange }) => {
   const { topPages, loading } = useWebVitals(query, metric);
 
   return (
-    <StatBox sx={{ height: { xs: "auto", md: "310px" } }}>
+    <StatBox
+      sx={{
+        height: { xs: "auto", md: 380 },
+        minHeight: { xs: 320, md: 380 },
+        maxHeight: { xs: "none", md: 380 },
+        ...sx,
+      }}
+    >
       <Box
         sx={{
           display: "flex",
@@ -113,7 +125,31 @@ const WebVitals = ({ query, metric: metricProp = "FCP", onMetricChange }) => {
         </FormControl>
       </Box>
 
-      <Box sx={{ flexGrow: 1, overflowY: "auto", p: 2 }}>
+      <Box
+        sx={{
+          flexGrow: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          p: 2,
+          pr: 1.25,
+          scrollbarWidth: "thin",
+          scrollbarColor: `${
+            isDark ? "rgba(255,255,255,0.28)" : "rgba(0,0,0,0.28)"
+          } transparent`,
+          "&::-webkit-scrollbar": {
+            width: 6,
+          },
+          "&::-webkit-scrollbar-track": {
+            background: "transparent",
+          },
+          "&::-webkit-scrollbar-thumb": {
+            backgroundColor: isDark
+              ? "rgba(255,255,255,0.28)"
+              : "rgba(0,0,0,0.28)",
+            borderRadius: 999,
+          },
+        }}
+      >
         {loading ? (
           Array.from(new Array(5)).map((_, i) => (
             <Box key={i} sx={{ mb: 2 }}>

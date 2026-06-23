@@ -217,6 +217,92 @@ async function queryHourlySessionTotals(conn, start, end, cutoffHour = 23) {
   return rows?.[0] || {};
 }
 
+async function queryCheckoutInitiatedTotals(conn, start, end, cutoffHour = null) {
+  const hasCutoff = Number.isInteger(cutoffHour);
+  const sql = `
+    SELECT
+      COALESCE(SUM(ci_events), 0) AS total_ci_events
+    FROM hourly_sessions_summary_shopify
+    WHERE date >= ? AND date <= ?${hasCutoff ? " AND hour <= ?" : ""}
+  `;
+  const replacements = hasCutoff ? [start, end, cutoffHour] : [start, end];
+  const rows = await conn.query(sql, {
+    type: QueryTypes.SELECT,
+    replacements,
+  });
+  return Number(rows?.[0]?.total_ci_events || 0);
+}
+
+async function queryCheckoutInitiatedPair(
+  conn,
+  currentRange,
+  previousRange,
+  currentCutoffHour = null,
+  previousCutoffHour = null,
+) {
+  const [current, previous] = await Promise.all([
+    queryCheckoutInitiatedTotals(
+      conn,
+      currentRange.start,
+      currentRange.end,
+      currentCutoffHour,
+    ),
+    queryCheckoutInitiatedTotals(
+      conn,
+      previousRange.start,
+      previousRange.end,
+      previousCutoffHour,
+    ),
+  ]);
+
+  return { current, previous };
+}
+
+async function queryCheckoutInitiatedRows(
+  conn,
+  start,
+  end,
+  granularity = "hourly",
+  cutoffHour = null,
+) {
+  if (granularity === "daily") {
+    const rows = await conn.query(
+      `
+        SELECT
+          DATE_FORMAT(date, '%Y-%m-%d') AS date,
+          COALESCE(SUM(ci_events), 0) AS ci_events
+        FROM hourly_sessions_summary_shopify
+        WHERE date >= ? AND date <= ?
+        GROUP BY date
+        ORDER BY date ASC
+      `,
+      {
+        type: QueryTypes.SELECT,
+        replacements: [start, end],
+      },
+    );
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  const hasCutoff = Number.isInteger(cutoffHour);
+  const rows = await conn.query(
+    `
+      SELECT
+        DATE_FORMAT(date, '%Y-%m-%d') AS date,
+        hour,
+        COALESCE(ci_events, 0) AS ci_events
+      FROM hourly_sessions_summary_shopify
+      WHERE date >= ? AND date <= ?${hasCutoff ? " AND hour <= ?" : ""}
+      ORDER BY date ASC, hour ASC
+    `,
+    {
+      type: QueryTypes.SELECT,
+      replacements: hasCutoff ? [start, end, cutoffHour] : [start, end],
+    },
+  );
+  return Array.isArray(rows) ? rows : [];
+}
+
 async function queryHourlyProductSessionTotals(conn, start, end, cutoffHour = 23, filters = {}) {
   let sql = `
     SELECT
@@ -325,6 +411,7 @@ function buildSnapshotPayload(metrics = {}, returnsObj = {}, source = "db") {
   const total_sales = Number(metrics.total_sales || 0);
   const total_sessions = Number(metrics.total_sessions || 0);
   const total_atc_sessions = Number(metrics.total_atc_sessions || 0);
+  const total_ci_events = Number(metrics.total_ci_events || 0);
   const average_order_value = total_orders > 0 ? total_sales / total_orders : 0;
   const conversion_rate = total_sessions > 0 ? total_orders / total_sessions : 0;
 
@@ -333,6 +420,7 @@ function buildSnapshotPayload(metrics = {}, returnsObj = {}, source = "db") {
     total_sales,
     total_sessions,
     total_atc_sessions,
+    total_ci_events,
     average_order_value,
     conversion_rate,
     conversion_rate_percent: conversion_rate * 100,
@@ -350,6 +438,7 @@ function buildDiscountSnapshotPayload(metrics = {}, source = "db") {
     total_sales,
     total_sessions: null,
     total_atc_sessions: null,
+    total_ci_events: null,
     average_order_value: total_orders > 0 ? total_sales / total_orders : 0,
     conversion_rate: null,
     conversion_rate_percent: null,
@@ -359,12 +448,18 @@ function buildDiscountSnapshotPayload(metrics = {}, source = "db") {
   };
 }
 
-function buildCachedSnapshot(cachedData = {}, returnsObj = {}, source = "cache") {
+function buildCachedSnapshot(
+  cachedData = {},
+  returnsObj = {},
+  source = "cache",
+  totalCiEvents = 0,
+) {
   return {
     total_orders: Number(cachedData.total_orders || 0),
     total_sales: Number(cachedData.total_sales || 0),
     total_sessions: Number(cachedData.total_sessions || 0),
     total_atc_sessions: Number(cachedData.total_atc_sessions || 0),
+    total_ci_events: Number(totalCiEvents || 0),
     average_order_value: Number(cachedData.average_order_value || 0),
     conversion_rate: Number(cachedData.conversion_rate || 0) / 100,
     conversion_rate_percent: Number(cachedData.conversion_rate || 0),
@@ -550,6 +645,7 @@ function buildMetricShape(metrics) {
   const sessions = Number(metrics.sessions || 0);
   const orders = Number(metrics.orders || 0);
   const atc = Number(metrics.atc || 0);
+  const ciEvents = Number(metrics.ci_events || 0);
   const sales = Number(metrics.sales || 0);
   const cvrRatio = sessions > 0 ? orders / sessions : 0;
   return {
@@ -559,6 +655,7 @@ function buildMetricShape(metrics) {
     adjusted_sessions: sessions,
     raw_sessions: sessions,
     atc,
+    ci_events: ciEvents,
     cvr_ratio: cvrRatio,
     cvr_percent: cvrRatio * 100,
   };
@@ -587,15 +684,18 @@ async function fetchHourlyRows(conn, start, end, filters = {}, cutoffHour = 23) 
   if (!hasProduct && !hasDevice && !hasSnapshot && !hasSalesChannel) {
     const sql = `
       SELECT
-        DATE_FORMAT(date, '%Y-%m-%d') AS date,
-        hour,
-        total_sales AS sales,
-        number_of_orders AS orders,
-        COALESCE(adjusted_number_of_sessions, number_of_sessions) AS sessions,
-        number_of_atc_sessions AS atc
-      FROM hour_wise_sales
-      WHERE date >= ? AND date <= ? AND hour <= ?
-      ORDER BY date ASC, hour ASC
+        DATE_FORMAT(hws.date, '%Y-%m-%d') AS date,
+        hws.hour,
+        hws.total_sales AS sales,
+        hws.number_of_orders AS orders,
+        COALESCE(hws.adjusted_number_of_sessions, hws.number_of_sessions) AS sessions,
+        hws.number_of_atc_sessions AS atc,
+        COALESCE(hsss.ci_events, 0) AS ci_events
+      FROM hour_wise_sales hws
+      LEFT JOIN hourly_sessions_summary_shopify hsss
+        ON hsss.date = hws.date AND hsss.hour = hws.hour
+      WHERE hws.date >= ? AND hws.date <= ? AND hws.hour <= ?
+      ORDER BY hws.date ASC, hws.hour ASC
     `;
     return conn.query(sql, {
       type: QueryTypes.SELECT,
@@ -674,12 +774,13 @@ async function fetchHourlyRows(conn, start, end, filters = {}, cutoffHour = 23) 
     });
   }
 
-  const [orderRows, sessionRows] = await Promise.all([
+  const [orderRows, sessionRows, ciRows] = await Promise.all([
     conn.query(orderSql, {
       type: QueryTypes.SELECT,
       replacements: orderReplacements,
     }),
     sessionRowsPromise,
+    queryCheckoutInitiatedRows(conn, start, end, "hourly", cutoffHour),
   ]);
 
   const byKey = new Map();
@@ -692,6 +793,7 @@ async function fetchHourlyRows(conn, start, end, filters = {}, cutoffHour = 23) 
       orders: Number(row.orders || 0),
       sessions: 0,
       atc: 0,
+      ci_events: 0,
     });
   }
   for (const row of sessionRows) {
@@ -703,9 +805,24 @@ async function fetchHourlyRows(conn, start, end, filters = {}, cutoffHour = 23) 
       orders: 0,
       sessions: 0,
       atc: 0,
+      ci_events: 0,
     };
     existing.sessions += Number(row.sessions || 0);
     existing.atc += Number(row.atc || 0);
+    byKey.set(key, existing);
+  }
+  for (const row of ciRows) {
+    const key = `${row.date}#${row.hour}`;
+    const existing = byKey.get(key) || {
+      date: String(row.date),
+      hour: Number(row.hour || 0),
+      sales: 0,
+      orders: 0,
+      sessions: 0,
+      atc: 0,
+      ci_events: 0,
+    };
+    existing.ci_events += Number(row.ci_events || 0);
     byKey.set(key, existing);
   }
 
@@ -754,7 +871,7 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
       GROUP BY date
       ORDER BY date ASC
     `;
-    const [salesRows, sessionRows] = await Promise.all([
+    const [salesRows, sessionRows, ciRows] = await Promise.all([
       conn.query(salesSql, {
         type: QueryTypes.SELECT,
         replacements: [start, end],
@@ -763,6 +880,7 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
         type: QueryTypes.SELECT,
         replacements: [start, end],
       }),
+      queryCheckoutInitiatedRows(conn, start, end, "daily"),
     ]);
     const byDate = new Map();
     for (const row of salesRows) {
@@ -772,6 +890,7 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
         orders: Number(row.orders || 0),
         sessions: 0,
         atc: 0,
+        ci_events: 0,
       });
     }
     for (const row of sessionRows) {
@@ -781,9 +900,22 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
         orders: 0,
         sessions: 0,
         atc: 0,
+        ci_events: 0,
       };
       existing.sessions += Number(row.sessions || 0);
       existing.atc += Number(row.atc || 0);
+      byDate.set(String(row.date), existing);
+    }
+    for (const row of ciRows) {
+      const existing = byDate.get(String(row.date)) || {
+        date: String(row.date),
+        sales: 0,
+        orders: 0,
+        sessions: 0,
+        atc: 0,
+        ci_events: 0,
+      };
+      existing.ci_events += Number(row.ci_events || 0);
       byDate.set(String(row.date), existing);
     }
     return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
@@ -871,12 +1003,13 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
     });
   }
 
-  const [orderRows, sessionRows] = await Promise.all([
+  const [orderRows, sessionRows, ciRows] = await Promise.all([
     conn.query(orderSql, {
       type: QueryTypes.SELECT,
       replacements: orderReplacements,
     }),
     sessionRowsPromise,
+    queryCheckoutInitiatedRows(conn, start, end, "daily"),
   ]);
   const byDate = new Map();
   for (const row of orderRows) {
@@ -886,6 +1019,7 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
       orders: Number(row.orders || 0),
       sessions: 0,
       atc: 0,
+      ci_events: 0,
     });
   }
   for (const row of sessionRows) {
@@ -895,9 +1029,22 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
       orders: 0,
       sessions: 0,
       atc: 0,
+      ci_events: 0,
     };
     existing.sessions += Number(row.sessions || 0);
     existing.atc += Number(row.atc || 0);
+    byDate.set(String(row.date), existing);
+  }
+  for (const row of ciRows) {
+    const existing = byDate.get(String(row.date)) || {
+      date: String(row.date),
+      sales: 0,
+      orders: 0,
+      sessions: 0,
+      atc: 0,
+      ci_events: 0,
+    };
+    existing.ci_events += Number(row.ci_events || 0);
     byDate.set(String(row.date), existing);
   }
   return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
@@ -915,6 +1062,7 @@ async function fetchMonthlyRows(conn, start, end, filters = {}) {
       orders: 0,
       sessions: 0,
       atc: 0,
+      ci_events: 0,
     };
     existing.startDate = row.date < existing.startDate ? row.date : existing.startDate;
     existing.endDate = row.date > existing.endDate ? row.date : existing.endDate;
@@ -922,6 +1070,7 @@ async function fetchMonthlyRows(conn, start, end, filters = {}) {
     existing.orders += Number(row.orders || 0);
     existing.sessions += Number(row.sessions || 0);
     existing.atc += Number(row.atc || 0);
+    existing.ci_events += Number(row.ci_events || 0);
     byMonth.set(bucket, existing);
   }
 
@@ -954,6 +1103,7 @@ function buildHourlyPoints(rows, start, end, aggregate = "") {
       orders: 0,
       sessions: 0,
       atc: 0,
+      ci_events: 0,
     }));
     for (const bucket of buckets) {
       const row = rowMap.get(`${bucket.date}#${bucket.hour}`) || {};
@@ -963,6 +1113,7 @@ function buildHourlyPoints(rows, start, end, aggregate = "") {
       target.orders += Number(row.orders || 0);
       target.sessions += Number(row.sessions || 0);
       target.atc += Number(row.atc || 0);
+      target.ci_events += Number(row.ci_events || 0);
     }
     return acc.slice(0, alignHour + 1).map((metrics, hour) => ({
       hour,
@@ -972,6 +1123,7 @@ function buildHourlyPoints(rows, start, end, aggregate = "") {
         orders: metrics.count ? metrics.orders / metrics.count : 0,
         sessions: metrics.count ? metrics.sessions / metrics.count : 0,
         atc: metrics.count ? metrics.atc / metrics.count : 0,
+        ci_events: metrics.count ? metrics.ci_events / metrics.count : 0,
       }),
     }));
   }
@@ -1001,8 +1153,16 @@ function buildMetricsSnapshotService(deps = {}) {
     const { start, end } = range;
 
     if (cachedData && isCacheEligible(range, filters, cutoffTime)) {
-      const returnsObj = await getReturnsSnapshot(conn, start, end, filters);
-      return buildCachedSnapshot(cachedData, returnsObj, "cache+db_returns");
+      const [returnsObj, totalCiEvents] = await Promise.all([
+        getReturnsSnapshot(conn, start, end, filters),
+        queryCheckoutInitiatedTotals(conn, start, end),
+      ]);
+      return buildCachedSnapshot(
+        cachedData,
+        returnsObj,
+        "cache+db_returns",
+        totalCiEvents,
+      );
     }
 
     if (getDiscountAggregateSource(filters, cutoffTime ? "hourly" : "daily")) {
@@ -1351,6 +1511,20 @@ function buildMetricsSnapshotService(deps = {}) {
     const deltaCurrentRowTwo = deltaRowTwoComparison?.current || deltaCurrent;
     const deltaPreviousRowTwo =
       deltaRowTwoComparison?.previous || deltaPrevious;
+    const checkoutInitiatedPair = await queryCheckoutInitiatedPair(
+      spec.conn,
+      { start: spec.start, end: spec.end },
+      compareRange,
+    );
+    const checkoutInitiatedDeltaPair = rowTwoCutoffCtx.currentRangeIncludesToday
+      ? await queryCheckoutInitiatedPair(
+          spec.conn,
+          { start: spec.start, end: spec.end },
+          compareRange,
+          rowTwoCutoffCtx.cutoffHour,
+          rowTwoCutoffCtx.cutoffHour,
+        )
+      : checkoutInitiatedPair;
 
     return {
       filter_options: null,
@@ -1399,6 +1573,12 @@ function buildMetricsSnapshotService(deps = {}) {
               deltaCurrentRowTwo.total_atc_sessions,
               deltaPreviousRowTwo.total_atc_sessions,
             ),
+        total_ci_events: buildSummaryMetric(
+          checkoutInitiatedPair.current,
+          checkoutInitiatedPair.previous,
+          checkoutInitiatedDeltaPair.current,
+          checkoutInitiatedDeltaPair.previous,
+        ),
         atc_rate: discountActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(

@@ -54,7 +54,7 @@ describe("metricsSnapshotService", () => {
       "2026-03-30",
       "2026-03-29",
     ]);
-    expect(conn.query).toHaveBeenCalledTimes(2);
+    expect(conn.query).toHaveBeenCalledTimes(4);
     expect(response.metrics.total_sales).toEqual({
       value: 500,
       previous: 200,
@@ -173,24 +173,27 @@ describe("metricsSnapshotService", () => {
         }
 
         if (sql.includes("FROM hourly_sessions_summary_shopify")) {
+          if (sql.includes("SUM(ci_events)")) {
+            return Promise.resolve([{ total_ci_events: 0 }]);
+          }
           const cutoffHour = replacements[2];
           if (replacements[0] === "2026-03-31") {
             if (cutoffHour === 11) {
               return Promise.resolve([
-                { total_sessions: 110, total_atc_sessions: 28 },
+                { total_sessions: 110, total_atc_sessions: 28, total_ci_events: 18 },
               ]);
             }
             return Promise.resolve([
-              { total_sessions: 120, total_atc_sessions: 30 },
+              { total_sessions: 120, total_atc_sessions: 30, total_ci_events: 20 },
             ]);
           }
           if (cutoffHour === 11) {
             return Promise.resolve([
-              { total_sessions: 100, total_atc_sessions: 20 },
+              { total_sessions: 100, total_atc_sessions: 20, total_ci_events: 14 },
             ]);
           }
           return Promise.resolve([
-            { total_sessions: 130, total_atc_sessions: 26 },
+            { total_sessions: 130, total_atc_sessions: 26, total_ci_events: 16 },
           ]);
         }
 
@@ -237,6 +240,13 @@ describe("metricsSnapshotService", () => {
     expect(response.metrics.atc_rate.diff).toBeCloseTo(5.4545454545);
     expect(response.metrics.atc_rate.diff_pct).toBeCloseTo(27.2727272727);
     expect(response.metrics.atc_rate.direction).toBe("up");
+    expect(response.metrics.total_ci_events).toEqual({
+      value: 20,
+      previous: 16,
+      diff: 4,
+      diff_pct: 28.57142857142857,
+      direction: "up",
+    });
   });
 
   test("builds summary filter options with discount codes", async () => {
@@ -260,7 +270,7 @@ describe("metricsSnapshotService", () => {
       end: "2026-03-31",
     });
 
-    expect(conn.query).toHaveBeenCalledTimes(2);
+    expect(conn.query).toHaveBeenCalledTimes(4);
     expect(result).toEqual({
       sales_channel: [],
       discount_codes: ["SAVE10"],
@@ -377,7 +387,7 @@ describe("metricsSnapshotService", () => {
       filters: { utm_source: "google", utm_medium: "cpc" },
     });
 
-    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(conn.query).toHaveBeenCalledTimes(3);
     expect(conn.query.mock.calls[0][0]).toContain("FROM utm_source_medium_daily");
     expect(response.metrics.total_orders).toEqual({
       value: 12,
@@ -479,6 +489,18 @@ describe("metricsSnapshotService", () => {
               },
             ]);
           }
+        }
+
+        if (sql.includes("SUM(ci_events)")) {
+          const cutoffHour = options.replacements?.[2];
+          if (options.replacements?.[0] === "2026-03-31") {
+            return Promise.resolve([
+              { total_ci_events: cutoffHour === 11 ? 18 : 20 },
+            ]);
+          }
+          return Promise.resolve([
+            { total_ci_events: cutoffHour === 11 ? 16 : 17 },
+          ]);
         }
 
         throw new Error(`Unexpected SQL: ${sql}`);
@@ -618,7 +640,7 @@ describe("metricsSnapshotService", () => {
       filters: { discount_code: "SAVE10" },
     });
 
-    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(conn.query).toHaveBeenCalledTimes(3);
     expect(conn.query.mock.calls[0][0]).toContain("FROM dashboard_discount_daily");
     expect(response.metrics.total_orders.value).toBe(12);
     expect(response.metrics.total_sales.value).toBe(1200);
@@ -656,6 +678,9 @@ describe("metricsSnapshotService", () => {
               previous_total_sales: 900,
             },
           ]);
+        }
+        if (sql.includes("SUM(ci_events)")) {
+          return Promise.resolve([{ total_ci_events: 0 }]);
         }
         throw new Error(`Unexpected SQL: ${sql}`);
       }),
@@ -729,6 +754,9 @@ describe("metricsSnapshotService", () => {
         }
         if (sql.includes("FROM returns_fact")) {
           return Promise.resolve([{ cancelled_orders: 1, refunded_orders: 0 }]);
+        }
+        if (sql.includes("SUM(ci_events)")) {
+          return Promise.resolve([{ total_ci_events: 0 }]);
         }
         throw new Error(`Unexpected SQL: ${sql}`);
       }),
