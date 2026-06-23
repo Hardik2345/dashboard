@@ -230,6 +230,26 @@ export async function doDelete(path) {
   }
 }
 
+export async function doPatch(path, body) {
+  const url = `${API_BASE}${path}`;
+  try {
+    const res = await fetchWithAuth(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      captureFailure(path, { status: res.status, method: "PATCH", brandKey: body?.brand_key });
+      return { error: true, status: res.status, data: json };
+    }
+    return { error: false, data: json };
+  } catch {
+    captureFailure(path, { method: "PATCH", brandKey: body?.brand_key });
+    return { error: true };
+  }
+}
+
 // ---- Auth helpers -----------------------------------------------------------
 export async function login(email, password) {
   try {
@@ -315,6 +335,74 @@ export async function removeWhitelist(id) {
 
 export async function onboardTenant(payload) {
   return doPost("/tenant/add", payload);
+}
+
+// ---- Merchant Requests ------------------------------------------------------
+export async function listMerchantRequests(params = {}) {
+  return doGet("/merchant-requests/", params);
+}
+
+export async function createMerchantRequest(payload) {
+  return doPost("/merchant-requests/", payload);
+}
+
+export async function getMerchantRequest(id) {
+  return doGet(`/merchant-requests/${encodeURIComponent(id)}`);
+}
+
+export async function addMerchantRequestComment(id, content) {
+  return doPost(`/merchant-requests/${encodeURIComponent(id)}/comments`, { content });
+}
+
+export async function updateMerchantRequestStatus(id, status) {
+  return doPatch(`/merchant-requests/${encodeURIComponent(id)}/status`, { status });
+}
+
+export async function updateMerchantRequestAssignee(id, todoist_user_id) {
+  return doPatch(`/merchant-requests/${encodeURIComponent(id)}/assignee`, { todoist_user_id });
+}
+
+export async function updateMerchantRequestDueDate(id, due_date) {
+  return doPatch(`/merchant-requests/${encodeURIComponent(id)}/due-date`, { due_date });
+}
+
+export async function listTodoistUsers() {
+  return doGet("/merchant-requests/admin/todoist-users");
+}
+
+export async function reconcileMerchantRequests() {
+  return doPost("/merchant-requests/admin/reconcile", {});
+}
+
+export async function listBrandConfigs() {
+  return doGet("/merchant-requests/admin/brand-configs");
+}
+
+export async function listTodoistProjects({ refresh = false } = {}) {
+  return doGet(
+    "/merchant-requests/admin/todoist-projects",
+    refresh ? { refresh: 1 } : {},
+  );
+}
+
+export async function linkBrandProject(brand_key, todoist_project_id) {
+  return doPost(`/merchant-requests/admin/brand-configs/${encodeURIComponent(brand_key)}/link`, {
+    todoist_project_id,
+  });
+}
+
+export async function triggerBrandProvision(brand_key) {
+  return doPost(`/merchant-requests/admin/brand-configs/${encodeURIComponent(brand_key)}/provision`, {});
+}
+
+export async function updateBrandVisibleStatuses(brand_key, unlocked_statuses) {
+  return doPatch(`/merchant-requests/admin/brand-configs/${encodeURIComponent(brand_key)}/visible-statuses`, {
+    unlocked_statuses,
+  });
+}
+
+export async function deleteBrandConfig(brand_key) {
+  return doDelete(`/merchant-requests/admin/brand-configs/${encodeURIComponent(brand_key)}`);
 }
 
 
@@ -1139,5 +1227,3 @@ export async function deleteAlert(id) {
 export async function setAlertActive(id, isActive) {
   return doPost(`/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
 }
-
-
