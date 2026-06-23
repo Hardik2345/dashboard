@@ -74,6 +74,10 @@ const tenantSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    store_timezone: {
+      type: String,
+      required: true,
+    },
     api_version: {
       type: String,
       required: true,

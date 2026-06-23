@@ -30,6 +30,7 @@ const BrandMembershipSchema = new mongoose.Schema({
       "traffic_split",
       "sales_channel_filter",
       "device_type_filter",
+      "ci_events",
       "sessions_drop_off_funnel",
       "product_conversion",
       "compare_mode",

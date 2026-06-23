@@ -16,6 +16,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import {
   BarChart,
   Bar,
+  LabelList,
   LineChart,
   Line,
   XAxis,
@@ -23,9 +24,9 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LabelList,
 } from "recharts";
 import { getOrderSplit, getPaymentSalesSplit } from "../lib/api.js";
+import { formatInrAmount, useInrCurrency } from "../lib/currency.js";
 
 const MAIN_COLOR = "#10b981";
 const COLORS = {
@@ -42,19 +43,8 @@ const TOOLTIP_VALUE_COLORS = [
   "#c77dff",
 ];
 
-const nfCurrency0 = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  maximumFractionDigits: 0,
-});
 const nfInt0 = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 0,
-});
-const nfCompactCurrency = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  notation: "compact",
-  maximumFractionDigits: 1,
 });
 const nfCompactInt = new Intl.NumberFormat("en-IN", {
   notation: "compact",
@@ -88,8 +78,13 @@ const METRIC_CONFIG = {
   },
   sales: {
     label: "Sales",
-    formatter: (value) => nfCurrency0.format(value || 0),
-    compactFormatter: (value) => nfCompactCurrency.format(value || 0),
+    formatter: (value) =>
+      formatInrAmount(value || 0, { maximumFractionDigits: 0 }),
+    compactFormatter: (value) =>
+      formatInrAmount(value || 0, {
+        notation: "compact",
+        maximumFractionDigits: 1,
+      }),
   },
 };
 
@@ -130,6 +125,33 @@ function getInclusiveDayCount(start, end) {
       (endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000),
     ) + 1
   );
+}
+
+function getPercentAxisMax(chartData, selectedSeries, visibleBars) {
+  const percentKeys = [];
+
+  if (visibleBars.includes("comparison")) {
+    percentKeys.push(...selectedSeries.map((series) => series.comparisonPctKey));
+  }
+  if (visibleBars.includes("primary")) {
+    percentKeys.push(...selectedSeries.map((series) => series.currentPctKey));
+  }
+
+  if (percentKeys.length === 0 || !Array.isArray(chartData) || chartData.length === 0) {
+    return 100;
+  }
+
+  let maxPercent = 0;
+  for (const point of chartData) {
+    for (const key of percentKeys) {
+      const value = Number(point?.[key] || 0);
+      if (Number.isFinite(value) && value > maxPercent) {
+        maxPercent = value;
+      }
+    }
+  }
+
+  return Math.max(1, Math.ceil(maxPercent));
 }
 
 function resolveComparisonRange(start, end, compareStart, compareEnd) {
@@ -206,11 +228,7 @@ function buildTooltipRows(payload = [], chartMode, formatter) {
       const rawKey = dataKey.includes("Pct")
         ? dataKey.replace("Pct", "")
         : dataKey;
-      const percentKey = dataKey.includes("Pct")
-        ? dataKey
-        : `${dataKey}Pct`;
       const rawValue = Number(entry.payload?.[rawKey] || 0);
-      const percentValue = Number(entry.payload?.[percentKey] || 0);
       return {
         color: entry.color || entry.fill || entry.stroke,
         name,
@@ -294,27 +312,6 @@ const TrendTooltip = ({ active, payload, label, formatter, chartMode }) => {
   );
 };
 
-function BarPercentText({ x, y, width, height, value }) {
-  const percent = Number(value || 0);
-  if (!Number.isFinite(percent) || percent <= 0 || width <= 0 || height <= 0) {
-    return null;
-  }
-
-  return (
-    <text
-      x={x + width / 2}
-      y={y + Math.max(14, height / 2)}
-      textAnchor="middle"
-      fill="#ffffff"
-      fontSize="10"
-      fontWeight="700"
-      style={{ pointerEvents: "none" }}
-    >
-      {`${Math.round(percent)}%`}
-    </text>
-  );
-}
-
 export default memo(function PaymentSplitTrend({ query }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -339,12 +336,21 @@ export default memo(function PaymentSplitTrend({ query }) {
   const discountCode = query?.discount_code;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
+  const { convertAmount } = useInrCurrency(brandKey, end);
 
   const config = METRIC_CONFIG[metric] || METRIC_CONFIG.orders;
   const selectedSeries = SERIES.filter((series) =>
     selectedSeriesKeys.includes(series.key),
   );
-  const showBarPercentLabels = getInclusiveDayCount(start, end) <= 7;
+  const selectedDayCount = getInclusiveDayCount(start, end);
+  const showBarPercentLabels = isMobile
+    ? selectedDayCount <= 8
+    : selectedDayCount <= 15;
+  const percentAxisMax = getPercentAxisMax(
+    chartData,
+    selectedSeries,
+    visibleBars,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -421,38 +427,38 @@ export default memo(function PaymentSplitTrend({ query }) {
               const currentPrepaid =
                 metric === "orders"
                   ? Number(point.orders?.prepaid_orders || 0)
-                  : Number(point.sales?.prepaid_sales || 0);
+                  : convertAmount(point.sales?.prepaid_sales || 0);
               const currentCod =
                 metric === "orders"
                   ? Number(point.orders?.cod_orders || 0)
-                  : Number(point.sales?.cod_sales || 0);
+                  : convertAmount(point.sales?.cod_sales || 0);
               const currentPartial =
                 metric === "orders"
                   ? Number(point.orders?.partially_paid_orders || 0)
-                  : Number(point.sales?.partial_sales || 0);
+                  : convertAmount(point.sales?.partial_sales || 0);
               const currentTotal =
                 metric === "orders"
                   ? Number(point.orders?.total || 0)
-                  : Number(point.sales?.total || 0);
+                  : convertAmount(point.sales?.total || 0);
               const comparisonPrepaid = previousPoints[index]
                 ? metric === "orders"
                   ? Number(previousPoints[index].orders?.prepaid_orders || 0)
-                  : Number(previousPoints[index].sales?.prepaid_sales || 0)
+                  : convertAmount(previousPoints[index].sales?.prepaid_sales || 0)
                 : 0;
               const comparisonCod = previousPoints[index]
                 ? metric === "orders"
                   ? Number(previousPoints[index].orders?.cod_orders || 0)
-                  : Number(previousPoints[index].sales?.cod_sales || 0)
+                  : convertAmount(previousPoints[index].sales?.cod_sales || 0)
                 : 0;
               const comparisonPartial = previousPoints[index]
                 ? metric === "orders"
                   ? Number(previousPoints[index].orders?.partially_paid_orders || 0)
-                  : Number(previousPoints[index].sales?.partial_sales || 0)
+                  : convertAmount(previousPoints[index].sales?.partial_sales || 0)
                 : 0;
               const comparisonTotal = previousPoints[index]
                 ? metric === "orders"
                   ? Number(previousPoints[index].orders?.total || 0)
-                  : Number(previousPoints[index].sales?.total || 0)
+                  : convertAmount(previousPoints[index].sales?.total || 0)
                 : 0;
 
               return {
@@ -513,6 +519,7 @@ export default memo(function PaymentSplitTrend({ query }) {
     discountCode,
     compareStart,
     compareEnd,
+    convertAmount,
   ]);
 
   const toggleBar = (bar) => {
@@ -530,6 +537,21 @@ export default memo(function PaymentSplitTrend({ query }) {
       return [...prev, seriesKey];
     });
   };
+
+  const renderBarPercentLabel = (dataKey) => (
+    <LabelList
+      dataKey={dataKey}
+      position="top"
+      offset={10}
+      fill={theme.palette.text.primary}
+      fontSize={10}
+      fontWeight={700}
+      formatter={(value) => {
+        const percent = Number(value || 0);
+        return Number.isFinite(percent) && percent > 0 ? `${Math.round(percent)}%` : "";
+      }}
+    />
+  );
 
   return (
     <Card
@@ -799,7 +821,7 @@ export default memo(function PaymentSplitTrend({ query }) {
                     tickFormatter={formatPercent}
                     tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
                     width={60}
-                    domain={[0, 100]}
+                    domain={[0, percentAxisMax]}
                   />
                   <Tooltip
                     allowEscapeViewBox={{ x: true, y: true }}
@@ -839,7 +861,7 @@ export default memo(function PaymentSplitTrend({ query }) {
               ) : (
                 <BarChart
                   data={chartData}
-                  margin={{ top: 25, right: 32, left: 32, bottom: 5 }}
+                  margin={{ top: 40, right: 32, left: 32, bottom: 5 }}
                   barGap={0}
                 >
                   <CartesianGrid
@@ -863,7 +885,7 @@ export default memo(function PaymentSplitTrend({ query }) {
                     tickFormatter={formatPercent}
                     tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
                     width={60}
-                    domain={[0, 100]}
+                    domain={[0, percentAxisMax]}
                   />
                   <Tooltip
                     allowEscapeViewBox={{ x: true, y: true }}
@@ -882,12 +904,8 @@ export default memo(function PaymentSplitTrend({ query }) {
                       radius={[4, 4, 0, 0]}
                       maxBarSize={28}
                     >
-                      {showBarPercentLabels && (
-                        <LabelList
-                          dataKey={series.comparisonPctKey}
-                          content={(props) => <BarPercentText {...props} />}
-                        />
-                      )}
+                      {showBarPercentLabels &&
+                        renderBarPercentLabel(series.comparisonPctKey)}
                     </Bar>
                   ))}
                   {selectedSeries.map((series) => (
@@ -900,12 +918,8 @@ export default memo(function PaymentSplitTrend({ query }) {
                       radius={[4, 4, 0, 0]}
                       maxBarSize={28}
                     >
-                      {showBarPercentLabels && (
-                        <LabelList
-                          dataKey={series.currentPctKey}
-                          content={(props) => <BarPercentText {...props} />}
-                        />
-                      )}
+                      {showBarPercentLabels &&
+                        renderBarPercentLabel(series.currentPctKey)}
                     </Bar>
                   ))}
                 </BarChart>

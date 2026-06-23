@@ -124,13 +124,18 @@ async function queryOverallSummaryTotals(conn, start, end) {
       COALESCE(SUM(total_orders), 0) AS total_orders,
       COALESCE(SUM(total_sales), 0) AS total_sales,
       COALESCE(SUM(COALESCE(adjusted_total_sessions, total_sessions)), 0) AS total_sessions,
-      COALESCE(SUM(total_atc_sessions), 0) AS total_atc_sessions
+      COALESCE(SUM(total_atc_sessions), 0) AS total_atc_sessions,
+      (
+        SELECT COALESCE(SUM(ci_events), 0)
+        FROM hourly_sessions_summary_shopify
+        WHERE date >= ? AND date <= ?
+      ) AS total_ci_events
     FROM overall_summary
     WHERE date >= ? AND date <= ?
   `;
   const rows = await conn.query(sql, {
     type: QueryTypes.SELECT,
-    replacements: [start, end],
+    replacements: [start, end, start, end],
   });
   return rows?.[0] || {};
 }
@@ -151,10 +156,20 @@ async function queryOverallSummaryPair(conn, currentRange, previousRange) {
       COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_sales ELSE 0 END), 0) AS current_total_sales,
       COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN COALESCE(adjusted_total_sessions, total_sessions) ELSE 0 END), 0) AS current_total_sessions,
       COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_atc_sessions ELSE 0 END), 0) AS current_total_atc_sessions,
+      (
+        SELECT COALESCE(SUM(ci_events), 0)
+        FROM hourly_sessions_summary_shopify
+        WHERE date >= ? AND date <= ?
+      ) AS current_total_ci_events,
       COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_orders ELSE 0 END), 0) AS previous_total_orders,
       COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_sales ELSE 0 END), 0) AS previous_total_sales,
       COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN COALESCE(adjusted_total_sessions, total_sessions) ELSE 0 END), 0) AS previous_total_sessions,
-      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_atc_sessions ELSE 0 END), 0) AS previous_total_atc_sessions
+      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_atc_sessions ELSE 0 END), 0) AS previous_total_atc_sessions,
+      (
+        SELECT COALESCE(SUM(ci_events), 0)
+        FROM hourly_sessions_summary_shopify
+        WHERE date >= ? AND date <= ?
+      ) AS previous_total_ci_events
     FROM overall_summary
     WHERE date >= ? AND date <= ?
   `;
@@ -169,6 +184,10 @@ async function queryOverallSummaryPair(conn, currentRange, previousRange) {
       currentRange.end,
       currentRange.start,
       currentRange.end,
+      currentRange.start,
+      currentRange.end,
+      previousRange.start,
+      previousRange.end,
       previousRange.start,
       previousRange.end,
       previousRange.start,
@@ -188,12 +207,14 @@ async function queryOverallSummaryPair(conn, currentRange, previousRange) {
       total_sales: Number(row.current_total_sales || 0),
       total_sessions: Number(row.current_total_sessions || 0),
       total_atc_sessions: Number(row.current_total_atc_sessions || 0),
+      total_ci_events: Number(row.current_total_ci_events || 0),
     },
     previous: {
       total_orders: Number(row.previous_total_orders || 0),
       total_sales: Number(row.previous_total_sales || 0),
       total_sessions: Number(row.previous_total_sessions || 0),
       total_atc_sessions: Number(row.previous_total_atc_sessions || 0),
+      total_ci_events: Number(row.previous_total_ci_events || 0),
     },
   };
 }

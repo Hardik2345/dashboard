@@ -37,6 +37,7 @@ import enTranslations from "@shopify/polaris/locales/en.json";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import { getBundleOptions, getBundleProducts, getBundleSummary, exportBundleSummaryCsv, exportBundleProductsCsv } from "../lib/api.js";
+import { formatInrAmount, useInrCurrency } from "../lib/currency.js";
 
 const DATE_PRESETS = [
   {
@@ -75,8 +76,8 @@ function formatInteger(value) {
   return Number(value || 0).toLocaleString();
 }
 
-function formatCurrency(value) {
-  return Number(value || 0).toLocaleString(undefined, {
+function formatCurrency(value, convertAmount) {
+  return formatInrAmount(convertAmount(value || 0), {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -507,6 +508,7 @@ export default function BundlesPanel({
 
   const start = useMemo(() => formatDate(startDate), [startDate]);
   const end = useMemo(() => formatDate(endDate), [endDate]);
+  const { convertAmount } = useInrCurrency(brandKey, end);
   const bundleFilterOptions = useMemo(
     () => [
       { bundle_product_id: ALL_BUNDLES_VALUE, bundle_name: "All" },
@@ -1028,7 +1030,7 @@ export default function BundlesPanel({
         }}
         renderCell={(row, column) => {
           if (column.id === "orders") return formatInteger(row.orders);
-          if (column.id === "sales") return formatCurrency(row.sales);
+          if (column.id === "sales") return formatCurrency(row.sales, convertAmount);
           return row.child_product_title || "-";
         }}
       />
@@ -1066,7 +1068,7 @@ export default function BundlesPanel({
         }}
         renderCell={(row, column) => {
           if (column.id === "orders") return formatInteger(row.orders);
-          if (column.id === "sales") return formatCurrency(row.sales);
+          if (column.id === "sales") return formatCurrency(row.sales, convertAmount);
           return row.bundle_name || "-";
         }}
       />

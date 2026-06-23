@@ -239,6 +239,7 @@ exports.adminUpsertUser = async (req, res) => {
         if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
         if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
         if (err.message === 'email required' || err.message === 'invalid role') return res.status(400).json({ error: err.message });
+        if (err.name === 'ValidationError') return res.status(400).json({ error: err.message });
         logger.error('AuthController', 'Admin upsert user error', { error: err.message });
         return res.status(500).json({ error: 'Failed to upsert user' });
     }
@@ -284,6 +285,7 @@ exports.adminUpsertDomainRule = async (req, res) => {
         if (err.message === 'invalid domain' || err.message === 'invalid role' || err.message === 'primary_brand_id required') {
             return res.status(400).json({ error: err.message });
         }
+        if (err.name === 'ValidationError') return res.status(400).json({ error: err.message });
         logger.error('AuthController', 'Admin upsert domain rule error', { error: err.message });
         return res.status(500).json({ error: 'Failed to upsert domain rule' });
     }

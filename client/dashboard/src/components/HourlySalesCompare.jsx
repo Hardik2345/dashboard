@@ -1,83 +1,20 @@
 import { useEffect, useMemo, useState, memo } from 'react';
-import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, MenuItem, InputLabel, Stack, useMediaQuery } from '@mui/material';
+import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, MenuItem, Stack, useMediaQuery } from '@mui/material';
 import { useTheme, alpha } from '@mui/material/styles';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell, LabelList
+  BarChart, Bar, LabelList
 } from 'recharts';
-import { getHourlyTrend, getDailyTrend, getMonthlyTrend, getHourlySalesSummary } from '../lib/api.js';
+import { getHourlyTrend, getDailyTrend, getMonthlyTrend } from '../lib/api.js';
+import { formatInrAmount, useInrCurrency } from '../lib/currency.js';
 
-const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
-const nfCurrency2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 2 });
-
-const nfCompactCurrency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', notation: 'compact', maximumFractionDigits: 1 });
 const nfCompactInt = new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 });
 
-// Design color: Emerald/Greenish for the main line
-// Image 1 shows a green line for current, dotted grey for previous?
-// Actually Image 1 legend says: "Aug 24" (grey square) "Aug 25" (green square).
-// So Current = Green, Previous = Grey.
-
-const MAIN_COLOR = '#10b981'; // Emerald 500
-const PREV_COLOR = '#9ca3af'; // Gray 400
-
-const METRIC_CONFIG = {
-  aov: {
-    label: 'Avg Order Value',
-    accessor: (metrics) => {
-      const sales = Number(metrics?.sales || 0);
-      const orders = Number(metrics?.orders || 0);
-      return orders > 0 ? sales / orders : 0;
-    },
-    formatter: (value) => nfCurrency2.format(value || 0),
-    compactFormatter: (value) => nfCompactCurrency.format(value || 0),
-  },
-  orders: {
-    label: 'Total Orders',
-    accessor: (metrics) => metrics?.orders ?? 0,
-    formatter: (value) => nfInt0.format(value || 0),
-    compactFormatter: (value) => nfCompactInt.format(value || 0),
-  },
-  sales: {
-    label: 'Total Revenue', // Changed to match "Total Revenue" in KPI
-    accessor: (metrics) => metrics?.sales ?? 0,
-    formatter: (value) => nfCurrency0.format(value || 0),
-    compactFormatter: (value) => nfCompactCurrency.format(value || 0),
-  },
-  sessions: {
-    label: 'Total Sessions',
-    accessor: (metrics) => metrics?.sessions ?? 0,
-    formatter: (value) => nfInt0.format(value || 0),
-    compactFormatter: (value) => nfCompactInt.format(value || 0),
-  },
-  cvr: {
-    label: 'Conversion Rate',
-    accessor: (metrics) => metrics?.cvr_ratio ?? 0,
-    formatter: (value) => nfPercent1.format(value || 0),
-    compactFormatter: (value) => nfPercent1.format(value || 0),
-  },
-  atc: {
-    label: 'ATC Sessions',
-    accessor: (metrics) => metrics?.atc ?? 0,
-    formatter: (value) => nfInt0.format(value || 0),
-    compactFormatter: (value) => nfCompactInt.format(value || 0),
-  },
-  atc_rate: {
-    label: 'ATC Rate',
-    accessor: (metrics) => {
-      const atc = Number(metrics?.atc || 0);
-      const sessions = Number(metrics?.sessions || 0);
-      return sessions > 0 ? atc / sessions : 0;
-    },
-    formatter: (value) => nfPercent1.format(value || 0),
-    compactFormatter: (value) => nfPercent1.format(value || 0),
-  },
-};
+const MAIN_COLOR = '#10b981';
 
 const CustomTooltip = ({ active, payload, label, formatter }) => {
-  const theme = useTheme();
   if (!active || !payload || !payload.length) return null;
 
   return (
@@ -86,8 +23,8 @@ const CustomTooltip = ({ active, payload, label, formatter }) => {
         bgcolor: 'background.paper',
         border: '1px solid',
         borderColor: 'divider',
-        borderRadius: 2, // More rounded per design
-        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)', // Tailwind shadow-md
+        borderRadius: 2,
+        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
         p: 1.5,
         minWidth: 160,
       }}
@@ -101,20 +38,16 @@ const CustomTooltip = ({ active, payload, label, formatter }) => {
             sx={{
               width: 8,
               height: 8,
-              borderRadius: 2, // Square with slight radius per design image
-              bgcolor: entry.stroke, // Use stroke color which matches legend
+              borderRadius: 2,
+              bgcolor: entry.stroke,
             }}
           />
-          {/* <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.8125rem' }}>
-            {entry.name}:
-          </Typography> */}
           <Typography variant="body2" color="text.primary" sx={{ fontWeight: 600 }}>
             {entry.name}
           </Typography>
           <Typography variant="body2" color="text.primary" sx={{ fontWeight: 600, ml: 'auto' }}>
             {formatter(entry.value)}
           </Typography>
-          {/* Delta if available? The tooltip in image 1 shows "40,000 ~ 4%". Recharts payload doesn't easily carry extra data unless we put it in the data object. */}
         </Box>
       ))}
     </Box>
@@ -123,8 +56,7 @@ const CustomTooltip = ({ active, payload, label, formatter }) => {
 
 function formatHourLabel(hour) {
   const normalized = hour % 12 === 0 ? 12 : hour % 12;
-  const suffix = hour >= 12 ? 'pm' : 'am';
-  return `${normalized}${suffix}`;
+  return `${normalized}${hour >= 12 ? 'pm' : 'am'}`;
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -177,8 +109,70 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
   const compare = query?.compare;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
+  const { convertAmount } = useInrCurrency(brandKey, end);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
+  const metricConfig = {
+    aov: {
+      label: 'Avg Order Value',
+      accessor: (metrics) => {
+        const sales = convertAmount(metrics?.sales || 0);
+        const orders = Number(metrics?.orders || 0);
+        return orders > 0 ? sales / orders : 0;
+      },
+      formatter: (value) => formatInrAmount(value || 0, { maximumFractionDigits: 2 }),
+      compactFormatter: (value) =>
+        formatInrAmount(value || 0, { notation: 'compact', maximumFractionDigits: 1 }),
+    },
+    orders: {
+      label: 'Total Orders',
+      accessor: (metrics) => metrics?.orders ?? 0,
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    sales: {
+      label: 'Total Revenue',
+      accessor: (metrics) => convertAmount(metrics?.sales ?? 0),
+      formatter: (value) => formatInrAmount(value || 0, { maximumFractionDigits: 0 }),
+      compactFormatter: (value) =>
+        formatInrAmount(value || 0, { notation: 'compact', maximumFractionDigits: 1 }),
+    },
+    sessions: {
+      label: 'Total Sessions',
+      accessor: (metrics) => metrics?.sessions ?? 0,
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    cvr: {
+      label: 'Conversion Rate',
+      accessor: (metrics) => metrics?.cvr_ratio ?? 0,
+      formatter: (value) => nfPercent1.format(value || 0),
+      compactFormatter: (value) => nfPercent1.format(value || 0),
+    },
+    atc: {
+      label: 'ATC Sessions',
+      accessor: (metrics) => metrics?.atc ?? 0,
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    ci_events: {
+      label: 'Checkout Initiated Events',
+      accessor: (metrics) => metrics?.ci_events ?? 0,
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    atc_rate: {
+      label: 'ATC Rate',
+      accessor: (metrics) => {
+        const atc = Number(metrics?.atc || 0);
+        const sessions = Number(metrics?.sessions || 0);
+        return sessions > 0 ? atc / sessions : 0;
+      },
+      formatter: (value) => nfPercent1.format(value || 0),
+      compactFormatter: (value) => nfPercent1.format(value || 0),
+    },
+  };
 
   const daysInRange = useMemo(() => {
     if (!start || !end) return 0;
@@ -194,26 +188,17 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
       setLoading(false);
       return () => { cancelled = true; };
     }
-    // If viewMode is monthly but range is now < 30, reset to daily or hourly
     if (viewMode === 'monthly' && daysInRange < 30) {
-      setViewMode('daily'); // or hourly
+      setViewMode('daily');
     }
     setLoading(true);
 
     const loadData = async () => {
       const utmParams = { utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, device_type: deviceType, product_id: productId, discount_code: discountCode };
-      const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
-
-      // Determine view mode based on range if strict logic needed, but user wants dropdown.
-      // We will respect `viewMode` state.
-
+      const configNext = metricConfig[metric] || metricConfig.sales;
       if (cancelled) return;
 
       const fetcher = viewMode === 'monthly' ? getMonthlyTrend : (viewMode === 'daily' ? getDailyTrend : getHourlyTrend);
-
-      // For design image matching, defaulting to monthly often looks best for long ranges.
-      // But we stick to logic: if viewMode is set, use it.
-
       const base = (viewMode === 'daily' || viewMode === 'monthly')
         ? { start, end, compare, compare_start: compareStart, compare_end: compareEnd, ...utmParams }
         : { start, end, compare, compare_start: compareStart, compare_end: compareEnd, aggregate: 'avg-by-hour', ...utmParams };
@@ -252,7 +237,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
           else {
             const dt = new Date(`${p.date}T00:00:00Z`);
             if (!Number.isNaN(dt.getTime())) {
-              if (viewMode === 'monthly') label = MONTH_NAMES[dt.getUTCMonth()]; // Just month name for clean look
+              if (viewMode === 'monthly') label = MONTH_NAMES[dt.getUTCMonth()];
               else label = `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
             }
           }
@@ -281,7 +266,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
 
     loadData();
     return () => { cancelled = true; };
-  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, productId, discountCode, compare, compareStart, compareEnd]);
+  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, productId, discountCode, compare, compareStart, compareEnd, convertAmount]);
 
   const toggleLine = (line) => {
     setVisibleLines(prev =>
@@ -289,16 +274,15 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
     );
   };
 
-  const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+  const config = metricConfig[metric] || metricConfig.sales;
 
   return (
     <Card elevation={0} sx={{
       borderRadius: isMobile ? 2 : 3,
-      height: isMobile ? 'auto' : '310px',
-      minHeight: isMobile ? '340px' : '310px'
+      height: isMobile ? 'auto' : '380px',
+      minHeight: isMobile ? '340px' : '380px'
     }}>
-      {/* Increased borderRadius to 3 (12px) or more to match image design */}
-      <CardContent sx={{ minHeight: 260, display: 'flex', flexDirection: 'column', px: 2, py: 3 }}>
+      <CardContent sx={{ minHeight: 330, display: 'flex', flexDirection: 'column', px: 2, py: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
           <Stack spacing={1}>
             <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
@@ -306,7 +290,6 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
             </Typography>
 
             <Stack direction="row" spacing={isMobile ? 1.5 : 3} alignItems="center" sx={{ flexWrap: 'wrap', gap: isMobile ? 1 : 0 }}>
-              {/* Actual Design Legend (Checkbox style) */}
               <Stack
                 direction="row"
                 spacing={1}
@@ -377,7 +360,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                 fontSize: 13,
                 fontWeight: 500,
                 bgcolor: alpha(theme.palette.action.active, 0.04),
-                '& .MuiOutlinedInput-notchedOutline': { border: 'none' }, // Remove border for cleaner look
+                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
               }}
             >
               <MenuItem value="hourly">Hourly</MenuItem>
@@ -388,13 +371,13 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
         </Box>
 
         {loading ? (
-          <Skeleton variant="rounded" width="100%" height={200} />
+          <Skeleton variant="rounded" width="100%" height={270} />
         ) : chartData.length === 0 ? (
           <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Typography variant="body2" color="text.secondary">No data available.</Typography>
           </Box>
         ) : (
-          <Box sx={{ width: '100%', height: 200 }}>
+          <Box sx={{ width: '100%', height: 270, flexGrow: 1 }}>
             <ResponsiveContainer width="100%" height="100%">
               {viewMode === 'hourly' ? (
                 <AreaChart data={chartData} margin={{ top: 25, right: 20, left: 15, bottom: 5 }}>
@@ -436,7 +419,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     strokeWidth={2}
                     fill="transparent"
                     activeDot={false}
-                    dot={{ r: 3, fill: 'white', stroke: PREV_COLOR, strokeWidth: 1.5 }}
+                    dot={{ r: 3, fill: 'white', stroke: MAIN_COLOR, strokeWidth: 1.5 }}
                   />
                   <Area
                     type="monotone"
