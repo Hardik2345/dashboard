@@ -29,6 +29,7 @@ export default function KPIs({
   showRow = null, // null for both, 1 for row 1, 2 for row 2
   compareMode = false,
   showWebVitals = true,
+  showCiEvents = true,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
@@ -743,14 +744,14 @@ export default function KPIs({
           </>
         )}
 
-        {/* Row 2 split: Sessions and ATC */}
+        {/* Row 2 split: Sessions, ATC, CI and Conversion */}
         {(showRow === null ||
           showRow === 2 ||
           showRow === "sessions_atc" ||
           showRow === "mobile_top") && (
           <>
             <Grid
-              size={{ xs: 6, sm: 6, md: showWebVitals ? 3 : 4 }}
+              size={{ xs: 6, sm: 6, md: showCiEvents ? 3 : 4 }}
               sx={{ order: { xs: 5, md: 0 } }}
             >
               <KPIStat
@@ -783,7 +784,7 @@ export default function KPIs({
               />
             </Grid>
             <Grid
-              size={{ xs: 6, sm: 6, md: showWebVitals ? 3 : 4 }}
+              size={{ xs: 6, sm: 6, md: showCiEvents ? 3 : 4 }}
               sx={{ order: { xs: 6, md: 0 } }}
             >
               <KPIStat
@@ -913,6 +914,41 @@ export default function KPIs({
                 }
               />
             </Grid>
+            {showCiEvents && (
+              <Grid
+                size={{ xs: 12, sm: 6, md: 3 }}
+                sx={{ order: { xs: 7, md: 0 } }}
+              >
+                <KPIStat
+                  label="Checkout Initiated Events"
+                  value={data.total_ci_events?.value ?? 0}
+                  centerOnMobile={true}
+                  loading={loading}
+                  deltaLoading={deltaLoading}
+                  formatter={(v) => nfInt.format(v)}
+                  delta={
+                    data.ciDelta
+                      ? {
+                          value: data.ciDelta.diff_pct,
+                          direction: data.ciDelta.direction,
+                        }
+                      : undefined
+                  }
+                  onSelect={
+                    onSelectMetric
+                      ? () => onSelectMetric("ci_events")
+                      : undefined
+                  }
+                  selected={selectedMetric === "ci_events"}
+                  compareValue={
+                    compareMode && data.prevCiEvents != null
+                      ? data.prevCiEvents
+                      : undefined
+                  }
+                  compareFormatter={(v) => nfInt.format(v)}
+                />
+              </Grid>
+            )}
           </>
         )}
 
@@ -922,7 +958,7 @@ export default function KPIs({
           showRow === "web_perf_cvr" ||
           showRow === "mobile_top") && (
           <Grid
-            size={{ xs: 6, sm: 6, md: showWebVitals ? 3 : 4 }}
+            size={{ xs: 6, sm: 6, md: showCiEvents ? 3 : 4 }}
             sx={{ order: { xs: 4, md: 0 } }}
           >
             <KPIStat

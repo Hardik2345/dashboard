@@ -183,6 +183,9 @@ const HourlySalesCompare = lazy(
   () => import("./components/HourlySalesCompare.jsx"),
 );
 const WebVitals = lazy(() => import("./components/WebVitals.jsx"));
+const WebPerformancePanel = lazy(
+  () => import("./components/WebPerformancePanel.jsx"),
+);
 const AccessControlCard = lazy(
   () => import("./components/AccessControlCard.jsx"),
 );
@@ -208,6 +211,7 @@ const TREND_METRICS = new Set([
   "sessions",
   "cvr",
   "atc",
+  "ci_events",
   "atc_rate",
   "aov",
 ]);
@@ -1705,9 +1709,13 @@ export default function App() {
   const handleSelectMetric = useCallback(
     (metricKey) => {
       if (!metricKey) return;
+      if (metricKey === "ci_events" && !hasPermission("ci_events")) {
+        dispatch(setSelectedMetric("sales"));
+        return;
+      }
       if (
         discountCode &&
-        !["orders", "sales", "aov"].includes(metricKey)
+        !["orders", "sales", "aov", "ci_events"].includes(metricKey)
       ) {
         dispatch(setSelectedMetric("sales"));
         return;
@@ -1718,7 +1726,7 @@ export default function App() {
         ),
       );
     },
-    [dispatch, discountCode],
+    [dispatch, discountCode, hasPermission],
   );
 
   const handleRangeChange = useCallback(
@@ -1900,13 +1908,17 @@ export default function App() {
                         ? Number(funnelData.deltas.atc.diff_pct).toFixed(1)
                         : undefined,
                     },
-                    {
-                      label: "Checkout Initiated",
-                      value: funnelData.stats.total_ci_events || 0,
-                      change: funnelData.deltas?.ci?.diff_pct
-                        ? Number(funnelData.deltas.ci.diff_pct).toFixed(1)
-                        : undefined,
-                    },
+                    ...(hasPermission("ci_events")
+                      ? [
+                          {
+                            label: "Checkout Initiated",
+                            value: funnelData.stats.total_ci_events || 0,
+                            change: funnelData.deltas?.ci?.diff_pct
+                              ? Number(funnelData.deltas.ci.diff_pct).toFixed(1)
+                              : undefined,
+                          },
+                        ]
+                      : []),
                     {
                       label: "Orders",
                       value: funnelData.stats.total_orders || 0,
@@ -1974,7 +1986,8 @@ export default function App() {
             productLabel={selectedProductLabel}
             utmOptions={utmOptions}
             showRow={1}
-            showWebVitals={hasPermission("web_vitals")}
+            showWebVitals={false}
+            showCiEvents={hasPermission("ci_events")}
             compareMode={compareMode}
           />
           <KPIs
@@ -1985,7 +1998,8 @@ export default function App() {
             productLabel={selectedProductLabel}
             utmOptions={utmOptions}
             showRow={2}
-            showWebVitals={hasPermission("web_vitals")}
+            showWebVitals={false}
+            showCiEvents={hasPermission("ci_events")}
             compareMode={compareMode}
           />
         </Stack>
@@ -2005,16 +2019,27 @@ export default function App() {
           </Grid>
           {hasPermission("web_vitals") && (
             <Grid size={{ xs: 12, md: 3 }}>
-              <WebVitals
-                query={generalMetricsQuery}
-                metric={webVitalsMetric}
-                onMetricChange={setWebVitalsMetric}
-              />
+              <WebPerformancePanel query={generalMetricsQuery} />
             </Grid>
           )}
         </Grid>
       ),
-      payment_split: <ModeOfPayment query={generalMetricsQuery} />,
+      payment_split: hasPermission("web_vitals") ? (
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, md: 8 }}>
+            <ModeOfPayment query={generalMetricsQuery} />
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <WebVitals
+              query={generalMetricsQuery}
+              metric={webVitalsMetric}
+              onMetricChange={setWebVitalsMetric}
+            />
+          </Grid>
+        </Grid>
+      ) : (
+        <ModeOfPayment query={generalMetricsQuery} />
+      ),
       payment_trend: <PaymentSplitTrend query={generalMetricsQuery} />,
       traffic_split: (
         <TrafficSourceSplit
@@ -2052,7 +2077,8 @@ export default function App() {
           productLabel={selectedProductLabel}
           utmOptions={utmOptions}
           showRow="mobile_top"
-          showWebVitals={hasPermission("web_vitals")}
+          showWebVitals={false}
+          showCiEvents={hasPermission("ci_events")}
           compareMode={compareMode}
         />
       ),
@@ -2287,15 +2313,15 @@ export default function App() {
   }, [discountCode]);
 
   useEffect(() => {
-    if (selectedMetric === "ci_events") {
+    if (selectedMetric === "ci_events" && !hasPermission("ci_events")) {
       dispatch(setSelectedMetric("sales"));
     }
-  }, [selectedMetric, dispatch]);
+  }, [selectedMetric, hasPermission, dispatch]);
 
   useEffect(() => {
     if (
       discountCode &&
-      !["orders", "sales", "aov"].includes(selectedMetric)
+      !["orders", "sales", "aov", "ci_events"].includes(selectedMetric)
     ) {
       dispatch(setSelectedMetric("sales"));
     }
@@ -3049,11 +3075,15 @@ export default function App() {
                           <InlineDashboardLayoutEditor
                             isEditing={layoutEditMode}
                             itemIds={activeWidgetIds}
-                            renderWidget={(widgetId) => activeWidgetRegistry[widgetId]}
+                            renderWidget={(widgetId) =>
+                              activeWidgetRegistry[widgetId]
+                            }
                             extraAfterId={extraAfterId}
                             extras={dashboardExtrasNode}
                             onOrderChange={handleInlineDashboardReorder}
-                            onSave={() => handleSaveDashboardLayout(effectiveDashboardLayout)}
+                            onSave={() =>
+                              handleSaveDashboardLayout(effectiveDashboardLayout)
+                            }
                             onCancel={handleCloseLayoutEditor}
                             onReset={handleResetDashboardLayout}
                             isDirty={isDashboardLayoutDirty}
@@ -3133,16 +3163,22 @@ export default function App() {
                                           ).toFixed(1)
                                         : undefined,
                                     },
-                                    {
-                                      label: "Checkout Initiated",
-                                      value:
-                                        funnelData.stats.total_ci_events || 0,
-                                      change: funnelData.deltas?.ci?.diff_pct
-                                        ? Number(
-                                            funnelData.deltas.ci.diff_pct,
-                                          ).toFixed(1)
-                                        : undefined,
-                                    },
+                                    ...(hasPermission("ci_events")
+                                      ? [
+                                          {
+                                            label: "Checkout Initiated",
+                                            value:
+                                              funnelData.stats.total_ci_events ||
+                                              0,
+                                            change: funnelData.deltas?.ci
+                                              ?.diff_pct
+                                              ? Number(
+                                                  funnelData.deltas.ci.diff_pct,
+                                                ).toFixed(1)
+                                              : undefined,
+                                          },
+                                        ]
+                                      : []),
                                     {
                                       label: "Orders",
                                       value: funnelData.stats.total_orders || 0,
