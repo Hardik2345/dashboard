@@ -18,6 +18,8 @@ services:
         condition: service_healthy
       tenant-router:
         condition: service_healthy
+      merchant-requests-service:
+        condition: service_healthy
       alerts-service:
         condition: service_healthy
       analytics-service:
@@ -94,6 +96,27 @@ services:
       - saas-net
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:5005/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  merchant-requests-service:
+    container_name: merchant-requests-service-main
+    build:
+      context: ./merchant-requests-service
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+      - ./merchant-requests-service/.env
+    environment:
+      PORT: 4020
+      NODE_ENV: production
+    restart: unless-stopped
+    networks:
+      - saas-net
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:4020/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
       interval: 10s
       timeout: 5s
       retries: 5

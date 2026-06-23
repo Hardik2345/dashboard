@@ -18,6 +18,7 @@ import {
   LogOut,
   Filter,
   Package,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -68,6 +69,7 @@ const NAV_ITEMS = [
       { id: "bundles", label: "Bundles", icon: Table2 },
       { id: "inventory", label: "Inventory", icon: Package },
       { id: "alerts", label: "Alerts", icon: Bell },
+      { id: "requests", label: "Requests", icon: ClipboardList },
     ],
   },
   {

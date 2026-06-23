@@ -117,6 +117,22 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
 
+      // Merchant requests Socket.IO (must stay above the REST route and catch-all)
+      '/api/merchant-requests/socket.io': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+      },
+
+      // Merchant requests service
+      '/api/merchant-requests': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
       // Sessions service
       '/api/sessions': {
 
@@ -186,6 +202,22 @@ export default defineConfig({
 
       // Tenant router direct mapping
       '/api/tenant': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
+      // Merchant requests Socket.IO (must stay above the REST route and catch-all)
+      '/api/merchant-requests/socket.io': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+      },
+
+      // Merchant requests service
+      '/api/merchant-requests': {
         target: 'http://localhost:8081',
         changeOrigin: true,
         secure: false,
