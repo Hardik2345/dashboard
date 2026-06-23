@@ -1,12 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  Box,
-  Button,
-  Stack,
-  Typography,
-  useMediaQuery,
-  useTheme,
-} from "@mui/material";
+import { Box, Button, Stack, Typography, Tooltip } from "@mui/material";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import {
   DndContext,
@@ -25,10 +18,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { motion } from "framer-motion";
-import { DASHBOARD_WIDGET_LABELS } from "../lib/dashboardLayout.js";
 
 function WidgetFrame({
-  id,
   isEditing,
   dragging = false,
   setNodeRef,
@@ -44,89 +35,66 @@ function WidgetFrame({
       sx={{
         width: "100%",
         position: "relative",
+        overflow: "visible",
+        isolation: "isolate",
+        zIndex: elevated ? 8 : 1,
       }}
       style={style}
     >
-      <motion.div
-        layout
-        initial={false}
-        animate={{
-          scale: elevated ? 1.012 : 1,
-          boxShadow: elevated
-            ? "0 22px 48px rgba(0,0,0,0.22)"
-            : "0 0 0 rgba(0,0,0,0)",
+      <Box
+        sx={{
+          position: "relative",
+          width: "100%",
+          pt: 0,
+          borderRadius: "22px",
+          boxShadow: elevated ? "0 24px 52px rgba(0,0,0,0.24)" : "none",
+          transform: elevated ? "scale(1.01)" : "scale(1)",
+          transition: "box-shadow 180ms ease, transform 180ms ease",
+          willChange: "transform",
         }}
-        transition={{ type: "spring", stiffness: 360, damping: 30 }}
       >
-        <Box
-          sx={{
-            position: "relative",
-            width: "100%",
-            pt: isEditing ? 2.25 : 0,
-            borderRadius: isEditing ? "22px" : 0,
-            outline: isEditing
-              ? "1px solid rgba(91,163,224,0.26)"
-              : "1px solid transparent",
-            boxShadow: isEditing
-              ? "0 0 0 1px rgba(255,255,255,0.04), 0 10px 30px rgba(0,0,0,0.08)"
-              : "none",
-            background: isEditing
-              ? "linear-gradient(180deg, rgba(91,163,224,0.06), rgba(255,255,255,0.02))"
-              : "transparent",
-            transition:
-              "outline-color 180ms ease, box-shadow 180ms ease, background 180ms ease",
-          }}
-        >
-          {isEditing && (
+        {isEditing && (
+          <Tooltip title="Drag to reorder">
             <Box
+              {...handleProps}
               sx={{
                 position: "absolute",
                 top: 10,
-                left: 10,
-                zIndex: 2,
-                display: "flex",
-                alignItems: "center",
-                gap: 1,
-                pr: 1.25,
-                py: 0.6,
-                pl: 0.8,
-                borderRadius: "999px",
-                bgcolor: "rgba(16,16,16,0.86)",
-                border: "1px solid rgba(255,255,255,0.08)",
-                backdropFilter: "blur(14px)",
-                boxShadow: "0 12px 26px rgba(0,0,0,0.22)",
+                right: 12,
+                zIndex: 20,
+                width: 28,
+                height: 28,
+                borderRadius: "10px",
+                display: "grid",
+                placeItems: "center",
+                color: "#dff1ff",
+                bgcolor: "rgba(10,10,10,0.96)",
+                border: "1px solid rgba(91,163,224,0.42)",
+                backdropFilter: "blur(18px)",
+                boxShadow: "0 14px 28px rgba(0,0,0,0.28)",
+                cursor: "grab",
+                touchAction: "none",
+                "&:active": {
+                  cursor: "grabbing",
+                },
               }}
             >
-              <Box
-                {...handleProps}
-                sx={{
-                  width: 26,
-                  height: 26,
-                  borderRadius: "9px",
-                  display: "grid",
-                  placeItems: "center",
-                  color: "text.secondary",
-                  bgcolor: "rgba(255,255,255,0.08)",
-                  cursor: "grab",
-                  touchAction: "none",
-                  "&:active": {
-                    cursor: "grabbing",
-                  },
-                }}
-              >
-                <DragIndicatorIcon sx={{ fontSize: 17 }} />
-              </Box>
-              <Typography variant="caption" fontWeight={700} sx={{ lineHeight: 1 }}>
-                {DASHBOARD_WIDGET_LABELS[id] || id}
-              </Typography>
+              <DragIndicatorIcon sx={{ fontSize: 16 }} />
             </Box>
-          )}
+          </Tooltip>
+        )}
 
-          <Box sx={{ pointerEvents: isEditing ? "none" : "auto" }}>
+        <Box sx={{ pointerEvents: isEditing ? "none" : "auto" }}>
+          <Box
+            sx={{
+              opacity: isEditing ? 0.6 : 1,
+              transition: "opacity 160ms ease",
+            }}
+          >
             {children}
           </Box>
         </Box>
-      </motion.div>
+      </Box>
     </Box>
   );
 }
@@ -143,7 +111,6 @@ function SortableWidget({ id, isEditing, children }) {
 
   return (
     <WidgetFrame
-      id={id}
       isEditing={isEditing}
       dragging={isDragging}
       setNodeRef={setNodeRef}
@@ -173,8 +140,6 @@ export default function InlineDashboardLayoutEditor({
   isDirty,
   isSaving = false,
 }) {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const [activeId, setActiveId] = useState(null);
 
   const sensors = useSensors(
@@ -187,7 +152,7 @@ export default function InlineDashboardLayoutEditor({
   const overlayNode = useMemo(() => {
     if (!activeId) return null;
     return (
-      <WidgetFrame id={activeId} isEditing dragging>
+      <WidgetFrame isEditing dragging>
         {renderWidget(activeId)}
       </WidgetFrame>
     );
@@ -252,6 +217,33 @@ export default function InlineDashboardLayoutEditor({
 
   return (
     <>
+      <Box
+        sx={{
+          mb: { xs: 1, md: 1.25 },
+          px: { xs: 1.35, md: 1.5 },
+          py: 1,
+          borderRadius: "18px",
+          bgcolor: "rgba(91,163,224,0.1)",
+          border: "1px solid rgba(91,163,224,0.24)",
+          color: "text.primary",
+          backdropFilter: "blur(14px)",
+        }}
+      >
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={{ xs: 0.25, sm: 1 }}
+          alignItems={{ xs: "flex-start", sm: "center" }}
+          justifyContent="space-between"
+        >
+          <Typography variant="subtitle2" fontWeight={800}>
+            Layout Edit Mode Active
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Drag blocks using the top-left handle, then save or cancel.
+          </Typography>
+        </Stack>
+      </Box>
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -326,7 +318,7 @@ export default function InlineDashboardLayoutEditor({
                 whiteSpace: "nowrap",
               }}
             >
-              {isDirty ? "Unsaved Changes" : "Edit Mode"}
+              {isDirty ? "Unsaved Changes" : "Layout Mode"}
             </Typography>
             <Button
               onClick={onReset}

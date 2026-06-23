@@ -23,7 +23,6 @@ import {
   Skeleton,
   IconButton,
   Tooltip,
-  useTheme,
   useMediaQuery,
 } from "@mui/material";
 import Grid from "@mui/material/Grid2";
@@ -2102,12 +2101,15 @@ export default function App() {
       mobile: draftLayout.mobile,
     };
     setIsSavingDashboardLayout(true);
-    const res = await saveDashboardLayout(payload);
-    setIsSavingDashboardLayout(false);
-    if (res.error) return;
-    setDashboardLayout(normalizeDashboardLayout(res.data));
-    setPreviewDashboardLayout(null);
-    setLayoutEditMode(false);
+    try {
+      const res = await saveDashboardLayout(payload);
+      if (res.error) return;
+      setDashboardLayout(normalizeDashboardLayout(res.data));
+      setPreviewDashboardLayout(null);
+      setLayoutEditMode(false);
+    } finally {
+      setIsSavingDashboardLayout(false);
+    }
   }, []);
 
   const handleOpenLayoutEditor = useCallback(() => {
