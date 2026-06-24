@@ -40,6 +40,7 @@ import {
   Store,
   Filter,
   Package,
+  ClipboardList,
   Grip,
 } from "lucide-react";
 
@@ -49,6 +50,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "bundles", label: "Bundles", icon: Table2 },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "alerts", label: "Alerts", icon: Bell },
+  { id: "requests", label: "Requests", icon: ClipboardList },
   { id: "tenant-setup", label: "Tenant Setup", icon: Store },
   //  { id: "notifications-log", label: "Logs", icon: Bell },
   { id: "access", label: "Access", icon: ShieldCheck },
@@ -62,6 +64,7 @@ const TAB_ROUTE_MAP = {
   bundles: "/bundles",
   inventory: "/inventory",
   alerts: "/alerts",
+  requests: "/requests",
   access: "/access-control",
   "traffic-split-config": "/configurations",
   "tenant-setup": "/tenant-setup",
@@ -200,6 +203,9 @@ const BundlesPanel = lazy(() => import("./components/BundlesPanel.jsx"));
 const AuthorBrandForm = lazy(() => import("./components/AuthorBrandForm.jsx"));
 const AuthorBrandList = lazy(() => import("./components/AuthorBrandList.jsx"));
 const AlertsAdmin = lazy(() => import("./components/AlertsAdmin.jsx"));
+const MerchantRequestsPanel = lazy(
+  () => import("./components/MerchantRequestsPanel.jsx"),
+);
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format("YYYY-MM-DD") : undefined;
@@ -593,13 +599,19 @@ export default function App() {
     return hasPermission("bundles_panel");
   }, [hasPermission, isAuthor]);
 
+  const canAccessRequestsPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("requests_panel");
+  }, [hasPermission, isAuthor]);
+
   const accessibleTabs = useMemo(() => {
     if (isAuthor) return null;
     const tabs = ["dashboard"];
+    if (canAccessRequestsPanel) tabs.push("requests");
     if (canAccessBundlesPanel) tabs.push("bundles");
     if (canAccessInventoryPanel) tabs.push("inventory");
     return tabs;
-  }, [canAccessBundlesPanel, canAccessInventoryPanel, isAuthor]);
+  }, [canAccessBundlesPanel, canAccessInventoryPanel, canAccessRequestsPanel, isAuthor]);
 
   useEffect(() => {
     if (!initialized) return;
@@ -621,11 +633,22 @@ export default function App() {
         },
         { replace: true },
       );
+      return;
+    }
+    if (authorTab === "requests" && !canAccessRequestsPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP.dashboard,
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
     }
   }, [
     authorTab,
     canAccessBundlesPanel,
     canAccessInventoryPanel,
+    canAccessRequestsPanel,
     initialized,
     location.search,
     sanitizedSearch,
@@ -3333,6 +3356,16 @@ export default function App() {
                           </Typography>
                         </Paper>
                       ))}
+
+                    {authorTab === "requests" && (
+                      <Suspense fallback={<SectionFallback count={2} />}>
+                        <MerchantRequestsPanel
+                          brandKey={activeBrandKey}
+                          isAuthor={isAuthor}
+                          availableBrands={authorBrands}
+                        />
+                      </Suspense>
+                    )}
 
                     {authorTab === "notifications-log" && (
                       <Suspense fallback={<SectionFallback />}>

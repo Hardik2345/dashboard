@@ -71,6 +71,8 @@ const GlassChip = ({ label, size = "small", isDark }) => (
 
 const PERMISSION_OPTIONS = [
   "all",
+  "requests_panel",
+  "requests_timeline",
   "bundles_panel",
   "inventory_panel",
   "product_filter",
@@ -120,6 +122,17 @@ const FILTER_PANEL_PERMISSIONS = [
   { id: "product_table_filters:product_types", label: "Product Types" },
   { id: "product_table_filters:sort_filter", label: "Sort Filter" },
 ];
+
+function normalizePermissionSelection(permissions = []) {
+  let next = Array.from(new Set(permissions));
+  if (next.includes("requests_timeline") && !next.includes("requests_panel")) {
+    next.push("requests_panel");
+  }
+  if (!next.includes("requests_panel")) {
+    next = next.filter((permission) => permission !== "requests_timeline");
+  }
+  return next;
+}
 
 const StatusSwitch = ({ active, onChange, label = "Active", isDark }) => (
   <Stack direction="row" spacing={1} alignItems="center">
@@ -553,7 +566,10 @@ export default function AccessControlCard() {
   }
 
   function handleFormChange(key, value) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => ({
+      ...prev,
+      [key]: key === "permissions" ? normalizePermissionSelection(value) : value,
+    }));
   }
 
   async function handleSave() {
@@ -1685,14 +1701,17 @@ export default function AccessControlCard() {
               )}
             />
             {domainForm.role === "viewer" && (
-              <Autocomplete
-                multiple
-                options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                value={domainForm.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                onChange={(_, val) => {
-                  const nestedPerms = domainForm.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
-                  setDomainForm((prev) => ({ ...prev, permissions: [...val, ...nestedPerms] }));
-                }}
+                <Autocomplete
+                  multiple
+                  options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                  value={domainForm.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                  onChange={(_, val) => {
+                    const nestedPerms = domainForm.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
+                    setDomainForm((prev) => ({
+                      ...prev,
+                      permissions: normalizePermissionSelection([...val, ...nestedPerms]),
+                    }));
+                  }}
                 slotProps={{
                   popper: {
                     sx: { zIndex: 1400 },
