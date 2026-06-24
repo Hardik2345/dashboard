@@ -33,6 +33,7 @@ export default async function handler(req, res) {
       "/track",
       "/analytics",
       "/sessions",
+      "/merchant-requests",
     ];
 
 

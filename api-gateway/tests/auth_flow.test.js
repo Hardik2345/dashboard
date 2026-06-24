@@ -21,6 +21,7 @@ process.env.AUTH_KEYS = AUTH_KEYS;
 process.env.AUTH_ACTIVE_KID = KID;
 
 const app = require('../src/app');
+const DomainRule = require('../src/models/DomainRule.model');
 const GlobalUser = require('../src/models/GlobalUser.model');
 const RefreshToken = require('../src/models/RefreshToken.model');
 const AuthService = require('../src/services/auth.service');
@@ -49,6 +50,7 @@ describe('Auth Flow', () => {
 
     beforeEach(async () => {
         await GlobalUser.deleteMany({});
+        await DomainRule.deleteMany({});
         await RefreshToken.deleteMany({});
 
         const passwordHash = await bcrypt.hash('password123', 10);
@@ -64,6 +66,33 @@ describe('Auth Flow', () => {
                 permissions: ['all']
             }]
         });
+    });
+
+    test('Request permissions are valid for users and domain rules', async () => {
+        const createdUser = await GlobalUser.create({
+            email: 'requests@example.com',
+            password_hash: 'hash',
+            status: 'active',
+            role: 'viewer',
+            primary_brand_id: 'TMC',
+            brand_memberships: [{
+                brand_id: 'TMC',
+                status: 'active',
+                permissions: ['requests_panel', 'requests_timeline']
+            }]
+        });
+
+        const createdRule = await DomainRule.create({
+            domain: 'requests.example.com',
+            role: 'viewer',
+            primary_brand_id: 'TMC',
+            brand_ids: ['TMC'],
+            permissions: ['requests_panel', 'requests_timeline'],
+            status: 'active'
+        });
+
+        expect(createdUser.brand_memberships[0].permissions).toEqual(['requests_panel', 'requests_timeline']);
+        expect(createdRule.permissions).toEqual(['requests_panel', 'requests_timeline']);
     });
 
     test('Login Success', async () => {
