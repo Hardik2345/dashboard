@@ -7,14 +7,12 @@ import {
   ArrowLeft,
   Building2,
   CalendarDays,
-  Check,
   CirclePlus,
   ClipboardList,
   Clock,
   ExternalLink,
   Link2,
   Loader2,
-  Lock,
   MessageSquare,
   Plus,
   RefreshCw,
@@ -62,7 +60,7 @@ import {
   listTodoistUsers,
   reconcileMerchantRequests,
   triggerBrandProvision,
-  updateBrandVisibleStatuses,
+  updateBrandPriorityCaps,
   updateMerchantRequestAssignee,
   updateMerchantRequestDueDate,
   updateMerchantRequestStatus,
@@ -74,12 +72,8 @@ dayjs.extend(relativeTime);
 
 const STATUSES = [
   "submitted",
-  "triaged",
-  "in_progress",
-  "waiting_on_merchant",
-  "resolved",
-  "closed",
-  "cancelled",
+  "assigned",
+  "done",
 ];
 
 const STATUS_CONFIG = {
@@ -88,35 +82,15 @@ const STATUS_CONFIG = {
     className:
       "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
   },
-  triaged: {
-    label: "Triaged",
-    className:
-      "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-900/30 dark:text-violet-300",
-  },
-  in_progress: {
-    label: "In Progress",
+  assigned: {
+    label: "Assigned",
     className:
       "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
   },
-  waiting_on_merchant: {
-    label: "Waiting",
-    className:
-      "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
-  },
-  resolved: {
-    label: "Resolved",
+  done: {
+    label: "Done",
     className:
       "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
-  },
-  closed: {
-    label: "Closed",
-    className:
-      "border-gray-200 bg-gray-100 text-gray-600 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-400",
-  },
-  cancelled: {
-    label: "Cancelled",
-    className:
-      "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300",
   },
 };
 
@@ -154,6 +128,12 @@ const EVENT_CONFIG = {
     bg: "bg-blue-50 dark:bg-blue-900/30",
     label: "Request created",
   },
+  request_imported: {
+    Icon: CirclePlus,
+    color: "text-blue-500 dark:text-blue-400",
+    bg: "bg-blue-50 dark:bg-blue-900/30",
+    label: "Imported from Todoist",
+  },
   status_changed: {
     Icon: RefreshCw,
     color: "text-violet-500 dark:text-violet-400",
@@ -182,15 +162,26 @@ const EVENT_CONFIG = {
 
 const TAB_FILTERS = [
   { id: "all", label: "All", statuses: null },
-  { id: "open", label: "Open", statuses: ["submitted", "triaged"] },
-  {
-    id: "active",
-    label: "Active",
-    statuses: ["in_progress", "waiting_on_merchant"],
-  },
-  { id: "resolved", label: "Resolved", statuses: ["resolved"] },
-  { id: "closed", label: "Closed", statuses: ["closed", "cancelled"] },
+  { id: "submitted", label: "Submitted", statuses: ["submitted"] },
+  { id: "assigned", label: "Assigned", statuses: ["assigned"] },
+  { id: "done", label: "Done", statuses: ["done"] },
 ];
+
+const CATEGORIES = [
+  "Design",
+  "Data Analysis",
+  "Development",
+  "Issues",
+  "Integrations",
+  "Feature Request",
+];
+
+const DEFAULT_PRIORITY_CAPS = {
+  urgent: 1,
+  high: 2,
+  normal: 3,
+  low: 5,
+};
 
 // Glassy card surface matching the dashboard's MUI cards (rounded-2xl, subtle
 // border + depth shadow, gentle hover-lift; dark = backdrop blur + white border).
@@ -227,6 +218,20 @@ function syncPending(req) {
     s.todoist_due_date_status,
     s.todoist_comment_status,
   ].includes("pending");
+}
+
+function formatRequestError(data, fallback = "Failed to create request") {
+  const error = data?.error;
+  if (error === "priority_cap_reached") {
+    const priority = PRIORITY_CONFIG[data?.priority]?.label || data?.priority || "this priority";
+    const limit = Number(data?.limit ?? 0);
+    const activeCount = Number(data?.active_count ?? limit);
+    return `You already have ${activeCount} active ${priority.toLowerCase()} request${activeCount === 1 ? "" : "s"}. The limit is ${limit}. Please wait until one is marked done or choose another priority.`;
+  }
+  if (error === "invalid_category") return "Please select a valid category.";
+  if (error === "invalid_priority") return "Please select a valid priority.";
+  if (error === "title_required") return "Please enter a request title.";
+  return error || fallback;
 }
 
 // ── Atomic sub-components ─────────────────────────────────────────────────────
@@ -296,7 +301,7 @@ function SyncIndicator({ request }) {
 
 // ── Request list card ─────────────────────────────────────────────────────────
 
-function RequestCard({ request, selected, onClick }) {
+function RequestCard({ request, selected, onClick, showAssignee = false }) {
   const pCfg = PRIORITY_CONFIG[request.priority] || PRIORITY_CONFIG.normal;
   return (
     <button
@@ -321,7 +326,7 @@ function RequestCard({ request, selected, onClick }) {
         <span className="text-[11px] font-mono font-semibold tracking-wide text-foreground/60">
           {request.brand_key}
         </span>
-        {request.assignee?.name && (
+        {showAssignee && request.assignee?.name && (
           <>
             <span className="text-muted-foreground/30">·</span>
             <span className="text-[11px] text-muted-foreground">
@@ -333,6 +338,15 @@ function RequestCard({ request, selected, onClick }) {
         <span className="text-[11px] text-muted-foreground">
           {dayjs(request.updated_at).fromNow()}
         </span>
+        {request.due_date && (
+          <>
+            <span className="text-muted-foreground/30">·</span>
+            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Clock className="h-3 w-3" />
+              Due {request.due_date}
+            </span>
+          </>
+        )}
         <SyncIndicator request={request} />
       </div>
     </button>
@@ -456,21 +470,6 @@ function DetailSkeleton() {
 
 // ── Brand settings dialog ─────────────────────────────────────────────────────
 
-// Always shown to merchants (mirrors DEFAULT_VISIBLE_STATUSES in the backend's
-// statusVisibility.js) — these cannot be toggled off.
-const DEFAULT_VISIBLE_STATUS_LABELS = {
-  submitted: "Submitted",
-  in_progress: "In Progress",
-  closed: "Closed",
-};
-
-const UNLOCKABLE_STATUS_LABELS = {
-  triaged: "Triaged",
-  waiting_on_merchant: "Waiting on Merchant",
-  resolved: "Resolved",
-  cancelled: "Cancelled",
-};
-
 const PROVISION_STATUS_CONFIG = {
   ready: {
     label: "Ready",
@@ -499,13 +498,23 @@ function BrandSettingsDialog({ open, onClose, availableBrands = [] }) {
   const [linkProjectId, setLinkProjectId] = useState("");
   const [linkLoading, setLinkLoading] = useState(false);
   const [linkError, setLinkError] = useState("");
+  const [capDrafts, setCapDrafts] = useState({});
   // Add-brand form at the bottom
   const [addBrandKey, setAddBrandKey] = useState("");
 
   const loadConfigs = useCallback(async () => {
     setLoading(true);
     const res = await listBrandConfigs();
-    if (!res.error) setConfigs(res.data?.configs || []);
+    if (!res.error) {
+      const nextConfigs = res.data?.configs || [];
+      setConfigs(nextConfigs);
+      setCapDrafts(
+        nextConfigs.reduce((acc, cfg) => {
+          acc[cfg.brand_key] = { ...DEFAULT_PRIORITY_CAPS, ...(cfg.priority_caps || {}) };
+          return acc;
+        }, {}),
+      );
+    }
     setLoading(false);
   }, []);
 
@@ -552,12 +561,21 @@ function BrandSettingsDialog({ open, onClose, availableBrands = [] }) {
     loadConfigs();
   }
 
-  async function handleUnlockToggle(brand_key, status, currentUnlocked) {
-    const next = currentUnlocked.includes(status)
-      ? currentUnlocked.filter((s) => s !== status)
-      : [...currentUnlocked, status];
-    setActionLoading(`unlock-${brand_key}-${status}`);
-    await updateBrandVisibleStatuses(brand_key, next);
+  function handleCapChange(brandKey, priority, value) {
+    const normalized = Math.max(0, Number(value || 0));
+    setCapDrafts((drafts) => ({
+      ...drafts,
+      [brandKey]: {
+        ...DEFAULT_PRIORITY_CAPS,
+        ...(drafts[brandKey] || {}),
+        [priority]: normalized,
+      },
+    }));
+  }
+
+  async function handleSavePriorityCaps(brandKey) {
+    setActionLoading(`caps-${brandKey}`);
+    await updateBrandPriorityCaps(brandKey, capDrafts[brandKey] || DEFAULT_PRIORITY_CAPS);
     setActionLoading("");
     loadConfigs();
   }
@@ -665,81 +683,36 @@ function BrandSettingsDialog({ open, onClose, availableBrands = [] }) {
                         </div>
                       </div>
 
-                      {/* Merchant visible statuses (only when ready) */}
+                      {/* Priority caps (only when ready) */}
                       {isReady && (
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                            Merchant Visible Statuses
+                            Active Request Caps
                           </p>
-
-                          {/* Always visible — defaults, cannot be turned off */}
-                          <div className="mb-3">
-                            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70 mb-1.5">
-                              Always visible
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                              {Object.entries(DEFAULT_VISIBLE_STATUS_LABELS).map(([status, label]) => (
-                                <TooltipProvider key={status} delayDuration={200}>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300/70 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-700/50 dark:bg-emerald-900/20 dark:text-emerald-300">
-                                        <Lock className="h-3 w-3" />
-                                        {label}
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Always shown to merchants — can't be hidden</TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              ))}
-                            </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            {["urgent", "high", "normal", "low"].map((priority) => (
+                              <label key={priority} className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                                {PRIORITY_CONFIG[priority]?.label || priority}
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  value={(capDrafts[cfg.brand_key] || DEFAULT_PRIORITY_CAPS)[priority]}
+                                  onChange={(e) => handleCapChange(cfg.brand_key, priority, e.target.value)}
+                                  className="mt-1 h-8 text-xs"
+                                />
+                              </label>
+                            ))}
                           </div>
-
-                          {/* Optional — unlockable, click to toggle */}
-                          <div>
-                            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70 mb-1.5">
-                              Optional — click to toggle
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                              {Object.entries(UNLOCKABLE_STATUS_LABELS).map(([status, label]) => {
-                                const unlocked = (cfg.unlocked_statuses || []).includes(status);
-                                const key = `unlock-${cfg.brand_key}-${status}`;
-                                const busy = actionLoading === key;
-                                return (
-                                  <button
-                                    key={status}
-                                    disabled={busy}
-                                    onClick={() => handleUnlockToggle(cfg.brand_key, status, cfg.unlocked_statuses || [])}
-                                    className={cn(
-                                      "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-                                      unlocked
-                                        ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
-                                        : "border-dashed border-border bg-transparent text-muted-foreground hover:border-primary/40 hover:text-foreground",
-                                      busy && "opacity-50 cursor-not-allowed",
-                                    )}
-                                  >
-                                    {busy ? (
-                                      <Loader2 className="h-3 w-3 animate-spin" />
-                                    ) : unlocked ? (
-                                      <Check className="h-3 w-3" />
-                                    ) : (
-                                      <Plus className="h-3 w-3" />
-                                    )}
-                                    {label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          <p className="text-[11px] text-muted-foreground mt-2.5">
-                            <span className="inline-flex items-center gap-1">
-                              <Check className="h-3 w-3 text-primary" /> Visible to merchants.
-                            </span>{" "}
-                            <span className="inline-flex items-center gap-1">
-                              <Plus className="h-3 w-3" /> Available to enable
-                            </span>{" "}
-                            — disabled statuses are shown as their nearest visible bucket.
-                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-3 h-7 text-xs"
+                            disabled={actionLoading === `caps-${cfg.brand_key}`}
+                            onClick={() => handleSavePriorityCaps(cfg.brand_key)}
+                          >
+                            {actionLoading === `caps-${cfg.brand_key}` && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                            Save caps
+                          </Button>
                         </div>
                       )}
 
@@ -936,7 +909,7 @@ export default function MerchantRequestsPanel({
   const [form, setForm] = useState({
     title: "",
     description: "",
-    category: "",
+    category: "Feature Request",
     priority: "normal",
     due_date: "",
   });
@@ -991,7 +964,7 @@ export default function MerchantRequestsPanel({
 
   const openCount = useMemo(
     () =>
-      requests.filter((r) => !["closed", "cancelled", "resolved"].includes(r.status))
+      requests.filter((r) => r.status !== "done")
         .length,
     [requests],
   );
@@ -1132,10 +1105,10 @@ export default function MerchantRequestsPanel({
     const res = await createMerchantRequest(payload);
     setFormSubmitting(false);
     if (res.error) {
-      setFormError(res.data?.error || "Failed to create request");
+      setFormError(formatRequestError(res.data));
       return;
     }
-    setForm({ title: "", description: "", category: "", priority: "normal", due_date: "" });
+    setForm({ title: "", description: "", category: "Feature Request", priority: "normal", due_date: "" });
     setNewRequestOpen(false);
     const newId = res.data?.request?.id || "";
     if (newId) {
@@ -1364,6 +1337,7 @@ export default function MerchantRequestsPanel({
                       request={req}
                       selected={req.id === selectedId}
                       onClick={() => selectRequest(req.id)}
+                      showAssignee={isAuthor}
                     />
                   ))
                 )}
@@ -1442,7 +1416,7 @@ export default function MerchantRequestsPanel({
                           selectedRequest.requester?.email ||
                           "Unknown"}
                       </span>
-                      {selectedRequest.assignee?.name && (
+                      {isAuthor && selectedRequest.assignee?.name && (
                         <>
                           <span className="text-muted-foreground/30">·</span>
                           <span className="text-muted-foreground text-[11px]">
@@ -1471,7 +1445,7 @@ export default function MerchantRequestsPanel({
 
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                       <SyncIndicator request={selectedRequest} />
-                      {selectedRequest.todoist_url && (
+                      {isAuthor && selectedRequest.todoist_url && (
                         <a
                           href={selectedRequest.todoist_url}
                           target="_blank"
@@ -1753,14 +1727,21 @@ export default function MerchantRequestsPanel({
                 <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">
                   Category
                 </label>
-                <Input
-                  placeholder="e.g. Design, Technical"
+                <Select
                   value={form.category}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, category: e.target.value }))
-                  }
-                  className="h-9 text-sm"
-                />
+                  onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="w-[130px]">
                 <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">

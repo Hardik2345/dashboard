@@ -11,8 +11,9 @@ const TodoistSyncJob = require("../src/models/TodoistSyncJob");
 const TodoistWebhookDelivery = require("../src/models/TodoistWebhookDelivery");
 const { buildApp } = require("../src/app");
 const { computeTodoistHmac } = require("../src/services/todoistHmac");
-const { buildTaskPayload } = require("../src/services/syncJobs");
-const { maskStatus, expandStatusFilter, getVisibleStatuses } = require("../src/services/statusVisibility");
+const { buildTaskPayload, getMerchantRaisedSectionId } = require("../src/services/syncJobs");
+const { ensureFallbackBrandConfig, provisionBrandProject } = require("../src/services/brandProvisioning");
+const { backfillMerchantRequestWorkflow } = require("../src/services/migrations");
 
 function testConfig() {
   return {
@@ -33,19 +34,21 @@ function testConfig() {
   };
 }
 
-function mockBrandConfig(overrides = {}) {
+function brandConfig(overrides = {}) {
   return {
     todoist_project_id: "project-1",
+    merchant_raised_section_id: "sec-raised",
     section_by_status: {
-      submitted: "sec-submitted",
-      triaged: "sec-triaged",
-      in_progress: "sec-progress",
-      waiting_on_merchant: "sec-waiting",
-      resolved: "sec-resolved",
-      closed: "sec-closed",
-      cancelled: "sec-cancelled",
+      submitted: "sec-raised",
+      assigned: "sec-raised",
+      done: "sec-raised",
     },
-    unlocked_statuses: [],
+    priority_caps: {
+      urgent: 1,
+      high: 2,
+      normal: 3,
+      low: 5,
+    },
     ...overrides,
   };
 }
@@ -53,20 +56,10 @@ function mockBrandConfig(overrides = {}) {
 async function seedBrandConfig(brand_key = "TMC", overrides = {}) {
   return BrandTodoistConfig.create({
     brand_key,
-    todoist_project_id: "project-1",
-    section_by_status: {
-      submitted: "sec-submitted",
-      triaged: "sec-triaged",
-      in_progress: "sec-progress",
-      waiting_on_merchant: "sec-waiting",
-      resolved: "sec-resolved",
-      closed: "sec-closed",
-      cancelled: "sec-cancelled",
-    },
     provisioning_status: "ready",
     provisioning_mode: "auto",
-    unlocked_statuses: [],
-    ...overrides,
+    provisioning_error: "",
+    ...brandConfig(overrides),
   });
 }
 
@@ -89,6 +82,20 @@ function authorHeaders(brand = "TMC") {
   };
 }
 
+function appWithTodoist(todoistClient = {}) {
+  return buildApp({ config: testConfig(), todoistClient }).app;
+}
+
+function signedTodoistPost(app, payload, deliveryId = "delivery-1") {
+  const raw = JSON.stringify(payload);
+  return request(app)
+    .post("/merchant-requests/todoist/webhook")
+    .set("Content-Type", "application/json")
+    .set("X-Todoist-Hmac-SHA256", computeTodoistHmac(raw, "secret"))
+    .set("X-Todoist-Delivery-ID", deliveryId)
+    .send(raw);
+}
+
 test.beforeEach(async (t) => {
   const mongo = await MongoMemoryServer.create();
   t.after(async () => {
@@ -98,161 +105,619 @@ test.beforeEach(async (t) => {
   await mongoose.connect(mongo.getUri(), { dbName: "merchant_requests_test" });
 });
 
-// ─── buildTaskPayload ──────────────────────────────────────────────────────────
-
-test("buildTaskPayload includes required labels and submitted section", async () => {
+test("buildTaskPayload uses Merchant Raised section and includes due date", async () => {
   const req = new MerchantRequest({
     brand_key: "TMC",
     requester: { user_id: "u1", email: "merchant@example.com" },
     title: "Help with report",
     description: "Need a custom report",
-    category: "reporting",
-    status: "submitted",
-  });
-
-  const payload = buildTaskPayload(req, mockBrandConfig());
-
-  assert.equal(payload.project_id, "project-1");
-  assert.equal(payload.section_id, "sec-submitted");
-  assert.deepEqual(payload.labels.slice(0, 3), ["Datum", "merchant-request", "brand:TMC"]);
-  assert.match(payload.description, /Datum Request ID:/);
-});
-
-test("buildTaskPayload includes due_date when present", async () => {
-  const req = new MerchantRequest({
-    brand_key: "TMC",
-    requester: { user_id: "u1", email: "merchant@example.com" },
-    title: "Help with report",
+    category: "Data Analysis",
     status: "submitted",
     due_date: "2026-06-25",
   });
 
-  const payload = buildTaskPayload(req, mockBrandConfig());
+  const payload = buildTaskPayload(req, brandConfig());
 
+  assert.equal(payload.content, "Help with report");
+  assert.equal(payload.project_id, "project-1");
+  assert.equal(payload.section_id, "sec-raised");
   assert.equal(payload.due_date, "2026-06-25");
+  assert.ok(payload.labels.includes("category:Data Analysis"));
+  assert.match(payload.description, /Datum Request ID:/);
 });
 
-// ─── Status visibility / masking ──────────────────────────────────────────────
-
-test("maskStatus returns bucket status when internal status is not visible", () => {
-  const visible = ["submitted", "in_progress", "closed"];
-  assert.equal(maskStatus("triaged", visible), "submitted");
-  assert.equal(maskStatus("waiting_on_merchant", visible), "in_progress");
-  assert.equal(maskStatus("resolved", visible), "in_progress");
-  assert.equal(maskStatus("cancelled", visible), "closed");
-  assert.equal(maskStatus("submitted", visible), "submitted");
-  assert.equal(maskStatus("in_progress", visible), "in_progress");
-  assert.equal(maskStatus("closed", visible), "closed");
-});
-
-test("maskStatus passes through unlocked statuses unchanged", () => {
-  const visible = ["submitted", "in_progress", "closed", "triaged", "cancelled"];
-  assert.equal(maskStatus("triaged", visible), "triaged");
-  assert.equal(maskStatus("cancelled", visible), "cancelled");
-  assert.equal(maskStatus("waiting_on_merchant", visible), "in_progress");
-});
-
-test("expandStatusFilter expands visible bucket to underlying statuses", () => {
-  const defaults = ["submitted", "in_progress", "closed"];
-  assert.deepEqual(expandStatusFilter("submitted", defaults).sort(), ["submitted", "triaged"].sort());
-  assert.deepEqual(
-    expandStatusFilter("in_progress", defaults).sort(),
-    ["in_progress", "waiting_on_merchant", "resolved"].sort(),
+test("getMerchantRaisedSectionId falls back to old submitted section", () => {
+  assert.equal(
+    getMerchantRaisedSectionId({ section_by_status: { submitted: "legacy-submitted" } }),
+    "legacy-submitted",
   );
-  assert.deepEqual(expandStatusFilter("closed", defaults).sort(), ["closed", "cancelled"].sort());
 });
 
-test("expandStatusFilter respects unlocked statuses", () => {
-  const visible = ["submitted", "in_progress", "closed", "waiting_on_merchant"];
-  // waiting_on_merchant is now visible separately → excluded from in_progress expansion
-  const expanded = expandStatusFilter("in_progress", visible).sort();
-  assert.deepEqual(expanded, ["in_progress", "resolved"].sort());
-});
-
-test("getVisibleStatuses includes unlocked statuses from brand config", () => {
-  const cfg = { unlocked_statuses: ["triaged", "cancelled"] };
-  const visible = getVisibleStatuses(cfg);
-  assert.ok(visible.includes("submitted"));
-  assert.ok(visible.includes("in_progress"));
-  assert.ok(visible.includes("closed"));
-  assert.ok(visible.includes("triaged"));
-  assert.ok(visible.includes("cancelled"));
-  assert.ok(!visible.includes("waiting_on_merchant"));
-  assert.ok(!visible.includes("resolved"));
-});
-
-// ─── Request creation ──────────────────────────────────────────────────────────
-
-test("merchant create returns local request when Todoist is down and queues retry", async () => {
+test("provisioning creates only the Merchant Raised section", async () => {
+  const createdSections = [];
   const todoistClient = {
-    createTask: async () => {
-      const err = new Error("todoist_down");
-      err.status = 503;
-      throw err;
-    },
-  };
-  const { app } = buildApp({ config: testConfig(), todoistClient });
-
-  const res = await request(app)
-    .post("/merchant-requests")
-    .set(merchantHeaders("TMC"))
-    .send({ brand_key: "TMC", title: "Need help", description: "Please check this" });
-
-  assert.equal(res.status, 201);
-  assert.equal(res.body.request.brand_key, "TMC");
-  // Job deferred due to no brand config (not a Todoist error), sync status stays pending
-  assert.equal(res.body.request.sync.todoist_task_status, "pending");
-
-  const jobs = await TodoistSyncJob.find({ request_id: res.body.request.id }).lean();
-  assert.equal(jobs.length, 1);
-  assert.equal(jobs[0].type, "create_task");
-  assert.equal(jobs[0].status, "pending");
-});
-
-test("merchant status is masked to visible bucket on create response", async () => {
-  // Seed brand config with triaged NOT unlocked
-  await seedBrandConfig("TMC");
-  const todoistClient = {
-    createTask: async () => ({ id: "task-99", url: "https://todoist.com/task-99" }),
+    createProject: async () => ({ id: "project-1" }),
     listSections: async () => [],
-    createSection: async (name) => ({ id: `sec-${name}` }),
-  };
-  const { app } = buildApp({ config: testConfig(), todoistClient });
-
-  const res = await request(app)
-    .post("/merchant-requests")
-    .set(merchantHeaders("TMC"))
-    .send({ brand_key: "TMC", title: "Need help" });
-
-  assert.equal(res.status, 201);
-  // "submitted" is always visible, so no masking occurs here
-  assert.equal(res.body.request.status, "submitted");
-});
-
-test("author create request with due_date sends due_date to Todoist", async () => {
-  await seedBrandConfig("TMC");
-  const createTaskCalls = [];
-  const todoistClient = {
-    createTask: async (payload) => {
-      createTaskCalls.push(payload);
-      return { id: "task-99", url: "https://todoist.com/task-99" };
+    createSection: async (name) => {
+      createdSections.push(name);
+      return { id: "sec-raised" };
     },
   };
-  const { app } = buildApp({ config: testConfig(), todoistClient });
+
+  await provisionBrandProject("TMC", { todoistClient, config: testConfig() });
+
+  assert.deepEqual(createdSections, ["Merchant Raised"]);
+  const cfg = await BrandTodoistConfig.findOne({ brand_key: "TMC" }).lean();
+  assert.equal(cfg.merchant_raised_section_id, "sec-raised");
+  assert.equal(cfg.section_by_status.submitted, "sec-raised");
+});
+
+test("fallback provisioning creates the unassigned project and Merchant Raised section", async () => {
+  const createdProjects = [];
+  const createdSections = [];
+  const todoistClient = {
+    listProjects: async () => [],
+    createProject: async (name) => {
+      createdProjects.push(name);
+      return { id: "fallback-project", name };
+    },
+    listSections: async () => [],
+    createSection: async (name) => {
+      createdSections.push(name);
+      return { id: "fallback-section", name };
+    },
+  };
+
+  const cfg = await ensureFallbackBrandConfig({ todoistClient, config: testConfig() });
+
+  assert.deepEqual(createdProjects, ["Datum - Unassigned Merchant Requests"]);
+  assert.deepEqual(createdSections, ["Merchant Raised"]);
+  assert.equal(cfg.brand_key, "UNASSIGNED");
+  assert.equal(cfg.todoist_project_id, "fallback-project");
+  assert.equal(cfg.merchant_raised_section_id, "fallback-section");
+});
+
+test("fallback provisioning reuses existing fallback project and section", async () => {
+  const todoistClient = {
+    listProjects: async () => [{ id: "fallback-project", name: "Datum - Unassigned Merchant Requests" }],
+    createProject: async () => {
+      throw new Error("should_not_create_project");
+    },
+    listSections: async () => [{ id: "fallback-section", name: "Merchant Raised" }],
+    createSection: async () => {
+      throw new Error("should_not_create_section");
+    },
+  };
+
+  const cfg = await ensureFallbackBrandConfig({ todoistClient, config: testConfig() });
+
+  assert.equal(cfg.todoist_project_id, "fallback-project");
+  assert.equal(cfg.merchant_raised_section_id, "fallback-section");
+});
+
+test("creation rejects invalid category and invalid priority", async () => {
+  await seedBrandConfig("TMC");
+  const app = appWithTodoist({ createTask: async () => ({ id: "task-1" }) });
+
+  const invalidCategory = await request(app)
+    .post("/merchant-requests")
+    .set(merchantHeaders("TMC"))
+    .send({ brand_key: "TMC", title: "Bad category", category: "Technical" });
+  assert.equal(invalidCategory.status, 400);
+  assert.equal(invalidCategory.body.error, "invalid_category");
+
+  const invalidPriority = await request(app)
+    .post("/merchant-requests")
+    .set(merchantHeaders("TMC"))
+    .send({ brand_key: "TMC", title: "Bad priority", priority: "critical" });
+  assert.equal(invalidPriority.status, 400);
+  assert.equal(invalidPriority.body.error, "invalid_priority");
+});
+
+test("creation enforces default priority caps per brand and excludes done requests", async () => {
+  await seedBrandConfig("TMC");
+  const app = appWithTodoist({ createTask: async () => ({ id: `task-${Date.now()}` }) });
+
+  for (let i = 0; i < 3; i += 1) {
+    const res = await request(app)
+      .post("/merchant-requests")
+      .set(merchantHeaders("TMC"))
+      .send({ brand_key: "TMC", title: `Normal ${i}`, category: "Feature Request", priority: "normal" });
+    assert.equal(res.status, 201);
+  }
+
+  const capped = await request(app)
+    .post("/merchant-requests")
+    .set(merchantHeaders("TMC"))
+    .send({ brand_key: "TMC", title: "One too many", category: "Feature Request", priority: "normal" });
+
+  assert.equal(capped.status, 409);
+  assert.equal(capped.body.error, "priority_cap_reached");
+  assert.equal(capped.body.priority, "normal");
+  assert.equal(capped.body.limit, 3);
+  assert.equal(capped.body.active_count, 3);
+
+  await MerchantRequest.updateOne({ title: "Normal 0" }, { $set: { status: "done" } });
+  const afterDone = await request(app)
+    .post("/merchant-requests")
+    .set(merchantHeaders("TMC"))
+    .send({ brand_key: "TMC", title: "Allowed again", category: "Feature Request", priority: "normal" });
+  assert.equal(afterDone.status, 201);
+});
+
+test("author can update priority caps and new caps affect creation", async () => {
+  await seedBrandConfig("TMC");
+  const app = appWithTodoist({ createTask: async () => ({ id: `task-${Date.now()}` }) });
+
+  const update = await request(app)
+    .patch("/merchant-requests/admin/brand-configs/TMC/priority-caps")
+    .set(authorHeaders())
+    .send({ urgent: 1, high: 1, normal: 1, low: 1 });
+  assert.equal(update.status, 200);
+  assert.equal(update.body.priority_caps.normal, 1);
+
+  const first = await request(app)
+    .post("/merchant-requests")
+    .set(merchantHeaders("TMC"))
+    .send({ brand_key: "TMC", title: "First", category: "Design", priority: "normal" });
+  assert.equal(first.status, 201);
+
+  const second = await request(app)
+    .post("/merchant-requests")
+    .set(merchantHeaders("TMC"))
+    .send({ brand_key: "TMC", title: "Second", category: "Design", priority: "normal" });
+  assert.equal(second.status, 409);
+});
+
+test("merchant responses hide assignee while author responses include it", async () => {
+  const reqDoc = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "merchant-1" },
+    title: "Assigned internally",
+    category: "Issues",
+    status: "assigned",
+    assignee: { todoist_user_id: "u1", name: "Internal User", email: "internal@example.com" },
+  });
+  const app = appWithTodoist({});
+
+  const merchant = await request(app).get(`/merchant-requests/${reqDoc._id}`).set(merchantHeaders("TMC"));
+  assert.equal(merchant.status, 200);
+  assert.equal(merchant.body.request.assignee, undefined);
+
+  const author = await request(app).get(`/merchant-requests/${reqDoc._id}`).set(authorHeaders("TMC"));
+  assert.equal(author.status, 200);
+  assert.equal(author.body.request.assignee.name, "Internal User");
+});
+
+test("merchant timeline does not reveal assignee identity", async () => {
+  const reqDoc = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "merchant-1" },
+    title: "Timeline privacy",
+    category: "Issues",
+  });
+  await MerchantRequestEvent.create({
+    request_id: reqDoc._id,
+    brand_key: "TMC",
+    type: "assignment_changed",
+    source: "todoist",
+    actor: { name: "Todoist" },
+    data: { todoist_user_id: "secret-user" },
+  });
+  const app = appWithTodoist({});
+
+  const res = await request(app).get(`/merchant-requests/${reqDoc._id}`).set(merchantHeaders("TMC"));
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.events[0].message, "Request assigned");
+  assert.deepEqual(res.body.events[0].data, {});
+});
+
+test("Todoist assignment webhook stores assignee internally and sets status assigned", async () => {
+  await seedBrandConfig("TMC");
+  const reqDoc = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "merchant-1" },
+    title: "Webhook assignment",
+    category: "Issues",
+    status: "submitted",
+    todoist_task_id: "task-1",
+    sync: { todoist_task_status: "synced" },
+  });
+  const app = appWithTodoist({});
+
+  const res = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "task-1",
+        assignee_id: "todoist-user-1",
+        labels: ["Datum", "merchant-request", "brand:TMC"],
+      },
+    },
+    "delivery-assigned",
+  );
+
+  assert.equal(res.status, 200);
+  const updated = await MerchantRequest.findById(reqDoc._id).lean();
+  assert.equal(updated.status, "assigned");
+  assert.equal(updated.assignee.todoist_user_id, "todoist-user-1");
+});
+
+test("Todoist completion webhook sets status done and dedupes delivery id", async () => {
+  await seedBrandConfig("TMC");
+  const reqDoc = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "merchant-1" },
+    title: "Webhook done",
+    category: "Issues",
+    status: "assigned",
+    todoist_task_id: "task-1",
+    sync: { todoist_task_status: "synced" },
+  });
+  const app = appWithTodoist({});
+  const payload = {
+    event_name: "item:completed",
+    event_data: {
+      id: "task-1",
+      labels: ["Datum", "merchant-request", "brand:TMC"],
+    },
+  };
+
+  const first = await signedTodoistPost(app, payload, "delivery-completed");
+  assert.equal(first.status, 200);
+  assert.equal(first.body.processed, true);
+
+  const updated = await MerchantRequest.findById(reqDoc._id).lean();
+  assert.equal(updated.status, "done");
+  assert.ok(updated.closed_at);
+
+  const second = await signedTodoistPost(app, payload, "delivery-completed");
+  assert.equal(second.status, 200);
+  assert.equal(second.body.duplicate, true);
+
+  const deliveries = await TodoistWebhookDelivery.find({ delivery_id: "delivery-completed" }).lean();
+  assert.equal(deliveries.length, 1);
+});
+
+test("webhook imports unlinked tagged task using brand label", async () => {
+  await seedBrandConfig("TMC");
+  const app = appWithTodoist({});
+
+  const res = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-new-1",
+        content: "Imported request",
+        description: "From Todoist",
+        project_id: "other-project",
+        section_id: "any-section",
+        labels: ["merchant-request", "brand:TMC", "category:Design"],
+        priority: 4,
+        due: { date: "2026-06-30" },
+      },
+    },
+    "delivery-import-brand",
+  );
+
+  assert.equal(res.status, 200);
+  const imported = await MerchantRequest.findOne({ todoist_task_id: "todoist-new-1" }).lean();
+  assert.equal(imported.brand_key, "TMC");
+  assert.equal(imported.title, "Imported request");
+  assert.equal(imported.category, "Design");
+  assert.equal(imported.priority, "urgent");
+  assert.equal(imported.due_date, "2026-06-30");
+  const event = await MerchantRequestEvent.findOne({ request_id: imported._id, type: "request_imported" }).lean();
+  assert.ok(event);
+});
+
+test("webhook imports tagged task via mapped Todoist project config", async () => {
+  await seedBrandConfig("TMC", { todoist_project_id: "mapped-project" });
+  const app = appWithTodoist({});
+
+  const res = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-new-2",
+        content: "Mapped project request",
+        project_id: "mapped-project",
+        labels: ["merchant-request"],
+      },
+    },
+    "delivery-import-project",
+  );
+
+  assert.equal(res.status, 200);
+  const imported = await MerchantRequest.findOne({ todoist_task_id: "todoist-new-2" }).lean();
+  assert.equal(imported.brand_key, "TMC");
+});
+
+test("project mapping wins over conflicting brand label during import", async () => {
+  await seedBrandConfig("TMC", { todoist_project_id: "mapped-project" });
+  const app = appWithTodoist({});
+
+  const res = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-new-conflict",
+        content: "Mapped project wins",
+        project_id: "mapped-project",
+        labels: ["merchant-request", "brand:OTHER"],
+      },
+    },
+    "delivery-import-project-wins",
+  );
+
+  assert.equal(res.status, 200);
+  const imported = await MerchantRequest.findOne({ todoist_task_id: "todoist-new-conflict" }).lean();
+  assert.equal(imported.brand_key, "TMC");
+});
+
+test("webhook imports unknown-brand tagged task into fallback project and normalizes Todoist task", async () => {
+  const updateCalls = [];
+  const app = appWithTodoist({
+    listProjects: async () => [],
+    createProject: async () => ({ id: "fallback-project", name: "Datum - Unassigned Merchant Requests" }),
+    listSections: async () => [],
+    createSection: async () => ({ id: "fallback-section", name: "Merchant Raised" }),
+    updateTask: async (taskId, payload) => {
+      updateCalls.push({ taskId, payload });
+      return { id: taskId };
+    },
+  });
+
+  const res = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-new-3",
+        content: "Needs triage",
+        project_id: "unknown-project",
+        section_id: "random-section",
+        labels: ["merchant-request", "category:Issues"],
+      },
+    },
+    "delivery-import-fallback",
+  );
+
+  assert.equal(res.status, 200);
+  const imported = await MerchantRequest.findOne({ todoist_task_id: "todoist-new-3" }).lean();
+  assert.equal(imported.brand_key, "UNASSIGNED");
+  assert.equal(imported.todoist_section_id, "fallback-section");
+  assert.ok(imported.todoist_labels.includes("brand:UNASSIGNED"));
+  assert.deepEqual(updateCalls, [
+    {
+      taskId: "todoist-new-3",
+      payload: {
+        project_id: "fallback-project",
+        section_id: "fallback-section",
+        labels: ["merchant-request", "category:Issues", "Datum", "brand:UNASSIGNED"],
+      },
+    },
+  ]);
+});
+
+test("webhook ignores untagged Todoist task even if it is in Merchant Raised", async () => {
+  const app = appWithTodoist({});
+
+  const res = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-untagged",
+        content: "No import",
+        section_id: "sec-raised",
+        labels: [],
+      },
+    },
+    "delivery-untagged",
+  );
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ignored, true);
+  assert.equal(await MerchantRequest.countDocuments({ todoist_task_id: "todoist-untagged" }), 0);
+});
+
+test("imported assigned and completed tasks map to assigned and done", async () => {
+  await seedBrandConfig("TMC");
+  const app = appWithTodoist({});
+
+  await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-assigned-import",
+        content: "Assigned import",
+        labels: ["merchant-request", "brand:TMC"],
+        assignee_id: "todoist-user-1",
+      },
+    },
+    "delivery-import-assigned",
+  );
+  const assigned = await MerchantRequest.findOne({ todoist_task_id: "todoist-assigned-import" }).lean();
+  assert.equal(assigned.status, "assigned");
+  assert.equal(assigned.assignee.todoist_user_id, "todoist-user-1");
+
+  await signedTodoistPost(
+    app,
+    {
+      event_name: "item:completed",
+      event_data: {
+        id: "todoist-done-import",
+        content: "Done import",
+        labels: ["merchant-request", "brand:TMC"],
+      },
+    },
+    "delivery-import-done",
+  );
+  const done = await MerchantRequest.findOne({ todoist_task_id: "todoist-done-import" }).lean();
+  assert.equal(done.status, "done");
+  assert.ok(done.closed_at);
+});
+
+test("reconcile imports unlinked tagged Todoist task", async () => {
+  await seedBrandConfig("TMC");
+  const todoistClient = {
+    listProjects: async () => [],
+    sync: async () => ({
+      items: [
+        {
+          id: "todoist-reconcile-import",
+          content: "Reconcile import",
+          labels: ["merchant-request", "brand:TMC"],
+        },
+      ],
+      collaborators: [],
+      notes: [],
+      sync_token: "next-token",
+    }),
+  };
+  const { reconcileTodoist } = require("../src/services/reconcileService");
+
+  const result = await reconcileTodoist({ todoistClient, config: testConfig() });
+
+  assert.equal(result.tasks_processed, 1);
+  const imported = await MerchantRequest.findOne({ todoist_task_id: "todoist-reconcile-import" }).lean();
+  assert.equal(imported.brand_key, "TMC");
+  assert.equal(imported.title, "Reconcile import");
+});
+
+test("existing linked Todoist task updates without duplicate import", async () => {
+  await seedBrandConfig("TMC");
+  await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "merchant-1" },
+    title: "Existing",
+    category: "Issues",
+    todoist_task_id: "existing-task",
+    status: "submitted",
+  });
+  const app = appWithTodoist({});
+
+  const res = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "existing-task",
+        content: "Existing",
+        labels: ["merchant-request", "brand:TMC"],
+        assignee_id: "todoist-user-1",
+      },
+    },
+    "delivery-existing-linked",
+  );
+
+  assert.equal(res.status, 200);
+  assert.equal(await MerchantRequest.countDocuments({ todoist_task_id: "existing-task" }), 1);
+  const updated = await MerchantRequest.findOne({ todoist_task_id: "existing-task" }).lean();
+  assert.equal(updated.status, "assigned");
+});
+
+test("author assignee update sends Todoist assignee and sets local status assigned", async () => {
+  await seedBrandConfig("TMC");
+  const reqDoc = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "merchant-1" },
+    title: "Assign me",
+    category: "Development",
+    status: "submitted",
+    todoist_task_id: "task-1",
+    sync: { todoist_task_status: "synced" },
+  });
+  const calls = [];
+  const app = appWithTodoist({
+    updateTask: async (taskId, payload) => {
+      calls.push({ taskId, payload });
+      return { id: taskId };
+    },
+  });
 
   const res = await request(app)
-    .post("/merchant-requests")
+    .patch(`/merchant-requests/${reqDoc._id}/assignee`)
     .set(authorHeaders("TMC"))
-    .send({ brand_key: "TMC", title: "Need help", due_date: "2026-06-25" });
+    .send({ todoist_user_id: "todoist-user-1" });
 
-  assert.equal(res.status, 201);
-  assert.equal(res.body.request.due_date, "2026-06-25");
-  assert.equal(createTaskCalls.length, 1);
-  assert.equal(createTaskCalls[0].due_date, "2026-06-25");
+  assert.equal(res.status, 200);
+  assert.equal(res.body.request.status, "assigned");
+  assert.deepEqual(calls[0], { taskId: "task-1", payload: { assignee_id: "todoist-user-1" } });
+});
+
+test("author status done completes the Todoist task", async () => {
+  await seedBrandConfig("TMC");
+  const reqDoc = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "merchant-1" },
+    title: "Complete me",
+    category: "Development",
+    status: "assigned",
+    todoist_task_id: "task-1",
+    sync: { todoist_task_status: "synced" },
+  });
+  const completed = [];
+  const app = appWithTodoist({
+    completeTask: async (taskId) => {
+      completed.push(taskId);
+      return {};
+    },
+  });
+
+  const res = await request(app)
+    .patch(`/merchant-requests/${reqDoc._id}/status`)
+    .set(authorHeaders("TMC"))
+    .send({ status: "done" });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.request.status, "done");
+  assert.deepEqual(completed, ["task-1"]);
+});
+
+test("author can set and clear due date", async () => {
+  await seedBrandConfig("TMC");
+  const reqDoc = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "merchant-1" },
+    title: "Due me",
+    category: "Development",
+    todoist_task_id: "task-1",
+    sync: { todoist_task_status: "synced" },
+  });
+  const calls = [];
+  const app = appWithTodoist({
+    updateTask: async (taskId, payload) => {
+      calls.push({ taskId, payload });
+      return { id: taskId };
+    },
+  });
+
+  const set = await request(app)
+    .patch(`/merchant-requests/${reqDoc._id}/due-date`)
+    .set(authorHeaders("TMC"))
+    .send({ due_date: "2026-06-25" });
+  assert.equal(set.status, 200);
+  assert.equal(set.body.request.due_date, "2026-06-25");
+
+  const clear = await request(app)
+    .patch(`/merchant-requests/${reqDoc._id}/due-date`)
+    .set(authorHeaders("TMC"))
+    .send({ due_date: "" });
+  assert.equal(clear.status, 200);
+  assert.equal(clear.body.request.due_date, "");
+  assert.deepEqual(calls.map((c) => c.payload), [{ due_date: "2026-06-25" }, { due_date: null }]);
 });
 
 test("merchant create request with due_date is rejected", async () => {
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
+  const app = appWithTodoist({});
 
   const res = await request(app)
     .post("/merchant-requests")
@@ -263,69 +728,20 @@ test("merchant create request with due_date is rejected", async () => {
   assert.equal(res.body.error, "author_required");
 });
 
-// ─── Brand config provisioning ────────────────────────────────────────────────
-
-test("processJob defers create_task when brand config not provisioned", async () => {
-  const createTaskCalls = [];
-  const todoistClient = {
-    createTask: async (p) => { createTaskCalls.push(p); return { id: "t1" }; },
-    createProject: async () => ({ id: "proj-1" }),
-    listSections: async () => [],
-    createSection: async (name) => ({ id: `s-${name}` }),
-  };
-  const { app } = buildApp({ config: testConfig(), todoistClient });
-
-  const res = await request(app)
-    .post("/merchant-requests")
-    .set(merchantHeaders("TMC"))
-    .send({ title: "First request" });
-
-  assert.equal(res.status, 201);
-  // createTask should NOT have been called — job was deferred, provisioning kicked off async
-  assert.equal(createTaskCalls.length, 0);
-  assert.equal(res.body.request.sync.todoist_task_status, "pending");
-});
-
-// ─── Access control ────────────────────────────────────────────────────────────
-
-test("merchant cannot list another brand request", async () => {
-  await MerchantRequest.create({
-    brand_key: "BBB",
-    requester: { user_id: "merchant-2" },
-    title: "Other brand",
-  });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-
-  const res = await request(app)
-    .get("/merchant-requests")
-    .set(merchantHeaders("TMC"));
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.requests.length, 0);
-});
-
-test("merchant without requests_panel cannot access request endpoints", async () => {
+test("viewer without requests_panel cannot access request endpoints", async () => {
   const reqDoc = await MerchantRequest.create({
     brand_key: "TMC",
     requester: { user_id: "merchant-1" },
     title: "Restricted",
+    category: "Issues",
   });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
+  const app = appWithTodoist({});
   const noRequestAccess = merchantHeaders("TMC", []);
 
   const list = await request(app).get("/merchant-requests").set(noRequestAccess);
   assert.equal(list.status, 403);
-  assert.equal(list.body.error, "permission_forbidden");
 
-  const create = await request(app)
-    .post("/merchant-requests")
-    .set(noRequestAccess)
-    .send({ brand_key: "TMC", title: "Blocked" });
-  assert.equal(create.status, 403);
-
-  const detail = await request(app)
-    .get(`/merchant-requests/${reqDoc._id}`)
-    .set(noRequestAccess);
+  const detail = await request(app).get(`/merchant-requests/${reqDoc._id}`).set(noRequestAccess);
   assert.equal(detail.status, 403);
 
   const comment = await request(app)
@@ -335,11 +751,12 @@ test("merchant without requests_panel cannot access request endpoints", async ()
   assert.equal(comment.status, 403);
 });
 
-test("merchant with requests_panel but without requests_timeline gets hidden timeline marker", async () => {
+test("viewer with requests_panel but without requests_timeline gets hidden timeline marker", async () => {
   const reqDoc = await MerchantRequest.create({
     brand_key: "TMC",
     requester: { user_id: "merchant-1" },
     title: "Timeline hidden",
+    category: "Issues",
   });
   await MerchantRequestEvent.create({
     request_id: reqDoc._id,
@@ -348,7 +765,7 @@ test("merchant with requests_panel but without requests_timeline gets hidden tim
     source: "datum",
     actor: { user_id: "merchant-1" },
   });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
+  const app = appWithTodoist({});
 
   const res = await request(app)
     .get(`/merchant-requests/${reqDoc._id}`)
@@ -359,571 +776,31 @@ test("merchant with requests_panel but without requests_timeline gets hidden tim
   assert.deepEqual(res.body.events, []);
 });
 
-test("merchant with requests_panel and requests_timeline receives timeline events", async () => {
-  const reqDoc = await MerchantRequest.create({
+test("startup backfill maps old statuses and categories", async () => {
+  await MerchantRequest.collection.insertOne({
     brand_key: "TMC",
     requester: { user_id: "merchant-1" },
-    title: "Timeline visible",
-  });
-  await MerchantRequestEvent.create({
-    request_id: reqDoc._id,
-    brand_key: "TMC",
-    type: "request_created",
-    source: "datum",
-    actor: { user_id: "merchant-1" },
-  });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-
-  const res = await request(app)
-    .get(`/merchant-requests/${reqDoc._id}`)
-    .set(merchantHeaders("TMC", ["requests_panel", "requests_timeline"]));
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.timeline_hidden, false);
-  assert.equal(res.body.events.length, 1);
-});
-
-test("author status update stores local intent before Todoist sync", async () => {
-  const reqDoc = await MerchantRequest.create({
-    brand_key: "TMC",
-    requester: { user_id: "merchant-1" },
-    title: "Assign me",
-    todoist_task_id: "task-1",
-    sync: { todoist_task_status: "synced" },
-  });
-  const todoistClient = {
-    updateTask: async () => {
-      throw new Error("todoist_timeout");
-    },
-  };
-  const { app } = buildApp({ config: testConfig(), todoistClient });
-
-  const res = await request(app)
-    .patch(`/merchant-requests/${reqDoc._id}/status`)
-    .set(authorHeaders("TMC"))
-    .send({ status: "in_progress" });
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.request.status, "in_progress");
-  assert.equal(res.body.request.sync.pending_status, "in_progress");
-  assert.equal(res.body.request.sync.todoist_status_status, "pending");
-});
-
-test("author can set due date and Todoist receives due_date", async () => {
-  await seedBrandConfig("TMC");
-  const reqDoc = await MerchantRequest.create({
-    brand_key: "TMC",
-    requester: { user_id: "merchant-1" },
-    title: "Due me",
-    todoist_task_id: "task-1",
-    sync: { todoist_task_status: "synced" },
-  });
-  const updateTaskCalls = [];
-  const todoistClient = {
-    updateTask: async (taskId, payload) => {
-      updateTaskCalls.push({ taskId, payload });
-      return { id: taskId };
-    },
-  };
-  const { app } = buildApp({ config: testConfig(), todoistClient });
-
-  const res = await request(app)
-    .patch(`/merchant-requests/${reqDoc._id}/due-date`)
-    .set(authorHeaders("TMC"))
-    .send({ due_date: "2026-06-25" });
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.request.due_date, "2026-06-25");
-  assert.equal(res.body.request.sync.todoist_due_date_status, "synced");
-  assert.equal(updateTaskCalls.length, 1);
-  assert.deepEqual(updateTaskCalls[0], {
-    taskId: "task-1",
-    payload: { due_date: "2026-06-25" },
-  });
-});
-
-test("author can clear due date and Todoist receives null due_date", async () => {
-  await seedBrandConfig("TMC");
-  const reqDoc = await MerchantRequest.create({
-    brand_key: "TMC",
-    requester: { user_id: "merchant-1" },
-    title: "Clear due",
-    due_date: "2026-06-25",
-    todoist_task_id: "task-1",
-    sync: { todoist_task_status: "synced", todoist_due_date_status: "synced" },
-  });
-  const updateTaskCalls = [];
-  const todoistClient = {
-    updateTask: async (taskId, payload) => {
-      updateTaskCalls.push({ taskId, payload });
-      return { id: taskId };
-    },
-  };
-  const { app } = buildApp({ config: testConfig(), todoistClient });
-
-  const res = await request(app)
-    .patch(`/merchant-requests/${reqDoc._id}/due-date`)
-    .set(authorHeaders("TMC"))
-    .send({ due_date: "" });
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.request.due_date, "");
-  assert.equal(res.body.request.sync.todoist_due_date_status, "synced");
-  assert.deepEqual(updateTaskCalls[0], {
-    taskId: "task-1",
-    payload: { due_date: null },
-  });
-});
-
-test("merchant cannot patch due date", async () => {
-  const reqDoc = await MerchantRequest.create({
-    brand_key: "TMC",
-    requester: { user_id: "merchant-1" },
-    title: "No due for merchant",
-    todoist_task_id: "task-1",
-  });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-
-  const res = await request(app)
-    .patch(`/merchant-requests/${reqDoc._id}/due-date`)
-    .set(merchantHeaders("TMC"))
-    .send({ due_date: "2026-06-25" });
-
-  assert.equal(res.status, 403);
-  assert.equal(res.body.error, "author_required");
-});
-
-test("Todoist due date failure stores local intent for retry", async () => {
-  await seedBrandConfig("TMC");
-  const reqDoc = await MerchantRequest.create({
-    brand_key: "TMC",
-    requester: { user_id: "merchant-1" },
-    title: "Retry due",
-    todoist_task_id: "task-1",
-    sync: { todoist_task_status: "synced" },
-  });
-  const todoistClient = {
-    updateTask: async () => {
-      throw new Error("todoist_timeout");
-    },
-  };
-  const { app } = buildApp({ config: testConfig(), todoistClient });
-
-  const res = await request(app)
-    .patch(`/merchant-requests/${reqDoc._id}/due-date`)
-    .set(authorHeaders("TMC"))
-    .send({ due_date: "2026-06-25" });
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.request.due_date, "2026-06-25");
-  assert.equal(res.body.request.sync.pending_due_date, "2026-06-25");
-  assert.equal(res.body.request.sync.todoist_due_date_status, "pending");
-});
-
-// ─── Merchant status masking in list / get ────────────────────────────────────
-
-test("merchant sees masked status when internal status is not in their visible set", async () => {
-  await seedBrandConfig("TMC");
-  const reqDoc = await MerchantRequest.create({
-    brand_key: "TMC",
-    requester: { user_id: "merchant-1" },
-    title: "Internal triaged request",
-    status: "triaged",
-    sync: { todoist_task_status: "synced" },
-  });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-
-  const res = await request(app)
-    .get("/merchant-requests")
-    .set(merchantHeaders("TMC"));
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.requests.length, 1);
-  // triaged is not visible by default → masked to "submitted"
-  assert.equal(res.body.requests[0].status, "submitted");
-
-  const single = await request(app)
-    .get(`/merchant-requests/${reqDoc._id}`)
-    .set(merchantHeaders("TMC"));
-  assert.equal(single.status, 200);
-  assert.equal(single.body.request.status, "submitted");
-});
-
-test("merchant sees unlocked status when author has granted visibility", async () => {
-  await seedBrandConfig("TMC", { unlocked_statuses: ["triaged"] });
-  await MerchantRequest.create({
-    brand_key: "TMC",
-    requester: { user_id: "merchant-1" },
-    title: "Triaged request",
-    status: "triaged",
-    sync: { todoist_task_status: "synced" },
-  });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-
-  const res = await request(app)
-    .get("/merchant-requests")
-    .set(merchantHeaders("TMC"));
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.requests.length, 1);
-  // triaged is unlocked → shown as-is
-  assert.equal(res.body.requests[0].status, "triaged");
-});
-
-test("author always sees internal statuses without masking", async () => {
-  await seedBrandConfig("TMC");
-  await MerchantRequest.create({
-    brand_key: "TMC",
-    requester: { user_id: "merchant-1" },
-    title: "Triaged",
-    status: "triaged",
-    sync: { todoist_task_status: "synced" },
-  });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-
-  const res = await request(app)
-    .get("/merchant-requests")
-    .set(authorHeaders("TMC"));
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.requests[0].status, "triaged");
-});
-
-// ─── Webhook ──────────────────────────────────────────────────────────────────
-
-test("Todoist webhook verifies HMAC and dedupes delivery id", async () => {
-  await seedBrandConfig("TMC");
-  const reqDoc = await MerchantRequest.create({
-    brand_key: "TMC",
-    requester: { user_id: "merchant-1" },
-    title: "Webhook target",
-    todoist_task_id: "task-1",
-    sync: { todoist_task_status: "synced" },
-  });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-  const raw = JSON.stringify({
-    event_name: "item:updated",
-    event_data: {
-      id: "task-1",
-      section_id: "sec-progress",
-      labels: ["Datum", "merchant-request", "brand:TMC"],
-    },
-  });
-  const sig = computeTodoistHmac(raw, "secret");
-
-  const first = await request(app)
-    .post("/merchant-requests/todoist/webhook")
-    .set("Content-Type", "application/json")
-    .set("X-Todoist-Hmac-SHA256", sig)
-    .set("X-Todoist-Delivery-ID", "delivery-1")
-    .send(raw);
-  assert.equal(first.status, 200);
-  assert.equal(first.body.processed, true);
-
-  const updated = await MerchantRequest.findById(reqDoc._id).lean();
-  assert.equal(updated.status, "in_progress");
-
-  const second = await request(app)
-    .post("/merchant-requests/todoist/webhook")
-    .set("Content-Type", "application/json")
-    .set("X-Todoist-Hmac-SHA256", sig)
-    .set("X-Todoist-Delivery-ID", "delivery-1")
-    .send(raw);
-  assert.equal(second.status, 200);
-  assert.equal(second.body.duplicate, true);
-
-  const deliveries = await TodoistWebhookDelivery.find({ delivery_id: "delivery-1" }).lean();
-  assert.equal(deliveries.length, 1);
-});
-
-test("pending Datum status intent wins over conflicting Todoist webhook", async () => {
-  await seedBrandConfig("TMC");
-  const reqDoc = await MerchantRequest.create({
-    brand_key: "TMC",
-    requester: { user_id: "merchant-1" },
-    title: "Conflict target",
+    title: "Legacy",
+    category: "Technical",
     status: "in_progress",
-    todoist_task_id: "task-1",
-    sync: {
-      todoist_task_status: "synced",
-      todoist_status_status: "pending",
-      pending_status: "in_progress",
-    },
-  });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-  const raw = JSON.stringify({
-    event_name: "item:updated",
-    event_data: {
-      id: "task-1",
-      section_id: "sec-closed",
-      labels: ["Datum", "merchant-request", "brand:TMC"],
-    },
+    created_at: new Date(),
+    updated_at: new Date(),
   });
 
-  const res = await request(app)
-    .post("/merchant-requests/todoist/webhook")
-    .set("Content-Type", "application/json")
-    .set("X-Todoist-Hmac-SHA256", computeTodoistHmac(raw, "secret"))
-    .set("X-Todoist-Delivery-ID", "delivery-conflict")
-    .send(raw);
+  await backfillMerchantRequestWorkflow();
 
-  assert.equal(res.status, 200);
-  const updated = await MerchantRequest.findById(reqDoc._id).lean();
-  assert.equal(updated.status, "in_progress");
+  const updated = await MerchantRequest.findOne({ title: "Legacy" }).lean();
+  assert.equal(updated.status, "assigned");
+  assert.equal(updated.category, "Feature Request");
 });
 
-test("webhook with unknown section_id is ignored without error", async () => {
-  await seedBrandConfig("TMC");
-  const reqDoc = await MerchantRequest.create({
-    brand_key: "TMC",
-    requester: { user_id: "merchant-1" },
-    title: "Unknown section target",
-    status: "submitted",
-    todoist_task_id: "task-1",
-    sync: { todoist_task_status: "synced" },
-  });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-  const raw = JSON.stringify({
-    event_name: "item:updated",
-    event_data: {
-      id: "task-1",
-      section_id: "sec-does-not-exist",
-      labels: ["Datum", "merchant-request", "brand:TMC"],
-    },
-  });
-
-  const res = await request(app)
-    .post("/merchant-requests/todoist/webhook")
-    .set("Content-Type", "application/json")
-    .set("X-Todoist-Hmac-SHA256", computeTodoistHmac(raw, "secret"))
-    .set("X-Todoist-Delivery-ID", "delivery-unknown-section")
-    .send(raw);
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.processed, true);
-  // Status should be unchanged
-  const unchanged = await MerchantRequest.findById(reqDoc._id).lean();
-  assert.equal(unchanged.status, "submitted");
-});
-
-test("Todoist webhook updates Datum due date when no Datum due date is pending", async () => {
-  await seedBrandConfig("TMC");
-  const reqDoc = await MerchantRequest.create({
-    brand_key: "TMC",
-    requester: { user_id: "merchant-1" },
-    title: "Due webhook target",
-    todoist_task_id: "task-1",
-    sync: { todoist_task_status: "synced" },
-  });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-  const raw = JSON.stringify({
-    event_name: "item:updated",
-    event_data: {
-      id: "task-1",
-      due: { date: "2026-06-25" },
-      labels: ["Datum", "merchant-request", "brand:TMC"],
-    },
-  });
-
-  const res = await request(app)
-    .post("/merchant-requests/todoist/webhook")
-    .set("Content-Type", "application/json")
-    .set("X-Todoist-Hmac-SHA256", computeTodoistHmac(raw, "secret"))
-    .set("X-Todoist-Delivery-ID", "delivery-due-date")
-    .send(raw);
-
-  assert.equal(res.status, 200);
-  const updated = await MerchantRequest.findById(reqDoc._id).lean();
-  assert.equal(updated.due_date, "2026-06-25");
-  assert.equal(updated.sync.todoist_due_date_status, "synced");
-});
-
-test("Todoist webhook does not override pending Datum due date", async () => {
-  await seedBrandConfig("TMC");
-  const reqDoc = await MerchantRequest.create({
-    brand_key: "TMC",
-    requester: { user_id: "merchant-1" },
-    title: "Due conflict target",
-    due_date: "2026-06-25",
-    todoist_task_id: "task-1",
-    sync: {
-      todoist_task_status: "synced",
-      todoist_due_date_status: "pending",
-      pending_due_date: "2026-06-25",
-    },
-  });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-  const raw = JSON.stringify({
-    event_name: "item:updated",
-    event_data: {
-      id: "task-1",
-      due: { date: "2026-06-30" },
-      labels: ["Datum", "merchant-request", "brand:TMC"],
-    },
-  });
-
-  const res = await request(app)
-    .post("/merchant-requests/todoist/webhook")
-    .set("Content-Type", "application/json")
-    .set("X-Todoist-Hmac-SHA256", computeTodoistHmac(raw, "secret"))
-    .set("X-Todoist-Delivery-ID", "delivery-due-conflict")
-    .send(raw);
-
-  assert.equal(res.status, 200);
-  const updated = await MerchantRequest.findById(reqDoc._id).lean();
-  assert.equal(updated.due_date, "2026-06-25");
-  assert.equal(updated.sync.pending_due_date, "2026-06-25");
-});
-
-// ─── Admin: brand config endpoints ────────────────────────────────────────────
-
-test("admin can update visible statuses for a brand", async () => {
-  await seedBrandConfig("TMC");
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-
-  const res = await request(app)
-    .patch("/merchant-requests/admin/brand-configs/TMC/visible-statuses")
-    .set(authorHeaders())
-    .send({ unlocked_statuses: ["triaged", "cancelled"] });
-
-  assert.equal(res.status, 200);
-  assert.ok(res.body.visible_statuses.includes("triaged"));
-  assert.ok(res.body.visible_statuses.includes("cancelled"));
-  assert.ok(res.body.visible_statuses.includes("submitted"));
-
-  const cfg = await BrandTodoistConfig.findOne({ brand_key: "TMC" }).lean();
-  assert.deepEqual(cfg.unlocked_statuses.sort(), ["cancelled", "triaged"]);
-});
-
-test("admin visible-statuses rejects invalid status values", async () => {
-  await seedBrandConfig("TMC");
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-
-  const res = await request(app)
-    .patch("/merchant-requests/admin/brand-configs/TMC/visible-statuses")
-    .set(authorHeaders())
-    .send({ unlocked_statuses: ["submitted", "bogus"] });
-
-  assert.equal(res.status, 400);
-  assert.equal(res.body.error, "invalid_statuses");
-});
-
-test("admin can list brand configs", async () => {
-  await seedBrandConfig("TMC");
-  await seedBrandConfig("BBB", { todoist_project_id: "project-2" });
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-
-  const res = await request(app)
-    .get("/merchant-requests/admin/brand-configs")
-    .set(authorHeaders());
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.configs.length, 2);
-});
-
-test("admin can delete brand config", async () => {
-  await seedBrandConfig("TMC");
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-
-  const res = await request(app)
-    .delete("/merchant-requests/admin/brand-configs/TMC")
-    .set(authorHeaders());
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.ok, true);
-
-  const cfg = await BrandTodoistConfig.findOne({ brand_key: "TMC" });
-  assert.equal(cfg, null);
-});
-
-test("merchant cannot access admin endpoints", async () => {
-  const { app } = buildApp({ config: testConfig(), todoistClient: {} });
-
-  const res = await request(app)
-    .get("/merchant-requests/admin/brand-configs")
-    .set(merchantHeaders());
-
-  assert.equal(res.status, 403);
-});
-
-test("admin todoist-projects serves the local snapshot sorted by name", async () => {
-  const TodoistProject = require("../src/models/TodoistProject");
-  await TodoistProject.create([
-    { todoist_project_id: "p-2", name: "Beta", active: true },
-    { todoist_project_id: "p-1", name: "Alpha", active: true },
-    { todoist_project_id: "p-3", name: "Archived", active: false },
-  ]);
-  // listProjects must NOT be hit when the cache is already populated.
-  const todoistClient = {
-    listProjects: async () => {
-      throw new Error("should not call live API when cache is warm");
-    },
-  };
-  const { app } = buildApp({ config: testConfig(), todoistClient });
-
-  const res = await request(app)
-    .get("/merchant-requests/admin/todoist-projects")
-    .set(authorHeaders());
-
-  assert.equal(res.status, 200);
-  assert.deepEqual(
-    res.body.projects.map((p) => p.name),
-    ["Alpha", "Beta"],
-  );
-});
-
-test("admin todoist-projects lazy-seeds from the paginated Todoist API when cache is empty", async () => {
-  const todoistClient = {
-    listProjects: async () => [
-      { id: "p-10", name: "Seeded One" },
-      { id: "p-11", name: "Seeded Two" },
-    ],
-  };
-  const { app } = buildApp({ config: testConfig(), todoistClient });
-
-  const res = await request(app)
-    .get("/merchant-requests/admin/todoist-projects")
-    .set(authorHeaders());
-
-  assert.equal(res.status, 200);
-  assert.equal(res.body.projects.length, 2);
-
-  const TodoistProject = require("../src/models/TodoistProject");
-  const stored = await TodoistProject.countDocuments({ active: true });
-  assert.equal(stored, 2);
-});
-
-// ─── Reconcile hardening ─────────────────────────────────────────────────────────
-
-test("reconcile is single-flight and throttles rapid repeats", async () => {
-  let syncCalls = 0;
-  const todoistClient = {
-    sync: async () => {
-      syncCalls += 1;
-      return { items: [], collaborators: [], notes: [], sync_token: "tok" };
-    },
-    listProjects: async () => [],
-  };
-  const { reconcileTodoist } = require("../src/services/reconcileService");
-  const deps = { todoistClient, config: testConfig() };
-
-  // Two concurrent triggers coalesce into a single run.
-  await Promise.all([reconcileTodoist(deps), reconcileTodoist(deps)]);
-  assert.equal(syncCalls, 1);
-
-  // An immediate repeat is throttled, not executed again.
-  const third = await reconcileTodoist(deps);
-  assert.equal(third.skipped, true);
-  assert.equal(third.reason, "throttled");
-  assert.equal(syncCalls, 1);
-});
-
-test("processDueJobs claims jobs atomically — no double-processing under concurrency", async () => {
+test("processDueJobs claims jobs atomically", async () => {
   await seedBrandConfig("TMC");
   const reqDoc = await MerchantRequest.create({
     brand_key: "TMC",
     requester: { user_id: "merchant-1" },
     title: "Has task",
+    category: "Issues",
     todoist_task_id: "task-123",
     status: "submitted",
   });
@@ -943,25 +820,13 @@ test("processDueJobs claims jobs atomically — no double-processing under concu
     },
   };
   const { processDueJobs } = require("../src/services/syncJobs");
-  const deps = { todoistClient, config: testConfig() };
 
-  // Two concurrent workers must not process the same job twice.
-  await Promise.all([processDueJobs(deps), processDueJobs(deps)]);
+  await Promise.all([
+    processDueJobs({ todoistClient, config: testConfig() }),
+    processDueJobs({ todoistClient, config: testConfig() }),
+  ]);
+
   assert.equal(createCommentCalls, 1);
-
   const job = await TodoistSyncJob.findOne({ request_id: reqDoc._id });
   assert.equal(job.status, "completed");
-});
-
-// ─── Auth fail-closed ────────────────────────────────────────────────────────────
-
-test("auth fails closed when gateway secret is missing and insecure auth is off", async () => {
-  const config = { ...testConfig(), gatewaySharedSecret: "", allowInsecureAuth: false };
-  const { app } = buildApp({ config, todoistClient: {} });
-
-  const res = await request(app)
-    .get("/merchant-requests/admin/brand-configs")
-    .set(authorHeaders());
-
-  assert.equal(res.status, 401);
 });

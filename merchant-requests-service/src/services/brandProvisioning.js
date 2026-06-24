@@ -1,15 +1,17 @@
 const BrandTodoistConfig = require("../models/BrandTodoistConfig");
+const { DEFAULT_PRIORITY_CAPS } = require("../config");
 
-// Display names for sections created in Todoist (matched case-insensitively on manual link)
-const SECTION_STATUS_NAMES = {
-  submitted: "Submitted",
-  triaged: "Triaged",
-  in_progress: "In Progress",
-  waiting_on_merchant: "Waiting on Merchant",
-  resolved: "Resolved",
-  closed: "Closed",
-  cancelled: "Cancelled",
-};
+const FALLBACK_BRAND_KEY = "UNASSIGNED";
+const FALLBACK_PROJECT_NAME = "Datum - Unassigned Merchant Requests";
+const MERCHANT_RAISED_SECTION_NAME = "Merchant Raised";
+
+function buildSectionFallback(sectionId) {
+  return {
+    submitted: sectionId,
+    assigned: sectionId,
+    done: sectionId,
+  };
+}
 
 // Returns true if we own the provisioning slot (may create or reclaim a failed doc).
 // Uses create-then-catch-11000 for concurrency safety without transactions.
@@ -30,23 +32,42 @@ async function _claimProvisioningSlot(brand_key) {
   }
 }
 
-// Matches existing sections by name (case-insensitive) and creates any missing ones.
-async function _buildSectionMap(projectId, { todoistClient }) {
+async function _findOrCreateMerchantRaisedSection(projectId, { todoistClient }) {
   const existingSections = await todoistClient.listSections(projectId);
-  const sectionByStatus = {};
-
-  for (const [status, label] of Object.entries(SECTION_STATUS_NAMES)) {
-    const existing = existingSections.find(
-      (s) => String(s.name || "").toLowerCase() === label.toLowerCase(),
-    );
-    if (existing) {
-      sectionByStatus[status] = String(existing.id || existing.section_id || "");
-    } else {
-      const created = await todoistClient.createSection(label, projectId);
-      sectionByStatus[status] = String(created.id || created.section_id || "");
-    }
+  const existing = existingSections.find(
+    (s) => String(s.name || "").toLowerCase() === MERCHANT_RAISED_SECTION_NAME.toLowerCase(),
+  );
+  if (existing) {
+    return String(existing.id || existing.section_id || "");
   }
-  return sectionByStatus;
+  const created = await todoistClient.createSection(MERCHANT_RAISED_SECTION_NAME, projectId);
+  return String(created.id || created.section_id || "");
+}
+
+async function ensureFallbackBrandConfig({ todoistClient, config: _config } = {}) {
+  const projects = await todoistClient.listProjects();
+  const existingProject = projects.find(
+    (project) => String(project.name || "").trim() === FALLBACK_PROJECT_NAME,
+  );
+  const project = existingProject || (await todoistClient.createProject(FALLBACK_PROJECT_NAME));
+  const projectId = String(project.id || project.project_id || "");
+  const merchantRaisedSectionId = await _findOrCreateMerchantRaisedSection(projectId, { todoistClient });
+
+  return BrandTodoistConfig.findOneAndUpdate(
+    { brand_key: FALLBACK_BRAND_KEY },
+    {
+      $set: {
+        todoist_project_id: projectId,
+        merchant_raised_section_id: merchantRaisedSectionId,
+        section_by_status: buildSectionFallback(merchantRaisedSectionId),
+        provisioning_status: "ready",
+        provisioning_mode: "auto",
+        provisioning_error: "",
+        priority_caps: { ...DEFAULT_PRIORITY_CAPS },
+      },
+    },
+    { returnDocument: "after", upsert: true },
+  );
 }
 
 // Auto-creates a Todoist project for the brand and populates sections.
@@ -67,13 +88,14 @@ async function provisionBrandProject(brand_key, { todoistClient, config }) {
       await BrandTodoistConfig.updateOne({ brand_key }, { $set: { todoist_project_id: projectId } });
     }
 
-    const sectionByStatus = await _buildSectionMap(projectId, { todoistClient });
+    const merchantRaisedSectionId = await _findOrCreateMerchantRaisedSection(projectId, { todoistClient });
 
     await BrandTodoistConfig.updateOne(
       { brand_key },
       {
         $set: {
-          section_by_status: sectionByStatus,
+          merchant_raised_section_id: merchantRaisedSectionId,
+          section_by_status: buildSectionFallback(merchantRaisedSectionId),
           provisioning_status: "ready",
           provisioning_mode: "auto",
           provisioning_error: "",
@@ -102,14 +124,15 @@ async function linkBrandProject(brand_key, todoist_project_id, { todoistClient }
   // Validate the project exists (getProject throws if not found)
   await todoistClient.getProject(todoist_project_id);
 
-  const sectionByStatus = await _buildSectionMap(todoist_project_id, { todoistClient });
+  const merchantRaisedSectionId = await _findOrCreateMerchantRaisedSection(todoist_project_id, { todoistClient });
 
   await BrandTodoistConfig.updateOne(
     { brand_key },
     {
       $set: {
         todoist_project_id,
-        section_by_status: sectionByStatus,
+        merchant_raised_section_id: merchantRaisedSectionId,
+        section_by_status: buildSectionFallback(merchantRaisedSectionId),
         provisioning_status: "ready",
         provisioning_mode: "manual",
         provisioning_error: "",
@@ -154,7 +177,11 @@ async function retryFailedProvisionings(deps) {
 }
 
 module.exports = {
-  SECTION_STATUS_NAMES,
+  FALLBACK_BRAND_KEY,
+  FALLBACK_PROJECT_NAME,
+  MERCHANT_RAISED_SECTION_NAME,
+  buildSectionFallback,
+  ensureFallbackBrandConfig,
   getBrandConfig,
   getOrProvisionBrandConfig,
   linkBrandProject,

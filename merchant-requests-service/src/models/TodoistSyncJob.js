@@ -10,7 +10,7 @@ const todoistSyncJobSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["create_task", "update_assignment", "update_status", "update_due_date", "create_comment"],
+      enum: ["create_task", "update_assignment", "update_status", "update_due_date", "complete_task", "create_comment"],
       required: true,
       index: true,
     },

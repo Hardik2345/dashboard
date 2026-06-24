@@ -1,7 +1,12 @@
-const { STATUSES } = require("../config");
+const { LEGACY_STATUS_MAP, STATUSES } = require("../config");
+
+function normalizeStoredStatus(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  return LEGACY_STATUS_MAP[normalized] || normalized;
+}
 
 function normalizeStatus(status) {
-  const normalized = String(status || "").trim().toLowerCase();
+  const normalized = normalizeStoredStatus(status);
   if (!STATUSES.includes(normalized)) {
     const err = new Error("invalid_status");
     err.statusCode = 400;
@@ -24,6 +29,7 @@ function sectionIdToStatus(sectionId, sectionByStatus) {
 
 module.exports = {
   normalizeStatus,
+  normalizeStoredStatus,
   sectionIdToStatus,
   statusToSectionId,
 };

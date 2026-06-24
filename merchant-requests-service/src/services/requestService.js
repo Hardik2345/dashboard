@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { CATEGORIES, DEFAULT_PRIORITY_CAPS, PRIORITIES } = require("../config");
 const MerchantRequest = require("../models/MerchantRequest");
 const MerchantRequestEvent = require("../models/MerchantRequestEvent");
 const TodoistUser = require("../models/TodoistUser");
@@ -14,16 +15,14 @@ const {
 } = require("./permissions");
 const { emitRequestEvent } = require("./realtime");
 const { enqueueSyncJob, processJob } = require("./syncJobs");
-const { normalizeStatus } = require("./statusMapping");
+const { normalizeStatus, normalizeStoredStatus } = require("./statusMapping");
 const { getBrandConfig } = require("./brandProvisioning");
-const { getVisibleStatuses, maskStatus, expandStatusFilter } = require("./statusVisibility");
 
-function serializeRequest(doc, visibleStatuses = null) {
+function serializeRequest(doc, { includeAssignee = true } = {}) {
   const request = typeof doc.toObject === "function" ? doc.toObject() : doc;
   request.id = String(request._id);
-  if (visibleStatuses) {
-    request.status = maskStatus(request.status, visibleStatuses);
-  }
+  request.status = normalizeStoredStatus(request.status);
+  if (!includeAssignee) delete request.assignee;
   return request;
 }
 
@@ -49,6 +48,69 @@ function normalizeDueDate(value) {
   return normalized;
 }
 
+function normalizePriority(value) {
+  const normalized = String(value || "normal").trim().toLowerCase();
+  if (!PRIORITIES.includes(normalized)) {
+    const err = new Error("invalid_priority");
+    err.statusCode = 400;
+    throw err;
+  }
+  return normalized;
+}
+
+function normalizeCategory(value) {
+  const normalized = String(value || "Feature Request").trim();
+  if (!CATEGORIES.includes(normalized)) {
+    const err = new Error("invalid_category");
+    err.statusCode = 400;
+    err.valid = CATEGORIES;
+    throw err;
+  }
+  return normalized;
+}
+
+function normalizePriorityCaps(input = {}) {
+  const caps = { ...DEFAULT_PRIORITY_CAPS };
+  for (const priority of PRIORITIES) {
+    if (input[priority] === undefined || input[priority] === null || input[priority] === "") continue;
+    const value = Number(input[priority]);
+    if (!Number.isInteger(value) || value < 0) {
+      const err = new Error("invalid_priority_caps");
+      err.statusCode = 400;
+      throw err;
+    }
+    caps[priority] = value;
+  }
+  return caps;
+}
+
+function priorityCapsForConfig(brandConfig) {
+  return normalizePriorityCaps(brandConfig?.priority_caps || DEFAULT_PRIORITY_CAPS);
+}
+
+async function assertPriorityCapAvailable(brandKey, priority) {
+  const brandConfig = await getBrandConfig(brandKey);
+  const caps = priorityCapsForConfig(brandConfig);
+  const limit = caps[priority];
+  if (limit === 0) {
+    const err = new Error("priority_cap_reached");
+    err.statusCode = 409;
+    err.details = { priority, limit, active_count: 0 };
+    throw err;
+  }
+  const activeCount = await MerchantRequest.countDocuments({
+    brand_key: brandKey,
+    priority,
+    status: { $ne: "done" },
+  });
+  if (activeCount >= limit) {
+    const err = new Error("priority_cap_reached");
+    err.statusCode = 409;
+    err.details = { priority, limit, active_count: activeCount };
+    throw err;
+  }
+}
+
 async function createRequest(input, principal, deps) {
   assertPermission(principal, "requests_panel");
   const brandKey = normalizeBrandKey(input.brand_key || principal.brand_key);
@@ -57,6 +119,9 @@ async function createRequest(input, principal, deps) {
     assertAuthor(principal);
   }
   const dueDate = normalizeDueDate(input.due_date);
+  const priority = normalizePriority(input.priority);
+  const category = normalizeCategory(input.category);
+  await assertPriorityCapAvailable(brandKey, priority);
 
   const request = await MerchantRequest.create({
     brand_key: brandKey,
@@ -67,8 +132,8 @@ async function createRequest(input, principal, deps) {
     },
     title: validateTitle(input.title),
     description: String(input.description || ""),
-    category: String(input.category || ""),
-    priority: input.priority || "normal",
+    category,
+    priority,
     due_date: dueDate,
     status: "submitted",
     todoist_labels: ["Datum", "merchant-request", `brand:${brandKey}`],
@@ -90,27 +155,16 @@ async function createRequest(input, principal, deps) {
 async function listRequests(query, principal) {
   assertPermission(principal, "requests_panel");
   const filter = {};
-  let visibleStatuses = null;
 
   if (principal.isAuthor) {
     if (query.brand_key) filter.brand_key = normalizeBrandKey(query.brand_key);
   } else {
     const allowed = getAllowedBrands(principal);
     filter.brand_key = { $in: allowed };
-    // Compute visibility for single-brand merchants (the common case)
-    if (allowed.length === 1) {
-      const brandConfig = await getBrandConfig(allowed[0]);
-      visibleStatuses = getVisibleStatuses(brandConfig);
-    }
   }
 
   if (query.status) {
-    const rawStatus = normalizeStatus(query.status);
-    if (visibleStatuses) {
-      filter.status = { $in: expandStatusFilter(rawStatus, visibleStatuses) };
-    } else {
-      filter.status = rawStatus;
-    }
+    filter.status = normalizeStatus(query.status);
   }
 
   if (query.assignee_id) filter["assignee.todoist_user_id"] = String(query.assignee_id);
@@ -125,7 +179,7 @@ async function listRequests(query, principal) {
   }
 
   const requests = await MerchantRequest.find(filter).sort({ updated_at: -1 }).limit(200).lean();
-  return requests.map((r) => serializeRequest(r, visibleStatuses));
+  return requests.map((r) => serializeRequest(r, { includeAssignee: principal.isAuthor }));
 }
 
 async function getRequestWithEvents(id, principal) {
@@ -137,20 +191,25 @@ async function getRequestWithEvents(id, principal) {
     throw err;
   }
 
-  let visibleStatuses = null;
-  if (!principal.isAuthor) {
-    const brandConfig = await getBrandConfig(request.brand_key);
-    visibleStatuses = getVisibleStatuses(brandConfig);
-  }
-
   const canViewTimeline = hasPermission(principal, "requests_timeline");
-  const events = canViewTimeline
+  const rawEvents = canViewTimeline
     ? await MerchantRequestEvent.find({ request_id: request._id }).sort({ created_at: 1 }).lean()
     : [];
+  const events = principal.isAuthor ? rawEvents : rawEvents.map(sanitizeMerchantEvent);
   return {
-    request: serializeRequest(request, visibleStatuses),
+    request: serializeRequest(request, { includeAssignee: principal.isAuthor }),
     events,
     timeline_hidden: !canViewTimeline,
+  };
+}
+
+function sanitizeMerchantEvent(event) {
+  if (event.type !== "assignment_changed" && event.type !== "assignment_synced") return event;
+  return {
+    ...event,
+    actor: event.source === "todoist" ? { name: "Todoist" } : event.actor,
+    data: {},
+    message: event.message || "Request assigned",
   };
 }
 
@@ -194,10 +253,10 @@ async function updateStatus(id, body, principal, deps) {
   request.status = status;
   request.sync.todoist_status_status = "pending";
   request.sync.pending_status = status;
-  if (["closed", "cancelled"].includes(status) && !request.closed_at) request.closed_at = new Date();
+  if (status === "done" && !request.closed_at) request.closed_at = new Date();
   await request.save();
   await appendEvent(request, "status_changed", "datum", { principal, data: { status } });
-  const job = await enqueueSyncJob(request._id, "update_status", { status });
+  const job = await enqueueSyncJob(request._id, status === "done" ? "complete_task" : "update_status", { status });
   emitRequestEvent("merchant-request:updated", request);
   await processJob(job, { todoistClient: deps.todoistClient, config: deps.config });
   return MerchantRequest.findById(request._id);
@@ -224,6 +283,11 @@ async function updateAssignee(id, body, principal, deps) {
     email: user?.email || body.email || "",
     unmapped: !user,
   };
+  if (request.status !== "done") {
+    request.status = "assigned";
+    request.sync.todoist_status_status = "pending";
+    request.sync.pending_status = "assigned";
+  }
   request.sync.todoist_assignment_status = "pending";
   request.sync.pending_assignment_user_id = todoistUserId;
   await request.save();
@@ -267,10 +331,15 @@ async function updateDueDate(id, body, principal, deps) {
 
 module.exports = {
   addComment,
+  assertPriorityCapAvailable,
   createRequest,
   getRequestWithEvents,
   listRequests,
+  normalizeCategory,
   normalizeDueDate,
+  normalizePriority,
+  normalizePriorityCaps,
+  priorityCapsForConfig,
   serializeRequest,
   updateAssignee,
   updateDueDate,

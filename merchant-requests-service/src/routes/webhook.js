@@ -2,7 +2,7 @@ const express = require("express");
 const { verifyTodoistHmac } = require("../services/todoistHmac");
 const { processTodoistWebhook } = require("../services/webhookService");
 
-function buildWebhookRouter(config) {
+function buildWebhookRouter(config, deps = {}) {
   const router = express.Router();
 
   router.post("/", async (req, res, next) => {
@@ -24,6 +24,7 @@ function buildWebhookRouter(config) {
         payload,
         req.headers["x-todoist-delivery-id"] || "",
         config,
+        deps,
       );
       return res.json({ ok: true, ...result });
     } catch (err) {
