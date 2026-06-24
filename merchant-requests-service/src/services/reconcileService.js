@@ -1,7 +1,7 @@
 const MerchantRequest = require("../models/MerchantRequest");
 const TodoistSyncState = require("../models/TodoistSyncState");
 const TodoistUser = require("../models/TodoistUser");
-const { applyNoteEvent, applyTaskUpdate } = require("./webhookService");
+const { applyNoteEvent, applyTaskUpdate, importRequestFromTodoistTask } = require("./webhookService");
 const { processDueJobs } = require("./syncJobs");
 const { retryFailedProvisionings } = require("./brandProvisioning");
 const { syncAllProjects } = require("./todoistProjects");
@@ -37,9 +37,14 @@ async function _runReconcile({ todoistClient, config }) {
     for (const item of items) {
       const taskId = String(item.id || item.task_id || "");
       if (!taskId) continue;
-      const request = await MerchantRequest.findOne({ todoist_task_id: taskId });
+      let imported = false;
+      let request = await MerchantRequest.findOne({ todoist_task_id: taskId });
+      if (!request) {
+        request = await importRequestFromTodoistTask(item, { todoistClient, config });
+        imported = !!request;
+      }
       if (!request) continue;
-      await applyTaskUpdate(request, item);
+      if (!imported) await applyTaskUpdate(request, item);
       result.tasks_processed += 1;
     }
 

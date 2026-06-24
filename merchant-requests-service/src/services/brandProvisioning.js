@@ -1,5 +1,8 @@
 const BrandTodoistConfig = require("../models/BrandTodoistConfig");
+const { DEFAULT_PRIORITY_CAPS } = require("../config");
 
+const FALLBACK_BRAND_KEY = "UNASSIGNED";
+const FALLBACK_PROJECT_NAME = "Datum - Unassigned Merchant Requests";
 const MERCHANT_RAISED_SECTION_NAME = "Merchant Raised";
 
 function buildSectionFallback(sectionId) {
@@ -39,6 +42,32 @@ async function _findOrCreateMerchantRaisedSection(projectId, { todoistClient }) 
   }
   const created = await todoistClient.createSection(MERCHANT_RAISED_SECTION_NAME, projectId);
   return String(created.id || created.section_id || "");
+}
+
+async function ensureFallbackBrandConfig({ todoistClient, config: _config } = {}) {
+  const projects = await todoistClient.listProjects();
+  const existingProject = projects.find(
+    (project) => String(project.name || "").trim() === FALLBACK_PROJECT_NAME,
+  );
+  const project = existingProject || (await todoistClient.createProject(FALLBACK_PROJECT_NAME));
+  const projectId = String(project.id || project.project_id || "");
+  const merchantRaisedSectionId = await _findOrCreateMerchantRaisedSection(projectId, { todoistClient });
+
+  return BrandTodoistConfig.findOneAndUpdate(
+    { brand_key: FALLBACK_BRAND_KEY },
+    {
+      $set: {
+        todoist_project_id: projectId,
+        merchant_raised_section_id: merchantRaisedSectionId,
+        section_by_status: buildSectionFallback(merchantRaisedSectionId),
+        provisioning_status: "ready",
+        provisioning_mode: "auto",
+        provisioning_error: "",
+        priority_caps: { ...DEFAULT_PRIORITY_CAPS },
+      },
+    },
+    { returnDocument: "after", upsert: true },
+  );
 }
 
 // Auto-creates a Todoist project for the brand and populates sections.
@@ -148,8 +177,11 @@ async function retryFailedProvisionings(deps) {
 }
 
 module.exports = {
+  FALLBACK_BRAND_KEY,
+  FALLBACK_PROJECT_NAME,
   MERCHANT_RAISED_SECTION_NAME,
   buildSectionFallback,
+  ensureFallbackBrandConfig,
   getBrandConfig,
   getOrProvisionBrandConfig,
   linkBrandProject,

@@ -5,6 +5,7 @@ const { validateConfig } = require("./config");
 const { buildApp } = require("./app");
 const { connectDB } = require("./db");
 const { backfillMerchantRequestWorkflow } = require("./services/migrations");
+const { ensureFallbackBrandConfig } = require("./services/brandProvisioning");
 const { initSocket } = require("./services/socket");
 const { reconcileTodoist } = require("./services/reconcileService");
 
@@ -13,6 +14,7 @@ async function start() {
   const { app, config, todoistClient } = buildApp();
   await connectDB(config);
   await backfillMerchantRequestWorkflow();
+  await ensureFallbackBrandConfig({ todoistClient, config });
 
   if (!config.gatewaySharedSecret) {
     if (config.allowInsecureAuth) {
