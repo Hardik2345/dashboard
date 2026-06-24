@@ -4,6 +4,7 @@ const http = require("http");
 const { validateConfig } = require("./config");
 const { buildApp } = require("./app");
 const { connectDB } = require("./db");
+const { backfillMerchantRequestWorkflow } = require("./services/migrations");
 const { initSocket } = require("./services/socket");
 const { reconcileTodoist } = require("./services/reconcileService");
 
@@ -11,6 +12,7 @@ async function start() {
   validateConfig();
   const { app, config, todoistClient } = buildApp();
   await connectDB(config);
+  await backfillMerchantRequestWorkflow();
 
   if (!config.gatewaySharedSecret) {
     if (config.allowInsecureAuth) {

@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const { STATUSES } = require("../config");
+const { CATEGORIES, LEGACY_STATUS_MAP, PRIORITIES, STATUSES } = require("../config");
 
 const assigneeSchema = new mongoose.Schema(
   {
@@ -68,10 +68,10 @@ const merchantRequestSchema = new mongoose.Schema(
     requester: { type: requesterSchema, required: true },
     title: { type: String, required: true, trim: true },
     description: { type: String, default: "" },
-    category: { type: String, default: "" },
+    category: { type: String, enum: CATEGORIES, default: "Feature Request" },
     priority: {
       type: String,
-      enum: ["low", "normal", "high", "urgent"],
+      enum: PRIORITIES,
       default: "normal",
     },
     due_date: { type: String, default: "" },
@@ -93,5 +93,14 @@ const merchantRequestSchema = new mongoose.Schema(
 );
 
 merchantRequestSchema.index({ brand_key: 1, status: 1, updated_at: -1 });
+
+merchantRequestSchema.pre("validate", function normalizeLegacyValues() {
+  if (this.status && LEGACY_STATUS_MAP[this.status]) {
+    this.status = LEGACY_STATUS_MAP[this.status];
+  }
+  if (!this.category || !CATEGORIES.includes(this.category)) {
+    this.category = "Feature Request";
+  }
+});
 
 module.exports = mongoose.model("MerchantRequest", merchantRequestSchema);

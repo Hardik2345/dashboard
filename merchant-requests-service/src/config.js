@@ -1,12 +1,32 @@
-const STATUSES = Object.freeze([
-  "submitted",
-  "triaged",
-  "in_progress",
-  "waiting_on_merchant",
-  "resolved",
-  "closed",
-  "cancelled",
+const STATUSES = Object.freeze(["submitted", "assigned", "done"]);
+
+const LEGACY_STATUS_MAP = Object.freeze({
+  submitted: "submitted",
+  triaged: "submitted",
+  in_progress: "assigned",
+  waiting_on_merchant: "assigned",
+  resolved: "done",
+  closed: "done",
+  cancelled: "done",
+});
+
+const CATEGORIES = Object.freeze([
+  "Design",
+  "Data Analysis",
+  "Development",
+  "Issues",
+  "Integrations",
+  "Feature Request",
 ]);
+
+const PRIORITIES = Object.freeze(["low", "normal", "high", "urgent"]);
+
+const DEFAULT_PRIORITY_CAPS = Object.freeze({
+  urgent: 1,
+  high: 2,
+  normal: 3,
+  low: 5,
+});
 
 function validateConfig(env = process.env) {
   if (env.NODE_ENV === "test" && env.SKIP_CONFIG_VALIDATION === "true") {
@@ -45,6 +65,10 @@ function getConfig(env = process.env) {
 }
 
 module.exports = {
+  CATEGORIES,
+  DEFAULT_PRIORITY_CAPS,
+  LEGACY_STATUS_MAP,
+  PRIORITIES,
   STATUSES,
   getConfig,
   validateConfig,

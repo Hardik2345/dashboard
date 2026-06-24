@@ -20,7 +20,17 @@ async function enqueueSyncJob(requestId, type, payload = {}) {
   });
 }
 
-// brandConfig must have todoist_project_id and section_by_status
+function getMerchantRaisedSectionId(brandConfig = {}) {
+  return (
+    brandConfig.merchant_raised_section_id ||
+    brandConfig.section_by_status?.submitted ||
+    brandConfig.section_by_status?.assigned ||
+    brandConfig.section_by_status?.done ||
+    ""
+  );
+}
+
+// brandConfig must have todoist_project_id and a Merchant Raised section
 function buildTaskPayload(request, brandConfig) {
   const labels = ["Datum", "merchant-request", `brand:${request.brand_key}`];
   if (request.category) labels.push(`category:${request.category}`);
@@ -40,7 +50,7 @@ function buildTaskPayload(request, brandConfig) {
     content: `[${request.brand_key}] ${request.title}`,
     description,
     project_id: brandConfig.todoist_project_id,
-    section_id: brandConfig.section_by_status[request.status] || "",
+    section_id: getMerchantRaisedSectionId(brandConfig),
     labels,
     priority: request.priority === "urgent" ? 4 : request.priority === "high" ? 3 : 1,
   };
@@ -55,6 +65,7 @@ async function markRequestSyncError(request, job, err) {
   if (job.type === "update_assignment") request.sync.todoist_assignment_status = "failed";
   if (job.type === "update_status") request.sync.todoist_status_status = "failed";
   if (job.type === "update_due_date") request.sync.todoist_due_date_status = "failed";
+  if (job.type === "complete_task") request.sync.todoist_status_status = "failed";
   if (job.type === "create_comment") request.sync.todoist_comment_status = "failed";
   await request.save();
   await appendEvent(request, "todoist_sync_failed", "system", {
@@ -155,8 +166,11 @@ async function processJob(job, { todoistClient, config }) {
         email: user?.email || job.payload.email || "",
         unmapped: !user,
       };
+      if (request.status !== "done") request.status = "assigned";
       request.sync.todoist_assignment_status = "synced";
       request.sync.pending_assignment_user_id = "";
+      request.sync.todoist_status_status = "synced";
+      request.sync.pending_status = "";
       request.sync.last_todoist_error = "";
       request.sync.last_synced_at = new Date();
       await request.save();
@@ -168,17 +182,29 @@ async function processJob(job, { todoistClient, config }) {
 
     if (job.type === "update_status") {
       const targetStatus = job.payload.status;
-      const sectionId = brandConfig.section_by_status[targetStatus] || "";
-      await todoistClient.updateTask(request.todoist_task_id, { section_id: sectionId });
       request.status = targetStatus;
-      request.todoist_section_id = sectionId;
       request.sync.todoist_status_status = "synced";
       request.sync.pending_status = "";
       request.sync.last_todoist_error = "";
       request.sync.last_synced_at = new Date();
-      if (["closed", "cancelled"].includes(targetStatus) && !request.closed_at) request.closed_at = new Date();
+      if (targetStatus === "done" && !request.closed_at) request.closed_at = new Date();
       await request.save();
-      await appendEvent(request, "status_synced", "system", { data: { status: targetStatus, section_id: sectionId } });
+      await appendEvent(request, "status_synced", "system", { data: { status: targetStatus } });
+      emitRequestEvent("merchant-request:updated", request);
+      await completeJob(job);
+      return;
+    }
+
+    if (job.type === "complete_task") {
+      await todoistClient.completeTask(request.todoist_task_id);
+      request.status = "done";
+      request.sync.todoist_status_status = "synced";
+      request.sync.pending_status = "";
+      request.sync.last_todoist_error = "";
+      request.sync.last_synced_at = new Date();
+      if (!request.closed_at) request.closed_at = new Date();
+      await request.save();
+      await appendEvent(request, "status_synced", "system", { data: { status: "done" } });
       emitRequestEvent("merchant-request:updated", request);
       await completeJob(job);
       return;
@@ -252,6 +278,7 @@ async function processDueJobs({ todoistClient, config, limit = 20 } = {}) {
 module.exports = {
   buildTaskPayload,
   enqueueSyncJob,
+  getMerchantRaisedSectionId,
   processDueJobs,
   processJob,
 };
