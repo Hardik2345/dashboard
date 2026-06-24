@@ -3,14 +3,15 @@ const BrandTodoistConfig = require("../models/BrandTodoistConfig");
 const TodoistUser = require("../models/TodoistUser");
 const { assertAuthor } = require("../services/permissions");
 const { reconcileTodoist } = require("../services/reconcileService");
-const { getBrandConfig, linkBrandProject, provisionBrandProject } = require("../services/brandProvisioning");
+const { linkBrandProject, provisionBrandProject } = require("../services/brandProvisioning");
 const { listLocalProjects, syncAllProjects } = require("../services/todoistProjects");
-const { UNLOCKABLE_STATUSES, getVisibleStatuses } = require("../services/statusVisibility");
 const {
   addComment,
   createRequest,
   getRequestWithEvents,
   listRequests,
+  normalizePriorityCaps,
+  priorityCapsForConfig,
   serializeRequest,
   updateAssignee,
   updateDueDate,
@@ -36,13 +37,7 @@ function buildRequestsRouter(deps) {
     "/",
     asyncHandler(async (req, res) => {
       const request = await createRequest(req.body || {}, req.principal, deps);
-      let serialized = serializeRequest(request);
-      // Apply status masking for merchants
-      if (!req.principal.isAuthor) {
-        const brandConfig = await getBrandConfig(request.brand_key);
-        const visible = getVisibleStatuses(brandConfig);
-        serialized.status = require("../services/statusVisibility").maskStatus(serialized.status, visible);
-      }
+      const serialized = serializeRequest(request, { includeAssignee: req.principal.isAuthor });
       res.status(201).json({ request: serialized });
     }),
   );
@@ -102,24 +97,17 @@ function buildRequestsRouter(deps) {
   );
 
   router.patch(
-    "/admin/brand-configs/:brand_key/visible-statuses",
+    "/admin/brand-configs/:brand_key/priority-caps",
     asyncHandler(async (req, res) => {
       assertAuthor(req.principal);
       const brand_key = String(req.params.brand_key || "").toUpperCase();
-      const { unlocked_statuses } = req.body || {};
-      if (!Array.isArray(unlocked_statuses)) {
-        return res.status(400).json({ error: "unlocked_statuses_must_be_array" });
-      }
-      const invalid = unlocked_statuses.filter((s) => !UNLOCKABLE_STATUSES.includes(s));
-      if (invalid.length) {
-        return res.status(400).json({ error: "invalid_statuses", invalid, valid: UNLOCKABLE_STATUSES });
-      }
+      const priority_caps = normalizePriorityCaps(req.body || {});
       const config = await BrandTodoistConfig.findOneAndUpdate(
         { brand_key },
-        { $set: { unlocked_statuses } },
+        { $set: { priority_caps } },
         { returnDocument: "after", upsert: true },
       );
-      res.json({ config, visible_statuses: getVisibleStatuses(config) });
+      res.json({ config, priority_caps: priorityCapsForConfig(config) });
     }),
   );
 

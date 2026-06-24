@@ -1,11 +1,17 @@
 const mongoose = require("mongoose");
+const { DEFAULT_PRIORITY_CAPS } = require("../config");
 
 const BrandTodoistConfigSchema = new mongoose.Schema(
   {
     brand_key: { type: String, required: true, uppercase: true, unique: true },
     todoist_project_id: { type: String, default: "" },
+    merchant_raised_section_id: { type: String, default: "" },
     // Maps each internal status to the Todoist section ID within this brand's project
     section_by_status: { type: Object, default: {} },
+    priority_caps: {
+      type: Object,
+      default: () => ({ ...DEFAULT_PRIORITY_CAPS }),
+    },
     provisioning_status: {
       type: String,
       enum: ["pending", "ready", "failed"],

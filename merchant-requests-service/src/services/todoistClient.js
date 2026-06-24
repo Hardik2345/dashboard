@@ -53,6 +53,13 @@ class TodoistClient {
     });
   }
 
+  completeTask(taskId) {
+    return this.request(`/tasks/${encodeURIComponent(taskId)}/close`, {
+      method: "POST",
+      body: {},
+    });
+  }
+
   createComment(taskId, content) {
     return this.request("/comments", {
       method: "POST",
