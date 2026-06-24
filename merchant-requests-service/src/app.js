@@ -44,7 +44,11 @@ function buildApp(overrides = {}) {
   app.use((err, _req, res, _next) => {
     const status = err.statusCode || err.status || 500;
     if (status >= 500) console.error("[merchant-requests] route error", err);
-    res.status(status).json({ error: err.message || "internal_server_error" });
+    res.status(status).json({
+      error: err.message || "internal_server_error",
+      ...(err.details || {}),
+      ...(err.valid ? { valid: err.valid } : {}),
+    });
   });
 
   return { app, config, todoistClient };

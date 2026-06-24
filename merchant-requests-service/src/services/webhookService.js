@@ -3,7 +3,6 @@ const TodoistUser = require("../models/TodoistUser");
 const TodoistWebhookDelivery = require("../models/TodoistWebhookDelivery");
 const { appendEvent } = require("./events");
 const { emitRequestEvent } = require("./realtime");
-const { getBrandConfig } = require("./brandProvisioning");
 const { upsertProjectSnapshot, removeProjectSnapshot } = require("./todoistProjects");
 
 function labelsFromTask(task = {}) {
@@ -21,6 +20,12 @@ function dueDateFromTask(task = {}) {
   return String(task.due?.date || "").trim();
 }
 
+function isTaskCompleted(task = {}, eventName = "") {
+  if (eventName === "item:completed" || eventName === "item:checked" || eventName === "item:closed") return true;
+  if (task.is_completed === true || task.checked === true || task.completed === true) return true;
+  return false;
+}
+
 async function resolveRequestFromTask(task) {
   const taskId = String(task.id || task.task_id || task.item_id || "");
   if (taskId) {
@@ -31,27 +36,19 @@ async function resolveRequestFromTask(task) {
   return null;
 }
 
-// brandConfig may be null if the brand isn't provisioned yet; section updates are skipped.
-async function applyTaskUpdate(request, task, brandConfig) {
+async function applyTaskUpdate(request, task, _brandConfig, eventName = "") {
+  if (isTaskCompleted(task, eventName) && request.status !== "done") {
+    request.status = "done";
+    request.sync.todoist_status_status = "synced";
+    request.sync.pending_status = "";
+    request.sync.last_synced_at = new Date();
+    if (!request.closed_at) request.closed_at = new Date();
+    await appendEvent(request, "status_changed", "todoist", { data: { status: "done" } });
+  }
+
   const sectionId = String(task.section_id || "");
-  if (sectionId && brandConfig) {
-    const sectionByStatus = brandConfig.section_by_status || {};
-    const status = Object.entries(sectionByStatus).find(([, id]) => String(id) === sectionId)?.[0] || null;
-    if (!status) {
-      await appendEvent(request, "todoist_unmapped_section", "todoist", {
-        data: { section_id: sectionId },
-      });
-    } else if (request.sync.pending_status) {
-      await appendEvent(request, "todoist_status_conflict_ignored", "todoist", {
-        data: { incoming_status: status, pending_status: request.sync.pending_status },
-      });
-    } else if (request.status !== status) {
-      request.status = status;
-      request.todoist_section_id = sectionId;
-      request.sync.todoist_status_status = "synced";
-      request.sync.last_synced_at = new Date();
-      await appendEvent(request, "status_changed", "todoist", { data: { status, section_id: sectionId } });
-    }
+  if (sectionId) {
+    request.todoist_section_id = sectionId;
   }
 
   const assigneeId = String(task.responsible_uid || task.assignee_id || "");
@@ -71,6 +68,13 @@ async function applyTaskUpdate(request, task, brandConfig) {
       request.sync.todoist_assignment_status = "synced";
       request.sync.last_synced_at = new Date();
       await appendEvent(request, "assignment_changed", "todoist", { data: { todoist_user_id: assigneeId } });
+    }
+    if (request.status !== "done" && request.status !== "assigned") {
+      request.status = "assigned";
+      request.sync.todoist_status_status = "synced";
+      request.sync.pending_status = "";
+      request.sync.last_synced_at = new Date();
+      await appendEvent(request, "status_changed", "todoist", { data: { status: "assigned" } });
     }
   }
 
@@ -155,11 +159,8 @@ async function processTodoistWebhook(payload, deliveryId, _config) {
       return { ignored: true };
     }
 
-    // Look up brand config by brand_key for section → status mapping
-    const brandConfig = await getBrandConfig(request.brand_key);
-
     if (eventName.startsWith("item:")) {
-      await applyTaskUpdate(request, data, brandConfig);
+      await applyTaskUpdate(request, data, null, eventName);
     } else if (eventName.startsWith("note:")) {
       await applyNoteEvent(request, data);
     }
@@ -183,5 +184,6 @@ module.exports = {
   applyTaskUpdate,
   dueDateFromTask,
   hasRequiredLabels,
+  isTaskCompleted,
   processTodoistWebhook,
 };

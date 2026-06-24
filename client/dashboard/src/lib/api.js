@@ -395,10 +395,8 @@ export async function triggerBrandProvision(brand_key) {
   return doPost(`/merchant-requests/admin/brand-configs/${encodeURIComponent(brand_key)}/provision`, {});
 }
 
-export async function updateBrandVisibleStatuses(brand_key, unlocked_statuses) {
-  return doPatch(`/merchant-requests/admin/brand-configs/${encodeURIComponent(brand_key)}/visible-statuses`, {
-    unlocked_statuses,
-  });
+export async function updateBrandPriorityCaps(brand_key, priority_caps) {
+  return doPatch(`/merchant-requests/admin/brand-configs/${encodeURIComponent(brand_key)}/priority-caps`, priority_caps);
 }
 
 export async function deleteBrandConfig(brand_key) {

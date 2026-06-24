@@ -3,7 +3,7 @@ const TodoistSyncState = require("../models/TodoistSyncState");
 const TodoistUser = require("../models/TodoistUser");
 const { applyNoteEvent, applyTaskUpdate } = require("./webhookService");
 const { processDueJobs } = require("./syncJobs");
-const { getBrandConfig, retryFailedProvisionings } = require("./brandProvisioning");
+const { retryFailedProvisionings } = require("./brandProvisioning");
 const { syncAllProjects } = require("./todoistProjects");
 
 // Minimum gap between reconcile runs; rapid repeat calls (button spam) are
@@ -39,8 +39,7 @@ async function _runReconcile({ todoistClient, config }) {
       if (!taskId) continue;
       const request = await MerchantRequest.findOne({ todoist_task_id: taskId });
       if (!request) continue;
-      const brandConfig = await getBrandConfig(request.brand_key);
-      await applyTaskUpdate(request, item, brandConfig);
+      await applyTaskUpdate(request, item);
       result.tasks_processed += 1;
     }
 
