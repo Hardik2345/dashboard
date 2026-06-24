@@ -32,7 +32,7 @@ function buildApp(overrides = {}) {
   app.use(
     "/merchant-requests/todoist/webhook",
     express.raw({ type: "*/*", limit: "1mb" }),
-    buildWebhookRouter(config),
+    buildWebhookRouter(config, { todoistClient }),
   );
   app.use(express.json({ limit: "1mb" }));
   app.use(

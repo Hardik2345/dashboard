@@ -128,6 +128,12 @@ const EVENT_CONFIG = {
     bg: "bg-blue-50 dark:bg-blue-900/30",
     label: "Request created",
   },
+  request_imported: {
+    Icon: CirclePlus,
+    color: "text-blue-500 dark:text-blue-400",
+    bg: "bg-blue-50 dark:bg-blue-900/30",
+    label: "Imported from Todoist",
+  },
   status_changed: {
     Icon: RefreshCw,
     color: "text-violet-500 dark:text-violet-400",

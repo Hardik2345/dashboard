@@ -12,7 +12,7 @@ const TodoistWebhookDelivery = require("../src/models/TodoistWebhookDelivery");
 const { buildApp } = require("../src/app");
 const { computeTodoistHmac } = require("../src/services/todoistHmac");
 const { buildTaskPayload, getMerchantRaisedSectionId } = require("../src/services/syncJobs");
-const { provisionBrandProject } = require("../src/services/brandProvisioning");
+const { ensureFallbackBrandConfig, provisionBrandProject } = require("../src/services/brandProvisioning");
 const { backfillMerchantRequestWorkflow } = require("../src/services/migrations");
 
 function testConfig() {
@@ -150,6 +150,49 @@ test("provisioning creates only the Merchant Raised section", async () => {
   const cfg = await BrandTodoistConfig.findOne({ brand_key: "TMC" }).lean();
   assert.equal(cfg.merchant_raised_section_id, "sec-raised");
   assert.equal(cfg.section_by_status.submitted, "sec-raised");
+});
+
+test("fallback provisioning creates the unassigned project and Merchant Raised section", async () => {
+  const createdProjects = [];
+  const createdSections = [];
+  const todoistClient = {
+    listProjects: async () => [],
+    createProject: async (name) => {
+      createdProjects.push(name);
+      return { id: "fallback-project", name };
+    },
+    listSections: async () => [],
+    createSection: async (name) => {
+      createdSections.push(name);
+      return { id: "fallback-section", name };
+    },
+  };
+
+  const cfg = await ensureFallbackBrandConfig({ todoistClient, config: testConfig() });
+
+  assert.deepEqual(createdProjects, ["Datum - Unassigned Merchant Requests"]);
+  assert.deepEqual(createdSections, ["Merchant Raised"]);
+  assert.equal(cfg.brand_key, "UNASSIGNED");
+  assert.equal(cfg.todoist_project_id, "fallback-project");
+  assert.equal(cfg.merchant_raised_section_id, "fallback-section");
+});
+
+test("fallback provisioning reuses existing fallback project and section", async () => {
+  const todoistClient = {
+    listProjects: async () => [{ id: "fallback-project", name: "Datum - Unassigned Merchant Requests" }],
+    createProject: async () => {
+      throw new Error("should_not_create_project");
+    },
+    listSections: async () => [{ id: "fallback-section", name: "Merchant Raised" }],
+    createSection: async () => {
+      throw new Error("should_not_create_section");
+    },
+  };
+
+  const cfg = await ensureFallbackBrandConfig({ todoistClient, config: testConfig() });
+
+  assert.equal(cfg.todoist_project_id, "fallback-project");
+  assert.equal(cfg.merchant_raised_section_id, "fallback-section");
 });
 
 test("creation rejects invalid category and invalid priority", async () => {
@@ -336,6 +379,249 @@ test("Todoist completion webhook sets status done and dedupes delivery id", asyn
 
   const deliveries = await TodoistWebhookDelivery.find({ delivery_id: "delivery-completed" }).lean();
   assert.equal(deliveries.length, 1);
+});
+
+test("webhook imports unlinked tagged task using brand label", async () => {
+  await seedBrandConfig("TMC");
+  const app = appWithTodoist({});
+
+  const res = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-new-1",
+        content: "Imported request",
+        description: "From Todoist",
+        project_id: "other-project",
+        section_id: "any-section",
+        labels: ["merchant-request", "brand:TMC", "category:Design"],
+        priority: 4,
+        due: { date: "2026-06-30" },
+      },
+    },
+    "delivery-import-brand",
+  );
+
+  assert.equal(res.status, 200);
+  const imported = await MerchantRequest.findOne({ todoist_task_id: "todoist-new-1" }).lean();
+  assert.equal(imported.brand_key, "TMC");
+  assert.equal(imported.title, "Imported request");
+  assert.equal(imported.category, "Design");
+  assert.equal(imported.priority, "urgent");
+  assert.equal(imported.due_date, "2026-06-30");
+  const event = await MerchantRequestEvent.findOne({ request_id: imported._id, type: "request_imported" }).lean();
+  assert.ok(event);
+});
+
+test("webhook imports tagged task via mapped Todoist project config", async () => {
+  await seedBrandConfig("TMC", { todoist_project_id: "mapped-project" });
+  const app = appWithTodoist({});
+
+  const res = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-new-2",
+        content: "Mapped project request",
+        project_id: "mapped-project",
+        labels: ["merchant-request"],
+      },
+    },
+    "delivery-import-project",
+  );
+
+  assert.equal(res.status, 200);
+  const imported = await MerchantRequest.findOne({ todoist_task_id: "todoist-new-2" }).lean();
+  assert.equal(imported.brand_key, "TMC");
+});
+
+test("project mapping wins over conflicting brand label during import", async () => {
+  await seedBrandConfig("TMC", { todoist_project_id: "mapped-project" });
+  const app = appWithTodoist({});
+
+  const res = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-new-conflict",
+        content: "Mapped project wins",
+        project_id: "mapped-project",
+        labels: ["merchant-request", "brand:OTHER"],
+      },
+    },
+    "delivery-import-project-wins",
+  );
+
+  assert.equal(res.status, 200);
+  const imported = await MerchantRequest.findOne({ todoist_task_id: "todoist-new-conflict" }).lean();
+  assert.equal(imported.brand_key, "TMC");
+});
+
+test("webhook imports unknown-brand tagged task into fallback project and normalizes Todoist task", async () => {
+  const updateCalls = [];
+  const app = appWithTodoist({
+    listProjects: async () => [],
+    createProject: async () => ({ id: "fallback-project", name: "Datum - Unassigned Merchant Requests" }),
+    listSections: async () => [],
+    createSection: async () => ({ id: "fallback-section", name: "Merchant Raised" }),
+    updateTask: async (taskId, payload) => {
+      updateCalls.push({ taskId, payload });
+      return { id: taskId };
+    },
+  });
+
+  const res = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-new-3",
+        content: "Needs triage",
+        project_id: "unknown-project",
+        section_id: "random-section",
+        labels: ["merchant-request", "category:Issues"],
+      },
+    },
+    "delivery-import-fallback",
+  );
+
+  assert.equal(res.status, 200);
+  const imported = await MerchantRequest.findOne({ todoist_task_id: "todoist-new-3" }).lean();
+  assert.equal(imported.brand_key, "UNASSIGNED");
+  assert.equal(imported.todoist_section_id, "fallback-section");
+  assert.ok(imported.todoist_labels.includes("brand:UNASSIGNED"));
+  assert.deepEqual(updateCalls, [
+    {
+      taskId: "todoist-new-3",
+      payload: {
+        project_id: "fallback-project",
+        section_id: "fallback-section",
+        labels: ["merchant-request", "category:Issues", "Datum", "brand:UNASSIGNED"],
+      },
+    },
+  ]);
+});
+
+test("webhook ignores untagged Todoist task even if it is in Merchant Raised", async () => {
+  const app = appWithTodoist({});
+
+  const res = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-untagged",
+        content: "No import",
+        section_id: "sec-raised",
+        labels: [],
+      },
+    },
+    "delivery-untagged",
+  );
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ignored, true);
+  assert.equal(await MerchantRequest.countDocuments({ todoist_task_id: "todoist-untagged" }), 0);
+});
+
+test("imported assigned and completed tasks map to assigned and done", async () => {
+  await seedBrandConfig("TMC");
+  const app = appWithTodoist({});
+
+  await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-assigned-import",
+        content: "Assigned import",
+        labels: ["merchant-request", "brand:TMC"],
+        assignee_id: "todoist-user-1",
+      },
+    },
+    "delivery-import-assigned",
+  );
+  const assigned = await MerchantRequest.findOne({ todoist_task_id: "todoist-assigned-import" }).lean();
+  assert.equal(assigned.status, "assigned");
+  assert.equal(assigned.assignee.todoist_user_id, "todoist-user-1");
+
+  await signedTodoistPost(
+    app,
+    {
+      event_name: "item:completed",
+      event_data: {
+        id: "todoist-done-import",
+        content: "Done import",
+        labels: ["merchant-request", "brand:TMC"],
+      },
+    },
+    "delivery-import-done",
+  );
+  const done = await MerchantRequest.findOne({ todoist_task_id: "todoist-done-import" }).lean();
+  assert.equal(done.status, "done");
+  assert.ok(done.closed_at);
+});
+
+test("reconcile imports unlinked tagged Todoist task", async () => {
+  await seedBrandConfig("TMC");
+  const todoistClient = {
+    listProjects: async () => [],
+    sync: async () => ({
+      items: [
+        {
+          id: "todoist-reconcile-import",
+          content: "Reconcile import",
+          labels: ["merchant-request", "brand:TMC"],
+        },
+      ],
+      collaborators: [],
+      notes: [],
+      sync_token: "next-token",
+    }),
+  };
+  const { reconcileTodoist } = require("../src/services/reconcileService");
+
+  const result = await reconcileTodoist({ todoistClient, config: testConfig() });
+
+  assert.equal(result.tasks_processed, 1);
+  const imported = await MerchantRequest.findOne({ todoist_task_id: "todoist-reconcile-import" }).lean();
+  assert.equal(imported.brand_key, "TMC");
+  assert.equal(imported.title, "Reconcile import");
+});
+
+test("existing linked Todoist task updates without duplicate import", async () => {
+  await seedBrandConfig("TMC");
+  await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "merchant-1" },
+    title: "Existing",
+    category: "Issues",
+    todoist_task_id: "existing-task",
+    status: "submitted",
+  });
+  const app = appWithTodoist({});
+
+  const res = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "existing-task",
+        content: "Existing",
+        labels: ["merchant-request", "brand:TMC"],
+        assignee_id: "todoist-user-1",
+      },
+    },
+    "delivery-existing-linked",
+  );
+
+  assert.equal(res.status, 200);
+  assert.equal(await MerchantRequest.countDocuments({ todoist_task_id: "existing-task" }), 1);
+  const updated = await MerchantRequest.findOne({ todoist_task_id: "existing-task" }).lean();
+  assert.equal(updated.status, "assigned");
 });
 
 test("author assignee update sends Todoist assignee and sets local status assigned", async () => {
