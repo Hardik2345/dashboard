@@ -47,7 +47,7 @@ function buildTaskPayload(request, brandConfig) {
   ].join("\n");
 
   const payload = {
-    content: `[${request.brand_key}] ${request.title}`,
+    content: request.title,
     description,
     project_id: brandConfig.todoist_project_id,
     section_id: getMerchantRaisedSectionId(brandConfig),

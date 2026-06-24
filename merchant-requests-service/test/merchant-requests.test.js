@@ -118,6 +118,7 @@ test("buildTaskPayload uses Merchant Raised section and includes due date", asyn
 
   const payload = buildTaskPayload(req, brandConfig());
 
+  assert.equal(payload.content, "Help with report");
   assert.equal(payload.project_id, "project-1");
   assert.equal(payload.section_id, "sec-raised");
   assert.equal(payload.due_date, "2026-06-25");
