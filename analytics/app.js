@@ -22,6 +22,7 @@ const { buildApiKeysRouter } = require("./modules/api-keys");
 const { buildShopifyRouter } = require("./modules/shopify");
 const { buildNotificationsRouter } = require("./modules/notifications");
 const { buildDashboardRouter } = require("./modules/dashboard");
+const { buildSessionAnalyticsRouter } = require("./routes/sessionAnalytics.routes");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -58,6 +59,7 @@ app.use("/metrics", buildMetricsRouter(sequelize));
 app.use("/metrics", buildProductConversionRouter());
 app.use("/metrics", buildBundlesRouter());
 app.use("/dashboard", buildDashboardRouter());
+app.use("/session-analytics", buildSessionAnalyticsRouter());
 app.use("/external", buildExternalRouter());
 app.use("/", buildUploadsRouter());
 app.use("/", buildApiKeysRouter(sequelize));

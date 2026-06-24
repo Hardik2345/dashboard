@@ -72,6 +72,13 @@ function buildPrincipalFromHeaders(req) {
 
   const permissionsRaw = (req.headers["x-permissions"] || "").toString().trim();
   const permissions = permissionsRaw ? permissionsRaw.split(",").map((p) => p.trim()) : [];
+  const allowedBrandsRaw = (req.headers["x-brand-ids"] || "").toString().trim();
+  const allowedBrands = allowedBrandsRaw
+    ? allowedBrandsRaw
+        .split(",")
+        .map((value) => value.trim().toUpperCase())
+        .filter(Boolean)
+    : [];
 
   if (!userId || !brandId || !roleRaw) return null;
 
@@ -82,6 +89,7 @@ function buildPrincipalFromHeaders(req) {
     isAuthor: roleRaw === "author" || roleRaw === "admin",
     email: email || null,
     permissions: permissions,
+    allowedBrands,
   };
 }
 

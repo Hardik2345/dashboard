@@ -9,7 +9,7 @@ import {
   Legend,
 } from 'chart.js';
 import { getPaymentSalesSplit } from '../lib/api.js';
-import { formatInrAmount, useInrCurrency } from '../lib/currency.js';
+import { useInrCurrency } from '../lib/currency.js';
 
 ChartJS.register(ArcElement, ChartTooltip, Legend);
 
@@ -23,7 +23,7 @@ export default function PaymentSalesSplit({ query }) {
   const brandKey = query?.brand_key;
   const refreshKey = query?.refreshKey;
   const productId = query?.product_id || '';
-  const { convertAmount } = useInrCurrency(brandKey, query?.end);
+  const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, query?.end);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,7 +86,7 @@ export default function PaymentSalesSplit({ query }) {
             const label = ctx.label;
             const raw = ctx.parsed;
             const pct = convertedTotal > 0 ? (raw / convertedTotal) * 100 : 0;
-            return `${label}: ${formatInrAmount(raw, { maximumFractionDigits: 0 })} (${nfPct1.format(pct)}%)`;
+            return `${label}: ${formatConvertedAmount(raw, { maximumFractionDigits: 0 })} (${nfPct1.format(pct)}%)`;
           }
         }
       }
@@ -116,19 +116,19 @@ export default function PaymentSalesSplit({ query }) {
             >
               <GlassChip
                 size="small"
-                label={`COD ${nfPct1.format(data.cod_percent)}% (${formatInrAmount(convertedCodSales, { notation: 'compact', maximumFractionDigits: 1 })})`}
+                label={`COD ${nfPct1.format(data.cod_percent)}% (${formatConvertedAmount(convertedCodSales, { notation: 'compact', maximumFractionDigits: 1 })})`}
                 color="warning"
                 isDark={isDark}
               />
               <GlassChip
                 size="small"
-                label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${formatInrAmount(convertedPrepaidSales, { notation: 'compact', maximumFractionDigits: 1 })})`}
+                label={`Prepaid ${nfPct1.format(data.prepaid_percent)}% (${formatConvertedAmount(convertedPrepaidSales, { notation: 'compact', maximumFractionDigits: 1 })})`}
                 color="success"
                 isDark={isDark}
               />
               <GlassChip
                 size="small"
-                label={`Partial ${nfPct1.format(data.partial_percent)}% (${formatInrAmount(convertedPartialSales, { notation: 'compact', maximumFractionDigits: 1 })})`}
+                label={`Partial ${nfPct1.format(data.partial_percent)}% (${formatConvertedAmount(convertedPartialSales, { notation: 'compact', maximumFractionDigits: 1 })})`}
                 color="primary"
                 isDark={isDark}
               />

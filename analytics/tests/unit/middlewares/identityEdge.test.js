@@ -48,6 +48,8 @@ describe("identityEdge middleware", () => {
       role: "admin",
       isAuthor: true,
       email: "user@example.com",
+      permissions: [],
+      allowedBrands: [],
     });
   });
 
@@ -96,6 +98,8 @@ describe("identityEdge middleware", () => {
       role: "user",
       isAuthor: false,
       email: "user@example.com",
+      permissions: [],
+      allowedBrands: [],
     });
   });
 

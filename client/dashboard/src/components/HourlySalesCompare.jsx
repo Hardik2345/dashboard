@@ -6,7 +6,7 @@ import {
   BarChart, Bar, LabelList
 } from 'recharts';
 import { getHourlyTrend, getDailyTrend, getMonthlyTrend } from '../lib/api.js';
-import { formatInrAmount, useInrCurrency } from '../lib/currency.js';
+import { useInrCurrency } from '../lib/currency.js';
 
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 2 });
@@ -109,7 +109,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
   const compare = query?.compare;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
-  const { convertAmount } = useInrCurrency(brandKey, end);
+  const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -121,9 +121,10 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
         const orders = Number(metrics?.orders || 0);
         return orders > 0 ? sales / orders : 0;
       },
-      formatter: (value) => formatInrAmount(value || 0, { maximumFractionDigits: 2 }),
+      formatter: (value) =>
+        formatConvertedAmount(value || 0, { maximumFractionDigits: 2 }),
       compactFormatter: (value) =>
-        formatInrAmount(value || 0, { notation: 'compact', maximumFractionDigits: 1 }),
+        formatConvertedAmount(value || 0, { notation: 'compact', maximumFractionDigits: 1 }),
     },
     orders: {
       label: 'Total Orders',
@@ -134,9 +135,10 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
     sales: {
       label: 'Total Revenue',
       accessor: (metrics) => convertAmount(metrics?.sales ?? 0),
-      formatter: (value) => formatInrAmount(value || 0, { maximumFractionDigits: 0 }),
+      formatter: (value) =>
+        formatConvertedAmount(value || 0, { maximumFractionDigits: 0 }),
       compactFormatter: (value) =>
-        formatInrAmount(value || 0, { notation: 'compact', maximumFractionDigits: 1 }),
+        formatConvertedAmount(value || 0, { notation: 'compact', maximumFractionDigits: 1 }),
     },
     sessions: {
       label: 'Total Sessions',

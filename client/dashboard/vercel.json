@@ -12,6 +12,7 @@
       "destination": "/api/proxy?path=$1"
     },
     { "source": "/dashboard", "destination": "/" },
+    { "source": "/session-analytics", "destination": "/" },
     { "source": "/funnels", "destination": "/" },
     { "source": "/bundles", "destination": "/" },
     { "source": "/inventory", "destination": "/" },

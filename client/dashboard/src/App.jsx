@@ -34,6 +34,7 @@ import InlineDashboardLayoutEditor from "./components/InlineDashboardLayoutEdito
 
 import {
   LayoutGrid,
+  Activity,
   Table2,
   Bell,
   ShieldCheck,
@@ -46,6 +47,7 @@ import {
 
 const MOBILE_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
+  { id: "session-analytics", label: "Session Analytics", icon: Activity },
   { id: "product-conversion", label: "Funnels", icon: Filter },
   { id: "bundles", label: "Bundles", icon: Table2 },
   { id: "inventory", label: "Inventory", icon: Package },
@@ -60,6 +62,7 @@ const MOBILE_NAV_ITEMS = [
 
 const TAB_ROUTE_MAP = {
   dashboard: "/dashboard",
+  "session-analytics": "/session-analytics",
   "product-conversion": "/funnels",
   bundles: "/bundles",
   inventory: "/inventory",
@@ -119,6 +122,10 @@ import {
   doDelete,
   saveDashboardLayout,
 } from "./lib/api.js";
+import {
+  CURRENCY_DISPLAY_MODES,
+  CurrencyDisplayProvider,
+} from "./lib/currency.js";
 import { initializeSessionTracking } from "./lib/sessionTracker.js";
 import { isRangeOver30DaysInclusive } from "./lib/dateRange.js";
 import { setFrontendUserContext } from "./observability.js";
@@ -155,6 +162,7 @@ import {
   setDiscountCode,
 } from "./state/slices/filterSlice.js";
 import MobileTopBar from "./components/MobileTopBar.jsx";
+import DashboardCurrencyToggle from "./components/DashboardCurrencyToggle.jsx";
 const MobileFilterDrawer = lazy(
   () => import("./components/MobileFilterDrawer.jsx"),
 );
@@ -206,6 +214,9 @@ const AlertsAdmin = lazy(() => import("./components/AlertsAdmin.jsx"));
 const MerchantRequestsPanel = lazy(
   () => import("./components/MerchantRequestsPanel.jsx"),
 );
+const SessionAnalyticsPage = lazy(
+  () => import("./pages/SessionAnalytics/SessionAnalyticsPage.jsx"),
+);
 
 function formatDate(dt) {
   return dt ? dayjs(dt).format("YYYY-MM-DD") : undefined;
@@ -233,6 +244,7 @@ const SESSION_TRACKING_ENABLED =
   "true";
 const AUTHOR_BRAND_STORAGE_KEY = "author_active_brand_v1";
 const THEME_MODE_KEY = "dashboard_theme_mode";
+const DASHBOARD_CURRENCY_DISPLAY_MODE_KEY = "dashboard_currency_display_mode_v1";
 const TRAFFIC_SPLIT_RULES_STORAGE_PREFIX = "traffic_split_rules_v1";
 const DRAWER_WIDTH = 260;
 
@@ -262,6 +274,17 @@ function loadInitialThemeMode() {
     // Ignore storage access errors
   }
   return "light";
+}
+
+function loadInitialDashboardCurrencyDisplayMode() {
+  try {
+    const saved = localStorage.getItem(DASHBOARD_CURRENCY_DISPLAY_MODE_KEY);
+    return saved === CURRENCY_DISPLAY_MODES.STORE
+      ? CURRENCY_DISPLAY_MODES.STORE
+      : CURRENCY_DISPLAY_MODES.INR;
+  } catch {
+    return CURRENCY_DISPLAY_MODES.INR;
+  }
 }
 
 export default function App() {
@@ -351,6 +374,8 @@ export default function App() {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false); // Valid New State
   const [darkMode, setDarkMode] = useState(loadInitialThemeMode);
+  const [dashboardCurrencyDisplayMode, setDashboardCurrencyDisplayMode] =
+    useState(loadInitialDashboardCurrencyDisplayMode);
   const [isScrolled, setIsScrolled] = useState(false);
   const [productOptions, setProductOptions] = useState([
     DEFAULT_PRODUCT_OPTION,
@@ -370,6 +395,18 @@ export default function App() {
   );
   const [previewDashboardLayout, setPreviewDashboardLayout] = useState(null);
   const [isSavingDashboardLayout, setIsSavingDashboardLayout] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthor) return;
+    try {
+      localStorage.setItem(
+        DASHBOARD_CURRENCY_DISPLAY_MODE_KEY,
+        dashboardCurrencyDisplayMode,
+      );
+    } catch {
+      // Ignore storage access errors
+    }
+  }, [dashboardCurrencyDisplayMode, isAuthor]);
 
   // Track navigation direction for transitions
   const [direction, setDirection] = useState(0);
@@ -604,14 +641,26 @@ export default function App() {
     return hasPermission("requests_panel");
   }, [hasPermission, isAuthor]);
 
+  const canAccessSessionAnalyticsPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("session_analytics");
+  }, [hasPermission, isAuthor]);
+
   const accessibleTabs = useMemo(() => {
     if (isAuthor) return null;
     const tabs = ["dashboard"];
+    if (canAccessSessionAnalyticsPanel) tabs.push("session-analytics");
     if (canAccessRequestsPanel) tabs.push("requests");
     if (canAccessBundlesPanel) tabs.push("bundles");
     if (canAccessInventoryPanel) tabs.push("inventory");
     return tabs;
-  }, [canAccessBundlesPanel, canAccessInventoryPanel, canAccessRequestsPanel, isAuthor]);
+  }, [
+    canAccessBundlesPanel,
+    canAccessInventoryPanel,
+    canAccessRequestsPanel,
+    canAccessSessionAnalyticsPanel,
+    isAuthor,
+  ]);
 
   useEffect(() => {
     if (!initialized) return;
@@ -643,12 +692,23 @@ export default function App() {
         },
         { replace: true },
       );
+      return;
+    }
+    if (authorTab === "session-analytics" && !canAccessSessionAnalyticsPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP.dashboard,
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
     }
   }, [
     authorTab,
     canAccessBundlesPanel,
     canAccessInventoryPanel,
     canAccessRequestsPanel,
+    canAccessSessionAnalyticsPanel,
     initialized,
     location.search,
     sanitizedSearch,
@@ -2700,9 +2760,6 @@ export default function App() {
 
   // Unified layout for both author and viewer roles
   const hasBrand = Boolean((activeBrandKey || "").trim());
-  const availableBrands = isAuthor
-    ? authorBrands
-    : viewerBrands.map((key) => ({ key }));
   const brandsForSelector = isAuthor ? authorBrands : viewerBrands;
   const showMultipleBrands = isAuthor
     ? authorBrands.length > 0
@@ -2830,13 +2887,26 @@ export default function App() {
               />
             </Box>
 
-            {/* Non-Sticky Sub-Header (MobileTopBar etc) */}
-            <Box
-              sx={{
-                bgcolor: darkMode === "dark" ? "#000000" : "#FDFDFD",
-                pb: 0,
-              }}
+            <CurrencyDisplayProvider
+              mode={
+                isAuthor && authorTab === "dashboard"
+                  ? dashboardCurrencyDisplayMode
+                  : CURRENCY_DISPLAY_MODES.INR
+              }
+              setMode={
+                isAuthor && authorTab === "dashboard"
+                  ? setDashboardCurrencyDisplayMode
+                  : undefined
+              }
+              canToggle={isAuthor && authorTab === "dashboard"}
             >
+              {/* Non-Sticky Sub-Header (MobileTopBar etc) */}
+              <Box
+                sx={{
+                  bgcolor: darkMode === "dark" ? "#000000" : "#FDFDFD",
+                  pb: 0,
+                }}
+              >
               <Box
                 sx={{
                   px: { xs: 1.5, sm: 2.5, md: 4 },
@@ -2910,25 +2980,36 @@ export default function App() {
                         utmOptions={utmOptions}
                         onDownload={handleDownloadSnapshot}
                         children={
-                          canCustomizeDashboardLayout ? (
-                            <Tooltip title="Customize Layout">
-                              <IconButton
-                                size="small"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  handleOpenLayoutEditor();
-                                }}
-                                sx={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: "10px",
-                                  color: "text.secondary",
-                                }}
-                              >
-                                <Grip size={16} />
-                              </IconButton>
-                            </Tooltip>
+                          isAuthor ? (
+                            <Stack
+                              direction="row"
+                              alignItems="center"
+                              divider={<Divider orientation="vertical" flexItem />}
+                              sx={{ height: "100%" }}
+                            >
+                              <DashboardCurrencyToggle />
+                              {canCustomizeDashboardLayout ? (
+                                <Tooltip title="Customize Layout">
+                                  <IconButton
+                                    size="small"
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      handleOpenLayoutEditor();
+                                    }}
+                                    sx={{
+                                      width: 32,
+                                      height: 32,
+                                      borderRadius: "10px",
+                                      color: "text.secondary",
+                                      mx: 0.5,
+                                    }}
+                                  >
+                                    <Grip size={16} />
+                                  </IconButton>
+                                </Tooltip>
+                              ) : null}
+                            </Stack>
                           ) : null
                         }
                       />
@@ -2998,6 +3079,7 @@ export default function App() {
                       showDiscountFilter={hasPermission("discount_filter")}
                       utmOptions={utmOptions}
                       isAuthor={isAuthor}
+                      showCurrencyToggle={isAuthor}
                     />
                   )}
                 </Box>
@@ -3035,21 +3117,21 @@ export default function App() {
                   isDark={darkMode === "dark"}
                 />
               </Box>
-            </Box>
+              </Box>
 
-            <Box
-              sx={{
-                flex: 1,
-                width: "100%",
-                maxWidth: 1200,
-                mx: "auto",
-                px: { xs: 1.5, sm: 2.5, md: 4 },
-                py: { xs: 1, md: 2 },
-                pb: { xs: 14, md: 2 }, // Extra space for mobile bottom nav
-                overflow: "hidden",
-                position: "relative",
-              }}
-            >
+              <Box
+                sx={{
+                  flex: 1,
+                  width: "100%",
+                  maxWidth: 1200,
+                  mx: "auto",
+                  px: { xs: 1.5, sm: 2.5, md: 4 },
+                  py: { xs: 1, md: 2 },
+                  pb: { xs: 14, md: 2 }, // Extra space for mobile bottom nav
+                  overflow: "hidden",
+                  position: "relative",
+                }}
+              >
               <Stack spacing={{ xs: 1, md: 2 }} sx={{ position: "relative" }}>
                 <AnimatePresence mode="wait" custom={direction} initial={false}>
                   <motion.div
@@ -3095,23 +3177,37 @@ export default function App() {
                     {authorTab === "dashboard" &&
                       (hasBrand ? (
                         <Suspense fallback={<SectionFallback count={5} />}>
-                          <InlineDashboardLayoutEditor
-                            isEditing={layoutEditMode}
-                            itemIds={activeWidgetIds}
-                            renderWidget={(widgetId) =>
-                              activeWidgetRegistry[widgetId]
+                          <CurrencyDisplayProvider
+                            mode={
+                              isAuthor
+                                ? dashboardCurrencyDisplayMode
+                                : CURRENCY_DISPLAY_MODES.INR
                             }
-                            extraAfterId={extraAfterId}
-                            extras={dashboardExtrasNode}
-                            onOrderChange={handleInlineDashboardReorder}
-                            onSave={() =>
-                              handleSaveDashboardLayout(effectiveDashboardLayout)
+                            setMode={
+                              isAuthor
+                                ? setDashboardCurrencyDisplayMode
+                                : undefined
                             }
-                            onCancel={handleCloseLayoutEditor}
-                            onReset={handleResetDashboardLayout}
-                            isDirty={isDashboardLayoutDirty}
-                            isSaving={isSavingDashboardLayout}
-                          />
+                            canToggle={isAuthor}
+                          >
+                            <InlineDashboardLayoutEditor
+                              isEditing={layoutEditMode}
+                              itemIds={activeWidgetIds}
+                              renderWidget={(widgetId) =>
+                                activeWidgetRegistry[widgetId]
+                              }
+                              extraAfterId={extraAfterId}
+                              extras={dashboardExtrasNode}
+                              onOrderChange={handleInlineDashboardReorder}
+                              onSave={() =>
+                                handleSaveDashboardLayout(effectiveDashboardLayout)
+                              }
+                              onCancel={handleCloseLayoutEditor}
+                              onReset={handleResetDashboardLayout}
+                              isDirty={isDashboardLayoutDirty}
+                              isSaving={isSavingDashboardLayout}
+                            />
+                          </CurrencyDisplayProvider>
                         </Suspense>
                       ) : (
                         <Paper
@@ -3123,6 +3219,20 @@ export default function App() {
                           </Typography>
                         </Paper>
                       ))}
+
+                    {canAccessSessionAnalyticsPanel &&
+                      authorTab === "session-analytics" && (
+                        <Suspense fallback={<SectionFallback count={4} height={240} />}>
+                          <SessionAnalyticsPage
+                            brandKey={activeBrandKey}
+                            availableBrands={
+                              isAuthor
+                                ? authorBrands
+                                : viewerBrands.map((brand) => ({ key: brand }))
+                            }
+                          />
+                        </Suspense>
+                      )}
 
                     {/* Author-only tabs */}
                     {isAuthor &&
@@ -3375,10 +3485,11 @@ export default function App() {
                   </motion.div>
                 </AnimatePresence>
               </Stack>
-            </Box>
-            <Suspense fallback={null}>
-              <Footer />
-            </Suspense>
+              </Box>
+              <Suspense fallback={null}>
+                <Footer />
+              </Suspense>
+            </CurrencyDisplayProvider>
           </Box>
         </Box>
         {isMobile && mobileNavItems.length > 1 && (

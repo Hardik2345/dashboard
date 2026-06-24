@@ -7,7 +7,7 @@ import Skeleton from "@mui/material/Skeleton";
 import { GlassChip } from "./ui/GlassChip.jsx";
 import KPIStat from "./KPIStat.jsx";
 import { getDashboardSummary, getProductKpis } from "../lib/api.js";
-import { formatInrAmount, useInrCurrency } from "../lib/currency.js";
+import { useInrCurrency } from "../lib/currency.js";
 import useWebVitals from "../hooks/useWebVitals.js";
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
@@ -53,7 +53,7 @@ export default function KPIs({
   const discountCode = query?.discount_code;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
-  const { convertAmount } = useInrCurrency(brandKey, end);
+  const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
   const todayIst = new Date().toLocaleDateString("en-CA", {
     timeZone: "Asia/Kolkata",
   });
@@ -568,7 +568,9 @@ export default function KPIs({
                 }
                 loading={loading}
                 deltaLoading={deltaLoading}
-                formatter={(v) => formatInrAmount(v, { maximumFractionDigits: 0 })}
+                formatter={(v) =>
+                  formatConvertedAmount(v, { maximumFractionDigits: 0 })
+                }
                 delta={
                   data.salesDelta
                     ? {
@@ -590,7 +592,7 @@ export default function KPIs({
                     : undefined
                 }
                 compareFormatter={(v) =>
-                  formatInrAmount(v, { maximumFractionDigits: 0 })
+                  formatConvertedAmount(v, { maximumFractionDigits: 0 })
                 }
               />
             </Grid>
@@ -603,7 +605,9 @@ export default function KPIs({
                 value={convertAmount(data.aov?.aov ?? 0)}
                 loading={loading}
                 deltaLoading={deltaLoading}
-                formatter={(v) => formatInrAmount(v, { maximumFractionDigits: 0 })}
+                formatter={(v) =>
+                  formatConvertedAmount(v, { maximumFractionDigits: 0 })
+                }
                 delta={
                   data.aovDelta
                     ? {
@@ -622,7 +626,7 @@ export default function KPIs({
                     : undefined
                 }
                 compareFormatter={(v) =>
-                  formatInrAmount(v, { maximumFractionDigits: 0 })
+                  formatConvertedAmount(v, { maximumFractionDigits: 0 })
                 }
               />
             </Grid>
