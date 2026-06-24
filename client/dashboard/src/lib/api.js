@@ -1206,12 +1206,178 @@ export async function saveDashboardLayout(payload) {
   return doPost("/dashboard/layout", payload);
 }
 
+export async function getSessionAnalyticsSummary(args = {}) {
+  const params = appendBrandKey(
+    {
+      from: args.from,
+      to: args.to,
+      brand: args.brand,
+      user: args.user,
+    },
+    { ...args, brand_key: args.brand || args.brand_key },
+  );
+  const res = await doGet("/session-analytics/summary", params);
+  if (res.error) return { error: true, status: res.status, data: res.data };
+  return { error: false, data: res.data || {} };
+}
+
+export async function getSessionAnalyticsTrend(args = {}) {
+  const params = appendBrandKey(
+    {
+      from: args.from,
+      to: args.to,
+      brand: args.brand,
+      user: args.user,
+      granularity: args.granularity,
+    },
+    { ...args, brand_key: args.brand || args.brand_key },
+  );
+  const res = await doGet("/session-analytics/trend", params);
+  if (res.error) return { error: true, status: res.status, data: res.data };
+  return {
+    error: false,
+    data: Array.isArray(res.data) ? res.data : [],
+  };
+}
+
+export async function getSessionAnalyticsInsights(args = {}) {
+  const params = appendBrandKey(
+    {
+      from: args.from,
+      to: args.to,
+      brand: args.brand,
+      user: args.user,
+    },
+    { ...args, brand_key: args.brand || args.brand_key },
+  );
+  const res = await doGet("/session-analytics/insights", params);
+  if (res.error) return { error: true, status: res.status, data: res.data };
+  return { error: false, data: res.data || {} };
+}
+
+export async function getSessionAnalyticsBrands(args = {}) {
+  const params = appendBrandKey(
+    {
+      from: args.from,
+      to: args.to,
+      brand: args.brand,
+      user: args.user,
+    },
+    { ...args, brand_key: args.brand || args.brand_key },
+  );
+  const res = await doGet("/session-analytics/brands", params);
+  if (res.error) return { error: true, status: res.status, data: res.data };
+  return {
+    error: false,
+    data: Array.isArray(res.data) ? res.data : [],
+  };
+}
+
+export async function getSessionAnalyticsUsers(args = {}) {
+  const params = appendBrandKey(
+    {
+      from: args.from,
+      to: args.to,
+      brand: args.brand,
+      user: args.user,
+      page: args.page,
+      limit: args.limit,
+      search: args.search,
+      sort: args.sort,
+      direction: args.direction,
+    },
+    { ...args, brand_key: args.brand || args.brand_key },
+  );
+  const res = await doGet("/session-analytics/users", params);
+  if (res.error) return { error: true, status: res.status, data: res.data };
+  return {
+    error: false,
+    data: {
+      rows: Array.isArray(res.data?.rows) ? res.data.rows : [],
+      total: Number(res.data?.total || 0),
+    },
+  };
+}
+
+export async function getSessionAnalyticsFilters(args = {}) {
+  const params = appendBrandKey(
+    {
+      from: args.from,
+      to: args.to,
+      brand: args.brand,
+    },
+    { ...args, brand_key: args.brand || args.brand_key },
+  );
+  const res = await doGet("/session-analytics/filters", params);
+  if (res.error) return { error: true, status: res.status, data: res.data };
+  return {
+    error: false,
+    data: {
+      brands: Array.isArray(res.data?.brands) ? res.data.brands : [],
+      users: Array.isArray(res.data?.users) ? res.data.users : [],
+    },
+  };
+}
+
+async function exportSessionAnalyticsCsv(path, args = {}, fallbackName) {
+  const params = appendBrandKey(
+    {
+      from: args.from,
+      to: args.to,
+      brand: args.brand,
+      user: args.user,
+      search: args.search,
+      sort: args.sort,
+      direction: args.direction,
+    },
+    { ...args, brand_key: args.brand || args.brand_key },
+  );
+  const url = `${resolveApiBase()}${path}${qs(params)}`;
+  try {
+    const res = await fetch(url, {
+      credentials: "include",
+      headers: { ...authHeaders() },
+    });
+    if (!res.ok) return { error: true, status: res.status };
+    const blob = await res.blob();
+    const fromHeader = filenameFromDisposition(
+      res.headers.get("Content-Disposition"),
+    );
+    return {
+      error: false,
+      blob,
+      filename: fromHeader || fallbackName,
+    };
+  } catch (error) {
+    console.error("Session analytics export failed", error);
+    return { error: true };
+  }
+}
+
+export async function exportSessionAnalyticsBrandsCsv(args = {}) {
+  const dateSuffix = formatDateRangeSuffix(args.from, args.to);
+  return exportSessionAnalyticsCsv(
+    "/session-analytics/brands/export",
+    args,
+    dateSuffix ? `session_brands_${dateSuffix}.csv` : "session_brands.csv",
+  );
+}
+
+export async function exportSessionAnalyticsUsersCsv(args = {}) {
+  const dateSuffix = formatDateRangeSuffix(args.from, args.to);
+  return exportSessionAnalyticsCsv(
+    "/session-analytics/users/export",
+    args,
+    dateSuffix ? `session_users_${dateSuffix}.csv` : "session_users.csv",
+  );
+}
+
 // Author brands helper (list)
 export async function listAuthorBrands() {
   const res = await doGet("/tenant/brands");
   if (res.error) return res;
   // data is { "1": "PTS", "2": "BBB" }
-  const brands = Object.entries(res.data || {}).map(([num, id]) => ({
+  const brands = Object.entries(res.data || {}).map(([, id]) => ({
     key: id.toString().toUpperCase()
   }));
   return { error: false, data: { brands } };

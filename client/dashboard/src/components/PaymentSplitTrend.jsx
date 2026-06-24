@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
   Card,
   CardContent,
@@ -26,7 +26,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { getOrderSplit, getPaymentSalesSplit } from "../lib/api.js";
-import { formatInrAmount, useInrCurrency } from "../lib/currency.js";
+import { useInrCurrency } from "../lib/currency.js";
 
 const MAIN_COLOR = "#10b981";
 const COLORS = {
@@ -70,23 +70,25 @@ const MONTH_NAMES = [
   "Dec",
 ];
 
-const METRIC_CONFIG = {
-  orders: {
-    label: "Order count",
-    formatter: (value) => nfInt0.format(value || 0),
-    compactFormatter: (value) => nfCompactInt.format(value || 0),
-  },
-  sales: {
-    label: "Sales",
-    formatter: (value) =>
-      formatInrAmount(value || 0, { maximumFractionDigits: 0 }),
-    compactFormatter: (value) =>
-      formatInrAmount(value || 0, {
-        notation: "compact",
-        maximumFractionDigits: 1,
-      }),
-  },
-};
+function buildMetricConfig(formatConvertedAmount) {
+  return {
+    orders: {
+      label: "Order count",
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    sales: {
+      label: "Sales",
+      formatter: (value) =>
+        formatConvertedAmount(value || 0, { maximumFractionDigits: 0 }),
+      compactFormatter: (value) =>
+        formatConvertedAmount(value || 0, {
+          notation: "compact",
+          maximumFractionDigits: 1,
+        }),
+    },
+  };
+}
 
 const SERIES = [
   { key: "Prepaid", currentKey: "currentPrepaid", comparisonKey: "comparisonPrepaid", currentPctKey: "currentPrepaidPct", comparisonPctKey: "comparisonPrepaidPct", color: COLORS.prepaid },
@@ -336,9 +338,13 @@ export default memo(function PaymentSplitTrend({ query }) {
   const discountCode = query?.discount_code;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
-  const { convertAmount } = useInrCurrency(brandKey, end);
+  const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
+  const metricConfig = useMemo(
+    () => buildMetricConfig(formatConvertedAmount),
+    [formatConvertedAmount],
+  );
 
-  const config = METRIC_CONFIG[metric] || METRIC_CONFIG.orders;
+  const config = metricConfig[metric] || metricConfig.orders;
   const selectedSeries = SERIES.filter((series) =>
     selectedSeriesKeys.includes(series.key),
   );

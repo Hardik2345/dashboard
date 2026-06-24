@@ -40,6 +40,14 @@ describe("analytics app boundary", () => {
     expect(routePaths).toContain("/product-types");
     expect(routePaths).toContain("/hourly-sales-summary");
     expect(routePaths).toContain("/layout");
+    expect(routePaths).toContain("/summary");
+    expect(routePaths).toContain("/trend");
+    expect(routePaths).toContain("/brands");
+    expect(routePaths).toContain("/brands/export");
+    expect(routePaths).toContain("/users");
+    expect(routePaths).toContain("/users/export");
+    expect(routePaths).toContain("/insights");
+    expect(routePaths).toContain("/filters");
     expect(routePaths).toContain("/last-updated/pts");
     expect(routePaths).toContain("/qr-scans");
     expect(routePaths).toContain("/upload");

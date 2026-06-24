@@ -293,6 +293,13 @@ function _M.authenticate()
         end
     end
     ngx.req.set_header("x-permissions", table.concat(permissions, ","))
+    if claims.brand_ids then
+        local normalized_brand_ids = {}
+        for _, b_id in ipairs(claims.brand_ids) do
+            table.insert(normalized_brand_ids, tostring(b_id):upper())
+        end
+        ngx.req.set_header("x-brand-ids", table.concat(normalized_brand_ids, ","))
+    end
 
     -- 9. Gateway-signed header to prevent spoofing downstream
     local gw_secret = os.getenv("GATEWAY_SHARED_SECRET")

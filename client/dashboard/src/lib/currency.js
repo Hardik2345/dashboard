@@ -1,6 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  createElement,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 export const TARGET_CURRENCY = "INR";
+export const CURRENCY_DISPLAY_MODES = {
+  STORE: "store",
+  INR: "inr",
+};
+
+const CurrencyDisplayContext = createContext({
+  mode: CURRENCY_DISPLAY_MODES.INR,
+  setMode: () => {},
+  canToggle: false,
+});
 
 const DEFAULT_BRAND_CURRENCY_MAP = {
   AJMAL_BH: "BHD",
@@ -24,6 +42,17 @@ const rateCache = new Map();
 
 function normalizeCurrencyCode(value) {
   return String(value || "").trim().toUpperCase();
+}
+
+function normalizeDisplayMode(value) {
+  return value === CURRENCY_DISPLAY_MODES.STORE
+    ? CURRENCY_DISPLAY_MODES.STORE
+    : CURRENCY_DISPLAY_MODES.INR;
+}
+
+function normalizeAmount(value) {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? amount : 0;
 }
 
 function readEnvBrandCurrencyMap() {
@@ -62,8 +91,7 @@ export function resolveBrandCurrency(brandKey) {
 }
 
 export function convertAmountToInr(value, exchangeRate, sourceCurrency) {
-  const amount = Number(value || 0);
-  if (!Number.isFinite(amount)) return 0;
+  const amount = normalizeAmount(value);
   if (normalizeCurrencyCode(sourceCurrency) === TARGET_CURRENCY) {
     return amount;
   }
@@ -74,13 +102,14 @@ export function convertAmountToInr(value, exchangeRate, sourceCurrency) {
   return amount * rate;
 }
 
-export function formatInrAmount(value, options = {}) {
+function formatCurrencyAmount(value, currencyCode, options = {}) {
   const {
     maximumFractionDigits = 0,
     minimumFractionDigits = 0,
     notation,
   } = options;
   const cacheKey = JSON.stringify({
+    currencyCode,
     maximumFractionDigits,
     minimumFractionDigits,
     notation: notation || "standard",
@@ -88,17 +117,26 @@ export function formatInrAmount(value, options = {}) {
 
   let formatter = formatterCache.get(cacheKey);
   if (!formatter) {
-    formatter = new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: TARGET_CURRENCY,
-      maximumFractionDigits,
-      minimumFractionDigits,
-      ...(notation ? { notation } : {}),
-    });
+    const normalizedCurrency =
+      normalizeCurrencyCode(currencyCode) || TARGET_CURRENCY;
+    formatter = new Intl.NumberFormat(
+      normalizedCurrency === TARGET_CURRENCY ? "en-IN" : undefined,
+      {
+        style: "currency",
+        currency: normalizedCurrency,
+        maximumFractionDigits,
+        minimumFractionDigits,
+        ...(notation ? { notation } : {}),
+      },
+    );
     formatterCache.set(cacheKey, formatter);
   }
 
-  return formatter.format(Number(value || 0));
+  return formatter.format(normalizeAmount(value));
+}
+
+export function formatInrAmount(value, options = {}) {
+  return formatCurrencyAmount(value, TARGET_CURRENCY, options);
 }
 
 async function fetchExchangeRate(sourceCurrency, date) {
@@ -141,15 +179,27 @@ async function fetchExchangeRate(sourceCurrency, date) {
 }
 
 export function useInrCurrency(brandKey, date) {
+  const { mode } = useContext(CurrencyDisplayContext);
+  const displayMode = normalizeDisplayMode(mode);
   const sourceCurrency = resolveBrandCurrency(brandKey);
+  const displayCurrency =
+    displayMode === CURRENCY_DISPLAY_MODES.STORE
+      ? sourceCurrency || TARGET_CURRENCY
+      : TARGET_CURRENCY;
   const [exchangeRate, setExchangeRate] = useState(
-    sourceCurrency === TARGET_CURRENCY ? 1 : null,
+    displayMode === CURRENCY_DISPLAY_MODES.STORE ||
+      sourceCurrency === TARGET_CURRENCY
+      ? 1
+      : null,
   );
 
   useEffect(() => {
     let cancelled = false;
 
-    if (sourceCurrency === TARGET_CURRENCY) {
+    if (
+      displayMode === CURRENCY_DISPLAY_MODES.STORE ||
+      sourceCurrency === TARGET_CURRENCY
+    ) {
       setExchangeRate(1);
       return () => {
         cancelled = true;
@@ -171,19 +221,67 @@ export function useInrCurrency(brandKey, date) {
     return () => {
       cancelled = true;
     };
-  }, [sourceCurrency, date]);
+  }, [displayMode, sourceCurrency, date]);
 
   const convertAmount = useCallback(
-    (value) => convertAmountToInr(value, exchangeRate, sourceCurrency),
-    [exchangeRate, sourceCurrency],
+    (value) =>
+      displayMode === CURRENCY_DISPLAY_MODES.STORE
+        ? normalizeAmount(value)
+        : convertAmountToInr(value, exchangeRate, sourceCurrency),
+    [displayMode, exchangeRate, sourceCurrency],
+  );
+
+  const formatAmount = useCallback(
+    (value, options = {}) =>
+      formatCurrencyAmount(convertAmount(value), displayCurrency, options),
+    [convertAmount, displayCurrency],
+  );
+  const formatConvertedAmount = useCallback(
+    (value, options = {}) =>
+      formatCurrencyAmount(value, displayCurrency, options),
+    [displayCurrency],
   );
 
   return useMemo(
     () => ({
+      mode: displayMode,
       sourceCurrency,
+      displayCurrency,
       exchangeRate,
       convertAmount,
+      formatAmount,
+      formatConvertedAmount,
     }),
-    [sourceCurrency, exchangeRate, convertAmount],
+    [
+      displayMode,
+      sourceCurrency,
+      displayCurrency,
+      exchangeRate,
+      convertAmount,
+      formatAmount,
+      formatConvertedAmount,
+    ],
   );
+}
+
+export function CurrencyDisplayProvider({
+  mode = CURRENCY_DISPLAY_MODES.INR,
+  setMode,
+  canToggle = false,
+  children,
+}) {
+  const value = useMemo(
+    () => ({
+      mode: normalizeDisplayMode(mode),
+      setMode: typeof setMode === "function" ? setMode : () => {},
+      canToggle: Boolean(canToggle),
+    }),
+    [mode, setMode, canToggle],
+  );
+
+  return createElement(CurrencyDisplayContext.Provider, { value }, children);
+}
+
+export function useCurrencyDisplayMode() {
+  return useContext(CurrencyDisplayContext);
 }

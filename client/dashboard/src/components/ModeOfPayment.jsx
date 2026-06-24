@@ -4,7 +4,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } 
 import { getOrderSplit, getPaymentSalesSplit } from '../lib/api';
 import dayjs from 'dayjs';
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react';
-import { formatInrAmount, useInrCurrency } from '../lib/currency.js';
+import { useInrCurrency } from '../lib/currency.js';
 
 const COLORS = {
     Prepaid: '#2cc995',
@@ -76,7 +76,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
     const isDark = theme.palette.mode === 'dark';
     const [loading, setLoading] = useState(true);
     const [prevRange, setPrevRange] = useState(null);
-    const { convertAmount } = useInrCurrency(query?.brand_key, query?.end);
+    const { convertAmount, formatConvertedAmount } = useInrCurrency(query?.brand_key, query?.end);
     const [data, setData] = useState({
         quantity: [],
         value: [],
@@ -156,7 +156,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                             delta: Math.round(delta),
                             color: COLORS[key],
                             formattedValue: isValue
-                                ? formatInrAmount(displayValue, { notation: 'compact', maximumFractionDigits: 1 })
+                                ? formatConvertedAmount(displayValue, { notation: 'compact', maximumFractionDigits: 1 })
                                 : currVal.toLocaleString()
                         };
                     });
@@ -166,7 +166,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                         segments,
                         total: displayTotal,
                         formattedTotal: isValue
-                            ? formatInrAmount(displayTotal, { notation: 'compact', maximumFractionDigits: 1 })
+                            ? formatConvertedAmount(displayTotal, { notation: 'compact', maximumFractionDigits: 1 })
                             : total.toLocaleString()
                     };
                 };

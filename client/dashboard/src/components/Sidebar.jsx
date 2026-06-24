@@ -10,6 +10,7 @@ import {
 } from "@mui/material";
 import {
   LayoutGrid,
+  Activity,
   ShieldCheck,
   SlidersHorizontal,
   Store,
@@ -65,6 +66,7 @@ const NAV_ITEMS = [
     group: "main",
     items: [
       { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
+      { id: "session-analytics", label: "Session Analytics", icon: Activity },
       { id: "product-conversion", label: "Funnels", icon: Filter },
       { id: "bundles", label: "Bundles", icon: Table2 },
       { id: "inventory", label: "Inventory", icon: Package },
