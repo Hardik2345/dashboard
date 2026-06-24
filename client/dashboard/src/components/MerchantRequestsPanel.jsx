@@ -214,6 +214,20 @@ function syncPending(req) {
   ].includes("pending");
 }
 
+function formatRequestError(data, fallback = "Failed to create request") {
+  const error = data?.error;
+  if (error === "priority_cap_reached") {
+    const priority = PRIORITY_CONFIG[data?.priority]?.label || data?.priority || "this priority";
+    const limit = Number(data?.limit ?? 0);
+    const activeCount = Number(data?.active_count ?? limit);
+    return `You already have ${activeCount} active ${priority.toLowerCase()} request${activeCount === 1 ? "" : "s"}. The limit is ${limit}. Please wait until one is marked done or choose another priority.`;
+  }
+  if (error === "invalid_category") return "Please select a valid category.";
+  if (error === "invalid_priority") return "Please select a valid priority.";
+  if (error === "title_required") return "Please enter a request title.";
+  return error || fallback;
+}
+
 // ── Atomic sub-components ─────────────────────────────────────────────────────
 
 function StatusBadge({ status }) {
@@ -1085,7 +1099,7 @@ export default function MerchantRequestsPanel({
     const res = await createMerchantRequest(payload);
     setFormSubmitting(false);
     if (res.error) {
-      setFormError(res.data?.error || "Failed to create request");
+      setFormError(formatRequestError(res.data));
       return;
     }
     setForm({ title: "", description: "", category: "Feature Request", priority: "normal", due_date: "" });
