@@ -38,6 +38,7 @@ export default function KPIs({
   const [data, setData] = useState({});
   const [revenueMode, setRevenueMode] = useState("G"); // 'T' | 'G'
   const [atcMode, setAtcMode] = useState("R"); // 'R' (Rate) | 'S' (Sessions)
+  const [checkoutMode, setCheckoutMode] = useState("C"); // 'C' (Count) | 'R' (Rate)
   const [cancellationMode, setCancellationMode] = useState("C"); // 'C' | 'R'
   const start = query?.start;
   const end = query?.end;
@@ -202,6 +203,8 @@ export default function KPIs({
           const unavailable = {
             sessions: !!m.total_sessions?.unavailable,
             atc: !!m.total_atc_sessions?.unavailable || !!m.atc_rate?.unavailable,
+            ci:
+              !!m.total_ci_events?.unavailable || !!m.checkout_rate?.unavailable,
             cvr: !!m.conversion_rate?.unavailable,
             returns: !!m.cancelled_orders?.unavailable || !!m.refunded_orders?.unavailable,
           };
@@ -262,6 +265,10 @@ export default function KPIs({
             diff_pct: m.total_ci_events?.diff_pct ?? 0,
             direction: m.total_ci_events?.direction ?? "flat",
           };
+          const checkoutRateDelta = {
+            diff_pct: m.checkout_rate?.diff_pct ?? 0,
+            direction: m.checkout_rate?.direction ?? "flat",
+          };
           const cancelledRateDelta = {
             diff_pct: m.cancelled_orders?.diff_pct ?? 0,
             direction: m.cancelled_orders?.direction ?? "flat",
@@ -284,6 +291,12 @@ export default function KPIs({
           const cmpSessions = m.total_sessions?.previous ?? null;
           const cmpAtcSessions = m.total_atc_sessions?.previous ?? null;
           const cmpCiEvents = m.total_ci_events?.previous ?? null;
+          const cmpCheckoutRate =
+            m.checkout_rate?.previous != null
+              ? m.checkout_rate.previous / 100
+              : cmpSessions != null && cmpCiEvents != null && cmpSessions > 0
+                ? cmpCiEvents / cmpSessions
+                : null;
           const cmpAtcRate =
             m.atc_rate?.previous != null
               ? m.atc_rate.previous / 100
@@ -315,6 +328,7 @@ export default function KPIs({
             sessDelta,
             atcDelta,
             ciDelta,
+            checkoutRateDelta,
             atcRateDelta,
             cancelledRateDelta,
             refundedRateDelta,
@@ -326,6 +340,7 @@ export default function KPIs({
             prevSessions: cmpSessions,
             prevAtcSessions: cmpAtcSessions,
             prevCiEvents: cmpCiEvents,
+            prevCheckoutRate: cmpCheckoutRate,
             prevAtcRate: cmpAtcRate,
             prevCancelledRate,
             prevRefundedRate,
@@ -924,32 +939,150 @@ export default function KPIs({
                 sx={{ order: { xs: 7, md: 0 } }}
               >
                 <KPIStat
-                  label="Checkout Initiated Events"
-                  value={data.total_ci_events?.value ?? 0}
+                  label={
+                    checkoutMode === "R"
+                      ? "Checkout Rate"
+                      : "Checkout Initiated Events"
+                  }
+                  action={
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        bgcolor: "background.default",
+                        borderRadius: 12,
+                        p: 0.5,
+                        cursor: "pointer",
+                        zIndex: 2,
+                        boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
+                        border: "1px solid",
+                        borderColor: "divider",
+                        transition: "all 0.3s ease",
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const nextMode = checkoutMode === "R" ? "C" : "R";
+                        setCheckoutMode(nextMode);
+                        if (
+                          selectedMetric === "ci_events" ||
+                          selectedMetric === "checkout_rate"
+                        ) {
+                          if (typeof onSelectMetric === "function") {
+                            onSelectMetric(
+                              nextMode === "R" ? "checkout_rate" : "ci_events",
+                            );
+                          }
+                        }
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          px: 1,
+                          py: 0.25,
+                          borderRadius: 10,
+                          bgcolor:
+                            checkoutMode === "C"
+                              ? "primary.main"
+                              : "transparent",
+                          color:
+                            checkoutMode === "C"
+                              ? "primary.contrastText"
+                              : "text.secondary",
+                          fontSize: "0.65rem",
+                          fontWeight: 600,
+                          transition: "all 0.2s ease",
+                          boxShadow:
+                            checkoutMode === "C"
+                              ? "0 1px 2px rgba(0,0,0,0.2)"
+                              : "none",
+                        }}
+                      >
+                        C
+                      </Box>
+                      <Box
+                        sx={{
+                          px: 1,
+                          py: 0.25,
+                          borderRadius: 10,
+                          bgcolor:
+                            checkoutMode === "R" ? "#10b981" : "transparent",
+                          color:
+                            checkoutMode === "R" ? "#fff" : "text.secondary",
+                          fontSize: "0.65rem",
+                          fontWeight: 600,
+                          transition: "all 0.2s ease",
+                          boxShadow:
+                            checkoutMode === "R"
+                              ? "0 1px 2px rgba(0,0,0,0.2)"
+                              : "none",
+                        }}
+                      >
+                        R
+                      </Box>
+                    </Box>
+                  }
+                  value={
+                    checkoutMode === "R"
+                      ? totalSessions > 0
+                        ? (data.total_ci_events?.value ?? 0) / totalSessions
+                        : 0
+                      : data.total_ci_events?.value ?? 0
+                  }
                   centerOnMobile={true}
+                  unavailable={data.unavailable?.ci}
                   loading={loading}
                   deltaLoading={deltaLoading}
-                  formatter={(v) => nfInt.format(v)}
+                  formatter={
+                    checkoutMode === "R"
+                      ? (v) => nfPct.format(v)
+                      : (v) => nfInt.format(v)
+                  }
                   delta={
-                    data.ciDelta
+                    checkoutMode === "R" && data.checkoutRateDelta
                       ? {
-                          value: data.ciDelta.diff_pct,
-                          direction: data.ciDelta.direction,
+                          value: data.checkoutRateDelta.diff_pct,
+                          direction: data.checkoutRateDelta.direction,
                         }
-                      : undefined
+                      : checkoutMode === "C" && data.ciDelta
+                        ? {
+                            value: data.ciDelta.diff_pct,
+                            direction: data.ciDelta.direction,
+                          }
+                        : undefined
                   }
                   onSelect={
-                    onSelectMetric
-                      ? () => onSelectMetric("ci_events")
+                    onSelectMetric && !data.unavailable?.ci
+                      ? () =>
+                          onSelectMetric(
+                            checkoutMode === "R"
+                              ? "checkout_rate"
+                              : "ci_events",
+                          )
                       : undefined
                   }
-                  selected={selectedMetric === "ci_events"}
+                  selected={
+                    selectedMetric === "ci_events" ||
+                    selectedMetric === "checkout_rate"
+                  }
+                  activeColor={
+                    checkoutMode === "R"
+                      ? "#10b981"
+                      : theme.palette.primary.main
+                  }
                   compareValue={
-                    compareMode && data.prevCiEvents != null
-                      ? data.prevCiEvents
+                    compareMode
+                      ? checkoutMode === "R" && data.prevCheckoutRate != null
+                        ? data.prevCheckoutRate
+                        : checkoutMode === "C" && data.prevCiEvents != null
+                          ? data.prevCiEvents
+                          : undefined
                       : undefined
                   }
-                  compareFormatter={(v) => nfInt.format(v)}
+                  compareFormatter={
+                    checkoutMode === "R"
+                      ? (v) => nfPct.format(v)
+                      : (v) => nfInt.format(v)
+                  }
                 />
               </Grid>
             )}

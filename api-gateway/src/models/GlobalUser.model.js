@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { randomUUID } = require('crypto');
+const { AUTH_ROLES } = require('../services/rbac.service');
 
 const BrandMembershipSchema = new mongoose.Schema({
   brand_id: {
@@ -79,7 +80,7 @@ const GlobalUserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['author', 'viewer'],
+    enum: AUTH_ROLES,
     default: 'viewer'
   },
   brand_memberships: {

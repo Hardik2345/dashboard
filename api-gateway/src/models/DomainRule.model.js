@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { AUTH_ROLES } = require('../services/rbac.service');
 
 const DomainRuleSchema = new mongoose.Schema({
   domain: {
@@ -8,7 +9,7 @@ const DomainRuleSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['author', 'viewer'],
+    enum: AUTH_ROLES,
     required: true,
     default: 'viewer',
   },

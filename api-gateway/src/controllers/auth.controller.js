@@ -10,6 +10,7 @@ const {
     recordAuthRefresh,
     captureError,
 } = require('../observability');
+const { isElevatedRole } = require('../services/rbac.service');
 
 const RAW_COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'lax').toString().trim().toLowerCase();
 const COOKIE_SAMESITE = (RAW_COOKIE_SAMESITE === 'none' || RAW_COOKIE_SAMESITE === 'lax' || RAW_COOKIE_SAMESITE === 'strict')
@@ -214,7 +215,7 @@ function requireAdminOrAuthor(req) {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) throw new Error('unauthorized');
     const payload = TokenService.verifyAccessToken(token);
-    if (!payload || (payload.role !== 'admin' && payload.role !== 'author')) {
+    if (!payload || !isElevatedRole(payload.role)) {
         throw new Error('forbidden');
     }
     return payload;
@@ -238,7 +239,7 @@ exports.adminUpsertUser = async (req, res) => {
     } catch (err) {
         if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
         if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
-        if (err.message === 'email required' || err.message === 'invalid role') return res.status(400).json({ error: err.message });
+        if (err.message === 'email required' || err.message === 'invalid role' || err.message === 'brand_user requires exactly one brand' || err.message === 'no brands available for super admin') return res.status(400).json({ error: err.message });
         if (err.name === 'ValidationError') return res.status(400).json({ error: err.message });
         logger.error('AuthController', 'Admin upsert user error', { error: err.message });
         return res.status(500).json({ error: 'Failed to upsert user' });
@@ -282,7 +283,7 @@ exports.adminUpsertDomainRule = async (req, res) => {
     } catch (err) {
         if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
         if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
-        if (err.message === 'invalid domain' || err.message === 'invalid role' || err.message === 'primary_brand_id required') {
+        if (err.message === 'invalid domain' || err.message === 'invalid role' || err.message === 'primary_brand_id required' || err.message === 'brand_user requires exactly one brand' || err.message === 'no brands available for super admin') {
             return res.status(400).json({ error: err.message });
         }
         if (err.name === 'ValidationError') return res.status(400).json({ error: err.message });
@@ -444,6 +445,7 @@ exports.googleCallback = async (req, res) => {
             user: {
                 id: result.user._id,
                 email: result.user.email,
+                role: result.user.role,
                 primary_brand_id: result.user.primary_brand_id,
                 brand_memberships: result.user.brand_memberships,
                 status: result.user.status,

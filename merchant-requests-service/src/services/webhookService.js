@@ -5,6 +5,7 @@ const BrandTodoistConfig = require("../models/BrandTodoistConfig");
 const { CATEGORIES } = require("../config");
 const { appendEvent } = require("./events");
 const { emitRequestEvent } = require("./realtime");
+const { normalizeTodoistTaskUrl } = require("./todoistLinks");
 const {
   FALLBACK_BRAND_KEY,
   ensureFallbackBrandConfig,
@@ -139,7 +140,7 @@ async function importRequestFromTodoistTask(task, { todoistClient, config, event
     status: completed ? "done" : assigneeId ? "assigned" : "submitted",
     assignee: assigneeId ? { todoist_user_id: assigneeId, unmapped: true } : {},
     todoist_task_id: taskId,
-    todoist_url: importTask.url || importTask.web_url || "",
+    todoist_url: normalizeTodoistTaskUrl(importTask),
     todoist_section_id: String(importTask.section_id || ""),
     todoist_labels: labelsFromTask(importTask),
     sync: {
@@ -219,7 +220,12 @@ async function applyTaskUpdate(request, task, _brandConfig, eventName = "") {
   }
 
   request.todoist_labels = labelsFromTask(task);
-  if (task.url || task.web_url) request.todoist_url = task.url || task.web_url;
+  request.todoist_url =
+    normalizeTodoistTaskUrl({
+      ...task,
+      todoist_task_id: request.todoist_task_id,
+    }) ||
+    request.todoist_url;
   await request.save();
   emitRequestEvent("merchant-request:updated", request);
 }

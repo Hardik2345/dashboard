@@ -145,4 +145,24 @@ describe("dashboard layout router identity edge", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.version).toBe(1);
   });
+
+  test("super_admin callers bypass explicit permission checks like authors", async () => {
+    const { router } = buildRouter();
+    const response = await invoke(router, {
+      method: "POST",
+      url: "/layout",
+      headers: {
+        "x-user-id": "user-2",
+        "x-brand-key": "TMC",
+        "x-role": "super_admin",
+      },
+      body: {
+        desktop: ["traffic_split", "kpi_cards"],
+        mobile: ["kpi_cards", "traffic_split"],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.version).toBe(1);
+  });
 });

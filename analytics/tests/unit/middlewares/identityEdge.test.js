@@ -125,4 +125,25 @@ describe("identityEdge middleware", () => {
     expect(res.jsonBody).toEqual({ error: "Forbidden" });
     expect(next).not.toHaveBeenCalled();
   });
+
+  test("treats super_admin as an elevated principal", () => {
+    delete process.env.GATEWAY_SHARED_SECRET;
+    const { buildPrincipalFromHeaders, requireTrustedAuthor } = require("../../../middlewares/identityEdge");
+    const req = {
+      headers: {
+        "x-user-id": "u-2",
+        "x-brand-key": "BBB",
+        "x-role": "super_admin",
+      },
+    };
+    const principal = buildPrincipalFromHeaders(req);
+    const res = createRes();
+    const next = jest.fn();
+
+    requireTrustedAuthor(req, res, next);
+
+    expect(principal.isAuthor).toBe(true);
+    expect(principal.role).toBe("super_admin");
+    expect(next).toHaveBeenCalled();
+  });
 });

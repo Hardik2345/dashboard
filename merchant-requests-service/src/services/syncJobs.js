@@ -4,6 +4,7 @@ const TodoistUser = require("../models/TodoistUser");
 const { appendEvent } = require("./events");
 const { emitRequestEvent } = require("./realtime");
 const { getBrandConfig, getOrProvisionBrandConfig } = require("./brandProvisioning");
+const { normalizeTodoistTaskUrl } = require("./todoistLinks");
 
 function nextAttemptDate(attempts) {
   const delayMs = Math.min(60 * 60 * 1000, (2 ** Math.max(0, attempts - 1)) * 30000);
@@ -129,7 +130,13 @@ async function processJob(job, { todoistClient, config }) {
       }
       const task = await todoistClient.createTask(buildTaskPayload(request, brandConfig));
       request.todoist_task_id = String(task.id || task.task_id || "");
-      request.todoist_url = task.url || task.web_url || request.todoist_url || "";
+      request.todoist_url =
+        normalizeTodoistTaskUrl({
+          ...task,
+          todoist_task_id: request.todoist_task_id,
+        }) ||
+        request.todoist_url ||
+        "";
       request.todoist_section_id = String(task.section_id || job.payload.section_id || "");
       request.todoist_labels = task.labels || ["Datum", "merchant-request", `brand:${request.brand_key}`];
       request.sync.todoist_task_status = "synced";

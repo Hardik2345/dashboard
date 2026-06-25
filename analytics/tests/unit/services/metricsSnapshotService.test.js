@@ -247,6 +247,11 @@ describe("metricsSnapshotService", () => {
       diff_pct: 28.57142857142857,
       direction: "up",
     });
+    expect(response.metrics.checkout_rate.value).toBeCloseTo(16.6666666667);
+    expect(response.metrics.checkout_rate.previous).toBeCloseTo(12.3076923077);
+    expect(response.metrics.checkout_rate.diff).toBeCloseTo(2.3636363636);
+    expect(response.metrics.checkout_rate.diff_pct).toBeCloseTo(16.8831168831);
+    expect(response.metrics.checkout_rate.direction).toBe("up");
   });
 
   test("builds summary filter options with discount codes", async () => {
@@ -572,6 +577,13 @@ describe("metricsSnapshotService", () => {
     expect(response.metrics.atc_rate).toEqual({
       value: 20,
       previous: 20,
+      diff: 0,
+      diff_pct: 0,
+      direction: "flat",
+    });
+    expect(response.metrics.checkout_rate).toEqual({
+      value: 17,
+      previous: 17,
       diff: 0,
       diff_pct: 0,
       direction: "flat",
