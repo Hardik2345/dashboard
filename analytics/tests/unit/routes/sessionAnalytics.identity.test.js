@@ -86,6 +86,22 @@ describe("session analytics router identity edge", () => {
     expect(mockController.summary).toHaveBeenCalled();
   });
 
+  test("allows super_admin onto session analytics routes", async () => {
+    const router = createRouter();
+    const response = await invoke(router, {
+      method: "GET",
+      url: "/summary",
+      headers: {
+        "x-user-id": "super-admin-1",
+        "x-brand-key": "TMC",
+        "x-role": "super_admin",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(mockController.summary).toHaveBeenCalled();
+  });
+
   test("allows viewers with session_analytics and forwards allowed brands", async () => {
     const router = createRouter();
     const response = await invoke(router, {

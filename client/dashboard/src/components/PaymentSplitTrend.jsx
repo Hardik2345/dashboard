@@ -42,7 +42,6 @@ const TOOLTIP_VALUE_COLORS = [
   "#72efdd",
   "#c77dff",
 ];
-
 const nfInt0 = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 0,
 });
@@ -324,6 +323,7 @@ export default memo(function PaymentSplitTrend({ query }) {
   const [chartData, setChartData] = useState([]);
   const [rangeLabels, setRangeLabels] = useState({ current: "", previous: "" });
   const [visibleBars, setVisibleBars] = useState(["primary", "comparison"]);
+  const shouldTiltDateLabels = chartData.length > 30;
 
   const start = query?.start;
   const end = query?.end;
@@ -804,7 +804,7 @@ export default memo(function PaymentSplitTrend({ query }) {
               {chartMode === "line" ? (
                 <LineChart
                   data={chartData}
-                  margin={{ top: 25, right: 20, left: 15, bottom: 5 }}
+                  margin={{ top: 25, right: 20, left: 15, bottom: shouldTiltDateLabels ? 28 : 5 }}
                 >
                   <CartesianGrid
                     vertical={false}
@@ -818,7 +818,12 @@ export default memo(function PaymentSplitTrend({ query }) {
                     tickMargin={12}
                     minTickGap={isMobile ? 15 : 0}
                     interval={isMobile ? "preserveStartEnd" : 0}
-                    tick={{ fontSize: 10, fill: theme.palette.text.secondary }}
+                    tick={
+                      shouldTiltDateLabels
+                        ? { fontSize: 10, fill: theme.palette.text.secondary, angle: -24, textAnchor: "end", dy: 8 }
+                        : { fontSize: 10, fill: theme.palette.text.secondary }
+                    }
+                    height={shouldTiltDateLabels ? 42 : undefined}
                   />
                   <YAxis
                     tickLine={false}
@@ -867,7 +872,7 @@ export default memo(function PaymentSplitTrend({ query }) {
               ) : (
                 <BarChart
                   data={chartData}
-                  margin={{ top: 40, right: 32, left: 32, bottom: 5 }}
+                  margin={{ top: 40, right: 32, left: 32, bottom: shouldTiltDateLabels ? 28 : 5 }}
                   barGap={0}
                 >
                   <CartesianGrid
@@ -882,7 +887,12 @@ export default memo(function PaymentSplitTrend({ query }) {
                     tickMargin={12}
                     minTickGap={isMobile ? 15 : 0}
                     interval={isMobile ? "preserveStartEnd" : 0}
-                    tick={{ fontSize: 10, fill: theme.palette.text.secondary }}
+                    tick={
+                      shouldTiltDateLabels
+                        ? { fontSize: 10, fill: theme.palette.text.secondary, angle: -24, textAnchor: "end", dy: 8 }
+                        : { fontSize: 10, fill: theme.palette.text.secondary }
+                    }
+                    height={shouldTiltDateLabels ? 42 : undefined}
                   />
                   <YAxis
                     tickLine={false}

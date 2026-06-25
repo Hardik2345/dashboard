@@ -164,6 +164,16 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
       formatter: (value) => nfInt0.format(value || 0),
       compactFormatter: (value) => nfCompactInt.format(value || 0),
     },
+    checkout_rate: {
+      label: 'Checkout Rate',
+      accessor: (metrics) => {
+        const ciEvents = Number(metrics?.ci_events || 0);
+        const sessions = Number(metrics?.sessions || 0);
+        return sessions > 0 ? ciEvents / sessions : 0;
+      },
+      formatter: (value) => nfPercent1.format(value || 0),
+      compactFormatter: (value) => nfPercent1.format(value || 0),
+    },
     atc_rate: {
       label: 'ATC Rate',
       accessor: (metrics) => {
@@ -277,6 +287,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
   };
 
   const config = metricConfig[metric] || metricConfig.sales;
+  const shouldTiltDateLabels = chartData.length > 30;
 
   return (
     <Card elevation={0} sx={{
@@ -382,7 +393,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
           <Box sx={{ width: '100%', height: 270, flexGrow: 1 }}>
             <ResponsiveContainer width="100%" height="100%">
               {viewMode === 'hourly' ? (
-                <AreaChart data={chartData} margin={{ top: 25, right: 20, left: 15, bottom: 5 }}>
+                <AreaChart data={chartData} margin={{ top: 25, right: 20, left: 15, bottom: shouldTiltDateLabels ? 28 : 5 }}>
                   <defs>
                     <linearGradient id="gradient-main" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={MAIN_COLOR} stopOpacity={0.1} />
@@ -397,7 +408,12 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     tickMargin={12}
                     minTickGap={isMobile ? 15 : 0}
                     interval={isMobile ? 'preserveStartEnd' : 0}
-                    tick={{ fontSize: 10, fill: theme.palette.text.secondary }}
+                    tick={
+                      shouldTiltDateLabels
+                        ? { fontSize: 10, fill: theme.palette.text.secondary, angle: -24, textAnchor: 'end', dy: 8 }
+                        : { fontSize: 10, fill: theme.palette.text.secondary }
+                    }
+                    height={shouldTiltDateLabels ? 42 : undefined}
                   />
                   <YAxis
                     tickLine={false}
@@ -439,7 +455,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                   </Area>
                 </AreaChart>
               ) : (
-                <BarChart data={chartData} margin={{ top: 25, right: 20, left: 15, bottom: 5 }} barGap={0}>
+                <BarChart data={chartData} margin={{ top: 25, right: 20, left: 15, bottom: shouldTiltDateLabels ? 28 : 5 }} barGap={0}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.5)} />
                   <XAxis
                     dataKey="label"
@@ -448,7 +464,12 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     tickMargin={12}
                     minTickGap={isMobile ? 15 : 0}
                     interval={isMobile ? 'preserveStartEnd' : 0}
-                    tick={{ fontSize: 10, fill: theme.palette.text.secondary }}
+                    tick={
+                      shouldTiltDateLabels
+                        ? { fontSize: 10, fill: theme.palette.text.secondary, angle: -24, textAnchor: 'end', dy: 8 }
+                        : { fontSize: 10, fill: theme.palette.text.secondary }
+                    }
+                    height={shouldTiltDateLabels ? 42 : undefined}
                   />
                   <YAxis
                     tickLine={false}

@@ -4,6 +4,14 @@ const TokenService = require('./token.service');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const DomainRule = require('../models/DomainRule.model');
+const {
+    fetchAllBrandIds,
+    isElevatedRole,
+    normalizeBrandIds,
+    normalizePermissions,
+    normalizePrimaryBrand,
+    normalizeRole,
+} = require('./rbac.service');
 
 const REFRESH_TOKEN_EXPIRY_DAYS = process.env.REFRESH_TOKEN_EXPIRY_DAYS || 7;
 
@@ -79,25 +87,67 @@ class AuthService {
         };
     }
 
-    static normalizeBrands(brand_ids = [], primary_brand_id = null, role = 'viewer') {
-        const brandIds = Array.isArray(brand_ids) ? [...new Set(brand_ids.map(b => (b || '').toUpperCase()).filter(Boolean))] : [];
-        const primary = primary_brand_id ? primary_brand_id.toUpperCase() : null;
+    static normalizeLegacyBrands(brand_ids = [], primary_brand_id = null, role = 'viewer') {
+        const brandIds = normalizeBrandIds(brand_ids);
+        const primary = normalizePrimaryBrand(primary_brand_id);
         if (!primary) throw new Error('primary_brand_id required');
         if (!brandIds.includes(primary)) brandIds.push(primary);
         if (role === 'author' && brandIds.length === 0) brandIds.push(primary);
         return { brandIds, primary };
     }
 
+    static async buildProvisionedMemberships(role, brand_ids = [], primary_brand_id = null, permissions = ['all']) {
+        const normalizedRole = normalizeRole(role);
+
+        if (normalizedRole === 'super_admin') {
+            const brandIds = await fetchAllBrandIds();
+            return {
+                role: normalizedRole,
+                primary: brandIds[0],
+                memberships: brandIds.map((brandId) => ({
+                    brand_id: brandId,
+                    status: 'active',
+                    permissions: ['all']
+                }))
+            };
+        }
+
+        if (normalizedRole === 'brand_user') {
+            const brandIds = normalizeBrandIds([...normalizeBrandIds(brand_ids), normalizePrimaryBrand(primary_brand_id)]);
+            if (brandIds.length !== 1) throw new Error('brand_user requires exactly one brand');
+            const safePermissions = normalizePermissions(permissions);
+            return {
+                role: normalizedRole,
+                primary: brandIds[0],
+                memberships: brandIds.map((brandId) => ({
+                    brand_id: brandId,
+                    status: 'active',
+                    permissions: safePermissions
+                }))
+            };
+        }
+
+        const { brandIds, primary } = this.normalizeLegacyBrands(brand_ids, primary_brand_id, normalizedRole);
+        const perms = normalizedRole === 'author' ? ['all'] : (permissions && permissions.length ? permissions : ['all']);
+        return {
+            role: normalizedRole,
+            primary,
+            memberships: brandIds.map((brandId) => ({
+                brand_id: brandId,
+                status: 'active',
+                permissions: perms
+            }))
+        };
+    }
+
     static async provisionUserFromRule(email, rule) {
         const normalizedEmail = (email || '').toLowerCase();
-        const role = rule.role || 'viewer';
-        const { brandIds, primary } = this.normalizeBrands(rule.brand_ids, rule.primary_brand_id, role);
-        const perms = role === 'author' ? ['all'] : (rule.permissions && rule.permissions.length ? rule.permissions : ['all']);
-        const memberships = brandIds.map((bid) => ({
-            brand_id: bid,
-            status: 'active',
-            permissions: perms
-        }));
+        const assignment = await this.buildProvisionedMemberships(
+            rule.role || 'viewer',
+            rule.brand_ids,
+            rule.primary_brand_id,
+            rule.permissions,
+        );
 
         // Upsert atomically to avoid race duplicates
         const password_hash = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
@@ -108,9 +158,9 @@ class AuthService {
                     password_hash
                 },
                 $set: {
-                    role,
-                    primary_brand_id: primary,
-                    brand_memberships: memberships,
+                    role: assignment.role,
+                    primary_brand_id: assignment.primary,
+                    brand_memberships: assignment.memberships,
                     status: rule.status || 'active',
                 },
             },
@@ -154,7 +204,7 @@ class AuthService {
         if (user.status !== 'active') {
             throw new Error('User suspended');
         }
-        const hasActiveBrand = user.role === 'author' || user.brand_memberships.some(m => m.status === 'active');
+        const hasActiveBrand = isElevatedRole(user.role) || user.brand_memberships.some(m => m.status === 'active');
         if (!hasActiveBrand) {
             throw new Error('No active brand memberships');
         }
@@ -201,7 +251,7 @@ class AuthService {
         }
 
         if (user.status !== 'active') throw new Error('User suspended');
-        const hasActiveBrand = user.role === 'author' || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
+        const hasActiveBrand = isElevatedRole(user.role) || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
         if (!hasActiveBrand) throw new Error('No active brand memberships');
 
         try {
@@ -286,7 +336,7 @@ class AuthService {
             throw new Error('User suspended or not found');
         }
         // Check membership suspension again
-        const hasActiveBrand = user.role === 'author' || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
+        const hasActiveBrand = isElevatedRole(user.role) || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
         if (!user.brand_memberships || !hasActiveBrand) {
             throw new Error('Membership suspended');
         }

@@ -7,6 +7,10 @@ local http = require("resty.http")
 
 local _M = {}
 
+local function is_elevated_role(role)
+    return role == "author" or role == "admin" or role == "super_admin"
+end
+
 local function validate_speed_key_for_top_pdps()
     local uri = ngx.var.uri or ""
     if uri ~= "/analytics/metrics/top-pdps" then
@@ -240,7 +244,7 @@ function _M.authenticate()
 
     -- Validate Membership (authors/admins are global; viewers must have brand access)
     local role = claims.role
-    local allowed = role == "author"
+    local allowed = is_elevated_role(role)
     if not allowed and claims.brand_ids then
         for _, b_id in ipairs(claims.brand_ids) do
             if tostring(b_id):upper() == target_brand_id then
@@ -265,7 +269,7 @@ function _M.authenticate()
 
     -- Admin Route Protection (author is the elevated role)
     if ngx.var.uri:find("^/admin") then
-        if role ~= "author" then
+        if not is_elevated_role(role) then
             ngx.status = 403
             ngx.say(cjson.encode({error = "Admin access required"}))
             ngx.exit(403)
@@ -282,7 +286,7 @@ function _M.authenticate()
     
     -- 8.1 Inject Permissions for target brand
     local permissions = {}
-    if role == "author" then
+    if is_elevated_role(role) then
         permissions = {"all"}
     elseif claims.memberships then
         for _, m in ipairs(claims.memberships) do

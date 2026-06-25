@@ -4,6 +4,7 @@ const MerchantRequest = require("../models/MerchantRequest");
 const MerchantRequestEvent = require("../models/MerchantRequestEvent");
 const TodoistUser = require("../models/TodoistUser");
 const { appendEvent } = require("./events");
+const { normalizeTodoistTaskUrl } = require("./todoistLinks");
 const {
   assertAuthor,
   assertBrandAccess,
@@ -22,6 +23,7 @@ function serializeRequest(doc, { includeAssignee = true } = {}) {
   const request = typeof doc.toObject === "function" ? doc.toObject() : doc;
   request.id = String(request._id);
   request.status = normalizeStoredStatus(request.status);
+  request.todoist_url = normalizeTodoistTaskUrl(request);
   if (!includeAssignee) delete request.assignee;
   return request;
 }

@@ -124,6 +124,45 @@ const FILTER_PANEL_PERMISSIONS = [
   { id: "product_table_filters:sort_filter", label: "Sort Filter" },
 ];
 
+const ROLE_OPTIONS = [
+  { value: "author", label: "Author" },
+  { value: "viewer", label: "Viewer" },
+  { value: "super_admin", label: "Super Admin" },
+  { value: "brand_user", label: "Brand User" },
+];
+
+function getRoleLabel(role) {
+  return ROLE_OPTIONS.find((option) => option.value === role)?.label || role;
+}
+
+function isElevatedRole(role) {
+  return role === "author" || role === "super_admin" || role === "admin";
+}
+
+function normalizeBrandValue(value) {
+  return (value || "").toString().trim().toUpperCase();
+}
+
+function summarizePermissions(role, permissions = []) {
+  if (isElevatedRole(role) || permissions[0] === "all") {
+    return "Full Access";
+  }
+  return `${permissions.length || 0} Permissions`;
+}
+
+function getRoleTone(role) {
+  if (role === "super_admin" || role === "admin") {
+    return { color: "#8b5cf6", icon: <ShieldOutlinedIcon sx={{ fontSize: 16, color: "#8b5cf6" }} /> };
+  }
+  if (role === "author") {
+    return { color: "#3b82f6", icon: <ShieldOutlinedIcon sx={{ fontSize: 16, color: "#3b82f6" }} /> };
+  }
+  if (role === "brand_user") {
+    return { color: "#10b981", icon: <PersonOutlineIcon sx={{ fontSize: 16, color: "#10b981" }} /> };
+  }
+  return { color: "#f59e0b", icon: <VisibilityOutlinedIcon sx={{ fontSize: 16, color: "#f59e0b" }} /> };
+}
+
 function normalizePermissionSelection(permissions = []) {
   let next = Array.from(new Set(permissions));
   if (next.includes("requests_timeline") && !next.includes("requests_panel")) {
@@ -214,27 +253,15 @@ const UserMobileCard = ({ user, onEdit, onDelete, onStatusToggle, isDark }) => (
             {user.email}
           </Typography>
           <Stack direction="row" spacing={1} alignItems="center">
-            {user.role === "admin" ? (
-              <ShieldOutlinedIcon sx={{ fontSize: 16, color: "#fff" }} />
-            ) : user.role === "author" ? (
-              <ShieldOutlinedIcon sx={{ fontSize: 16, color: "#3b82f6" }} />
-            ) : (
-              <VisibilityOutlinedIcon sx={{ fontSize: 16, color: "#f59e0b" }} />
-            )}
+            {getRoleTone(user.role).icon}
             <Typography
               variant="caption"
               sx={{
                 fontWeight: 600,
-                textTransform: "capitalize",
-                color:
-                  user.role === "author"
-                    ? "#3b82f6"
-                    : user.role === "viewer"
-                      ? "#f59e0b"
-                      : "inherit",
+                color: getRoleTone(user.role).color,
               }}
             >
-              {user.role}
+              {getRoleLabel(user.role)}
             </Typography>
           </Stack>
         </Stack>
@@ -262,7 +289,7 @@ const UserMobileCard = ({ user, onEdit, onDelete, onStatusToggle, isDark }) => (
             Primary Brand
           </Typography>
           <Typography variant="body2" sx={{ fontWeight: 600 }}>
-            {user.primary_brand_id || "N/A"}
+            {user.primary_brand_id || (isElevatedRole(user.role) ? "AUTO" : "N/A")}
           </Typography>
         </Stack>
         <Stack spacing={0.5}>
@@ -281,7 +308,7 @@ const UserMobileCard = ({ user, onEdit, onDelete, onStatusToggle, isDark }) => (
               ))
             ) : (
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                All
+                {isElevatedRole(user.role) ? "All Brands" : "N/A"}
               </Typography>
             )}
           </Box>
@@ -297,7 +324,7 @@ const UserMobileCard = ({ user, onEdit, onDelete, onStatusToggle, isDark }) => (
               ))
             ) : (
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                Full Access
+                {summarizePermissions(user.role, user.brand_memberships?.[0]?.permissions || [])}
               </Typography>
             )}
           </Box>
@@ -349,16 +376,15 @@ const DomainMobileCard = ({ rule, onEdit, onDelete, isDark }) => (
             {rule.domain}
           </Typography>
           <Stack direction="row" spacing={1} alignItems="center">
-            <ShieldOutlinedIcon sx={{ fontSize: 16, color: "#3b82f6" }} />
+            {getRoleTone(rule.role).icon}
             <Typography
               variant="caption"
               sx={{
                 fontWeight: 600,
-                textTransform: "capitalize",
-                color: "#3b82f6",
+                color: getRoleTone(rule.role).color,
               }}
             >
-              {rule.role}
+              {getRoleLabel(rule.role)}
             </Typography>
           </Stack>
         </Stack>
@@ -400,7 +426,7 @@ const DomainMobileCard = ({ rule, onEdit, onDelete, isDark }) => (
             Primary Brand
           </Typography>
           <Typography variant="body2" sx={{ fontWeight: 600 }}>
-            {rule.primary_brand_id || "N/A"}
+            {rule.primary_brand_id || (isElevatedRole(rule.role) ? "AUTO" : "N/A")}
           </Typography>
         </Stack>
         <Stack spacing={0.5}>
@@ -414,10 +440,18 @@ const DomainMobileCard = ({ rule, onEdit, onDelete, isDark }) => (
               ))
             ) : (
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                Default
+                {isElevatedRole(rule.role) ? "All Brands" : "N/A"}
               </Typography>
             )}
           </Box>
+        </Stack>
+        <Stack spacing={0.5} sx={{ gridColumn: "span 2" }}>
+          <Typography variant="caption" sx={{ opacity: 0.5, fontWeight: 600 }}>
+            Permissions
+          </Typography>
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            {summarizePermissions(rule.role, rule.permissions || [])}
+          </Typography>
         </Stack>
       </Box>
       <Stack direction="row" spacing={1} justifyContent="flex-end">
@@ -473,6 +507,7 @@ export default function AccessControlCard() {
   const [knownBrands, setKnownBrands] = useState([]);
   const [domainRules, setDomainRules] = useState([]);
   const [domainDialogOpen, setDomainDialogOpen] = useState(false);
+  const [isEditingDomainRule, setIsEditingDomainRule] = useState(false);
   const [domainForm, setDomainForm] = useState({
     domain: "",
     role: "viewer",
@@ -573,38 +608,83 @@ export default function AccessControlCard() {
     }));
   }
 
+  function buildUserPayload(source, statusOverride = null) {
+    const role = source.role;
+    const status = statusOverride ?? source.status ?? "active";
+    const email = source.email;
+    const normalizedPrimaryBrand = normalizeBrandValue(source.primary_brand_id);
+    const normalizedBrandIds = Array.from(
+      new Set((source.brand_ids || []).map((brandId) => normalizeBrandValue(brandId)).filter(Boolean)),
+    );
+
+    if (role === "super_admin") {
+      return {
+        email,
+        role,
+        brand_ids: [],
+        primary_brand_id: "",
+        permissions: ["all"],
+        status,
+      };
+    }
+
+    if (role === "brand_user") {
+      const selectedBrand = normalizedPrimaryBrand || normalizedBrandIds[0] || "";
+      if (!selectedBrand) {
+        throw new Error("Brand is required");
+      }
+      return {
+        email,
+        role,
+        brand_ids: [selectedBrand],
+        primary_brand_id: selectedBrand,
+        permissions: normalizePermissionSelection(source.permissions || ["all"]),
+        status,
+      };
+    }
+
+    if (!normalizedPrimaryBrand) {
+      throw new Error("Primary brand is required");
+    }
+
+    let brandIds = normalizedBrandIds;
+    if (role === "viewer") {
+      if (!brandIds.length) {
+        throw new Error("Select at least one brand");
+      }
+      if (!brandIds.includes(normalizedPrimaryBrand)) {
+        throw new Error("Primary brand must be one of the selected brands");
+      }
+    } else {
+      brandIds = Array.from(new Set([...brandIds, normalizedPrimaryBrand]));
+    }
+
+    return {
+      email,
+      role,
+      brand_ids: brandIds,
+      primary_brand_id: normalizedPrimaryBrand,
+      permissions: role === "author" ? ["all"] : normalizePermissionSelection(source.permissions || ["all"]),
+      status,
+    };
+  }
+
   async function handleSave() {
     if (!form.email) {
       setError("Email is required");
       return;
     }
-    if (!form.primary_brand_id) {
-      setError("Primary brand is required");
+
+    setSaving(true);
+    let payload;
+    try {
+      payload = buildUserPayload(form);
+    } catch (err) {
+      setSaving(false);
+      setError(err.message);
       return;
     }
 
-    let brandIds = form.brand_ids || [];
-    if (form.role === "viewer") {
-      if (!brandIds.length) {
-        setError("Select at least one brand");
-        return;
-      }
-      if (!brandIds.includes(form.primary_brand_id)) {
-        setError("Primary brand must be one of the selected brands");
-        return;
-      }
-    } else {
-      const merged = new Set(brandIds);
-      merged.add(form.primary_brand_id);
-      brandIds = Array.from(merged);
-    }
-
-    setSaving(true);
-    const payload = {
-      ...form,
-      brand_ids: brandIds,
-      permissions: form.role === "author" ? ["all"] : form.permissions,
-    };
     const r = await adminUpsertUser(payload);
     setSaving(false);
     if (r.error) {
@@ -622,14 +702,21 @@ export default function AccessControlCard() {
     if (!user) return;
 
     setSaving(true);
-    const payload = {
-      email: user.email,
-      role: user.role,
-      brand_ids: (user.brand_memberships || []).map((b) => b.brand_id),
-      primary_brand_id: user.primary_brand_id,
-      status: nextStatus,
-      permissions: user.brand_memberships?.[0]?.permissions || ["all"],
-    };
+    let payload;
+    try {
+      payload = buildUserPayload({
+        email: user.email,
+        role: user.role,
+        brand_ids: (user.brand_memberships || []).map((b) => b.brand_id),
+        primary_brand_id: user.primary_brand_id,
+        permissions: user.brand_memberships?.[0]?.permissions || ["all"],
+        status: nextStatus,
+      });
+    } catch (err) {
+      setSaving(false);
+      setError(err.message);
+      return;
+    }
 
     const r = await adminUpsertUser(payload);
     setSaving(false);
@@ -643,6 +730,7 @@ export default function AccessControlCard() {
   const filteredDomainRules = useMemo(() => domainRules, [domainRules]);
 
   function openNewDomainRule() {
+    setIsEditingDomainRule(false);
     setDomainForm({
       domain: "",
       role: "viewer",
@@ -654,36 +742,92 @@ export default function AccessControlCard() {
     setDomainDialogOpen(true);
   }
 
+  function openEditDomainRule(rule) {
+    setDomainForm({
+      domain: rule.domain,
+      role: rule.role,
+      brand_ids: rule.brand_ids || [],
+      primary_brand_id: rule.primary_brand_id || "",
+      permissions: rule.permissions || ["all"],
+      status: rule.status || "active",
+    });
+    setIsEditingDomainRule(true);
+    setDomainDialogOpen(true);
+  }
+
+  function buildDomainRulePayload(source) {
+    const role = source.role;
+    const normalizedPrimaryBrand = normalizeBrandValue(source.primary_brand_id);
+    const normalizedBrandIds = Array.from(
+      new Set((source.brand_ids || []).map((brandId) => normalizeBrandValue(brandId)).filter(Boolean)),
+    );
+
+    if (role === "super_admin") {
+      return {
+        domain: source.domain.toLowerCase().trim(),
+        role,
+        brand_ids: [],
+        primary_brand_id: "",
+        permissions: ["all"],
+        status: source.status,
+      };
+    }
+
+    if (role === "brand_user") {
+      const selectedBrand = normalizedPrimaryBrand || normalizedBrandIds[0] || "";
+      if (!selectedBrand) {
+        throw new Error("Brand is required");
+      }
+      return {
+        domain: source.domain.toLowerCase().trim(),
+        role,
+        brand_ids: [selectedBrand],
+        primary_brand_id: selectedBrand,
+        permissions: normalizePermissionSelection(source.permissions || ["all"]),
+        status: source.status,
+      };
+    }
+
+    if (!normalizedPrimaryBrand) {
+      throw new Error("Primary brand is required");
+    }
+
+    if (role === "viewer") {
+      if (!normalizedBrandIds.length) {
+        throw new Error("Select at least one brand");
+      }
+      if (!normalizedBrandIds.includes(normalizedPrimaryBrand)) {
+        throw new Error("Primary brand must be one of the selected brands");
+      }
+    }
+
+    return {
+      ...source,
+      domain: source.domain.toLowerCase().trim(),
+      brand_ids: role === "author"
+        ? Array.from(new Set([...normalizedBrandIds, normalizedPrimaryBrand]))
+        : normalizedBrandIds,
+      primary_brand_id: normalizedPrimaryBrand,
+      permissions: role === "author" ? ["all"] : normalizePermissionSelection(source.permissions || ["all"]),
+    };
+  }
+
   async function handleSaveDomainRule() {
     if (!domainForm.domain) {
       setError("Domain is required");
       return;
     }
-    if (!domainForm.primary_brand_id) {
-      setError("Primary brand is required");
+
+    setDomainSaving(true);
+    let payload;
+    try {
+      payload = buildDomainRulePayload(domainForm);
+    } catch (err) {
+      setDomainSaving(false);
+      setError(err.message);
       return;
     }
 
-    if (domainForm.role === "viewer") {
-      if (!domainForm.brand_ids.length) {
-        setError("Select at least one brand");
-        return;
-      }
-      if (!domainForm.brand_ids.includes(domainForm.primary_brand_id)) {
-        setError("Primary brand must be one of the selected brands");
-        return;
-      }
-    }
-
-    const payload = {
-      ...domainForm,
-      domain: domainForm.domain.toLowerCase().trim(),
-      brand_ids: domainForm.brand_ids,
-      permissions:
-        domainForm.role === "author" ? ["all"] : domainForm.permissions,
-    };
-
-    setDomainSaving(true);
     const r = await upsertDomainRule(payload);
     setDomainSaving(false);
     if (r.error) {
@@ -932,6 +1076,8 @@ export default function AccessControlCard() {
                 <MenuItem value="all">All</MenuItem>
                 <MenuItem value="author">Author</MenuItem>
                 <MenuItem value="viewer">Viewer</MenuItem>
+                <MenuItem value="super_admin">Super Admin</MenuItem>
+                <MenuItem value="brand_user">Brand User</MenuItem>
               </Select>
             </Stack>
           </Box>
@@ -1000,25 +1146,15 @@ export default function AccessControlCard() {
                       </TableCell>
                       <TableCell>
                         <Stack direction="row" spacing={1} alignItems="center">
-                          {u.role === "author" ? (
-                            <ShieldOutlinedIcon
-                              sx={{ fontSize: 18, color: "#3b82f6" }}
-                            />
-                          ) : (
-                            <VisibilityOutlinedIcon
-                              sx={{ fontSize: 18, color: "#f59e0b" }}
-                            />
-                          )}
+                          {getRoleTone(u.role).icon}
                           <Typography
                             variant="body2"
                             sx={{
                               fontWeight: 600,
-                              color:
-                                u.role === "author" ? "#3b82f6" : "#f59e0b",
-                              textTransform: "capitalize",
+                              color: getRoleTone(u.role).color,
                             }}
                           >
-                            {u.role}
+                            {getRoleLabel(u.role)}
                           </Typography>
                         </Stack>
                       </TableCell>
@@ -1033,7 +1169,7 @@ export default function AccessControlCard() {
                             const ids = (u.brand_memberships || [])
                               .map((b) => b.brand_id)
                               .filter(Boolean);
-                            if (u.role === "author")
+                            if (isElevatedRole(u.role))
                               return [...new Set(ids), "ALL"];
                             return ids;
                           })(),
@@ -1050,12 +1186,10 @@ export default function AccessControlCard() {
                             fontWeight: 500,
                           }}
                         >
-                          {u.role === "author"
-                            ? "Full Access"
-                            : u.brand_memberships?.[0]?.permissions?.[0] ===
-                                "all"
-                              ? "Full Access"
-                              : `${u.brand_memberships?.[0]?.permissions?.length || 0} Permissions`}
+                          {summarizePermissions(
+                            u.role,
+                            u.brand_memberships?.[0]?.permissions || [],
+                          )}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -1167,7 +1301,7 @@ export default function AccessControlCard() {
                   <DomainMobileCard
                     key={r._id || r.domain}
                     rule={r}
-                    onEdit={setDomainForm} // domain rule dialog uses setDomainForm directly in orig code
+                    onEdit={openEditDomainRule}
                     onDelete={handleDeleteDomainRule}
                     isDark={isDark}
                   />
@@ -1214,13 +1348,10 @@ export default function AccessControlCard() {
                           sx={{
                             fontWeight: 600,
                             color:
-                              r.role === "admin" || r.role === "author"
-                                ? "#fff"
-                                : "#f59e0b",
-                            textTransform: "capitalize",
+                              getRoleTone(r.role).color,
                           }}
                         >
-                          {r.role}
+                          {getRoleLabel(r.role)}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -1239,11 +1370,7 @@ export default function AccessControlCard() {
                             fontWeight: 500,
                           }}
                         >
-                          {r.role === "author" || r.role === "admin"
-                            ? "Full Access"
-                            : r.permissions?.[0] === "all"
-                              ? "Full Access"
-                              : `${r.permissions?.length || 0} Permissions`}
+                          {summarizePermissions(r.role, r.permissions || [])}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -1254,12 +1381,28 @@ export default function AccessControlCard() {
                         />
                       </TableCell>
                       <TableCell align="right" sx={{ pr: 4 }}>
-                        <IconButton
-                          sx={actionButtonSx("error")}
-                          onClick={() => handleDeleteDomainRule(r.domain)}
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          justifyContent="flex-end"
                         >
-                          <DeleteIcon sx={{ fontSize: 18 }} />
-                        </IconButton>
+                          <Tooltip title="Edit">
+                            <IconButton
+                              sx={actionButtonSx("primary")}
+                              onClick={() => openEditDomainRule(r)}
+                            >
+                              <EditIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton
+                              sx={actionButtonSx("error")}
+                              onClick={() => handleDeleteDomainRule(r.domain)}
+                            >
+                              <DeleteIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          </Tooltip>
+                        </Stack>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1312,8 +1455,11 @@ export default function AccessControlCard() {
                   PaperProps: { sx: { zIndex: 1400 } },
                 }}
               >
-                <MenuItem value="author">Author</MenuItem>
-                <MenuItem value="viewer">Viewer</MenuItem>
+                {ROLE_OPTIONS.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label}
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
             {form.role === "viewer" && (
@@ -1544,6 +1690,155 @@ export default function AccessControlCard() {
                 </Alert>
               </Stack>
             )}
+            {form.role === "brand_user" && (
+              <Stack spacing={2}>
+                <FormControl fullWidth>
+                  <InputLabel>Brand</InputLabel>
+                  <Select
+                    label="Brand"
+                    value={form.primary_brand_id}
+                    onChange={(e) =>
+                      handleFormChange(
+                        "primary_brand_id",
+                        normalizeBrandValue(e.target.value),
+                      )
+                    }
+                    MenuProps={{
+                      PaperProps: { sx: { zIndex: 1400 } },
+                    }}
+                  >
+                    {availableBrands.map((brand) => (
+                      <MenuItem key={brand} value={brand}>
+                        {brand}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Autocomplete
+                  multiple
+                  options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                  value={form.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                  onChange={(_, val) => {
+                    const nestedPerms = form.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
+                    handleFormChange("permissions", [...val, ...nestedPerms]);
+                  }}
+                  slotProps={{
+                    popper: {
+                      sx: { zIndex: 1400 },
+                      placement: "bottom-start",
+                      modifiers: [{ name: "flip", enabled: false }],
+                    },
+                  }}
+                  ListboxProps={{
+                    sx: { maxHeight: 250 },
+                  }}
+                  renderTags={(value, getTagProps) =>
+                    value.map((option, index) => (
+                      <Chip
+                        variant="outlined"
+                        label={option}
+                        {...getTagProps({ index })}
+                      />
+                    ))
+                  }
+                  renderInput={(params) => (
+                    <TextField {...params} label="General Permissions" fullWidth />
+                  )}
+                />
+                {form.permissions.includes("product_conversion") && (
+                  <Box sx={{ 
+                    p: 2, 
+                    borderRadius: "12px", 
+                    bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
+                    border: "1px dashed",
+                    borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
+                  }}>
+                    <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
+                      PRODUCT TABLE COLUMNS
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {COLUMN_PERMISSIONS.map((col) => {
+                        const active = form.permissions.includes(col.id);
+                        return (
+                          <Chip
+                            key={col.id}
+                            label={col.label}
+                            onClick={() => {
+                              let next = active
+                                ? form.permissions.filter(p => p !== col.id)
+                                : [...form.permissions, col.id];
+
+                              const hasDrrDoh = next.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
+                              if (!hasDrrDoh) {
+                                next = next.filter(p => p !== "product_table_filters:inventory");
+                              }
+
+                              handleFormChange("permissions", next);
+                            }}
+                            color={active ? "primary" : "default"}
+                            variant={active ? "filled" : "outlined"}
+                            size="small"
+                            sx={{ borderRadius: '8px' }}
+                          />
+                        );
+                      })}
+                    </Box>
+                  </Box>
+                )}
+                {form.permissions.includes("product_table_filters") && (
+                  <Box sx={{ 
+                    p: 2, 
+                    borderRadius: "12px", 
+                    bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
+                    border: "1px dashed",
+                    borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
+                  }}>
+                    <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
+                      PRODUCT TABLE FILTERS
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {FILTER_PANEL_PERMISSIONS.map((f) => {
+                        const active = form.permissions.includes(f.id);
+                        const isInventory = f.id === "product_table_filters:inventory";
+                        const hasDrrDoh = form.permissions.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
+                        const disabled = isInventory && !hasDrrDoh;
+
+                        return (
+                          <Tooltip
+                            key={f.id}
+                            title={disabled ? "Requires DRR or DOH column access" : ""}
+                            arrow
+                          >
+                            <span>
+                              <Chip
+                                label={f.label}
+                                onClick={() => {
+                                  if (disabled) return;
+                                  const next = active
+                                    ? form.permissions.filter(p => p !== f.id)
+                                    : [...form.permissions, f.id];
+                                  handleFormChange("permissions", next);
+                                }}
+                                disabled={disabled}
+                                color={active ? "primary" : "default"}
+                                variant={active ? "filled" : "outlined"}
+                                size="small"
+                                sx={{ borderRadius: '8px', opacity: disabled ? 0.5 : 1 }}
+                              />
+                            </span>
+                          </Tooltip>
+                        );
+                      })}
+                    </Box>
+                  </Box>
+                )}
+              </Stack>
+            )}
+            {form.role === "super_admin" && (
+              <Alert severity="info" sx={{ borderRadius: "12px" }}>
+                Super Admin automatically receives all brands and all permissions.
+              </Alert>
+            )}
             <FormControl fullWidth>
               <InputLabel>Status</InputLabel>
               <Select
@@ -1594,7 +1889,9 @@ export default function AccessControlCard() {
           sx: { borderRadius: "20px", bgcolor: isDark ? "#1a1a1a" : "#fff" },
         }}
       >
-        <DialogTitle sx={{ fontWeight: 700 }}>Add Domain Rule</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          {isEditingDomainRule ? "Edit Domain Rule" : "Add Domain Rule"}
+        </DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ mt: 1 }}>
             <TextField
@@ -1618,10 +1915,15 @@ export default function AccessControlCard() {
                   PaperProps: { sx: { zIndex: 1400 } },
                 }}
               >
-                <MenuItem value="author">Author</MenuItem>
-                <MenuItem value="viewer">Viewer</MenuItem>
+                {ROLE_OPTIONS.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label}
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
+            {(domainForm.role === "author" || domainForm.role === "viewer") && (
+              <>
             <Autocomplete
               multiple
               freeSolo
@@ -1701,6 +2003,8 @@ export default function AccessControlCard() {
                 />
               )}
             />
+              </>
+            )}
             {domainForm.role === "viewer" && (
                 <Autocomplete
                   multiple
@@ -1741,6 +2045,71 @@ export default function AccessControlCard() {
                   <TextField {...params} label="Permissions" fullWidth />
                 )}
               />
+            )}
+            {domainForm.role === "brand_user" && (
+              <>
+                <FormControl fullWidth>
+                  <InputLabel>Brand</InputLabel>
+                  <Select
+                    label="Brand"
+                    value={domainForm.primary_brand_id}
+                    onChange={(e) =>
+                      setDomainForm((prev) => ({
+                        ...prev,
+                        primary_brand_id: normalizeBrandValue(e.target.value),
+                      }))
+                    }
+                    MenuProps={{
+                      PaperProps: { sx: { zIndex: 1400 } },
+                    }}
+                  >
+                    {availableBrands.map((brand) => (
+                      <MenuItem key={brand} value={brand}>
+                        {brand}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Autocomplete
+                  multiple
+                  options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                  value={domainForm.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                  onChange={(_, val) => {
+                    const nestedPerms = domainForm.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
+                    setDomainForm((prev) => ({
+                      ...prev,
+                      permissions: normalizePermissionSelection([...val, ...nestedPerms]),
+                    }));
+                  }}
+                  slotProps={{
+                    popper: {
+                      sx: { zIndex: 1400 },
+                      placement: "bottom-start",
+                      modifiers: [{ name: "flip", enabled: false }],
+                    },
+                  }}
+                  ListboxProps={{
+                    sx: { maxHeight: 250 },
+                  }}
+                  renderTags={(value, getTagProps) =>
+                    value.map((option, index) => (
+                      <Chip
+                        variant="outlined"
+                        label={option}
+                        {...getTagProps({ index })}
+                      />
+                    ))
+                  }
+                  renderInput={(params) => (
+                    <TextField {...params} label="Permissions" fullWidth />
+                  )}
+                />
+              </>
+            )}
+            {domainForm.role === "super_admin" && (
+              <Alert severity="info" sx={{ borderRadius: "12px" }}>
+                Super Admin domain rules automatically receive all brands and all permissions.
+              </Alert>
             )}
             <FormControl fullWidth>
               <InputLabel>Status</InputLabel>

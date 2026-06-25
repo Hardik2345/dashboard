@@ -24,6 +24,8 @@ export default function SessionTrendChart({
   granularity = "daily",
   onGranularityChange,
 }) {
+  const shouldTiltDateLabels = rows.length > 30;
+
   return (
     <Card elevation={0} sx={{ border: "1px solid", borderColor: "divider", height: "100%" }}>
       <CardContent sx={{ p: { xs: 1.5, md: 2 }, "&:last-child": { pb: { xs: 1.5, md: 2 } } }}>
@@ -52,9 +54,18 @@ export default function SessionTrendChart({
           <Skeleton variant="rounded" height={320} />
         ) : (
           <ResponsiveContainer width="100%" height={320}>
-            <LineChart data={rows}>
+            <LineChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: shouldTiltDateLabels ? 28 : 0 }}>
               <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} minTickGap={24} />
+              <XAxis
+                dataKey="label"
+                tick={
+                  shouldTiltDateLabels
+                    ? { fontSize: 12, angle: -24, textAnchor: "end", dy: 8 }
+                    : { fontSize: 12 }
+                }
+                minTickGap={24}
+                height={shouldTiltDateLabels ? 42 : undefined}
+              />
               <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
               <Tooltip />
               <Line

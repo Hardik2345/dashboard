@@ -33,6 +33,7 @@ const jwt = require('jsonwebtoken');
 jest.setTimeout(30000);
 
 let mongoServer;
+const originalFetch = global.fetch;
 
 beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
@@ -43,6 +44,7 @@ beforeAll(async () => {
 afterAll(async () => {
     await mongoose.disconnect();
     await mongoServer.stop();
+    global.fetch = originalFetch;
 });
 
 describe('Auth Flow', () => {
@@ -52,6 +54,7 @@ describe('Auth Flow', () => {
         await GlobalUser.deleteMany({});
         await DomainRule.deleteMany({});
         await RefreshToken.deleteMany({});
+        global.fetch = originalFetch;
 
         const passwordHash = await bcrypt.hash('password123', 10);
         user = await GlobalUser.create({
@@ -230,6 +233,148 @@ describe('Auth Flow', () => {
         expect(() => {
             TokenService.verifyAccessToken('invalid.token.structure');
         }).toThrow('Invalid access token');
+    });
+
+    test('Admin upsert creates a brand_user with exactly one brand', async () => {
+        const adminUser = await GlobalUser.create({
+            email: 'admin@example.com',
+            password_hash: await bcrypt.hash('password123', 10),
+            status: 'active',
+            role: 'author',
+            primary_brand_id: 'TMC',
+            brand_memberships: [{
+                brand_id: 'TMC',
+                status: 'active',
+                permissions: ['all']
+            }]
+        });
+        const accessToken = TokenService.generateAccessToken(adminUser);
+
+        const res = await request(app)
+            .post('/auth/admin/users')
+            .set('Authorization', `Bearer ${accessToken}`)
+            .send({
+                email: 'brand-user@example.com',
+                role: 'brand_user',
+                brand_ids: ['BBB'],
+                primary_brand_id: 'BBB',
+                permissions: ['requests_panel'],
+                status: 'active',
+            });
+
+        expect(res.status).toBe(200);
+        expect(res.body.user.role).toBe('brand_user');
+        expect(res.body.user.primary_brand_id).toBe('BBB');
+        expect(res.body.user.brand_memberships).toHaveLength(1);
+        expect(res.body.user.brand_memberships[0].brand_id).toBe('BBB');
+        expect(res.body.user.brand_memberships[0].permissions).toEqual(['requests_panel']);
+    });
+
+    test('Admin upsert rejects brand_user with multiple brands', async () => {
+        const adminUser = await GlobalUser.create({
+            email: 'admin-2@example.com',
+            password_hash: await bcrypt.hash('password123', 10),
+            status: 'active',
+            role: 'author',
+            primary_brand_id: 'TMC',
+            brand_memberships: [{
+                brand_id: 'TMC',
+                status: 'active',
+                permissions: ['all']
+            }]
+        });
+        const accessToken = TokenService.generateAccessToken(adminUser);
+
+        const res = await request(app)
+            .post('/auth/admin/users')
+            .set('Authorization', `Bearer ${accessToken}`)
+            .send({
+                email: 'bad-brand-user@example.com',
+                role: 'brand_user',
+                brand_ids: ['BBB', 'TMC'],
+                primary_brand_id: 'BBB',
+                permissions: ['requests_panel'],
+                status: 'active',
+            });
+
+        expect(res.status).toBe(400);
+        expect(res.body).toEqual({ error: 'brand_user requires exactly one brand' });
+    });
+
+    test('Admin upsert creates a super_admin with all brands and all permissions', async () => {
+        const adminUser = await GlobalUser.create({
+            email: 'admin-3@example.com',
+            password_hash: await bcrypt.hash('password123', 10),
+            status: 'active',
+            role: 'author',
+            primary_brand_id: 'TMC',
+            brand_memberships: [{
+                brand_id: 'TMC',
+                status: 'active',
+                permissions: ['all']
+            }]
+        });
+        const accessToken = TokenService.generateAccessToken(adminUser);
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({ 1: 'bbb', 2: 'tmc' }),
+        });
+
+        const res = await request(app)
+            .post('/auth/admin/users')
+            .set('Authorization', `Bearer ${accessToken}`)
+            .send({
+                email: 'super-admin@example.com',
+                role: 'super_admin',
+                brand_ids: ['IGNORED'],
+                primary_brand_id: 'IGNORED',
+                permissions: ['requests_panel'],
+                status: 'active',
+            });
+
+        expect(res.status).toBe(200);
+        expect(res.body.user.role).toBe('super_admin');
+        expect(res.body.user.primary_brand_id).toBe('BBB');
+        expect(res.body.user.brand_memberships.map((membership) => membership.brand_id)).toEqual(['BBB', 'TMC']);
+        expect(res.body.user.brand_memberships.every((membership) => JSON.stringify(membership.permissions) === JSON.stringify(['all']))).toBe(true);
+    });
+
+    test('Provisioning from a super_admin domain rule assigns all brands', async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({ 1: 'bbb', 2: 'tmc' }),
+        });
+
+        await DomainRule.create({
+            domain: 'super.example.com',
+            role: 'super_admin',
+            primary_brand_id: 'BBB',
+            brand_ids: ['BBB', 'TMC'],
+            permissions: ['all'],
+            status: 'active'
+        });
+
+        const provisionedUser = await AuthService.provisionUserByDomainRule('owner@super.example.com');
+
+        expect(provisionedUser.role).toBe('super_admin');
+        expect(provisionedUser.primary_brand_id).toBe('BBB');
+        expect(provisionedUser.brand_memberships.map((membership) => membership.brand_id)).toEqual(['BBB', 'TMC']);
+        expect(provisionedUser.brand_memberships.every((membership) => JSON.stringify(membership.permissions) === JSON.stringify(['all']))).toBe(true);
+    });
+
+    test('Provisioning from an invalid brand_user domain rule is rejected', async () => {
+        await DomainRule.create({
+            domain: 'brand.example.com',
+            role: 'brand_user',
+            primary_brand_id: 'BBB',
+            brand_ids: ['BBB', 'TMC'],
+            permissions: ['requests_panel'],
+            status: 'active'
+        });
+
+        await expect(
+            AuthService.provisionUserByDomainRule('owner@brand.example.com')
+        ).rejects.toThrow('brand_user requires exactly one brand');
     });
 });
 /* eslint-env jest */

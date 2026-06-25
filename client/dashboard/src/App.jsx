@@ -224,6 +224,7 @@ const TREND_METRICS = new Set([
   "cvr",
   "atc",
   "ci_events",
+  "checkout_rate",
   "atc_rate",
   "aov",
 ]);
@@ -1761,7 +1762,10 @@ export default function App() {
   const handleSelectMetric = useCallback(
     (metricKey) => {
       if (!metricKey) return;
-      if (metricKey === "ci_events" && !hasPermission("ci_events")) {
+      if (
+        (metricKey === "ci_events" || metricKey === "checkout_rate") &&
+        !hasPermission("ci_events")
+      ) {
         dispatch(setSelectedMetric("sales"));
         return;
       }
@@ -2365,7 +2369,10 @@ export default function App() {
   }, [discountCode]);
 
   useEffect(() => {
-    if (selectedMetric === "ci_events" && !hasPermission("ci_events")) {
+    if (
+      (selectedMetric === "ci_events" || selectedMetric === "checkout_rate") &&
+      !hasPermission("ci_events")
+    ) {
       dispatch(setSelectedMetric("sales"));
     }
   }, [selectedMetric, hasPermission, dispatch]);

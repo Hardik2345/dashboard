@@ -4,6 +4,11 @@ const logger = require("../utils/logger");
 const GW_SECRET = process.env.GATEWAY_SHARED_SECRET || "";
 const MAX_SKEW_MS = 5 * 60 * 1000;
 
+function isElevatedRole(role) {
+  const normalized = (role || "").toString().trim().toLowerCase();
+  return normalized === "author" || normalized === "admin" || normalized === "super_admin";
+}
+
 function verifyGatewaySignature(req) {
   if (!GW_SECRET) return true;
 
@@ -86,7 +91,7 @@ function buildPrincipalFromHeaders(req) {
     id: userId,
     brandKey: brandId.toUpperCase(),
     role: roleRaw,
-    isAuthor: roleRaw === "author" || roleRaw === "admin",
+    isAuthor: isElevatedRole(roleRaw),
     email: email || null,
     permissions: permissions,
     allowedBrands,

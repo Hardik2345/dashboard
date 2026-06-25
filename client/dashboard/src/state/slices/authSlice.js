@@ -4,7 +4,8 @@ import { login, logout, me } from '../../lib/api.js';
 function normalizeUser(user) {
   if (!user) return null;
   const memberships = Array.isArray(user.brand_memberships) ? user.brand_memberships : [];
-  const hasAuthorRole = (user.role || '').toLowerCase() === 'author';
+  const normalizedRole = (user.role || '').toLowerCase();
+  const hasAuthorRole = normalizedRole === 'author' || normalizedRole === 'super_admin' || normalizedRole === 'admin';
   return {
     ...user,
     isAuthor: hasAuthorRole,

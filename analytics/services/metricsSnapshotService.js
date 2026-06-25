@@ -1579,6 +1579,20 @@ function buildMetricsSnapshotService(deps = {}) {
           checkoutInitiatedDeltaPair.current,
           checkoutInitiatedDeltaPair.previous,
         ),
+        checkout_rate: discountActive
+          ? buildUnavailableSummaryMetric()
+          : buildSummaryMetric(
+              computeRatePercent(checkoutInitiatedPair.current, current.total_sessions),
+              computeRatePercent(checkoutInitiatedPair.previous, previous.total_sessions),
+              computeRatePercent(
+                checkoutInitiatedDeltaPair.current,
+                deltaCurrentRowTwo.total_sessions,
+              ),
+              computeRatePercent(
+                checkoutInitiatedDeltaPair.previous,
+                deltaPreviousRowTwo.total_sessions,
+              ),
+            ),
         atc_rate: discountActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(

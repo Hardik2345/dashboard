@@ -80,7 +80,9 @@ exports.createSession = async (req, res) => {
     const gatewayBrand = req.headers['x-brand-id'];
     const gatewayRole = req.headers['x-role'];
     const finalBrand = gatewayBrand || brand || null;
-    const finalIsAdmin = gatewayRole ? (gatewayRole === 'author') : !!isAdmin;
+    const finalIsAdmin = gatewayRole
+      ? (gatewayRole === 'author' || gatewayRole === 'super_admin' || gatewayRole === 'admin')
+      : !!isAdmin;
     const ipAddress = getClientIp(req);
 
     // Create new session
