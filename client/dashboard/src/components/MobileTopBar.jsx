@@ -41,7 +41,6 @@ import customParseFormat from "dayjs/plugin/customParseFormat";
 import { getLastUpdatedPTS, getDashboardSummary } from "../lib/api.js";
 import { isRangeOver30DaysInclusive } from "../lib/dateRange.js";
 import SearchableSelect from "./ui/SearchableSelect.jsx";
-import DashboardCurrencyToggle from "./DashboardCurrencyToggle.jsx";
 
 dayjs.extend(relativeTime);
 dayjs.extend(utc);
@@ -135,7 +134,6 @@ export default function MobileTopBar({
   showSalesChannel = true,
   onSalesChannelChange,
   isAuthor,
-  showCurrencyToggle = false,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
@@ -1151,12 +1149,6 @@ export default function MobileTopBar({
           </Box>
         </Box>
       </Box>
-
-      {showCurrencyToggle && isAuthor && (
-        <Box sx={{ display: "flex", justifyContent: "flex-end", pr: 0.5 }}>
-          <DashboardCurrencyToggle />
-        </Box>
-      )}
 
       {/* Scope Label - Mobile below the row */}
       <Box
