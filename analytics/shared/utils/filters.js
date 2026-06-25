@@ -75,6 +75,8 @@ function buildUtmWhereClause(
 
   const clauses = [];
   const params = [];
+  const buildDirectSourceClause = (col) =>
+    `(${col} IS NULL OR TRIM(${col}) = '' OR LOWER(TRIM(${col})) IN ('(none)', 'none', 'null', 'direct'))`;
 
   const append = (col, val) => {
     const cleanVals = normalizeFilterValues(val);
@@ -85,10 +87,10 @@ function buildUtmWhereClause(
       const otherVals = cleanVals.filter((v) => v.toLowerCase() !== "direct");
       if (hasDirect) {
         if (otherVals.length === 0) {
-          clauses.push(`${col} IS NULL`);
+          clauses.push(buildDirectSourceClause(col));
         } else {
           clauses.push(
-            `(${col} IN (${otherVals.map(() => "?").join(", ")}) OR ${col} IS NULL)`,
+            `(${col} IN (${otherVals.map(() => "?").join(", ")}) OR ${buildDirectSourceClause(col)})`,
           );
           params.push(...otherVals);
         }

@@ -35,7 +35,10 @@ async function computeReturnCounts({ start, end, conn, filters }) {
     if (start) { parts.push("rf.event_date >= ?"); params.push(start); }
     if (end)   { parts.push("rf.event_date <= ?"); params.push(end); }
     if (filters) {
-      const built = buildUtmWhereClause(filters, { deviceColumn: "so.user_agent" });
+      const built = buildUtmWhereClause(filters, {
+        mapDirectToNull: true,
+        deviceColumn: "so.user_agent",
+      });
       if (built.clause) { parts.push(built.clause); params.push(...built.params); }
     }
     sql += parts.length ? ` WHERE ${parts.join(" AND ")}` : "";

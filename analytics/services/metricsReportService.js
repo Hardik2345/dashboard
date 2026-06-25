@@ -283,7 +283,7 @@ function buildMetricsReportService() {
       whereSql += ` AND created_time < ?`;
       replacements.push(buildCompletedHourOrderCutoffTime(hourLte));
     }
-    whereSql = appendUtmWhere(whereSql, replacements, filters);
+    whereSql = appendUtmWhere(whereSql, replacements, filters, true);
 
     const sql = `
       SELECT payment_type, SUM(max_price) AS sales
@@ -374,7 +374,7 @@ function buildMetricsReportService() {
         whereSql += ` AND created_time < ?`;
         replacements.push(buildCompletedHourOrderCutoffTime(hourLte));
       }
-      whereSql = appendUtmWhere(whereSql, replacements, filters);
+      whereSql = appendUtmWhere(whereSql, replacements, filters, true);
 
       const sql = `
         SELECT payment_type, COUNT(DISTINCT order_name) AS cnt

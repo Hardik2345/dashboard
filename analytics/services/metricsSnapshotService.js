@@ -713,7 +713,7 @@ async function fetchHourlyRows(conn, start, end, filters = {}, cutoffHour = 23) 
     WHERE created_date >= ? AND created_date <= ? AND HOUR(created_time) <= ?
   `;
   const orderReplacements = [start, end, cutoffHour];
-  orderSql = appendUtmWhere(orderSql, orderReplacements, filters);
+  orderSql = appendUtmWhere(orderSql, orderReplacements, filters, true);
   orderSql = appendProductFilter(orderSql, orderReplacements, filters.product_id);
   orderSql += ` GROUP BY created_date, HOUR(created_time) ORDER BY created_date ASC, HOUR(created_time) ASC`;
 
@@ -930,7 +930,7 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
     WHERE created_date >= ? AND created_date <= ?
   `;
   const orderReplacements = [start, end];
-  orderSql = appendUtmWhere(orderSql, orderReplacements, filters);
+  orderSql = appendUtmWhere(orderSql, orderReplacements, filters, true);
   orderSql = appendProductFilter(orderSql, orderReplacements, filters.product_id);
   orderSql += ` GROUP BY created_date ORDER BY created_date ASC`;
 
