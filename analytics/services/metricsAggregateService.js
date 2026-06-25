@@ -243,7 +243,7 @@ async function queryOrderSalesTotals(
     replacements.push(cutoffTime);
   }
 
-  sql = appendUtmWhere(sql, replacements, filters);
+  sql = appendUtmWhere(sql, replacements, filters, true);
   sql = appendProductFilter(sql, replacements, filters.product_id);
 
   const rows = await conn.query(sql, {
