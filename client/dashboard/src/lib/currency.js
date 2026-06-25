@@ -15,7 +15,7 @@ export const CURRENCY_DISPLAY_MODES = {
 };
 
 const CurrencyDisplayContext = createContext({
-  mode: CURRENCY_DISPLAY_MODES.INR,
+  mode: CURRENCY_DISPLAY_MODES.STORE,
   setMode: () => {},
   canToggle: false,
 });
@@ -47,7 +47,7 @@ function normalizeCurrencyCode(value) {
 function normalizeDisplayMode(value) {
   return value === CURRENCY_DISPLAY_MODES.STORE
     ? CURRENCY_DISPLAY_MODES.STORE
-    : CURRENCY_DISPLAY_MODES.INR;
+    : CURRENCY_DISPLAY_MODES.STORE;
 }
 
 function normalizeAmount(value) {
@@ -265,7 +265,7 @@ export function useInrCurrency(brandKey, date) {
 }
 
 export function CurrencyDisplayProvider({
-  mode = CURRENCY_DISPLAY_MODES.INR,
+  mode = CURRENCY_DISPLAY_MODES.STORE,
   setMode,
   canToggle = false,
   children,

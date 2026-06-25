@@ -28,6 +28,7 @@ import {
 import Grid from "@mui/material/Grid2";
 import Header from "./components/Header.jsx";
 import Sidebar from "./components/Sidebar.jsx";
+import LayoutPanelsIcon from "./components/ui/LayoutPanelsIcon.jsx";
 import SidebarToggle from "./components/ui/SidebarToggle.jsx";
 import { AnimeNavBar } from "./components/ui/AnimeNavBar.jsx";
 import InlineDashboardLayoutEditor from "./components/InlineDashboardLayoutEditor.jsx";
@@ -42,7 +43,6 @@ import {
   Filter,
   Package,
   ClipboardList,
-  Grip,
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
@@ -122,10 +122,6 @@ import {
   doDelete,
   saveDashboardLayout,
 } from "./lib/api.js";
-import {
-  CURRENCY_DISPLAY_MODES,
-  CurrencyDisplayProvider,
-} from "./lib/currency.js";
 import { initializeSessionTracking } from "./lib/sessionTracker.js";
 import { isRangeOver30DaysInclusive } from "./lib/dateRange.js";
 import { setFrontendUserContext } from "./observability.js";
@@ -162,7 +158,6 @@ import {
   setDiscountCode,
 } from "./state/slices/filterSlice.js";
 import MobileTopBar from "./components/MobileTopBar.jsx";
-import DashboardCurrencyToggle from "./components/DashboardCurrencyToggle.jsx";
 const MobileFilterDrawer = lazy(
   () => import("./components/MobileFilterDrawer.jsx"),
 );
@@ -244,7 +239,6 @@ const SESSION_TRACKING_ENABLED =
   "true";
 const AUTHOR_BRAND_STORAGE_KEY = "author_active_brand_v1";
 const THEME_MODE_KEY = "dashboard_theme_mode";
-const DASHBOARD_CURRENCY_DISPLAY_MODE_KEY = "dashboard_currency_display_mode_v1";
 const TRAFFIC_SPLIT_RULES_STORAGE_PREFIX = "traffic_split_rules_v1";
 const DRAWER_WIDTH = 260;
 
@@ -274,17 +268,6 @@ function loadInitialThemeMode() {
     // Ignore storage access errors
   }
   return "light";
-}
-
-function loadInitialDashboardCurrencyDisplayMode() {
-  try {
-    const saved = localStorage.getItem(DASHBOARD_CURRENCY_DISPLAY_MODE_KEY);
-    return saved === CURRENCY_DISPLAY_MODES.STORE
-      ? CURRENCY_DISPLAY_MODES.STORE
-      : CURRENCY_DISPLAY_MODES.INR;
-  } catch {
-    return CURRENCY_DISPLAY_MODES.INR;
-  }
 }
 
 export default function App() {
@@ -374,8 +357,6 @@ export default function App() {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false); // Valid New State
   const [darkMode, setDarkMode] = useState(loadInitialThemeMode);
-  const [dashboardCurrencyDisplayMode, setDashboardCurrencyDisplayMode] =
-    useState(loadInitialDashboardCurrencyDisplayMode);
   const [isScrolled, setIsScrolled] = useState(false);
   const [productOptions, setProductOptions] = useState([
     DEFAULT_PRODUCT_OPTION,
@@ -395,18 +376,6 @@ export default function App() {
   );
   const [previewDashboardLayout, setPreviewDashboardLayout] = useState(null);
   const [isSavingDashboardLayout, setIsSavingDashboardLayout] = useState(false);
-
-  useEffect(() => {
-    if (!isAuthor) return;
-    try {
-      localStorage.setItem(
-        DASHBOARD_CURRENCY_DISPLAY_MODE_KEY,
-        dashboardCurrencyDisplayMode,
-      );
-    } catch {
-      // Ignore storage access errors
-    }
-  }, [dashboardCurrencyDisplayMode, isAuthor]);
 
   // Track navigation direction for transitions
   const [direction, setDirection] = useState(0);
@@ -2887,19 +2856,6 @@ export default function App() {
               />
             </Box>
 
-            <CurrencyDisplayProvider
-              mode={
-                isAuthor && authorTab === "dashboard"
-                  ? dashboardCurrencyDisplayMode
-                  : CURRENCY_DISPLAY_MODES.INR
-              }
-              setMode={
-                isAuthor && authorTab === "dashboard"
-                  ? setDashboardCurrencyDisplayMode
-                  : undefined
-              }
-              canToggle={isAuthor && authorTab === "dashboard"}
-            >
               {/* Non-Sticky Sub-Header (MobileTopBar etc) */}
               <Box
                 sx={{
@@ -2980,36 +2936,25 @@ export default function App() {
                         utmOptions={utmOptions}
                         onDownload={handleDownloadSnapshot}
                         children={
-                          isAuthor ? (
-                            <Stack
-                              direction="row"
-                              alignItems="center"
-                              divider={<Divider orientation="vertical" flexItem />}
-                              sx={{ height: "100%" }}
-                            >
-                              <DashboardCurrencyToggle />
-                              {canCustomizeDashboardLayout ? (
-                                <Tooltip title="Customize Layout">
-                                  <IconButton
-                                    size="small"
-                                    onClick={(event) => {
-                                      event.preventDefault();
-                                      event.stopPropagation();
-                                      handleOpenLayoutEditor();
-                                    }}
-                                    sx={{
-                                      width: 32,
-                                      height: 32,
-                                      borderRadius: "10px",
-                                      color: "text.secondary",
-                                      mx: 0.5,
-                                    }}
-                                  >
-                                    <Grip size={16} />
-                                  </IconButton>
-                                </Tooltip>
-                              ) : null}
-                            </Stack>
+                          canCustomizeDashboardLayout ? (
+                            <Tooltip title="Customize Layout">
+                              <IconButton
+                                size="small"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  handleOpenLayoutEditor();
+                                }}
+                                sx={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: "10px",
+                                  color: "text.secondary",
+                                }}
+                              >
+                                <LayoutPanelsIcon size={16} />
+                              </IconButton>
+                            </Tooltip>
                           ) : null
                         }
                       />
@@ -3079,7 +3024,6 @@ export default function App() {
                       showDiscountFilter={hasPermission("discount_filter")}
                       utmOptions={utmOptions}
                       isAuthor={isAuthor}
-                      showCurrencyToggle={isAuthor}
                     />
                   )}
                 </Box>
@@ -3177,37 +3121,23 @@ export default function App() {
                     {authorTab === "dashboard" &&
                       (hasBrand ? (
                         <Suspense fallback={<SectionFallback count={5} />}>
-                          <CurrencyDisplayProvider
-                            mode={
-                              isAuthor
-                                ? dashboardCurrencyDisplayMode
-                                : CURRENCY_DISPLAY_MODES.INR
+                          <InlineDashboardLayoutEditor
+                            isEditing={layoutEditMode}
+                            itemIds={activeWidgetIds}
+                            renderWidget={(widgetId) =>
+                              activeWidgetRegistry[widgetId]
                             }
-                            setMode={
-                              isAuthor
-                                ? setDashboardCurrencyDisplayMode
-                                : undefined
+                            extraAfterId={extraAfterId}
+                            extras={dashboardExtrasNode}
+                            onOrderChange={handleInlineDashboardReorder}
+                            onSave={() =>
+                              handleSaveDashboardLayout(effectiveDashboardLayout)
                             }
-                            canToggle={isAuthor}
-                          >
-                            <InlineDashboardLayoutEditor
-                              isEditing={layoutEditMode}
-                              itemIds={activeWidgetIds}
-                              renderWidget={(widgetId) =>
-                                activeWidgetRegistry[widgetId]
-                              }
-                              extraAfterId={extraAfterId}
-                              extras={dashboardExtrasNode}
-                              onOrderChange={handleInlineDashboardReorder}
-                              onSave={() =>
-                                handleSaveDashboardLayout(effectiveDashboardLayout)
-                              }
-                              onCancel={handleCloseLayoutEditor}
-                              onReset={handleResetDashboardLayout}
-                              isDirty={isDashboardLayoutDirty}
-                              isSaving={isSavingDashboardLayout}
-                            />
-                          </CurrencyDisplayProvider>
+                            onCancel={handleCloseLayoutEditor}
+                            onReset={handleResetDashboardLayout}
+                            isDirty={isDashboardLayoutDirty}
+                            isSaving={isSavingDashboardLayout}
+                          />
                         </Suspense>
                       ) : (
                         <Paper
@@ -3489,7 +3419,6 @@ export default function App() {
               <Suspense fallback={null}>
                 <Footer />
               </Suspense>
-            </CurrencyDisplayProvider>
           </Box>
         </Box>
         {isMobile && mobileNavItems.length > 1 && (

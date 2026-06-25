@@ -24,10 +24,10 @@ import {
   LayoutGrid,
   SlidersHorizontal,
   LogOut,
-  Grip,
   PanelLeft, // Added
 } from "lucide-react";
 import SkyToggle from "./ui/SkyToggle.jsx";
+import LayoutPanelsIcon from "./ui/LayoutPanelsIcon.jsx";
 import NotificationsMenu from "./NotificationsMenu.jsx";
 
 export default function Header({
@@ -318,7 +318,7 @@ export default function Header({
                       : "rgba(0,0,0,0.1)",
                   }}
                 >
-                  <Grip size={18} />
+                  <LayoutPanelsIcon size={18} />
                 </ButtonBase>
                 </Tooltip>
               )}
