@@ -71,6 +71,7 @@ const GlassChip = ({ label, size = "small", isDark }) => (
 
 const PERMISSION_OPTIONS = [
   "all",
+  "overall_snapshot",
   "requests_panel",
   "requests_timeline",
   "bundles_panel",
