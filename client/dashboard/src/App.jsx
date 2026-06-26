@@ -624,15 +624,22 @@ export default function App() {
     return hasPermission("session_analytics");
   }, [hasPermission, isAuthor]);
 
+  const canAccessOverallSnapshotPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("overall_snapshot");
+  }, [hasPermission, isAuthor]);
+
   const accessibleTabs = useMemo(() => {
     if (isAuthor) return null;
-    const tabs = ["overall-snapshot", "dashboard"];
+    const tabs = ["dashboard"];
+    if (canAccessOverallSnapshotPanel) tabs.unshift("overall-snapshot");
     if (canAccessSessionAnalyticsPanel) tabs.push("session-analytics");
     if (canAccessRequestsPanel) tabs.push("requests");
     if (canAccessBundlesPanel) tabs.push("bundles");
     if (canAccessInventoryPanel) tabs.push("inventory");
     return tabs;
   }, [
+    canAccessOverallSnapshotPanel,
     canAccessBundlesPanel,
     canAccessInventoryPanel,
     canAccessRequestsPanel,
@@ -642,6 +649,16 @@ export default function App() {
 
   useEffect(() => {
     if (!initialized) return;
+    if (authorTab === "overall-snapshot" && !canAccessOverallSnapshotPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP.dashboard,
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
     if (authorTab === "inventory" && !canAccessInventoryPanel) {
       navigate(
         {
@@ -683,6 +700,7 @@ export default function App() {
     }
   }, [
     authorTab,
+    canAccessOverallSnapshotPanel,
     canAccessBundlesPanel,
     canAccessInventoryPanel,
     canAccessRequestsPanel,
