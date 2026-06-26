@@ -1944,6 +1944,7 @@ export default function UnifiedFilterBar({
             onClick={() => {
               onSalesChannelChange([]);
               onDeviceTypeChange([]);
+              onCityChange?.([]);
               onProductChange(null);
               onDiscountCodeChange?.("");
               handleFilterClose();
