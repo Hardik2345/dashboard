@@ -105,6 +105,10 @@ const pipelineCredsSchema = new mongoose.Schema(
       required: false,
       default: "",
     },
+    store_timezone: {
+      type: String,
+      required: true,
+    },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },

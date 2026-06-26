@@ -130,6 +130,7 @@ router.post("/create", async (req, res) => {
     app_id_mapping = "",
     brand_num,
     shop_name,
+    store_timezone,
     api_version,
     access_token,
     session_url = "",
@@ -140,7 +141,7 @@ router.post("/create", async (req, res) => {
   // Better validation giving missing fields breakdown
   const required = {
     shard_id, rds_proxy_endpoint, database, user, password,
-    shop_name, api_version, access_token, db_host
+    shop_name, store_timezone, api_version, access_token, db_host
   };
   const missing = [];
   
@@ -172,6 +173,7 @@ router.post("/create", async (req, res) => {
       app_id_mapping,
       brand_num,
       shop_name,
+      store_timezone,
       api_version,
       access_token,
       session_url,
