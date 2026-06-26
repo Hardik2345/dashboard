@@ -42,14 +42,16 @@ export default function PaymentSalesSplit({ query }) {
       utm_medium: query.utm_medium,
       utm_campaign: query.utm_campaign,
       sales_channel: query.sales_channel,
+      device_type: query.device_type,
       discount_code: query.discount_code,
+      city: query.city,
       refreshKey,
     };
     getPaymentSalesSplit(params)
       .then(res => { if (!cancelled) { setData(res); setLoading(false); } })
       .catch(() => setLoading(false));
     return () => { cancelled = true; };
-  }, [query.start, query.end, brandKey, productId, refreshKey, query.utm_source, query.utm_medium, query.utm_campaign, query.sales_channel, query.discount_code]);
+  }, [query.start, query.end, brandKey, productId, refreshKey, query.utm_source, query.utm_medium, query.utm_campaign, query.sales_channel, query.device_type, query.discount_code, query.city]);
 
   const empty = data.total === 0;
   const convertedCodSales = convertAmount(data.cod_sales);

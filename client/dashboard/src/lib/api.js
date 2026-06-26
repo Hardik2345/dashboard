@@ -40,6 +40,7 @@ function appendBrandKey(params, source) {
   if (source?.sales_channel) out.sales_channel = source.sales_channel;
   if (source?.device_type) out.device_type = source.device_type;
   if (source?.discount_code) out.discount_code = source.discount_code;
+  if (source?.city) out.city = source.city;
   if (source?.refreshKey) out.refreshKey = source.refreshKey;
   return out;
 }

@@ -50,6 +50,8 @@ export default function MobileFilterDrawer({
   utmDisabled = false,
   salesChannel = "",
   onSalesChannelChange,
+  city = [],
+  onCityChange,
   utmOptions: propUtmOptions,
   dateRange,
   isDark = false,
@@ -57,6 +59,7 @@ export default function MobileFilterDrawer({
   showProductFilter = true,
   showUtmFilter = true,
   showSalesChannel = true,
+  showCityFilter = true,
 
   deviceType = [],
   onDeviceTypeChange,
@@ -74,6 +77,7 @@ export default function MobileFilterDrawer({
   const [tempProduct, setTempProduct] = useState(productValue);
   const [tempUtm, setTempUtm] = useState(utm);
   const [tempSalesChannel, setTempSalesChannel] = useState(salesChannel);
+  const [tempCity, setTempCity] = useState(city);
   const [tempDeviceType, setTempDeviceType] = useState(deviceType);
   const [tempDiscountCode, setTempDiscountCode] = useState(discountCode);
 
@@ -82,7 +86,7 @@ export default function MobileFilterDrawer({
   const [availableProductTypes, setAvailableProductTypes] = useState([]);
   const [typesLoading, setTypesLoading] = useState(false);
 
-  const [view, setView] = useState("ROOT"); // ROOT, BRAND, PRODUCT, UTM, UTM_SOURCE, UTM_MEDIUM, UTM_CAMPAIGN, SALES_CHANNEL
+  const [view, setView] = useState("ROOT"); // ROOT, BRAND, PRODUCT, UTM, UTM_SOURCE, UTM_MEDIUM, UTM_CAMPAIGN, SALES_CHANNEL, CITY
   const [utmOptions, setUtmOptions] = useState(null);
   const [searchText, setSearchText] = useState("");
 
@@ -98,12 +102,13 @@ export default function MobileFilterDrawer({
       setTempProduct(productValue);
       setTempUtm(utm);
       setTempSalesChannel(salesChannel);
+      setTempCity(city);
       setTempDeviceType(deviceType);
       setTempDiscountCode(discountCode);
       setTempProductTypes(productTypes || []);
       setView("ROOT");
     }
-  }, [open, brandKey, productValue, utm, salesChannel, deviceType, discountCode]); // Removed productTypes to prevent reset loop
+  }, [open, brandKey, productValue, utm, salesChannel, city, deviceType, discountCode]); // Removed productTypes to prevent reset loop
 
   // Fetch Product Types
   useEffect(() => {
@@ -163,7 +168,7 @@ export default function MobileFilterDrawer({
 
   const handleBack = () => {
     if (
-      ["BRAND", "PRODUCT", "UTM", "SALES_CHANNEL", "DEVICE_TYPE", "DISCOUNT"].includes(view)
+      ["BRAND", "PRODUCT", "UTM", "SALES_CHANNEL", "CITY", "DEVICE_TYPE", "DISCOUNT"].includes(view)
     ) {
       setView("ROOT");
     } else if (["UTM_SOURCE", "UTM_MEDIUM", "UTM_CAMPAIGN"].includes(view)) {
@@ -210,6 +215,8 @@ export default function MobileFilterDrawer({
         return "Campaign";
       case "SALES_CHANNEL":
         return "Sales Channel";
+      case "CITY":
+        return "City";
       case "DEVICE_TYPE":
         return "Device Type";
       case "DISCOUNT":
@@ -304,6 +311,7 @@ export default function MobileFilterDrawer({
     if (onProductChange)
       onProductChange({ id: "", label: "All products", detail: "Whole store" });
     if (onSalesChannelChange) onSalesChannelChange("");
+    if (onCityChange) onCityChange([]);
     if (onDeviceTypeChange) onDeviceTypeChange([]);
     if (onDiscountCodeChange) onDiscountCodeChange("");
     onClose();
@@ -314,6 +322,7 @@ export default function MobileFilterDrawer({
     if (onProductChange) onProductChange(tempProduct);
     if (onUtmChange) onUtmChange(tempUtm);
     if (onSalesChannelChange) onSalesChannelChange(tempSalesChannel);
+    if (onCityChange) onCityChange(tempCity);
     if (onDeviceTypeChange) onDeviceTypeChange(tempDeviceType);
     if (onDiscountCodeChange) onDiscountCodeChange(tempDiscountCode);
     if (onProductTypeChange) onProductTypeChange(tempProductTypes);
@@ -388,6 +397,7 @@ export default function MobileFilterDrawer({
         (Array.isArray(salesChannel)
           ? salesChannel.length > 0
           : salesChannel) ||
+        (Array.isArray(city) ? city.length > 0 : city) ||
         (Array.isArray(deviceType) ? deviceType.length > 0 : deviceType) ||
         discountCode) && (
         <Fade in={true} timeout={500}>
@@ -493,6 +503,22 @@ export default function MobileFilterDrawer({
                       onDelete={() => {
                         if (onSalesChannelChange) onSalesChannelChange("");
                         setTempSalesChannel("");
+                      }}
+                      size="small"
+                      isDark={isDark}
+                      sx={{ borderRadius: "9999px" }}
+                    />
+                  </div>
+                </Grow>
+              )}
+              {(Array.isArray(city) ? city.length > 0 : city) && (
+                <Grow in={true}>
+                  <div>
+                    <GlassChip
+                      label={`City: ${Array.isArray(city) ? city.join(", ") : city}`}
+                      onDelete={() => {
+                        if (onCityChange) onCityChange([]);
+                        setTempCity([]);
                       }}
                       size="small"
                       isDark={isDark}
@@ -770,6 +796,32 @@ export default function MobileFilterDrawer({
                           ? tempSalesChannel.join(", ")
                           : "All"
                         : tempSalesChannel || "All"}
+                    </Typography>
+                  </Box>
+                  <ChevronRightIcon color="action" />
+                </ListItemButton>
+              )}
+
+              {showCityFilter && (
+                <ListItemButton
+                  onClick={() => setView("CITY")}
+                  sx={{ py: 2, justifyContent: "space-between" }}
+                  divider
+                >
+                  <Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ fontSize: 12 }}
+                    >
+                      City
+                    </Typography>
+                    <Typography variant="body1" fontSize={14} fontWeight={500}>
+                      {Array.isArray(tempCity)
+                        ? tempCity.length > 0
+                          ? `${tempCity.length} selected`
+                          : "All"
+                        : tempCity || "All"}
                     </Typography>
                   </Box>
                   <ChevronRightIcon color="action" />
@@ -1261,6 +1313,46 @@ export default function MobileFilterDrawer({
                   )}
                 </ListItemButton>
               ))}
+            </List>
+          )}
+
+          {view === "CITY" && (
+            <List disablePadding>
+              <ListItemButton
+                onClick={() => {
+                  setTempCity([]);
+                  handleBack();
+                }}
+                selected={!tempCity || tempCity.length === 0}
+                sx={{ py: 1.5 }}
+              >
+                <ListItemText primary="All" />
+                {(!tempCity || tempCity.length === 0) && (
+                  <CheckIcon fontSize="small" color="primary" />
+                )}
+              </ListItemButton>
+              {(utmOptions?.city || []).map((cityOption) => {
+                const selectedCities = Array.isArray(tempCity) ? tempCity : [];
+                const isSelected = selectedCities.includes(cityOption);
+                return (
+                  <ListItemButton
+                    key={cityOption}
+                    onClick={() => {
+                      const nextCities = isSelected
+                        ? selectedCities.filter((value) => value !== cityOption)
+                        : [...selectedCities, cityOption];
+                      setTempCity(nextCities);
+                    }}
+                    selected={isSelected}
+                    sx={{ py: 1.5 }}
+                  >
+                    <ListItemText primary={cityOption} />
+                    {isSelected && (
+                      <CheckIcon fontSize="small" color="primary" />
+                    )}
+                  </ListItemButton>
+                );
+              })}
             </List>
           )}
 

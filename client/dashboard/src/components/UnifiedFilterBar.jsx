@@ -122,6 +122,8 @@ export default function UnifiedFilterBar({
   onSalesChannelChange,
   deviceType,
   onDeviceTypeChange,
+  city = [],
+  onCityChange,
   discountCode = "",
   onDiscountCodeChange,
   allowedFilters = {
@@ -129,6 +131,7 @@ export default function UnifiedFilterBar({
     utm: true,
     salesChannel: true,
     deviceType: true,
+    city: true,
     discount: true,
   },
   utmOptions = {}, // Add prop
@@ -275,6 +278,7 @@ export default function UnifiedFilterBar({
   const activeFilterCount = [
     ...(Array.isArray(salesChannel) ? salesChannel : [salesChannel]),
     ...(Array.isArray(deviceType) ? deviceType : []),
+    ...(Array.isArray(city) ? city : [city]),
     discountCode,
     ...(Array.isArray(productValue) ? productValue : [productValue])?.map(
       (p) => p?.id,
@@ -439,6 +443,7 @@ export default function UnifiedFilterBar({
     !hideAllExceptDate &&
     (allowedFilters.salesChannel ||
       allowedFilters.deviceType ||
+      allowedFilters.city ||
       allowedFilters.discount ||
       allowedFilters.product);
   const disabledUtmTooltip = discountCode
@@ -1519,6 +1524,97 @@ export default function UnifiedFilterBar({
                       </ListItemButton>
                     );
                   })}
+                </List>
+              </AccordionDetails>
+            </Accordion>
+          )}
+
+          {allowedFilters.city && (
+            <Accordion
+              expanded={expandedAccordion === "city"}
+              onChange={handleAccordionChange("city")}
+              disableGutters
+              elevation={0}
+              sx={{
+                bgcolor: "transparent",
+                "&:before": { display: "none" },
+                borderBottom:
+                  expandedAccordion === "city" ? "1px solid" : "none",
+                borderColor: isDark
+                  ? "rgba(255,255,255,0.1)"
+                  : "rgba(0,0,0,0.05)",
+              }}
+            >
+              <AccordionSummary
+                expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
+                sx={{
+                  px: 2,
+                  minHeight: 44,
+                  "& .MuiAccordionSummary-content": { my: 1 },
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontSize: "0.75rem",
+                    fontWeight: 700,
+                    color: "text.secondary",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  City
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails sx={{ px: 0, pb: 1, pt: 0 }}>
+                <List dense sx={{ py: 0, maxHeight: 280, overflowY: "auto" }}>
+                  {(utmOptions?.city || []).map((cityOption) => {
+                    const selectedCities = Array.isArray(city) ? city : [];
+                    const isSelected = selectedCities.includes(cityOption);
+                    return (
+                      <ListItemButton
+                        key={cityOption}
+                        dense
+                        onClick={() => {
+                          const nextCities = isSelected
+                            ? selectedCities.filter((value) => value !== cityOption)
+                            : [...selectedCities, cityOption];
+                          onCityChange?.(nextCities);
+                        }}
+                        sx={{
+                          px: 2,
+                          py: 0.5,
+                          "&:hover": {
+                            bgcolor: isDark
+                              ? "rgba(255,255,255,0.05)"
+                              : "rgba(0,0,0,0.03)",
+                          },
+                        }}
+                      >
+                        <Checkbox
+                          edge="start"
+                          checked={isSelected}
+                          tabIndex={-1}
+                          disableRipple
+                          size="small"
+                          sx={{ py: 0 }}
+                        />
+                        <ListItemText
+                          primary={cityOption}
+                          primaryTypographyProps={{
+                            fontSize: "0.85rem",
+                            fontWeight: isSelected ? 600 : 400,
+                          }}
+                        />
+                      </ListItemButton>
+                    );
+                  })}
+                  {(!utmOptions?.city || utmOptions.city.length === 0) && (
+                    <Box sx={{ p: 2, textAlign: "center" }}>
+                      <Typography variant="caption" color="text.secondary">
+                        No cities found
+                      </Typography>
+                    </Box>
+                  )}
                 </List>
               </AccordionDetails>
             </Accordion>

@@ -68,6 +68,23 @@ function buildClosedOpenTimestampRange(start, end, hourLte = null) {
   };
 }
 
+function hasCityFilter(filters = {}) {
+  return Array.isArray(filters.city) ? filters.city.length > 0 : !!filters.city;
+}
+
+function appendCityOrderWhere(whereSql, replacements, city) {
+  const cities = Array.isArray(city) ? city.filter(Boolean) : city ? [city] : [];
+  if (cities.length === 0) return whereSql;
+  const normalizedExpr =
+    "LOWER(TRIM(COALESCE(NULLIF(shipping_city, ''), NULLIF(billing_city, ''))))";
+  if (cities.length === 1) {
+    replacements.push(cities[0].toString().trim().toLowerCase());
+    return `${whereSql} AND ${normalizedExpr} = ?`;
+  }
+  replacements.push(...cities.map((value) => value.toString().trim().toLowerCase()));
+  return `${whereSql} AND ${normalizedExpr} IN (${cities.map(() => "?").join(", ")})`;
+}
+
 function computeOrderSplitPayload({
   start,
   end,
@@ -275,15 +292,20 @@ function buildMetricsReportService() {
       ? [effectiveStart]
       : [effectiveStart, effectiveEnd];
 
-    if (productId) {
+    if (productId || hasCityFilter(filters)) {
       whereSql += ` AND product_id = ?`;
-      replacements.push(productId);
+      if (productId) {
+        replacements.push(productId);
+      } else {
+        whereSql = whereSql.replace(" AND product_id = ?", "");
+      }
     }
     if (useHourlyCutoff) {
       whereSql += ` AND created_time < ?`;
       replacements.push(buildCompletedHourOrderCutoffTime(hourLte));
     }
     whereSql = appendUtmWhere(whereSql, replacements, filters, true);
+    whereSql = appendCityOrderWhere(whereSql, replacements, filters.city);
 
     const sql = `
       SELECT payment_type, SUM(max_price) AS sales
@@ -349,7 +371,7 @@ function buildMetricsReportService() {
     const effectiveEnd = end || start;
     const useHourlyCutoff = Number.isInteger(hourLte);
 
-    if (productId) {
+    if (productId || hasCityFilter(filters)) {
       if (!effectiveStart || !effectiveEnd) {
         return computeOrderSplitPayload({
           start: effectiveStart,
@@ -375,6 +397,7 @@ function buildMetricsReportService() {
         replacements.push(buildCompletedHourOrderCutoffTime(hourLte));
       }
       whereSql = appendUtmWhere(whereSql, replacements, filters, true);
+      whereSql = appendCityOrderWhere(whereSql, replacements, filters.city);
 
       const sql = `
         SELECT payment_type, COUNT(DISTINCT order_name) AS cnt

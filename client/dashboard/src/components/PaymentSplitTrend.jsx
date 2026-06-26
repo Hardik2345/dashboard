@@ -393,6 +393,7 @@ export default memo(function PaymentSplitTrend({ query }) {
         device_type: deviceType,
         product_id: productId,
         discount_code: discountCode,
+        city: query?.city,
       };
 
       try {

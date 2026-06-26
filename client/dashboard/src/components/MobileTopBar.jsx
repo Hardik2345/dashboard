@@ -133,6 +133,9 @@ export default function MobileTopBar({
   salesChannel = "",
   showSalesChannel = true,
   onSalesChannelChange,
+  city = [],
+  onCityChange,
+  showCityFilter = true,
   isAuthor,
 }) {
   const theme = useTheme();
@@ -464,6 +467,32 @@ export default function MobileTopBar({
                             options={utmOptions?.sales_channel || []}
                             value={salesChannel}
                             onChange={onSalesChannelChange}
+                            sx={{ width: 140 }}
+                            labelSx={{
+                              fontSize: 12,
+                              transform: "translate(14px, 8px) scale(1)",
+                              "&.MuiInputLabel-shrink": {
+                                transform: "translate(14px, -9px) scale(0.75)",
+                              },
+                            }}
+                            selectSx={{
+                              fontSize: 12,
+                              height: 32,
+                              "& .MuiSelect-select": {
+                                py: 0.5,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              },
+                            }}
+                          />
+                        )}
+                        {showCityFilter && (
+                          <SearchableSelect
+                            label="City"
+                            options={utmOptions?.city || []}
+                            value={city}
+                            onChange={onCityChange}
                             sx={{ width: 140 }}
                             labelSx={{
                               fontSize: 12,
