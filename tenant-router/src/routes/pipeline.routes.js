@@ -38,6 +38,7 @@ router.post("/credentials/create", async (req, res) => {
     my_sql_url,
     shop_name,
     speed_key = "",
+    store_timezone,
   } = req.body;
 
   // Basic validation
@@ -54,7 +55,8 @@ router.post("/credentials/create", async (req, res) => {
     !brand_tag ||
     !db_database ||
     !my_sql_url ||
-    !shop_name
+    !shop_name ||
+    !store_timezone
   ) {
     return res.status(400).json({ error: "missing_required_fields" });
   }
@@ -75,6 +77,7 @@ router.post("/credentials/create", async (req, res) => {
       my_sql_url,
       shop_name,
       speed_key,
+      store_timezone,
     });
     return res.status(201).json(created);
   } catch (err) {
