@@ -144,7 +144,8 @@ function hasUtmFilters(filters) {
     filters.utm_term ||
     filters.utm_content ||
     filters.sales_channel ||
-    filters.device_type
+    filters.device_type ||
+    filters.city
   );
 }
 
@@ -163,6 +164,7 @@ function extractFilters(req) {
     device_type,
     product_id,
     discount_code,
+    city,
   } = req.query;
 
   // Suppress UTM filters for date ranges exceeding 30 days to prevent heavy queries.
@@ -178,6 +180,7 @@ function extractFilters(req) {
     device_type: extractUtmParam(device_type),
     product_id: extractUtmParam(product_id),
     discount_code: extractSingleParam(discount_code),
+    city: extractUtmParam(city),
   };
 }
 

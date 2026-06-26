@@ -157,6 +157,7 @@ import {
   setSalesChannel,
   setDeviceType,
   setDiscountCode,
+  setCity,
 } from "./state/slices/filterSlice.js";
 import MobileTopBar from "./components/MobileTopBar.jsx";
 const MobileFilterDrawer = lazy(
@@ -294,6 +295,7 @@ export default function App() {
     discountCode,
     salesChannel,
     deviceType,
+    city,
   } = useAppSelector((state) => state.filters);
   const productTableStart = useAppSelector(
     (state) => state.productConversion?.start,
@@ -833,6 +835,7 @@ export default function App() {
     // Arrays allowed here
     if (salesChannel) base.sales_channel = salesChannel;
     if (deviceType && deviceType.length > 0) base.device_type = deviceType;
+    if (city && city.length > 0) base.city = city;
 
     if (isAuthor) {
       base.refreshKey = authorRefreshKey;
@@ -867,6 +870,7 @@ export default function App() {
     discountCode,
     salesChannel,
     deviceType,
+    city,
   ]);
 
   // General Query (Legacy / Single Value Fallback)
@@ -1901,6 +1905,13 @@ export default function App() {
     [dispatch],
   );
 
+  const handleCityChange = useCallback(
+    (val) => {
+      dispatch(setCity(val));
+    },
+    [dispatch],
+  );
+
   const handleDiscountCodeChange = useCallback(
     (val) => {
       const next = val || "";
@@ -1910,6 +1921,7 @@ export default function App() {
         dispatch(setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }));
         dispatch(setSalesChannel([]));
         dispatch(setDeviceType([]));
+        dispatch(setCity([]));
       }
     },
     [dispatch],
@@ -3050,6 +3062,8 @@ export default function App() {
                         onSalesChannelChange={handleSalesChannelChange}
                         deviceType={deviceType}
                         onDeviceTypeChange={handleDeviceTypeChange}
+                        city={city}
+                        onCityChange={handleCityChange}
                         discountCode={discountCode}
                         onDiscountCodeChange={handleDiscountCodeChange}
                         allowedFilters={{
@@ -3057,6 +3071,7 @@ export default function App() {
                           utm: hasPermission("utm_filter"),
                           salesChannel: hasPermission("sales_channel_filter"),
                           deviceType: hasPermission("device_type_filter"),
+                          city: true,
                           discount: hasPermission("discount_filter"),
                         }}
                         utmOptions={utmOptions}
@@ -3144,10 +3159,13 @@ export default function App() {
                       onSalesChannelChange={handleSalesChannelChange}
                       deviceType={deviceType}
                       onDeviceTypeChange={handleDeviceTypeChange}
+                      city={city}
+                      onCityChange={handleCityChange}
                       discountCode={discountCode}
                       onDiscountCodeChange={handleDiscountCodeChange}
                       showUtmFilter={hasPermission("utm_filter")}
                       showSalesChannel={hasPermission("sales_channel_filter")}
+                      showCityFilter
                       showDiscountFilter={hasPermission("discount_filter")}
                       utmOptions={utmOptions}
                       isAuthor={isAuthor}
@@ -3159,6 +3177,7 @@ export default function App() {
                   showProductFilter={hasPermission("product_filter")}
                   showUtmFilter={hasPermission("utm_filter")}
                   showSalesChannel={hasPermission("sales_channel_filter")}
+                  showCityFilter
                   showDeviceType={hasPermission("device_type_filter")}
                   open={mobileFilterOpen}
                   onClose={() => setMobileFilterOpen(false)}
@@ -3180,6 +3199,8 @@ export default function App() {
                   onSalesChannelChange={handleSalesChannelChange}
                   deviceType={deviceType}
                   onDeviceTypeChange={handleDeviceTypeChange}
+                  city={city}
+                  onCityChange={handleCityChange}
                   discountCode={discountCode}
                   onDiscountCodeChange={handleDiscountCodeChange}
                   showDiscountFilter={hasPermission("discount_filter")}

@@ -266,6 +266,7 @@ describe("metricsSnapshotService", () => {
           },
         ])
         .mockResolvedValueOnce([{ discount_code: "SAVE10" }]),
+        .mockResolvedValueOnce([{ city: "Dubai" }, { city: "Mumbai" }]),
     };
     const service = buildMetricsSnapshotService();
 
@@ -275,10 +276,11 @@ describe("metricsSnapshotService", () => {
       end: "2026-03-31",
     });
 
-    expect(conn.query).toHaveBeenCalledTimes(4);
+    expect(conn.query).toHaveBeenCalledTimes(5);
     expect(result).toEqual({
       sales_channel: [],
       discount_codes: ["SAVE10"],
+      city: ["Dubai", "Mumbai"],
       utm_tree: {
         google: {
           mediums: {
@@ -294,6 +296,57 @@ describe("metricsSnapshotService", () => {
         },
       },
     });
+  });
+
+  test("uses city summary tables for city-filtered dashboard summaries", async () => {
+    const conn = {
+      query: jest.fn().mockImplementation((sql, options = {}) => {
+        const replacements = options.replacements || [];
+        if (sql.includes("FROM daily_citywise_summary")) {
+          if (sql.includes("SUM(total_orders)")) {
+            if (replacements[0] === "2026-03-10") {
+              return Promise.resolve([{ total_orders: 20, total_sales: 2000 }]);
+            }
+            return Promise.resolve([{ total_orders: 15, total_sales: 1500 }]);
+          }
+        }
+        if (sql.includes("FROM daily_city_sessions_summary_shopify")) {
+          if (replacements[0] === "2026-03-10") {
+            return Promise.resolve([{ total_sessions: 400, total_atc_sessions: 80 }]);
+          }
+          return Promise.resolve([{ total_sessions: 300, total_atc_sessions: 45 }]);
+        }
+        throw new Error(`Unexpected SQL: ${sql}`);
+      }),
+    };
+
+    const service = buildMetricsSnapshotService({
+      now: () => new Date("2026-03-20T06:30:00Z"),
+    });
+    const response = await service.getDashboardSummary({
+      conn,
+      brandKey: "PTS",
+      start: "2026-03-10",
+      end: "2026-03-15",
+      compareStart: "2026-03-04",
+      compareEnd: "2026-03-09",
+      filters: { city: ["Dubai", "Mumbai"] },
+    });
+
+    expect(response.metrics.total_orders.value).toBe(20);
+    expect(response.metrics.total_sales.value).toBe(2000);
+    expect(response.metrics.total_sessions.value).toBe(400);
+    expect(response.metrics.total_atc_sessions.value).toBe(80);
+    expect(response.metrics.total_ci_events.unavailable).toBe(true);
+    expect(response.metrics.checkout_rate.unavailable).toBe(true);
+    expect(response.metrics.cancelled_orders.unavailable).toBe(true);
+    expect(response.metrics.refunded_orders.unavailable).toBe(true);
+    expect(conn.query.mock.calls.some(([sql]) => sql.includes("FROM daily_citywise_summary"))).toBe(true);
+    expect(
+      conn.query.mock.calls.some(([sql]) =>
+        sql.includes("FROM daily_city_sessions_summary_shopify"),
+      ),
+    ).toBe(true);
   });
 
   test("batches unfiltered historical current and previous dashboard summaries", async () => {

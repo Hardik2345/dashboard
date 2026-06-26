@@ -56,7 +56,8 @@ function hasAnyFilters(filters = {}) {
     filters.sales_channel ||
     filters.device_type ||
     filters.product_id ||
-    filters.discount_code
+    filters.discount_code ||
+    filters.city
   );
 }
 
@@ -68,6 +69,22 @@ function hasSnapshotFilters(filters = {}) {
     filters.utm_term ||
     filters.utm_content
   );
+}
+
+function hasCityFilter(filters = {}) {
+  if (Array.isArray(filters.city)) return filters.city.length > 0;
+  return !!filters.city;
+}
+
+function appendCityWhere(sql, replacements, city, column = "city") {
+  const cities = Array.isArray(city) ? city.filter(Boolean) : city ? [city] : [];
+  if (cities.length === 0) return sql;
+  if (cities.length === 1) {
+    replacements.push(cities[0]);
+    return `${sql} AND ${column} = ?`;
+  }
+  replacements.push(...cities);
+  return `${sql} AND ${column} IN (${cities.map(() => "?").join(", ")})`;
 }
 
 async function queryCurrentRowTwoSessionTotals(
@@ -89,6 +106,9 @@ async function queryCurrentRowTwoSessionTotals(
   }
   if (filters.device_type) {
     return queryDeviceHourlyTotals(conn, start, end, filters, cutoffHour);
+  }
+  if (hasCityFilter(filters)) {
+    return queryCitySessionTotals(conn, start, end, filters, cutoffHour);
   }
   if (filters.product_id || hasSnapshotFilters(filters)) {
     return queryHourlyProductSessionTotals(conn, start, end, cutoffHour, filters);
@@ -118,6 +138,9 @@ async function queryPreviousRowTwoSessionTotals(
   }
   if (filters.device_type) {
     return queryDeviceHourlyTotals(conn, start, end, filters, cutoffHour);
+  }
+  if (hasCityFilter(filters)) {
+    return queryCitySessionTotals(conn, start, end, filters, cutoffHour);
   }
   if (filters.product_id || hasSnapshotFilters(filters)) {
     return queryHourlyProductSessionTotals(conn, start, end, cutoffHour, filters);
@@ -215,6 +238,112 @@ async function queryHourlySessionTotals(conn, start, end, cutoffHour = 23) {
     replacements: [start, end, cutoffHour],
   });
   return rows?.[0] || {};
+}
+
+async function queryCitySessionTotals(
+  conn,
+  start,
+  end,
+  filters = {},
+  cutoffHour = null,
+) {
+  const hasCutoff = Number.isInteger(cutoffHour);
+  let sql = `
+    SELECT
+      COALESCE(SUM(sessions), 0) AS total_sessions,
+      COALESCE(SUM(atc_sessions), 0) AS total_atc_sessions
+    FROM ${hasCutoff ? "hourly_city_sessions_summary_shopify" : "daily_city_sessions_summary_shopify"}
+    WHERE date >= ? AND date <= ?
+  `;
+  const replacements = [start, end];
+  if (hasCutoff) {
+    sql += " AND hour <= ?";
+    replacements.push(cutoffHour);
+  }
+  sql = appendCityWhere(sql, replacements, filters.city);
+  const rows = await conn.query(sql, {
+    type: QueryTypes.SELECT,
+    replacements,
+  });
+  return rows?.[0] || {};
+}
+
+async function queryCityOrderSalesTotals(
+  conn,
+  start,
+  end,
+  filters = {},
+  cutoffHour = null,
+) {
+  const hasCutoff = Number.isInteger(cutoffHour);
+  let sql = `
+    SELECT
+      COALESCE(SUM(total_orders), 0) AS total_orders,
+      COALESCE(SUM(total_revenue), 0) AS total_sales
+    FROM ${hasCutoff ? "hourly_citywise_summary" : "daily_citywise_summary"}
+    WHERE date >= ? AND date <= ?
+  `;
+  const replacements = [start, end];
+  if (hasCutoff) {
+    sql += " AND hour <= ?";
+    replacements.push(cutoffHour);
+  }
+  sql = appendCityWhere(sql, replacements, filters.city);
+  const rows = await conn.query(sql, {
+    type: QueryTypes.SELECT,
+    replacements,
+  });
+  return rows?.[0] || {};
+}
+
+async function queryCityRows(
+  conn,
+  start,
+  end,
+  filters = {},
+  granularity = "daily",
+  cutoffHour = null,
+) {
+  const replacements = [start, end];
+  let sql;
+  if (granularity === "hourly") {
+    sql = `
+      SELECT
+        DATE_FORMAT(date, '%Y-%m-%d') AS date,
+        hour,
+        COALESCE(SUM(total_revenue), 0) AS sales,
+        COALESCE(SUM(total_orders), 0) AS orders,
+        COALESCE(SUM(sessions), 0) AS sessions,
+        COALESCE(SUM(atc_sessions), 0) AS atc,
+        0 AS ci_events
+      FROM hourly_citywise_summary
+      WHERE date >= ? AND date <= ?
+    `;
+    if (Number.isInteger(cutoffHour)) {
+      sql += " AND hour <= ?";
+      replacements.push(cutoffHour);
+    }
+    sql = appendCityWhere(sql, replacements, filters.city);
+    sql += " GROUP BY date, hour ORDER BY date ASC, hour ASC";
+  } else {
+    sql = `
+      SELECT
+        DATE_FORMAT(date, '%Y-%m-%d') AS date,
+        COALESCE(SUM(total_revenue), 0) AS sales,
+        COALESCE(SUM(total_orders), 0) AS orders,
+        COALESCE(SUM(sessions), 0) AS sessions,
+        COALESCE(SUM(atc_sessions), 0) AS atc,
+        0 AS ci_events
+      FROM daily_citywise_summary
+      WHERE date >= ? AND date <= ?
+    `;
+    sql = appendCityWhere(sql, replacements, filters.city);
+    sql += " GROUP BY date ORDER BY date ASC";
+  }
+  return conn.query(sql, {
+    type: QueryTypes.SELECT,
+    replacements,
+  });
 }
 
 async function queryCheckoutInitiatedTotals(conn, start, end, cutoffHour = null) {
@@ -322,6 +451,12 @@ async function queryHourlyProductSessionTotals(conn, start, end, cutoffHour = 23
 }
 
 async function getReturnsSnapshot(conn, start, end, filters = {}) {
+  if (hasCityFilter(filters)) {
+    return {
+      cancelled_orders: null,
+      refunded_orders: null,
+    };
+  }
   if (getUtmAggregateSource(filters, "daily")) {
     const totals = await queryUtmAggregateTotals(conn, start, end, filters, {
       granularity: "daily",
@@ -339,6 +474,18 @@ async function getReturnsSnapshot(conn, start, end, filters = {}) {
 }
 
 async function getReturnsSnapshotPair(conn, currentRange, previousRange, filters = {}) {
+  if (hasCityFilter(filters)) {
+    return {
+      current: {
+        cancelled_orders: null,
+        refunded_orders: null,
+      },
+      previous: {
+        cancelled_orders: null,
+        refunded_orders: null,
+      },
+    };
+  }
   if (getUtmAggregateSource(filters, "daily")) {
     const pair = await queryUtmAggregatePair(
       conn,
@@ -556,6 +703,72 @@ async function getRowTwoComparisonSnapshots({
     };
   }
 
+  if (hasCityFilter(filters)) {
+    const [currentOrders, currentSessions, previousOrders, previousSessions] =
+      await Promise.all([
+        queryCityOrderSalesTotals(
+          conn,
+          currentRange.start,
+          currentRange.end,
+          filters,
+          currentCutoffHour,
+        ),
+        queryCitySessionTotals(
+          conn,
+          currentRange.start,
+          currentRange.end,
+          filters,
+          currentCutoffHour,
+        ),
+        queryCityOrderSalesTotals(
+          conn,
+          previousRange.start,
+          previousRange.end,
+          filters,
+          previousSessionCutoffHour,
+        ),
+        queryCitySessionTotals(
+          conn,
+          previousRange.start,
+          previousRange.end,
+          filters,
+          previousSessionCutoffHour,
+        ),
+      ]);
+
+    const currentTotalOrders = Number(currentOrders?.total_orders || 0);
+    const currentTotalSessions = Number(currentSessions?.total_sessions || 0);
+    const currentTotalAtcSessions = Number(
+      currentSessions?.total_atc_sessions || 0,
+    );
+    const previousTotalOrders = Number(previousOrders?.total_orders || 0);
+    const previousTotalSessions = Number(previousSessions?.total_sessions || 0);
+    const previousTotalAtcSessions = Number(
+      previousSessions?.total_atc_sessions || 0,
+    );
+
+    return {
+      current: {
+        total_orders: currentTotalOrders,
+        total_sessions: currentTotalSessions,
+        total_atc_sessions: currentTotalAtcSessions,
+        conversion_rate_percent:
+          currentTotalSessions > 0
+            ? (currentTotalOrders / currentTotalSessions) * 100
+            : 0,
+      },
+      previous: {
+        total_orders: previousTotalOrders,
+        total_sessions: previousTotalSessions,
+        total_atc_sessions: previousTotalAtcSessions,
+        conversion_rate_percent:
+          previousTotalSessions > 0
+            ? (previousTotalOrders / previousTotalSessions) * 100
+            : 0,
+      },
+    };
+  }
+
   const [currentOrders, currentSessions, previousOrders, previousSessions] =
     await Promise.all([
       queryOrderSalesTotals(
@@ -666,6 +879,7 @@ async function fetchHourlyRows(conn, start, end, filters = {}, cutoffHour = 23) 
   const hasDevice = !!filters.device_type;
   const hasSnapshot = hasSnapshotFilters(filters);
   const hasSalesChannel = !!filters.sales_channel;
+  const hasCity = hasCityFilter(filters);
 
   if (getDiscountAggregateSource(filters, "hourly")) {
     return queryDiscountAggregateRows(conn, start, end, filters, {
@@ -679,6 +893,10 @@ async function fetchHourlyRows(conn, start, end, filters = {}, cutoffHour = 23) 
       granularity: "hourly",
       cutoffHour,
     });
+  }
+
+  if (hasCity) {
+    return queryCityRows(conn, start, end, filters, "hourly", cutoffHour);
   }
 
   if (!hasProduct && !hasDevice && !hasSnapshot && !hasSalesChannel) {
@@ -837,6 +1055,7 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
   const hasDevice = !!filters.device_type;
   const hasSnapshot = hasSnapshotFilters(filters);
   const hasSalesChannel = !!filters.sales_channel;
+  const hasCity = hasCityFilter(filters);
 
   if (getDiscountAggregateSource(filters, "daily")) {
     return queryDiscountAggregateRows(conn, start, end, filters, {
@@ -848,6 +1067,10 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
     return queryUtmAggregateRows(conn, start, end, filters, {
       granularity: "daily",
     });
+  }
+
+  if (hasCity) {
+    return queryCityRows(conn, start, end, filters, "daily");
   }
 
   if (!hasProduct && !hasDevice && !hasSnapshot && !hasSalesChannel) {
@@ -1196,8 +1419,13 @@ function buildMetricsSnapshotService(deps = {}) {
     } else {
       const cutoffHour = cutoffTime ? parseHourFromCutoff(cutoffTime) : 23;
       const [orderSales, sessionTotals, returnsObj] = await Promise.all([
-        queryOrderSalesTotals(conn, start, end, filters, cutoffTime),
+        hasCityFilter(filters)
+          ? queryCityOrderSalesTotals(conn, start, end, filters, cutoffHour)
+          : queryOrderSalesTotals(conn, start, end, filters, cutoffTime),
         (() => {
+          if (hasCityFilter(filters)) {
+            return queryCitySessionTotals(conn, start, end, filters, cutoffHour);
+          }
           if (cutoffTime) {
             if (filters.product_id || hasSnapshotFilters(filters)) {
               return queryHourlyProductSessionTotals(
@@ -1485,6 +1713,7 @@ function buildMetricsSnapshotService(deps = {}) {
     }
 
     const discountActive = hasDiscountFilter(spec.filters);
+    const cityActive = hasCityFilter(spec.filters);
     const rowTwoComparison = discountActive
       ? null
       : await getRowTwoComparisonSnapshots({
@@ -1511,20 +1740,24 @@ function buildMetricsSnapshotService(deps = {}) {
     const deltaCurrentRowTwo = deltaRowTwoComparison?.current || deltaCurrent;
     const deltaPreviousRowTwo =
       deltaRowTwoComparison?.previous || deltaPrevious;
-    const checkoutInitiatedPair = await queryCheckoutInitiatedPair(
-      spec.conn,
-      { start: spec.start, end: spec.end },
-      compareRange,
-    );
-    const checkoutInitiatedDeltaPair = rowTwoCutoffCtx.currentRangeIncludesToday
-      ? await queryCheckoutInitiatedPair(
+    const checkoutInitiatedPair = cityActive
+      ? { current: null, previous: null }
+      : await queryCheckoutInitiatedPair(
           spec.conn,
           { start: spec.start, end: spec.end },
           compareRange,
-          rowTwoCutoffCtx.cutoffHour,
-          rowTwoCutoffCtx.cutoffHour,
-        )
-      : checkoutInitiatedPair;
+        );
+    const checkoutInitiatedDeltaPair = cityActive
+      ? checkoutInitiatedPair
+      : rowTwoCutoffCtx.currentRangeIncludesToday
+        ? await queryCheckoutInitiatedPair(
+            spec.conn,
+            { start: spec.start, end: spec.end },
+            compareRange,
+            rowTwoCutoffCtx.cutoffHour,
+            rowTwoCutoffCtx.cutoffHour,
+          )
+        : checkoutInitiatedPair;
 
     return {
       filter_options: null,
@@ -1573,13 +1806,15 @@ function buildMetricsSnapshotService(deps = {}) {
               deltaCurrentRowTwo.total_atc_sessions,
               deltaPreviousRowTwo.total_atc_sessions,
             ),
-        total_ci_events: buildSummaryMetric(
-          checkoutInitiatedPair.current,
-          checkoutInitiatedPair.previous,
-          checkoutInitiatedDeltaPair.current,
-          checkoutInitiatedDeltaPair.previous,
-        ),
-        checkout_rate: discountActive
+        total_ci_events: discountActive || cityActive
+          ? buildUnavailableSummaryMetric()
+          : buildSummaryMetric(
+              checkoutInitiatedPair.current,
+              checkoutInitiatedPair.previous,
+              checkoutInitiatedDeltaPair.current,
+              checkoutInitiatedDeltaPair.previous,
+            ),
+        checkout_rate: discountActive || cityActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
               computeRatePercent(checkoutInitiatedPair.current, current.total_sessions),
@@ -1607,7 +1842,7 @@ function buildMetricsSnapshotService(deps = {}) {
                 deltaPreviousRowTwo.total_sessions,
               ),
             ),
-        cancelled_orders: discountActive
+        cancelled_orders: discountActive || cityActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
               current.cancelled_orders,
@@ -1615,7 +1850,7 @@ function buildMetricsSnapshotService(deps = {}) {
               deltaCurrent.cancelled_orders,
               deltaPrevious.cancelled_orders,
             ),
-        refunded_orders: discountActive
+        refunded_orders: discountActive || cityActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
               current.refunded_orders,

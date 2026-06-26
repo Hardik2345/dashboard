@@ -79,6 +79,7 @@ const filterSlice = createSlice({
     discountCode: loadInitialDiscountCode(),
     salesChannel: [],
     deviceType: [],
+    city: [],
   },
   reducers: {
     setRange(state, action) {
@@ -166,8 +167,18 @@ const filterSlice = createSlice({
     setDiscountCode(state, action) {
       state.discountCode = (action.payload || '').toString();
     },
+    setCity(state, action) {
+      const payload = action.payload;
+      if (Array.isArray(payload)) {
+        state.city = payload;
+      } else if (typeof payload === 'string') {
+        state.city = payload ? [payload] : [];
+      } else {
+        state.city = [];
+      }
+    },
   },
 });
 
-export const { setRange, setCompareMode, setCompareDateRange, setSelectedMetric, setProductSelection, setUtm, setSalesChannel, setDeviceType, setDiscountCode } = filterSlice.actions;
+export const { setRange, setCompareMode, setCompareDateRange, setSelectedMetric, setProductSelection, setUtm, setSalesChannel, setDeviceType, setDiscountCode, setCity } = filterSlice.actions;
 export default filterSlice.reducer;

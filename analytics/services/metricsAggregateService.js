@@ -25,6 +25,9 @@ function normalizeDiscountCode(filters = {}) {
 }
 
 function resolveDiscountAggregateSource(filters = {}, granularity = "daily") {
+  if (filters.city && (!Array.isArray(filters.city) || filters.city.length > 0)) {
+    return null;
+  }
   const discountCode = normalizeDiscountCode(filters);
   if (!discountCode) return null;
   return {
@@ -49,7 +52,8 @@ function resolveUtmAggregateSource(filters = {}, granularity = "daily") {
     filters.utm_content ||
     filters.sales_channel ||
     filters.device_type ||
-    filters.product_id
+    filters.product_id ||
+    filters.city
   ) {
     return null;
   }
@@ -691,7 +695,7 @@ async function queryDiscountAggregateRows(
 }
 
 async function queryUtmSummaryFilterOptions(conn, start, end) {
-  const [rows, discountRows] = await Promise.all([
+  const [rows, discountRows, cityRows] = await Promise.all([
     conn.query(
     `
       SELECT DISTINCT
@@ -721,11 +725,26 @@ async function queryUtmSummaryFilterOptions(conn, start, end) {
         replacements: [start, end],
       },
     ),
+    conn.query(
+      `
+        SELECT DISTINCT city
+        FROM daily_citywise_summary
+        WHERE date >= ? AND date <= ?
+          AND city IS NOT NULL
+          AND TRIM(city) <> ''
+        ORDER BY city
+      `,
+      {
+        type: QueryTypes.SELECT,
+        replacements: [start, end],
+      },
+    ),
   ]);
 
   return {
     ...buildSummaryFilterOptions(rows),
     discount_codes: discountRows.map((row) => row.discount_code).filter(Boolean),
+    city: cityRows.map((row) => row.city).filter(Boolean),
   };
 }
 

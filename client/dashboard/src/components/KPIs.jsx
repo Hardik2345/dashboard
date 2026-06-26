@@ -52,6 +52,7 @@ export default function KPIs({
   const salesChannel = query?.sales_channel;
   const deviceType = query?.device_type;
   const discountCode = query?.discount_code;
+  const city = query?.city;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
   const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
@@ -166,6 +167,7 @@ export default function KPIs({
             sales_channel: salesChannel,
             device_type: deviceType,
             discount_code: discountCode,
+            city: query?.city,
           }
         : {
             start,
@@ -177,6 +179,7 @@ export default function KPIs({
             sales_channel: salesChannel,
             device_type: deviceType,
             discount_code: discountCode,
+            city: query?.city,
           };
       if (compareStart && compareEnd) {
         base.compare_start = compareStart;
@@ -375,6 +378,7 @@ export default function KPIs({
     salesChannel,
     deviceType,
     discountCode,
+    city,
     compareStart,
     compareEnd,
   ]);
