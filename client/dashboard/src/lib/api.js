@@ -452,6 +452,35 @@ export async function getDashboardSummary(args) {
   };
 }
 
+export async function getOverallSnapshot(args = {}) {
+  const params = {
+    start: args.start || args.date,
+    end: args.end || args.date || args.start,
+    compare_start: args.compare_start,
+    compare_end: args.compare_end,
+    utm_source: args.utm_source,
+    utm_medium: args.utm_medium,
+    utm_campaign: args.utm_campaign,
+    utm_term: args.utm_term,
+    utm_content: args.utm_content,
+    sales_channel: args.sales_channel,
+    device_type: args.device_type,
+    discount_code: args.discount_code,
+    brand_keys: args.brand_keys,
+  };
+  const json = await getJSON("/metrics/summary/brands", params);
+  return {
+    range: json?.range || {
+      start: params.start || null,
+      end: params.end || null,
+    },
+    prev_range: json?.prev_range || null,
+    metric_keys: Array.isArray(json?.metric_keys) ? json.metric_keys : [],
+    brands: Array.isArray(json?.brands) ? json.brands : [],
+    error: json?.__error,
+  };
+}
+
 export async function getSummaryFilterOptions(args) {
   const params = appendBrandKey(
     {

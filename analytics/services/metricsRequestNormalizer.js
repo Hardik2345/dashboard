@@ -57,6 +57,13 @@ function normalizeMetricRequest(req, options = {}) {
     return range;
   }
 
+  const brandKeysRaw = req.query.brand_keys;
+  const brandKeys = Array.isArray(brandKeysRaw)
+    ? brandKeysRaw
+    : brandKeysRaw
+      ? [brandKeysRaw]
+      : [];
+
   return {
     ok: true,
     spec: {
@@ -70,6 +77,7 @@ function normalizeMetricRequest(req, options = {}) {
       compareEnd: req.query.compare_end ? req.query.compare_end.toString() : null,
       filters: extractFilters(req),
       brandKey: req.brandKey,
+      brandKeys,
       conn: req.brandDb?.sequelize || null,
     },
   };

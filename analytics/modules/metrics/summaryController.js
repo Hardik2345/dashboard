@@ -52,6 +52,22 @@ function buildSummaryController({ metricsService }) {
       }
     },
 
+    dashboardSummaryBrands: async (req, res) => {
+      try {
+        const normalized = normalizeMetricRequest(req, { defaultToToday: true });
+        if (!normalized.ok) {
+          return res.status(normalized.status).json(normalized.body);
+        }
+        const snapshot = await metricsService.getOverallSnapshot({
+          user: req.user || {},
+          spec: normalized.spec,
+        });
+        return res.json(snapshot);
+      } catch (e) {
+        return handleControllerError(res, e, "dashboard-summary-brands failed");
+      }
+    },
+
     diagnoseTotalOrders: (sequelize) => async (req, res) => {
       try {
         const start = req.query.start;
