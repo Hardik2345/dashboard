@@ -266,6 +266,27 @@ export default function Header({
           {/* Mobile Actions */}
           {isMobile && (
             <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+              {showMenuButton && (
+                <IconButton
+                  onClick={onMenuClick}
+                  size="small"
+                  sx={{
+                    color: darkMode ? "#f0f0f0" : "inherit",
+                    bgcolor: darkMode
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(0,0,0,0.05)",
+                    border: "1px solid",
+                    borderColor: darkMode
+                      ? "rgba(255,255,255,0.1)"
+                      : "rgba(0,0,0,0.1)",
+                    borderRadius: "8px",
+                    p: 0.8,
+                  }}
+                >
+                  <PanelLeft size={18} />
+                </IconButton>
+              )}
+
               {/* Notifications - Only for admins */}
               {isAdmin && (
                 <NotificationsMenu

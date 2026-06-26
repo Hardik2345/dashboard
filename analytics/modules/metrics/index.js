@@ -19,6 +19,9 @@ const {
 const {
   buildMetricsPageService,
 } = require('../../services/metricsPageService');
+const {
+  buildOverallSnapshotService,
+} = require('../../services/overallSnapshotService');
 const { buildTrendController } = require('./trendController');
 const { buildSplitController } = require('./splitController');
 const { buildSummaryController } = require('./summaryController');
@@ -34,10 +37,19 @@ function buildMetricsRouter(sequelize) {
   });
   const reportService = buildMetricsReportService();
   const pageService = buildMetricsPageService({ cacheService });
+  const overallSnapshotService = buildOverallSnapshotService({
+    metricsService,
+  });
 
   const trend = buildTrendController({ metricsService });
   const split = buildSplitController({ reportService });
-  const summary = buildSummaryController({ metricsService });
+  const summary = buildSummaryController({
+    metricsService: {
+      getDashboardSummary: metricsService.getDashboardSummary,
+      getSummaryFilterOptions: metricsService.getSummaryFilterOptions,
+      getOverallSnapshot: overallSnapshotService.getOverallSnapshot,
+    },
+  });
   const product = buildProductController({ pageService });
 
   const apiKeyAuth = createApiKeyAuthMiddleware(sequelize, ['metrics:read']);
@@ -71,6 +83,7 @@ function buildMetricsRouter(sequelize) {
   router.get('/payment-sales-split', ...protectedBrand, split.paymentSalesSplit);
   router.get('/traffic-source-split', ...protectedBrand, split.trafficSourceSplit);
   router.get('/summary', requireTrustedPrincipal, authorizeBrandContext, summary.dashboardSummary);
+  router.get('/summary/brands', requireTrustedPrincipal, summary.dashboardSummaryBrands);
   router.get('/summary-filter-options', requireTrustedPrincipal, authorizeBrandContext, summary.summaryFilterOptions);
   router.get('/top-pdps', allowTopPdpsWithoutAuth, ensureTopPdpsBrandDb, product.topProductPages);
   router.get('/top-products', authOrApiKey, ensureBrandDb, product.topProducts);

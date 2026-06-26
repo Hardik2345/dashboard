@@ -30,7 +30,6 @@ import Header from "./components/Header.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import LayoutPanelsIcon from "./components/ui/LayoutPanelsIcon.jsx";
 import SidebarToggle from "./components/ui/SidebarToggle.jsx";
-import { AnimeNavBar } from "./components/ui/AnimeNavBar.jsx";
 import InlineDashboardLayoutEditor from "./components/InlineDashboardLayoutEditor.jsx";
 
 import {
@@ -46,8 +45,9 @@ import {
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
+  { id: "overall-snapshot", label: "Overall Snapshot", icon: LayoutGrid },
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
-  { id: "session-analytics", label: "Session Analytics", icon: Activity },
+  { id: "session-analytics", label: "Dashboard Sessions", icon: Activity },
   { id: "product-conversion", label: "Funnels", icon: Filter },
   { id: "bundles", label: "Bundles", icon: Table2 },
   { id: "inventory", label: "Inventory", icon: Package },
@@ -61,6 +61,7 @@ const MOBILE_NAV_ITEMS = [
 ];
 
 const TAB_ROUTE_MAP = {
+  "overall-snapshot": "/overall-snapshot",
   dashboard: "/dashboard",
   "session-analytics": "/session-analytics",
   "product-conversion": "/funnels",
@@ -90,7 +91,7 @@ function getTabFromPathname(pathname) {
 }
 
 function getPathForTab(tabId) {
-  return TAB_ROUTE_MAP[tabId] || TAB_ROUTE_MAP.dashboard;
+  return TAB_ROUTE_MAP[tabId] || TAB_ROUTE_MAP["overall-snapshot"];
 }
 
 function getSanitizedSearch(search) {
@@ -170,6 +171,9 @@ const AuthorBrandSelector = lazy(
 const Footer = lazy(() => import("./components/Footer.jsx"));
 
 const KPIs = lazy(() => import("./components/KPIs.jsx"));
+const OverallSnapshotWidget = lazy(
+  () => import("./components/OverallSnapshotWidget.jsx"),
+);
 const FunnelChart = lazy(() => import("./components/charts/FunnelChart.jsx"));
 const ModeOfPayment = lazy(() => import("./components/ModeOfPayment.jsx"));
 const PaymentSplitTrend = lazy(
@@ -334,6 +338,10 @@ export default function App() {
     }
     return list;
   }, [user]);
+  const snapshotBrands = useMemo(
+    () => (isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }))),
+    [authorBrands, isAuthor, viewerBrands],
+  );
 
   // Initialize tab checking storage; guard against invalid reads
   const [authorTab, setAuthorTab] = useState(() => {
@@ -344,10 +352,10 @@ export default function App() {
     if (routeTab) return routeTab;
     try {
       const stored =
-        localStorage.getItem("author_active_tab_v1") || "dashboard";
-      return stored === "adjustments" ? "dashboard" : stored;
+        localStorage.getItem("author_active_tab_v1") || "overall-snapshot";
+      return stored === "adjustments" ? "overall-snapshot" : stored;
     } catch {
-      return "dashboard";
+      return "overall-snapshot";
     }
   });
 
@@ -618,7 +626,7 @@ export default function App() {
 
   const accessibleTabs = useMemo(() => {
     if (isAuthor) return null;
-    const tabs = ["dashboard"];
+    const tabs = ["overall-snapshot", "dashboard"];
     if (canAccessSessionAnalyticsPanel) tabs.push("session-analytics");
     if (canAccessRequestsPanel) tabs.push("requests");
     if (canAccessBundlesPanel) tabs.push("bundles");
@@ -637,7 +645,7 @@ export default function App() {
     if (authorTab === "inventory" && !canAccessInventoryPanel) {
       navigate(
         {
-          pathname: TAB_ROUTE_MAP.dashboard,
+          pathname: TAB_ROUTE_MAP["overall-snapshot"],
           search: sanitizedSearch,
         },
         { replace: true },
@@ -647,7 +655,7 @@ export default function App() {
     if (authorTab === "bundles" && !canAccessBundlesPanel) {
       navigate(
         {
-          pathname: TAB_ROUTE_MAP.dashboard,
+          pathname: TAB_ROUTE_MAP["overall-snapshot"],
           search: sanitizedSearch,
         },
         { replace: true },
@@ -657,7 +665,7 @@ export default function App() {
     if (authorTab === "requests" && !canAccessRequestsPanel) {
       navigate(
         {
-          pathname: TAB_ROUTE_MAP.dashboard,
+          pathname: TAB_ROUTE_MAP["overall-snapshot"],
           search: sanitizedSearch,
         },
         { replace: true },
@@ -667,7 +675,7 @@ export default function App() {
     if (authorTab === "session-analytics" && !canAccessSessionAnalyticsPanel) {
       navigate(
         {
-          pathname: TAB_ROUTE_MAP.dashboard,
+          pathname: TAB_ROUTE_MAP["overall-snapshot"],
           search: sanitizedSearch,
         },
         { replace: true },
@@ -854,6 +862,13 @@ export default function App() {
 
     return base;
   }, [trendMetricsQuery]);
+  const overallSnapshotQuery = useMemo(() => {
+    const base = { ...generalMetricsQuery };
+    delete base.brand_key;
+    delete base.product_id;
+    delete base.refreshKey;
+    return base;
+  }, [generalMetricsQuery]);
 
   const escapeCsvCell = useCallback((value) => {
     const str = value == null ? "" : String(value);
@@ -1459,6 +1474,41 @@ export default function App() {
     [authorBrandKey, dispatch],
   );
 
+  const handleOverallSnapshotBrandSelect = useCallback(
+    (nextKeyRaw) => {
+      const normalized = (nextKeyRaw || "").toString().trim().toUpperCase();
+      if (!normalized) return;
+
+      try {
+        localStorage.setItem("author_active_brand_v1", normalized);
+      } catch {
+        // Ignore storage write errors
+      }
+
+      if (isAuthor) {
+        handleAuthorBrandChange(normalized);
+      } else {
+        dispatch(setBrand(normalized));
+      }
+
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP.dashboard,
+          search: sanitizedSearch,
+        },
+        { replace: currentRouteTab === "dashboard" },
+      );
+    },
+    [
+      currentRouteTab,
+      dispatch,
+      handleAuthorBrandChange,
+      isAuthor,
+      navigate,
+      sanitizedSearch,
+    ],
+  );
+
   // Reset UTM filters when brand changes
   useEffect(() => {
     dispatch(
@@ -1594,7 +1644,7 @@ export default function App() {
     if (normalizedPath === "/") {
       navigate(
         {
-          pathname: user ? TAB_ROUTE_MAP.dashboard : "/login",
+          pathname: user ? TAB_ROUTE_MAP["overall-snapshot"] : "/login",
           search: sanitizedSearch,
         },
         { replace: true },
@@ -1605,7 +1655,7 @@ export default function App() {
     if (!currentRouteTab) {
       navigate(
         {
-          pathname: user ? TAB_ROUTE_MAP.dashboard : "/login",
+          pathname: user ? TAB_ROUTE_MAP["overall-snapshot"] : "/login",
           search: sanitizedSearch,
         },
         { replace: true },
@@ -1633,7 +1683,7 @@ export default function App() {
     ) {
       navigate(
         {
-          pathname: TAB_ROUTE_MAP.dashboard,
+          pathname: TAB_ROUTE_MAP["overall-snapshot"],
           search: sanitizedSearch,
         },
         { replace: true },
@@ -1645,7 +1695,7 @@ export default function App() {
     if (initialized && authorTab === "adjustments") {
       navigate(
         {
-          pathname: TAB_ROUTE_MAP.dashboard,
+          pathname: TAB_ROUTE_MAP["overall-snapshot"],
           search: sanitizedSearch,
         },
         { replace: true },
@@ -2060,6 +2110,14 @@ export default function App() {
           />
         </Stack>
       ),
+      overall_snapshot: (
+        <OverallSnapshotWidget
+          query={overallSnapshotQuery}
+          brands={snapshotBrands}
+          brandsLoading={isAuthor && authorBrandsLoading}
+          onBrandSelect={handleOverallSnapshotBrandSelect}
+        />
+      ),
       kpi_trend: (
         <Grid container spacing={2}>
           <Grid
@@ -2106,17 +2164,22 @@ export default function App() {
       ),
     }),
     [
-      compareMode,
-      generalMetricsQuery,
-      handleFunnelData,
-      handleSelectMetric,
-      hasPermission,
-      selectedMetric,
-      selectedProductIds,
-      selectedProductLabel,
-      trafficSplitRules,
-      trendMetricsQuery,
-      utmOptions,
+        compareMode,
+        generalMetricsQuery,
+        handleOverallSnapshotBrandSelect,
+        handleFunnelData,
+        handleSelectMetric,
+        hasPermission,
+        isAuthor,
+        authorBrandsLoading,
+        overallSnapshotQuery,
+        selectedMetric,
+        selectedProductIds,
+        selectedProductLabel,
+        snapshotBrands,
+        trafficSplitRules,
+        trendMetricsQuery,
+        utmOptions,
       webVitalsMetric,
     ],
   );
@@ -2136,6 +2199,14 @@ export default function App() {
           showWebVitals={false}
           showCiEvents={hasPermission("ci_events")}
           compareMode={compareMode}
+        />
+      ),
+      overall_snapshot: (
+        <OverallSnapshotWidget
+          query={overallSnapshotQuery}
+          brands={snapshotBrands}
+          brandsLoading={isAuthor && authorBrandsLoading}
+          onBrandSelect={handleOverallSnapshotBrandSelect}
         />
       ),
       kpi_trend: (
@@ -2162,17 +2233,22 @@ export default function App() {
       ),
     }),
     [
-      compareMode,
-      generalMetricsQuery,
-      handleFunnelData,
-      handleSelectMetric,
-      hasPermission,
-      selectedMetric,
-      selectedProductIds,
-      selectedProductLabel,
-      trafficSplitRules,
-      trendMetricsQuery,
-      utmOptions,
+        compareMode,
+        generalMetricsQuery,
+        handleOverallSnapshotBrandSelect,
+        handleFunnelData,
+        handleSelectMetric,
+        hasPermission,
+        isAuthor,
+        authorBrandsLoading,
+        overallSnapshotQuery,
+        selectedMetric,
+        selectedProductIds,
+        selectedProductLabel,
+        snapshotBrands,
+        trafficSplitRules,
+        trendMetricsQuery,
+        utmOptions,
       webVitalsMetric,
     ],
   );
@@ -2584,7 +2660,7 @@ export default function App() {
       console.warn("FCM unregister on logout failed:", err);
     }
     try {
-      localStorage.setItem("author_active_tab_v1", "dashboard");
+      localStorage.setItem("author_active_tab_v1", "overall-snapshot");
     } catch {
       // Ignore storage write errors
     }
@@ -2892,7 +2968,25 @@ export default function App() {
                   }}
                 >
                   {/* Unified Filter Bar - Desktop Only (Dashboard Tab) */}
-                  {!isMobile && (authorTab === "dashboard") && hasBrand && (
+                  {!isMobile && authorTab === "overall-snapshot" && (
+                    <Box sx={{ mb: { xs: 1, md: 0 } }}>
+                      <UnifiedFilterBar
+                        range={normalizedRange}
+                        onRangeChange={handleRangeChange}
+                        brandKey=""
+                        brands={[]}
+                        onBrandChange={() => {}}
+                        isAuthor={false}
+                        compareMode={compareMode}
+                        onCompareModeChange={handleCompareModeChange}
+                        compareDateRange={compareDateRange}
+                        onCompareDateRangeChange={handleCompareDateRangeChange}
+                        hideAllExceptDate
+                      />
+                    </Box>
+                  )}
+
+                  {!isMobile && authorTab === "dashboard" && hasBrand && (
                     <Box sx={{ mb: { xs: 1, md: 0 } }}>
 
                       <UnifiedFilterBar
@@ -2970,6 +3064,7 @@ export default function App() {
 
                   {!isMobile &&
                     authorTab !== "dashboard" &&
+                    authorTab !== "overall-snapshot" &&
                     authorTab !== "alerts" &&
                     authorTab !== "access" &&
                     authorTab !== "notifications-log" &&
@@ -3078,8 +3173,9 @@ export default function App() {
                   mx: "auto",
                   px: { xs: 1.5, sm: 2.5, md: 4 },
                   py: { xs: 1, md: 2 },
-                  pb: { xs: 14, md: 2 }, // Extra space for mobile bottom nav
-                  overflow: "hidden",
+                  pb: { xs: 11, md: 2 }, // Extra space for mobile bottom sheet nav
+                  overflowX: "hidden",
+                  overflowY: authorTab === "overall-snapshot" ? "visible" : "hidden",
                   position: "relative",
                 }}
               >
@@ -3122,6 +3218,26 @@ export default function App() {
                             <TenantSetupForm onOnboard={(data) => console.log("Onboard:", data)} />
                             <LogsPanel />
                           </Stack>
+                        </Suspense>
+                      </motion.div>
+                    )}
+                    {authorTab === "overall-snapshot" && (
+                      <motion.div
+                        key="overall-snapshot"
+                        custom={direction}
+                        variants={pageVariants}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        style={{ width: "100%" }}
+                      >
+                        <Suspense fallback={<SectionFallback count={2} />}>
+                          <OverallSnapshotWidget
+                            query={overallSnapshotQuery}
+                            brands={snapshotBrands}
+                            brandsLoading={isAuthor && authorBrandsLoading}
+                            onBrandSelect={handleOverallSnapshotBrandSelect}
+                          />
                         </Suspense>
                       </motion.div>
                     )}
@@ -3428,14 +3544,6 @@ export default function App() {
               </Suspense>
           </Box>
         </Box>
-        {isMobile && mobileNavItems.length > 1 && (
-          <AnimeNavBar
-            items={mobileNavItems}
-            activeTab={authorTab}
-            onTabChange={handleSidebarTabChange}
-            isDark={darkMode === "dark"}
-          />
-        )}
       </AppProvider>
     </ThemeProvider>
   );

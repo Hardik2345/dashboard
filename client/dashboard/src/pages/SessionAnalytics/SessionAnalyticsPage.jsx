@@ -245,7 +245,7 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
         }}
       >
         <Typography variant="h6" sx={{ fontWeight: 600, color: "text.secondary" }}>
-          Session Analytics
+          Dashboard Sessions
         </Typography>
       </Box>
 

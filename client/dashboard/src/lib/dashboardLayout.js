@@ -33,7 +33,7 @@ function uniqWidgetIds(input = []) {
 
   for (const raw of Array.isArray(input) ? input : []) {
     const id = typeof raw === "string" ? raw.trim() : "";
-    if (!id || seen.has(id)) continue;
+    if (!id || id === "overall_snapshot" || seen.has(id)) continue;
     seen.add(id);
     out.push(id);
   }

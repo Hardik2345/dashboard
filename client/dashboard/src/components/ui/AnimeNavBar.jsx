@@ -25,6 +25,65 @@ export function AnimeNavBar({ items, className, activeTab, onTabChange, isDark =
 
     if (!mounted) return null
 
+    if (isMobile) {
+        return (
+            <div className={cn("fixed bottom-3 left-0 right-0 z-[9999] px-3", className)}>
+                <motion.div
+                    className={cn(
+                        "mx-auto max-w-[calc(100vw-24px)] rounded-[24px] border px-3 py-2 shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur-[40px]",
+                        isDark ? "bg-[#171717]/88 border-white/10" : "bg-[#f7f7f7]/92 border-black/8"
+                    )}
+                    initial={{ y: 24, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 260, damping: 24 }}
+                >
+                    <div className="mb-2 flex items-center justify-between px-1">
+                        <span className={cn(
+                            "text-[10px] font-extrabold uppercase tracking-[0.24em]",
+                            isDark ? "text-white/45" : "text-black/45"
+                        )}>
+                            Panels
+                        </span>
+                        <span className={cn(
+                            "text-[10px] font-semibold",
+                            isDark ? "text-white/35" : "text-black/35"
+                        )}>
+                            Swipe horizontally
+                        </span>
+                    </div>
+                    <div className="overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        <div className="flex min-w-max gap-2">
+                            {items.map((item) => {
+                                const isActive = activeTab === item.id
+
+                                return (
+                                    <button
+                                        key={item.id}
+                                        type="button"
+                                        onClick={() => onTabChange(item.id)}
+                                        className={cn(
+                                            "rounded-2xl border px-3 py-2 text-left text-xs font-bold whitespace-nowrap transition-all duration-200",
+                                            isDark
+                                                ? "border-white/10 bg-white/[0.04] text-white/72"
+                                                : "border-black/10 bg-black/[0.035] text-black/72",
+                                            isActive && (
+                                                isDark
+                                                    ? "border-[#5ba3e0]/60 bg-[#5ba3e0]/18 text-[#8cc7ff]"
+                                                    : "border-[#0b6bcb]/28 bg-[#0b6bcb]/10 text-[#0b6bcb]"
+                                            )
+                                        )}
+                                    >
+                                        {item.label}
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    </div>
+                </motion.div>
+            </div>
+        )
+    }
+
     return (
         <div className={cn("fixed bottom-6 left-0 right-0 z-[9999] px-4", className)}>
             <div className="flex justify-center">
