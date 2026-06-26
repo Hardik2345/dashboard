@@ -352,10 +352,10 @@ export default function App() {
     if (routeTab) return routeTab;
     try {
       const stored =
-        localStorage.getItem("author_active_tab_v1") || "overall-snapshot";
-      return stored === "adjustments" ? "overall-snapshot" : stored;
+        localStorage.getItem("author_active_tab_v1") || "dashboard";
+      return stored === "adjustments" ? "dashboard" : stored;
     } catch {
-      return "overall-snapshot";
+      return "dashboard";
     }
   });
 
@@ -629,6 +629,11 @@ export default function App() {
     return hasPermission("overall_snapshot");
   }, [hasPermission, isAuthor]);
 
+  const defaultLandingTab = useMemo(() => {
+    if (isAuthor) return "overall-snapshot";
+    return canAccessOverallSnapshotPanel ? "overall-snapshot" : "dashboard";
+  }, [canAccessOverallSnapshotPanel, isAuthor]);
+
   const accessibleTabs = useMemo(() => {
     if (isAuthor) return null;
     const tabs = ["dashboard"];
@@ -662,7 +667,7 @@ export default function App() {
     if (authorTab === "inventory" && !canAccessInventoryPanel) {
       navigate(
         {
-          pathname: TAB_ROUTE_MAP["overall-snapshot"],
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
           search: sanitizedSearch,
         },
         { replace: true },
@@ -672,7 +677,7 @@ export default function App() {
     if (authorTab === "bundles" && !canAccessBundlesPanel) {
       navigate(
         {
-          pathname: TAB_ROUTE_MAP["overall-snapshot"],
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
           search: sanitizedSearch,
         },
         { replace: true },
@@ -682,7 +687,7 @@ export default function App() {
     if (authorTab === "requests" && !canAccessRequestsPanel) {
       navigate(
         {
-          pathname: TAB_ROUTE_MAP["overall-snapshot"],
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
           search: sanitizedSearch,
         },
         { replace: true },
@@ -692,7 +697,7 @@ export default function App() {
     if (authorTab === "session-analytics" && !canAccessSessionAnalyticsPanel) {
       navigate(
         {
-          pathname: TAB_ROUTE_MAP["overall-snapshot"],
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
           search: sanitizedSearch,
         },
         { replace: true },
@@ -700,6 +705,7 @@ export default function App() {
     }
   }, [
     authorTab,
+    defaultLandingTab,
     canAccessOverallSnapshotPanel,
     canAccessBundlesPanel,
     canAccessInventoryPanel,
@@ -1662,7 +1668,7 @@ export default function App() {
     if (normalizedPath === "/") {
       navigate(
         {
-          pathname: user ? TAB_ROUTE_MAP["overall-snapshot"] : "/login",
+          pathname: user ? TAB_ROUTE_MAP[defaultLandingTab] : "/login",
           search: sanitizedSearch,
         },
         { replace: true },
@@ -1673,13 +1679,13 @@ export default function App() {
     if (!currentRouteTab) {
       navigate(
         {
-          pathname: user ? TAB_ROUTE_MAP["overall-snapshot"] : "/login",
+          pathname: user ? TAB_ROUTE_MAP[defaultLandingTab] : "/login",
           search: sanitizedSearch,
         },
         { replace: true },
       );
     }
-  }, [currentRouteTab, location.pathname, sanitizedSearch, navigate, user]);
+  }, [currentRouteTab, defaultLandingTab, location.pathname, sanitizedSearch, navigate, user]);
 
   useEffect(() => {
     if (!currentRouteTab) return;
@@ -1701,7 +1707,7 @@ export default function App() {
     ) {
       navigate(
         {
-          pathname: TAB_ROUTE_MAP["overall-snapshot"],
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
           search: sanitizedSearch,
         },
         { replace: true },
@@ -1713,7 +1719,7 @@ export default function App() {
     if (initialized && authorTab === "adjustments") {
       navigate(
         {
-          pathname: TAB_ROUTE_MAP["overall-snapshot"],
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
           search: sanitizedSearch,
         },
         { replace: true },
@@ -1722,6 +1728,7 @@ export default function App() {
   }, [
     isAuthor,
     initialized,
+    defaultLandingTab,
     authorTab,
     accessibleTabs,
     sanitizedSearch,
@@ -2678,7 +2685,7 @@ export default function App() {
       console.warn("FCM unregister on logout failed:", err);
     }
     try {
-      localStorage.setItem("author_active_tab_v1", "overall-snapshot");
+      localStorage.setItem("author_active_tab_v1", "dashboard");
     } catch {
       // Ignore storage write errors
     }
