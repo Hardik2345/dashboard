@@ -206,7 +206,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
     setLoading(true);
 
     const loadData = async () => {
-      const utmParams = { utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, device_type: deviceType, product_id: productId, discount_code: discountCode };
+      const utmParams = { utm_source: utmSource, utm_medium: utmMedium, utm_campaign: utmCampaign, sales_channel: salesChannel, device_type: deviceType, product_id: productId, discount_code: discountCode, city: query?.city };
       const configNext = metricConfig[metric] || metricConfig.sales;
       if (cancelled) return;
 
@@ -278,7 +278,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
 
     loadData();
     return () => { cancelled = true; };
-  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, productId, discountCode, compare, compareStart, compareEnd, convertAmount]);
+  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, productId, discountCode, query?.city, compare, compareStart, compareEnd, convertAmount]);
 
   const toggleLine = (line) => {
     setVisibleLines(prev =>
