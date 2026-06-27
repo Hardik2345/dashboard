@@ -7,7 +7,9 @@ function buildBundlesController() {
   return {
     options: async (req, res) => {
       try {
-        const normalized = bundlesService.normalizeBundleRequest(req.query);
+        const normalized = bundlesService.normalizeBundleRequest(req.query, {
+          timezone: req.tenantRoute?.timezone,
+        });
         if (!normalized.ok) {
           return res.status(normalized.status).json(normalized.body);
         }
@@ -30,7 +32,9 @@ function buildBundlesController() {
 
     summary: async (req, res) => {
       try {
-        const normalized = bundlesService.normalizeBundleRequest(req.query);
+        const normalized = bundlesService.normalizeBundleRequest(req.query, {
+          timezone: req.tenantRoute?.timezone,
+        });
         if (!normalized.ok) {
           return res.status(normalized.status).json(normalized.body);
         }
@@ -53,7 +57,9 @@ function buildBundlesController() {
 
     summaryCsv: async (req, res) => {
       try {
-        const normalized = bundlesService.normalizeBundleRequest(req.query);
+        const normalized = bundlesService.normalizeBundleRequest(req.query, {
+          timezone: req.tenantRoute?.timezone,
+        });
         if (!normalized.ok) {
           return res.status(normalized.status).json(normalized.body);
         }
@@ -80,6 +86,7 @@ function buildBundlesController() {
       try {
         const normalized = bundlesService.normalizeBundleRequest(req.query, {
           requireBundleProductId: true,
+          timezone: req.tenantRoute?.timezone,
         });
         if (!normalized.ok) {
           return res.status(normalized.status).json(normalized.body);
@@ -105,6 +112,7 @@ function buildBundlesController() {
       try {
         const normalized = bundlesService.normalizeBundleRequest(req.query, {
           requireBundleProductId: true,
+          timezone: req.tenantRoute?.timezone,
         });
         if (!normalized.ok) {
           return res.status(normalized.status).json(normalized.body);

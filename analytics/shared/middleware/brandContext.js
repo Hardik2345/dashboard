@@ -29,6 +29,7 @@ async function authorizeBrandContext(req, res, next) {
     req.brandKey = rawKey;
     req.brandDbName = route.dbName;
     req.tenantRoute = route;
+    req.brandTimezone = route.timezone;
     logger.info(`[brandContext] Querying data for ${rawKey} from DB Host: ${route.host}, Database: ${route.dbName}`);
     req.brandDb = getTenantConnection(route);
   } catch (e) {

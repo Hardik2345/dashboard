@@ -10,12 +10,13 @@ const {
 const {
   parseIsoDate,
   formatIsoDate,
+  DEFAULT_TIMEZONE,
+  normalizeTimezone,
 } = require("../shared/utils/date");
 const {
   DAY_MS,
   pad2,
-  getNowIst,
-  getTodayIst,
+  getTimezoneContext,
   parseHourFromCutoff,
   resolveCompareRange,
   buildLiveCutoffContext,
@@ -1307,9 +1308,10 @@ async function fetchMonthlyRows(conn, start, end, filters = {}) {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function buildHourlyPoints(rows, start, end, aggregate = "") {
-  const todayIst = getTodayIst();
-  const alignHour = end === todayIst ? getNowIst().getUTCHours() : 23;
+function buildHourlyPoints(rows, start, end, aggregate = "", timezone = DEFAULT_TIMEZONE) {
+  const resolvedTimezone = normalizeTimezone(timezone);
+  const tzCtx = getTimezoneContext(new Date(), resolvedTimezone);
+  const alignHour = end === tzCtx.today ? tzCtx.currentHour : 23;
   const rowMap = new Map(rows.map((row) => [`${row.date}#${row.hour}`, row]));
   const buckets = [];
   for (const day of buildSeriesBuckets(start, end)) {
@@ -1641,6 +1643,7 @@ function buildMetricsSnapshotService(deps = {}) {
   }
 
   async function getDashboardSummary(spec) {
+    const timezone = normalizeTimezone(spec.timezone);
     const compareRange = getComparableRange(
       spec.start,
       spec.end,
@@ -1650,12 +1653,13 @@ function buildMetricsSnapshotService(deps = {}) {
     if (!compareRange) {
       throw new Error("Previous range unavailable");
     }
-    const cutoffCtx = buildCutoffContext(spec.start, spec.end, now());
+    const cutoffCtx = buildCutoffContext(spec.start, spec.end, now(), timezone);
     const cutoffTime = cutoffCtx.includesToday ? cutoffCtx.cutoffTime : null;
     const rowTwoCutoffCtx = buildCompletedHourCutoffContext(
       spec.start,
       spec.end,
       now(),
+      timezone,
     );
     const useCompletedHourSummaryForUtm =
       !!getUtmAggregateSource(spec.filters, "daily") &&
@@ -1761,6 +1765,7 @@ function buildMetricsSnapshotService(deps = {}) {
 
     return {
       filter_options: null,
+      timezone,
       range: { start: spec.start, end: spec.end },
       prev_range: compareRange,
       metrics: {
@@ -1872,13 +1877,14 @@ function buildMetricsSnapshotService(deps = {}) {
   }
 
   async function getTrend(spec, granularity) {
+    const timezone = normalizeTimezone(spec.timezone);
     const compareRange = getComparableRange(
       spec.start,
       spec.end,
       spec.compareStart,
       spec.compareEnd,
     );
-    const cutoffCtx = buildCutoffContext(spec.start, spec.end, now());
+    const cutoffCtx = buildCutoffContext(spec.start, spec.end, now(), timezone);
     const cutoffHour = cutoffCtx.includesToday ? cutoffCtx.cutoffHour : 23;
     let currentRows;
     let previousRows = [];
@@ -1896,17 +1902,17 @@ function buildMetricsSnapshotService(deps = {}) {
             )
           : Promise.resolve([]),
       ]);
-      const points = buildHourlyPoints(currentRows, spec.start, spec.end, spec.aggregate);
+      const points = buildHourlyPoints(currentRows, spec.start, spec.end, spec.aggregate, timezone);
       const comparison = compareRange
         ? {
             range: compareRange,
-            points: buildHourlyPoints(previousRows, compareRange.start, compareRange.end, "avg"),
+            points: buildHourlyPoints(previousRows, compareRange.start, compareRange.end, "avg", timezone),
             hourSampleCount: null,
           }
         : null;
       return {
         range: { start: spec.start, end: spec.end },
-        timezone: "IST",
+        timezone,
         alignHour: cutoffHour,
         points,
         comparison,
@@ -1929,6 +1935,7 @@ function buildMetricsSnapshotService(deps = {}) {
         : null;
       return {
         range: { start: spec.start, end: spec.end },
+        timezone,
         points,
         days: points,
         comparison: comparison ? { ...comparison, days: comparison.points } : null,
@@ -1943,6 +1950,7 @@ function buildMetricsSnapshotService(deps = {}) {
     ]);
     return {
       range: { start: spec.start, end: spec.end },
+      timezone,
       points: currentRows,
       months: currentRows,
       comparison: compareRange

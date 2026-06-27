@@ -1,8 +1,9 @@
 // Canonical date utilities.
 // Merges: utils/dateUtils.js + the date/time helpers formerly in services/metricsFoundation.js
 
-// ── IST constants ─────────────────────────────────────────────────────────────
+// ── Timezone constants ────────────────────────────────────────────────────────
 
+const DEFAULT_TIMEZONE = "Asia/Kolkata";
 const IST_OFFSET_MIN = 330;
 const DAY_MS = 24 * 3600_000;
 
@@ -39,14 +40,90 @@ function parseHourFromCutoff(cutoffTime) {
   return Math.max(0, Math.min(23, hour));
 }
 
-// ── IST context helpers ────────────────────────────────────────────────────────
+// ── Timezone context helpers ───────────────────────────────────────────────────
+
+function normalizeTimezone(timezone, fallback = DEFAULT_TIMEZONE) {
+  const candidate = (timezone || "").toString().trim() || fallback;
+  try {
+    Intl.DateTimeFormat("en-US", { timeZone: candidate }).format(new Date(0));
+    return candidate;
+  } catch {
+    return fallback;
+  }
+}
+
+function getTimezoneParts(now = new Date(), timezone = DEFAULT_TIMEZONE) {
+  const resolvedTimezone = normalizeTimezone(timezone);
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: resolvedTimezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = {};
+  for (const part of formatter.formatToParts(now)) {
+    if (part.type !== "literal") parts[part.type] = part.value;
+  }
+  return {
+    timezone: resolvedTimezone,
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    second: Number(parts.second),
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+  };
+}
+
+function getTimezoneContext(now = new Date(), timezone = DEFAULT_TIMEZONE) {
+  const parts = getTimezoneParts(now, timezone);
+  return {
+    timezone: parts.timezone,
+    nowLocal: new Date(Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day,
+      parts.hour,
+      parts.minute,
+      parts.second,
+    )),
+    today: parts.date,
+    currentHour: parts.hour,
+    currentMinute: parts.minute,
+    currentSecond: parts.second,
+    secondsNow: parts.hour * 3600 + parts.minute * 60 + parts.second,
+  };
+}
+
+function getTodayInTimezone(timezone = DEFAULT_TIMEZONE, now = new Date()) {
+  return getTimezoneContext(now, timezone).today;
+}
+
+function getNowInTimezone(timezone = DEFAULT_TIMEZONE, now = new Date()) {
+  return getTimezoneContext(now, timezone).nowLocal;
+}
+
+function previousDateInTimezone(timezone = DEFAULT_TIMEZONE, now = new Date()) {
+  return shiftDays(getTodayInTimezone(timezone, now), -1);
+}
+
+function getTimezoneLabel(timezone = DEFAULT_TIMEZONE) {
+  return normalizeTimezone(timezone);
+}
+
+// ── IST compatibility helpers ─────────────────────────────────────────────────
 
 function getNowIst(now = new Date()) {
-  return new Date(now.getTime() + IST_OFFSET_MIN * 60 * 1000);
+  return getNowInTimezone(DEFAULT_TIMEZONE, now);
 }
 
 function getTodayIst(now = new Date()) {
-  return formatUtcDate(getNowIst(now));
+  return getTodayInTimezone(DEFAULT_TIMEZONE, now);
 }
 
 function isTodayUtc(dateStr, now = new Date()) {
@@ -55,14 +132,11 @@ function isTodayUtc(dateStr, now = new Date()) {
 }
 
 function getIstContext(now = new Date()) {
-  const nowIst = getNowIst(now);
+  const ctx = getTimezoneContext(now, DEFAULT_TIMEZONE);
   return {
-    nowIst,
-    todayIst: formatUtcDate(nowIst),
-    secondsNow:
-      nowIst.getUTCHours() * 3600 +
-      nowIst.getUTCMinutes() * 60 +
-      nowIst.getUTCSeconds(),
+    nowIst: ctx.nowLocal,
+    todayIst: ctx.today,
+    secondsNow: ctx.secondsNow,
   };
 }
 
@@ -95,6 +169,7 @@ function prevDayStr(date) {
 }
 
 module.exports = {
+  DEFAULT_TIMEZONE,
   IST_OFFSET_MIN,
   DAY_MS,
   pad2,
@@ -103,6 +178,13 @@ module.exports = {
   parseIsoDate,
   secondsToTime,
   parseHourFromCutoff,
+  normalizeTimezone,
+  getTimezoneParts,
+  getTimezoneContext,
+  getTodayInTimezone,
+  getNowInTimezone,
+  previousDateInTimezone,
+  getTimezoneLabel,
   getNowIst,
   getTodayIst,
   isTodayUtc,

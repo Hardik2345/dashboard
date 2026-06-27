@@ -3,7 +3,7 @@
 const {
   parseRangeQuery,
   ensureBrandSequelize,
-} = require("../../../controllers/metricsControllerSupport");
+} = require("../../../modules/metrics/requestNormalizer");
 
 describe("metricsControllerSupport", () => {
   afterEach(() => {
@@ -27,6 +27,7 @@ describe("metricsControllerSupport", () => {
     expect(result).toEqual({
       ok: true,
       data: { start: "2026-03-31", end: "2026-03-31" },
+      timezone: "Asia/Kolkata",
     });
     jest.useRealTimers();
   });

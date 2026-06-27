@@ -19,8 +19,7 @@ describe("productConversionService", () => {
           return Promise.resolve([{ total_count: 1 }]);
         }
         if (
-          sql.includes("FROM product_landing_mapping m") &&
-          sql.includes("LIMIT 5 OFFSET 0")
+          sql.includes("FROM product_landing_mapping m")
         ) {
           return Promise.resolve([
             {
@@ -69,9 +68,9 @@ describe("productConversionService", () => {
 
     expect(conn.query.mock.calls[0][0]).toContain("FROM product_landing_mapping m");
     expect(conn.query.mock.calls[0][0]).toContain("m.product_type IN (?)");
-    expect(conn.query).toHaveBeenCalledTimes(2);
+    expect(conn.query).toHaveBeenCalledTimes(1);
     expect(response.total_count).toBe(1);
-    expect(response.rows[0]).toEqual({
+    expect(response.rows[0]).toEqual(expect.objectContaining({
       product_id: "sku-1",
       landing_page_path: "/products/a",
       sessions: 100,
@@ -88,7 +87,7 @@ describe("productConversionService", () => {
         sales: 480,
         cvr: 7.5,
       },
-    });
+    }));
   });
 
   test("builds csv output with compare columns and visible-column parity", async () => {

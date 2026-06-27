@@ -1,5 +1,6 @@
 const {
   IST_OFFSET_MIN,
+  DEFAULT_TIMEZONE,
   DAY_MS,
   pad2,
   formatUtcDate,
@@ -9,6 +10,11 @@ const {
   secondsToTime,
   parseHourFromCutoff,
   getIstContext,
+  normalizeTimezone,
+  getTimezoneContext,
+  getTodayInTimezone,
+  getNowInTimezone,
+  shiftDays,
   previousWindow,
 } = require("../shared/utils/date");
 
@@ -22,21 +28,24 @@ function resolveCompareRange(start, end, compareStart, compareEnd) {
     : null;
 }
 
-function buildLiveCutoffContext(start, end, now = new Date()) {
-  const { nowIst, todayIst, secondsNow } = getIstContext(now);
-  const includesToday = !!start && !!end && start <= todayIst && end >= todayIst;
+function buildLiveCutoffContext(start, end, now = new Date(), timezone = DEFAULT_TIMEZONE) {
+  const ctx = getTimezoneContext(now, timezone);
+  const includesToday = !!start && !!end && start <= ctx.today && end >= ctx.today;
   if (!includesToday) {
     return {
       includesToday: false,
       cutoffTime: null,
       cutoffHour: 23,
-      todayIst,
-      nowIst,
+      today: ctx.today,
+      nowLocal: ctx.nowLocal,
+      timezone: ctx.timezone,
+      todayIst: ctx.today,
+      nowIst: ctx.nowLocal,
     };
   }
 
   const fullDaySeconds = 24 * 3600;
-  const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, secondsNow));
+  const effectiveSeconds = Math.min(fullDaySeconds, Math.max(0, ctx.secondsNow));
   const cutoffTime =
     effectiveSeconds >= fullDaySeconds
       ? "24:00:00"
@@ -46,23 +55,26 @@ function buildLiveCutoffContext(start, end, now = new Date()) {
     includesToday: true,
     cutoffTime,
     cutoffHour: parseHourFromCutoff(cutoffTime),
-    todayIst,
-    nowIst,
+    today: ctx.today,
+    nowLocal: ctx.nowLocal,
+    timezone: ctx.timezone,
+    todayIst: ctx.today,
+    nowIst: ctx.nowLocal,
   };
 }
 
-function buildCompletedHourCutoffContext(start, end, now = new Date()) {
-  const { nowIst, todayIst } = getIstContext(now);
+function buildCompletedHourCutoffContext(start, end, now = new Date(), timezone = DEFAULT_TIMEZONE) {
+  const ctx = getTimezoneContext(now, timezone);
   const rangeStart = start || end;
   const rangeEnd = end || start;
   const currentRangeIncludesToday =
     !!rangeStart &&
     !!rangeEnd &&
-    rangeStart <= todayIst &&
-    rangeEnd >= todayIst;
-  const currentHour = nowIst.getUTCHours();
-  const currentMinute = nowIst.getUTCMinutes();
-  const currentSecond = nowIst.getUTCSeconds();
+    rangeStart <= ctx.today &&
+    rangeEnd >= ctx.today;
+  const currentHour = ctx.currentHour;
+  const currentMinute = ctx.currentMinute;
+  const currentSecond = ctx.currentSecond;
 
   return {
     currentRangeIncludesToday,
@@ -70,8 +82,11 @@ function buildCompletedHourCutoffContext(start, end, now = new Date()) {
     orderCutoffTime: currentRangeIncludesToday
       ? `${pad2(currentHour)}:${pad2(currentMinute)}:${pad2(currentSecond)}`
       : "24:00:00",
-    todayIst,
-    nowIst,
+    today: ctx.today,
+    nowLocal: ctx.nowLocal,
+    timezone: ctx.timezone,
+    todayIst: ctx.today,
+    nowIst: ctx.nowLocal,
   };
 }
 
@@ -93,6 +108,7 @@ function buildRowTwoComparisonCutoffs(cutoffCtx) {
 
 module.exports = {
   IST_OFFSET_MIN,
+  DEFAULT_TIMEZONE,
   DAY_MS,
   pad2,
   formatUtcDate,
@@ -102,6 +118,11 @@ module.exports = {
   secondsToTime,
   parseHourFromCutoff,
   getIstContext,
+  normalizeTimezone,
+  getTimezoneContext,
+  getTodayInTimezone,
+  getNowInTimezone,
+  shiftDays,
   resolveCompareRange,
   buildLiveCutoffContext,
   buildCompletedHourCutoffContext,

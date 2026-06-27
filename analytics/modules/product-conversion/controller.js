@@ -10,7 +10,9 @@ function buildProductConversionController() {
   return {
     productConversion: async (req, res) => {
       try {
-        const normalized = productConversionService.normalizeProductConversionRequest(req.query);
+        const normalized = productConversionService.normalizeProductConversionRequest(req.query, {
+          timezone: req.tenantRoute?.timezone,
+        });
         if (!normalized.ok) return res.status(normalized.status).json(normalized.body);
         
         const spec = normalized.spec;
@@ -55,7 +57,9 @@ function buildProductConversionController() {
 
     productConversionCsv: async (req, res) => {
       try {
-        const normalized = productConversionService.normalizeProductConversionRequest(req.query);
+        const normalized = productConversionService.normalizeProductConversionRequest(req.query, {
+          timezone: req.tenantRoute?.timezone,
+        });
         if (!normalized.ok) return res.status(normalized.status).json(normalized.body);
         
         const spec = normalized.spec;

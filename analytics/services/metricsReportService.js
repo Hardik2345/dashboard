@@ -9,7 +9,9 @@ const {
 } = require("./metricsAggregateService");
 const {
   pad2,
-  getNowIst,
+  DEFAULT_TIMEZONE,
+  getTimezoneContext,
+  normalizeTimezone,
   formatUtcDate,
   resolveCompareRange,
   buildCompletedHourOrderCutoffTime,
@@ -88,6 +90,7 @@ function appendCityOrderWhere(whereSql, replacements, city) {
 function computeOrderSplitPayload({
   start,
   end,
+  timezone = DEFAULT_TIMEZONE,
   hourLte = null,
   productId = "",
   codOrders = 0,
@@ -99,6 +102,7 @@ function computeOrderSplitPayload({
   const total = codOrders + prepaidOrders + partiallyPaidOrders;
   return {
     metric: "ORDER_SPLIT",
+    timezone: normalizeTimezone(timezone),
     range: {
       start: start || null,
       end: end || null,
@@ -117,11 +121,12 @@ function computeOrderSplitPayload({
   };
 }
 
-function buildIstBuckets(days, now = new Date()) {
+function buildTimezoneBuckets(days, timezone = DEFAULT_TIMEZONE, now = new Date()) {
   const buckets = [];
-  const nowIst = getNowIst(now);
+  const resolvedTimezone = normalizeTimezone(timezone);
+  const nowLocal = getTimezoneContext(now, resolvedTimezone).nowLocal;
   for (let offset = 0; offset < days; offset += 1) {
-    const day = new Date(nowIst.getTime());
+    const day = new Date(nowLocal.getTime());
     day.setUTCDate(day.getUTCDate() - offset);
     const date = formatUtcDate(day);
     const maxHour = offset === 0 ? day.getUTCHours() : 23;
@@ -131,6 +136,8 @@ function buildIstBuckets(days, now = new Date()) {
   }
   return buckets;
 }
+
+const buildIstBuckets = (days, now = new Date()) => buildTimezoneBuckets(days, DEFAULT_TIMEZONE, now);
 
 function shiftBucketDays(buckets, deltaDays) {
   return buckets.map((bucket) => ({
@@ -213,12 +220,15 @@ function buildMetricsReportService() {
     productId = "",
     filters = {},
     includeSql = false,
+    timezone = DEFAULT_TIMEZONE,
   }) {
+    const resolvedTimezone = normalizeTimezone(timezone);
     const effectiveStart = start || end;
     const effectiveEnd = end || start;
     if (!effectiveStart || !effectiveEnd) {
       return {
         metric: "PAYMENT_SPLIT_SALES",
+        timezone: resolvedTimezone,
         range: { start: null, end: null },
         cod_sales: 0,
         prepaid_sales: 0,
@@ -269,6 +279,7 @@ function buildMetricsReportService() {
       const total = codSales + prepaidSales + partialSales;
       return {
         metric: "PAYMENT_SPLIT_SALES",
+        timezone: resolvedTimezone,
         range: {
           start: effectiveStart,
           end: effectiveEnd,
@@ -342,6 +353,7 @@ function buildMetricsReportService() {
     const total = codSales + prepaidSales + partialSales;
     return {
       metric: "PAYMENT_SPLIT_SALES",
+      timezone: resolvedTimezone,
       range: {
         start: effectiveStart,
         end: effectiveEnd,
@@ -366,7 +378,9 @@ function buildMetricsReportService() {
     productId = "",
     filters = {},
     includeSql = false,
+    timezone = DEFAULT_TIMEZONE,
   }) {
+    const resolvedTimezone = normalizeTimezone(timezone);
     const effectiveStart = start || end;
     const effectiveEnd = end || start;
     const useHourlyCutoff = Number.isInteger(hourLte);
@@ -376,6 +390,7 @@ function buildMetricsReportService() {
         return computeOrderSplitPayload({
           start: effectiveStart,
           end: effectiveEnd,
+          timezone: resolvedTimezone,
           productId,
         });
       }
@@ -433,6 +448,7 @@ function buildMetricsReportService() {
       return computeOrderSplitPayload({
         start: effectiveStart,
         end: effectiveEnd,
+        timezone: resolvedTimezone,
         hourLte: useHourlyCutoff ? hourLte : null,
         productId,
         codOrders,
@@ -482,6 +498,7 @@ function buildMetricsReportService() {
       return computeOrderSplitPayload({
         start: effectiveStart,
         end: effectiveEnd,
+        timezone: resolvedTimezone,
         hourLte: useHourlyCutoff ? hourLte : null,
         codOrders,
         prepaidOrders,
@@ -519,6 +536,7 @@ function buildMetricsReportService() {
       return computeOrderSplitPayload({
         start: effectiveStart,
         end: effectiveEnd,
+        timezone: resolvedTimezone,
         hourLte: useHourlyCutoff ? hourLte : null,
         codOrders: Number(row?.cod_orders || 0),
         prepaidOrders: Number(row?.prepaid_orders || 0),
@@ -548,6 +566,7 @@ function buildMetricsReportService() {
     return computeOrderSplitPayload({
       start,
       end,
+      timezone: resolvedTimezone,
       hourLte: useHourlyCutoff ? hourLte : null,
       codOrders,
       prepaidOrders,
@@ -555,8 +574,9 @@ function buildMetricsReportService() {
     });
   }
 
-  async function getHourlySalesCompare({ conn, days, now = new Date() }) {
-    const currentBuckets = buildIstBuckets(days, now);
+  async function getHourlySalesCompare({ conn, days, now = new Date(), timezone = DEFAULT_TIMEZONE }) {
+    const resolvedTimezone = normalizeTimezone(timezone);
+    const currentBuckets = buildTimezoneBuckets(days, resolvedTimezone, now);
     const previousBuckets = shiftBucketDays(currentBuckets, -1);
 
     const currentSpan = getBucketSpan(currentBuckets);
@@ -598,7 +618,8 @@ function buildMetricsReportService() {
           (bucket) => previousMap.get(`${bucket.date}#${bucket.hour}`) || 0,
         ),
       },
-      tz: "IST",
+      timezone: resolvedTimezone,
+      tz: resolvedTimezone,
     };
   }
 
@@ -615,5 +636,6 @@ module.exports = {
   resolveCompareRange,
   parseHourLte,
   buildClosedOpenTimestampRange,
+  buildTimezoneBuckets,
   buildIstBuckets,
 };

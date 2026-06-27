@@ -1,5 +1,4 @@
 const { QueryTypes } = require("sequelize");
-const redisClient = require("../shared/db/redis");
 const { normalizeRangeQuery } = require("./metricsRequestNormalizer");
 const {
   buildCompletedHourCutoffContext,
@@ -50,6 +49,15 @@ const PREVIOUS_HEADER_MAP = {
   cvr: "prev_cvr",
 };
 
+let defaultRedisClient;
+
+function getDefaultRedisClient() {
+  if (defaultRedisClient === undefined) {
+    defaultRedisClient = require("../shared/db/redis");
+  }
+  return defaultRedisClient;
+}
+
 function hasCompareRange(spec) {
   return !!(spec.compareStart && spec.compareEnd);
 }
@@ -99,10 +107,11 @@ function buildMetricFilterExpression(field) {
   }
 }
 
-function normalizeProductConversionRequest(query) {
+function normalizeProductConversionRequest(query, options = {}) {
   const range = normalizeRangeQuery(query, {
     defaultToToday: true,
     allowDateAlias: false,
+    timezone: options.timezone,
   });
   if (!range.ok) {
     return range;
@@ -143,6 +152,7 @@ function normalizeProductConversionRequest(query) {
         String(query.inventory_only || query.inventoryOnly || "")
           .toLowerCase()
           .trim() === "true",
+      timezone: range.timezone || options.timezone,
     },
   };
 }
@@ -203,7 +213,7 @@ function buildProductConditions(spec, baseAlias) {
 function buildBaseCte(spec, includeCompare = false) {
   const cutoffCtx =
     includeCompare && hasCompareRange(spec)
-      ? buildCompletedHourCutoffContext(spec.start, spec.end)
+      ? buildCompletedHourCutoffContext(spec.start, spec.end, new Date(), spec.timezone)
       : {
           currentRangeIncludesToday: false,
           cutoffHour: 23,
@@ -539,6 +549,7 @@ function applySearch(rows, search) {
 
 function buildProductConversionService() {
   async function getInventoryOnlyRowsFromRedis(spec, resolveShopSubdomain) {
+    const redisClient = getDefaultRedisClient();
     if (!redisClient || !resolveShopSubdomain) return [];
 
     const brandKey = spec.brandKey || "";
@@ -646,7 +657,9 @@ function buildProductConversionService() {
   }
 
   async function enrichWithRedis(rows, spec, resolveShopSubdomain) {
-    if (!redisClient || !resolveShopSubdomain) return rows;
+    if (!resolveShopSubdomain) return rows;
+    const redisClient = getDefaultRedisClient();
+    if (!redisClient) return rows;
 
     const brandKey = spec.brandKey || "";
     const shopName = resolveShopSubdomain(brandKey);
@@ -713,6 +726,7 @@ function buildProductConversionService() {
 
       return {
         range: { start: spec.start, end: spec.end },
+        timezone: spec.timezone,
         page: spec.page,
         page_size: spec.pageSize,
         total_count: sorted.length,
@@ -748,6 +762,7 @@ function buildProductConversionService() {
 
     return {
       range: { start: spec.start, end: spec.end },
+      timezone: spec.timezone,
       page: spec.page,
       page_size: spec.pageSize,
       total_count: sorted.length,
@@ -767,6 +782,7 @@ function buildProductConversionService() {
         spec.start === spec.end ? spec.start : `${spec.start}_to_${spec.end}`;
       return {
         filename: `product_conversion_${dateTag}.csv`,
+        timezone: spec.timezone,
         headers,
         csv: buildCsvContent(sorted, headers),
       };
@@ -797,6 +813,7 @@ function buildProductConversionService() {
       spec.start === spec.end ? spec.start : `${spec.start}_to_${spec.end}`;
     return {
       filename: `product_conversion_${dateTag}.csv`,
+      timezone: spec.timezone,
       headers,
       csv: buildCsvContent(sorted, headers),
     };

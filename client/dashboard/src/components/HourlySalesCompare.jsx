@@ -235,9 +235,10 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
           comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
         } else {
           points = Array.isArray(res.points) ? res.points : [];
-          const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-          if (viewMode === 'hourly' && start === todayIST) {
-            const currentHour = parseInt(new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour12: false, hour: 'numeric' }));
+          const timezone = res.timezone || 'Asia/Kolkata';
+          const todayInStoreTimezone = new Date().toLocaleDateString('en-CA', { timeZone: timezone });
+          if (viewMode === 'hourly' && start === todayInStoreTimezone) {
+            const currentHour = parseInt(new Date().toLocaleTimeString('en-US', { timeZone: timezone, hour12: false, hour: 'numeric' }));
             points = points.filter(p => p.hour <= currentHour);
           }
           comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];

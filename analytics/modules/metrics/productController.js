@@ -11,7 +11,7 @@ function buildProductController({ pageService }) {
   return {
     topProductPages: async (req, res) => {
       try {
-        const parsed = parseRangeQuery(req.query);
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
         if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
         const { start, end } = parsed.data;
         const brandConn = ensureBrandSequelize(req);
@@ -32,6 +32,7 @@ function buildProductController({ pageService }) {
             end: rangeEnd,
             limit,
             resolveShopSubdomain,
+            timezone: req.tenantRoute?.timezone,
           }),
         );
       } catch (e) {
@@ -41,7 +42,7 @@ function buildProductController({ pageService }) {
 
     topProducts: async (req, res) => {
       try {
-        const parsed = parseRangeQuery(req.query);
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
         if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
         const { start, end } = parsed.data;
         const brandConn = ensureBrandSequelize(req);
@@ -61,6 +62,7 @@ function buildProductController({ pageService }) {
             start: rangeStart,
             end: rangeEnd,
             limit,
+            timezone: req.tenantRoute?.timezone,
           }),
         );
       } catch (e) {
@@ -70,7 +72,7 @@ function buildProductController({ pageService }) {
 
     productKpis: async (req, res) => {
       try {
-        const parsed = parseRangeQuery(req.query);
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
         if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
         const { start, end } = parsed.data;
         const brandConn = ensureBrandSequelize(req);
@@ -86,6 +88,7 @@ function buildProductController({ pageService }) {
             start: rangeStart,
             end: rangeEnd,
             filters: extractFilters(req),
+            timezone: req.tenantRoute?.timezone,
           }),
         );
       } catch (e) {
@@ -101,6 +104,7 @@ function buildProductController({ pageService }) {
           await pageService.getProductTypes({
             conn: brandConn.conn,
             date: req.query.date,
+            timezone: req.tenantRoute?.timezone,
           }),
         );
       } catch (e) {
@@ -110,7 +114,10 @@ function buildProductController({ pageService }) {
 
     hourlyProductSessionsExport: async (req, res) => {
       try {
-        const parsed = parseRangeQuery(req.query, { defaultToToday: true });
+        const parsed = parseRangeQuery(req.query, {
+          defaultToToday: true,
+          timezone: req.tenantRoute?.timezone,
+        });
         if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
         const { start, end } = parsed.data;
         const brandConn = ensureBrandSequelize(req);
@@ -131,6 +138,7 @@ function buildProductController({ pageService }) {
           start,
           end,
           filters,
+          timezone: req.tenantRoute?.timezone,
         });
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="${exportResult.filename}"`);
@@ -153,6 +161,7 @@ function buildProductController({ pageService }) {
           await pageService.getHourlySalesSummary({
             conn: brandConn.conn,
             brandKey,
+            timezone: req.tenantRoute?.timezone,
           }),
         );
       } catch (e) {

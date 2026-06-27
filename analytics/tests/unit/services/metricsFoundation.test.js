@@ -4,6 +4,9 @@ const {
   formatUtcDate,
   getNowIst,
   getTodayIst,
+  getTodayInTimezone,
+  getTimezoneContext,
+  normalizeTimezone,
   isTodayUtc,
   secondsToTime,
   parseHourFromCutoff,
@@ -20,6 +23,15 @@ describe("metricsFoundation", () => {
     expect(formatUtcDate(now)).toBe("2026-03-31");
     expect(getNowIst(now).toISOString()).toBe("2026-03-31T12:00:15.000Z");
     expect(getTodayIst(now)).toBe("2026-03-31");
+    expect(getTodayInTimezone("Asia/Riyadh", now)).toBe("2026-03-31");
+    expect(getTimezoneContext(now, "America/New_York")).toMatchObject({
+      timezone: "America/New_York",
+      today: "2026-03-31",
+      currentHour: 2,
+      currentMinute: 30,
+      currentSecond: 15,
+    });
+    expect(normalizeTimezone("bad-zone")).toBe("Asia/Kolkata");
     expect(isTodayUtc("2026-03-31", now)).toBe(true);
     expect(secondsToTime(43215)).toBe("12:00:15");
     expect(parseHourFromCutoff("12:34:56")).toBe(12);
@@ -28,11 +40,12 @@ describe("metricsFoundation", () => {
   test("builds live and completed-hour cutoff contexts with row-two comparison cutoffs", () => {
     const now = new Date("2026-03-31T06:30:15Z");
 
-    const live = buildLiveCutoffContext("2026-03-31", "2026-03-31", now);
+    const live = buildLiveCutoffContext("2026-03-31", "2026-03-31", now, "Asia/Kolkata");
     const completed = buildCompletedHourCutoffContext(
       "2026-03-31",
       "2026-03-31",
       now,
+      "Asia/Kolkata",
     );
 
     expect(live).toMatchObject({
@@ -49,8 +62,32 @@ describe("metricsFoundation", () => {
     });
     expect(buildRowTwoComparisonCutoffs(live)).toEqual({
       currentCutoffHour: 12,
-      previousSessionCutoffHour: 11,
-      previousOrderCutoffTime: "12:00:00",
+      previousSessionCutoffHour: 12,
+      currentOrderCutoffTime: "13:00:00",
+      previousOrderCutoffTime: "13:00:00",
+    });
+  });
+
+  test("detects today across UTC day boundaries in store timezone", () => {
+    const now = new Date("2026-04-01T02:30:00Z");
+    const live = buildLiveCutoffContext("2026-03-31", "2026-03-31", now, "America/New_York");
+    const completed = buildCompletedHourCutoffContext(
+      "2026-03-31",
+      "2026-03-31",
+      now,
+      "America/New_York",
+    );
+
+    expect(live).toMatchObject({
+      includesToday: true,
+      cutoffHour: 22,
+      today: "2026-03-31",
+      timezone: "America/New_York",
+    });
+    expect(completed).toMatchObject({
+      currentRangeIncludesToday: true,
+      cutoffHour: 21,
+      orderCutoffTime: "22:30:00",
     });
   });
 

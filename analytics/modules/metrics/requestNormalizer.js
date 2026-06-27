@@ -2,9 +2,22 @@ const {
   normalizeRangeQuery,
   normalizeMetricRequest,
 } = require('../../services/metricsRequestNormalizer');
+const { DEFAULT_TIMEZONE, normalizeTimezone } = require('../../shared/utils/date');
 
-function parseRangeQuery(query = {}, { defaultToToday = false } = {}) {
-  return normalizeRangeQuery(query, { defaultToToday, allowDateAlias: false });
+function resolveRequestTimezone(reqOrOptions = {}, maybeOptions = {}) {
+  if (reqOrOptions?.tenantRoute || reqOrOptions?.brandTimezone) {
+    return normalizeTimezone(
+      reqOrOptions?.tenantRoute?.timezone ||
+      reqOrOptions?.brandTimezone ||
+      maybeOptions.timezone ||
+      DEFAULT_TIMEZONE,
+    );
+  }
+  return normalizeTimezone(reqOrOptions.timezone || DEFAULT_TIMEZONE);
+}
+
+function parseRangeQuery(query = {}, { defaultToToday = false, timezone = DEFAULT_TIMEZONE } = {}) {
+  return normalizeRangeQuery(query, { defaultToToday, allowDateAlias: false, timezone });
 }
 
 function ensureBrandSequelize(req, errorMessage = 'Brand DB connection unavailable') {
@@ -20,4 +33,5 @@ module.exports = {
   normalizeMetricRequest,
   parseRangeQuery,
   ensureBrandSequelize,
+  resolveRequestTimezone,
 };

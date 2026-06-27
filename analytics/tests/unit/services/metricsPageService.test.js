@@ -35,6 +35,7 @@ describe("metricsPageService", () => {
 
     expect(result).toEqual({
       brand_key: "TMC",
+      timezone: "Asia/Kolkata",
       range: { start: "2026-03-01", end: "2026-03-31" },
       pages: [
         {
@@ -68,6 +69,7 @@ describe("metricsPageService", () => {
       conn: {},
       brandKey: "TMC",
       now: expect.any(Date),
+      timezone: "Asia/Kolkata",
     });
     expect(result).toEqual({
       metric: "HOURLY_SALES_SUMMARY",
@@ -90,11 +92,13 @@ describe("metricsPageService", () => {
       start: "2026-03-01",
       end: "2026-03-31",
       filters: { product_id: "sku-1" },
+      timezone: "Asia/Riyadh",
     });
 
     expect(result).toEqual({
       product_id: "sku-1",
       brand_key: "TMC",
+      timezone: "Asia/Riyadh",
       range: { start: "2026-03-01", end: "2026-03-31" },
       sessions: 100,
       sessions_with_cart_additions: 20,
@@ -119,10 +123,12 @@ describe("metricsPageService", () => {
     const result = await service.getProductTypes({
       conn,
       date: "2026-03-31",
+      timezone: "Asia/Riyadh",
     });
 
     expect(result).toEqual({
       date: "2026-03-31",
+      timezone: "Asia/Riyadh",
       types: ["Bundle", "Single"],
     });
   });
@@ -154,6 +160,7 @@ describe("metricsPageService", () => {
       start: "2026-03-31",
       end: "2026-03-31",
       filters: { product_id: "sku-1" },
+      timezone: "Asia/Riyadh",
     });
 
     expect(queryHourlyProductSessions).toHaveBeenCalledWith({
@@ -164,6 +171,7 @@ describe("metricsPageService", () => {
       filters: { product_id: "sku-1" },
     });
     expect(result.filename).toBe("hourly_product_sessions_TMC_2026-03-31.csv");
+    expect(result.timezone).toBe("Asia/Riyadh");
     expect(result.csv).toContain(
       "date,hour,landing_page_type,landing_page_path,product_id,product_title,utm_source,utm_medium,utm_campaign,utm_content,utm_term,referrer_name,sessions,sessions_with_cart_additions",
     );

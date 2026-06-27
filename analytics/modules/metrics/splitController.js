@@ -14,7 +14,7 @@ function buildSplitController({ reportService }) {
   return {
     trafficSourceSplit: async (req, res) => {
       try {
-        const parsed = parseRangeQuery(req.query);
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
         if (!parsed.ok) return res.status(400).json({ error: 'Invalid date range' });
         const { start, end } = parsed.data;
         const brandConn = ensureBrandSequelize(req);
@@ -26,6 +26,7 @@ function buildSplitController({ reportService }) {
             end,
             compareStart: req.query.compare_start || null,
             compareEnd: req.query.compare_end || null,
+            timezone: req.tenantRoute?.timezone,
           }),
         );
       } catch (e) {
@@ -35,7 +36,7 @@ function buildSplitController({ reportService }) {
 
     orderSplit: async (req, res) => {
       try {
-        const parsed = parseRangeQuery(req.query);
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
         if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
         const { start, end } = parsed.data;
         const brandConn = ensureBrandSequelize(req);
@@ -50,6 +51,7 @@ function buildSplitController({ reportService }) {
             productId: (req.query.product_id || '').toString().trim(),
             filters: extractFilters(req),
             includeSql: process.env.NODE_ENV !== 'production',
+            timezone: req.tenantRoute?.timezone,
           }),
         );
       } catch (err) {
@@ -59,7 +61,7 @@ function buildSplitController({ reportService }) {
 
     paymentSalesSplit: async (req, res) => {
       try {
-        const parsed = parseRangeQuery(req.query);
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
         if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
         const { start, end } = parsed.data;
         const brandConn = ensureBrandSequelize(req);
@@ -74,6 +76,7 @@ function buildSplitController({ reportService }) {
             productId: (req.query.product_id || '').toString().trim(),
             filters: extractFilters(req),
             includeSql: process.env.NODE_ENV !== 'production',
+            timezone: req.tenantRoute?.timezone,
           }),
         );
       } catch (e) {
@@ -98,6 +101,7 @@ function buildSplitController({ reportService }) {
           await reportService.getHourlySalesCompare({
             conn: brandConn.sequelize,
             days: N,
+            timezone: req.tenantRoute?.timezone,
           }),
         );
       } catch (e) {

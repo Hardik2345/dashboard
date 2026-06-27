@@ -58,17 +58,35 @@ function getPreviousRange(start, end) {
     };
 }
 
-function getHourlyCutoffForTodayRange(start, end) {
+function getTimezoneParts(date, timezone) {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone || 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        hour12: false,
+    });
+    const parts = formatter.formatToParts(date).reduce((acc, part) => {
+        if (part.type !== 'literal') acc[part.type] = part.value;
+        return acc;
+    }, {});
+    const hour = Number(parts.hour || 0);
+    return {
+        date: `${parts.year}-${parts.month}-${parts.day}`,
+        hour: hour === 24 ? 0 : hour,
+    };
+}
+
+function getHourlyCutoffForTodayRange(start, end, timezone) {
     if (!start || !end) return null;
 
-    const IST_OFFSET_MIN = 330;
-    const nowIst = new Date(Date.now() + IST_OFFSET_MIN * 60 * 1000);
-    const todayIst = `${nowIst.getUTCFullYear()}-${String(nowIst.getUTCMonth() + 1).padStart(2, '0')}-${String(nowIst.getUTCDate()).padStart(2, '0')}`;
-    const includesToday = start <= todayIst && end >= todayIst;
+    const nowLocal = getTimezoneParts(new Date(), timezone);
+    const includesToday = start <= nowLocal.date && end >= nowLocal.date;
 
     if (!includesToday) return null;
 
-    return Math.max(0, nowIst.getUTCHours() - 1);
+    return Math.max(0, nowLocal.hour - 1);
 }
 
 const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
@@ -99,26 +117,37 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                 const prevRangeData = getPreviousRange(start, end);
                 setPrevRange(prevRangeData);
 
-                const hourLte = getHourlyCutoffForTodayRange(start, end);
+                const [
+                    currOrders,
+                    currSales,
+                    prevFullOrders,
+                    prevFullSales
+                ] = await Promise.all([
+                    getOrderSplit({ start, end, ...rest }),
+                    getPaymentSalesSplit({ start, end, ...rest }),
+                    prevRangeData.start ? getOrderSplit({ start: prevRangeData.start, end: prevRangeData.end, ...rest }) : Promise.resolve({}),
+                    prevRangeData.start ? getPaymentSalesSplit({ start: prevRangeData.start, end: prevRangeData.end, ...rest }) : Promise.resolve({})
+                ]);
+
+                const splitTimezone = currOrders?.timezone || currSales?.timezone || query?.timezone || 'Asia/Kolkata';
+                const hourLte = getHourlyCutoffForTodayRange(start, end, splitTimezone);
                 const compareArgs = Number.isInteger(hourLte)
                     ? { ...rest, hour_lte: hourLte }
                     : rest;
 
                 const [
-                    currOrders,
-                    currSales,
                     currCompareOrders,
                     currCompareSales,
                     prevCompareOrders,
                     prevCompareSales
-                ] = await Promise.all([
-                    getOrderSplit({ start, end, ...rest }),
-                    getPaymentSalesSplit({ start, end, ...rest }),
-                    Number.isInteger(hourLte) ? getOrderSplit({ start, end, ...compareArgs }) : Promise.resolve(null),
-                    Number.isInteger(hourLte) ? getPaymentSalesSplit({ start, end, ...compareArgs }) : Promise.resolve(null),
-                    prevRangeData.start ? getOrderSplit({ start: prevRangeData.start, end: prevRangeData.end, ...compareArgs }) : Promise.resolve({}),
-                    prevRangeData.start ? getPaymentSalesSplit({ start: prevRangeData.start, end: prevRangeData.end, ...compareArgs }) : Promise.resolve({})
-                ]);
+                ] = Number.isInteger(hourLte)
+                    ? await Promise.all([
+                        getOrderSplit({ start, end, ...compareArgs }),
+                        getPaymentSalesSplit({ start, end, ...compareArgs }),
+                        prevRangeData.start ? getOrderSplit({ start: prevRangeData.start, end: prevRangeData.end, ...compareArgs }) : Promise.resolve({}),
+                        prevRangeData.start ? getPaymentSalesSplit({ start: prevRangeData.start, end: prevRangeData.end, ...compareArgs }) : Promise.resolve({})
+                    ])
+                    : [null, null, prevFullOrders, prevFullSales];
 
                 if (cancelled) return;
 
