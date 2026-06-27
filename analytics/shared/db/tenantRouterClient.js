@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const { LRUCache } = require("lru-cache");
 const logger = require("../utils/logger");
 const { getBrands } = require("../../config/brands");
+const { DEFAULT_TIMEZONE, normalizeTimezone } = require("../utils/date");
 
 const LOCAL_MODE = (process.env.LOCAL_MODE || "").toLowerCase() === "true";
 
@@ -53,11 +54,26 @@ function resolveFromEnv(brandKey) {
   const pass = process.env[`${prefix}_DB_PASS`];
   const dbName = process.env[`${prefix}_DB_NAME`] || brandKey;
   const port = Number(process.env[`${prefix}_DB_PORT`] || 3306);
+  const timezone = normalizeTimezone(process.env[`${prefix}_STORE_TIMEZONE`] || DEFAULT_TIMEZONE);
 
   if (host && user && pass) {
-    return { brandId: brandKey, host, port, user, password: pass, dbName };
+    return { brandId: brandKey, host, port, user, password: pass, dbName, timezone };
   }
   return null;
+}
+
+function resolveRouteTimezone(rawTimezone, brandKey) {
+  const fallback = DEFAULT_TIMEZONE;
+  const candidate = (rawTimezone || "").toString().trim();
+  const timezone = normalizeTimezone(candidate || fallback, fallback);
+  if (!candidate || timezone !== candidate) {
+    logger.warn("[tenantRouterClient] invalid or missing store_timezone; using fallback", {
+      brand: brandKey,
+      store_timezone: candidate || null,
+      fallback,
+    });
+  }
+  return timezone;
 }
 
 async function resolveFromTenantRouter(brandKey) {
@@ -83,6 +99,7 @@ async function resolveFromTenantRouter(brandKey) {
       port: Number(data.port || 3306),
       user: data.user || "",
       password,
+      timezone: resolveRouteTimezone(data.store_timezone, key),
     };
     if (!route.host || !route.user || !route.password) {
       logger.error("[tenantRouterClient] incomplete route from tenant router", { brand: key });

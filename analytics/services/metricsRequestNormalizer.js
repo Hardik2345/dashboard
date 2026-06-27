@@ -1,5 +1,10 @@
 const { RangeSchema } = require("../validation/schemas");
-const { formatIsoDate } = require("../shared/utils/date");
+const {
+  DEFAULT_TIMEZONE,
+  formatIsoDate,
+  getTodayInTimezone,
+  normalizeTimezone,
+} = require("../shared/utils/date");
 const { extractFilters } = require("../shared/utils/filters");
 
 function normalizeRangeQuery(query = {}, options = {}) {
@@ -7,8 +12,12 @@ function normalizeRangeQuery(query = {}, options = {}) {
     defaultToToday = false,
     requireBoth = false,
     allowDateAlias = true,
+    timezone = DEFAULT_TIMEZONE,
   } = options;
-  const todayStr = formatIsoDate(new Date());
+  const resolvedTimezone = normalizeTimezone(timezone);
+  const todayStr = defaultToToday
+    ? getTodayInTimezone(resolvedTimezone, new Date())
+    : formatIsoDate(new Date());
   const dateAlias = allowDateAlias ? query.date : undefined;
   const startInput = query.start || dateAlias || (defaultToToday ? todayStr : undefined);
   const endInput =
@@ -48,11 +57,18 @@ function normalizeRangeQuery(query = {}, options = {}) {
   return {
     ok: true,
     data: { start, end },
+    timezone: resolvedTimezone,
   };
 }
 
 function normalizeMetricRequest(req, options = {}) {
-  const range = normalizeRangeQuery(req.query, options);
+  const timezone = normalizeTimezone(
+    req?.tenantRoute?.timezone ||
+    req?.brandTimezone ||
+    options.timezone ||
+    DEFAULT_TIMEZONE,
+  );
+  const range = normalizeRangeQuery(req.query, { ...options, timezone });
   if (!range.ok) {
     return range;
   }
@@ -79,6 +95,7 @@ function normalizeMetricRequest(req, options = {}) {
       brandKey: req.brandKey,
       brandKeys,
       conn: req.brandDb?.sequelize || null,
+      timezone,
     },
   };
 }

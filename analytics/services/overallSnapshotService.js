@@ -137,6 +137,7 @@ function buildOverallSnapshotService({
         ...spec,
         brandKey,
         conn: tenant?.sequelize || null,
+        timezone: route.timezone || spec.timezone,
       });
 
       return buildSuccessfulBrandSnapshot(brandKey, summary);

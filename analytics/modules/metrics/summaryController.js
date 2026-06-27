@@ -45,6 +45,7 @@ function buildSummaryController({ metricsService }) {
             conn: normalized.spec.conn,
             start: normalized.spec.start,
             end: normalized.spec.end,
+            timezone: normalized.spec.timezone,
           }),
         });
       } catch (e) {

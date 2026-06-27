@@ -32,10 +32,12 @@ describe("metricsReportService", () => {
       conn,
       days: 2,
       now: new Date("2026-03-31T06:30:00Z"),
+      timezone: "Asia/Kolkata",
     });
 
     expect(conn.query).toHaveBeenCalledTimes(2);
-    expect(response.tz).toBe("IST");
+    expect(response.timezone).toBe("Asia/Kolkata");
+    expect(response.tz).toBe("Asia/Kolkata");
     expect(response.labels).toHaveLength(37);
     expect(response.series.current[0]).toBe(10);
     expect(response.series.current[12]).toBe(25);
@@ -43,6 +45,34 @@ describe("metricsReportService", () => {
     expect(response.series.yesterday[0]).toBe(7);
     expect(response.series.yesterday[12]).toBe(15);
     expect(response.series.yesterday[36]).toBe(20);
+  });
+
+  test("builds hourly buckets in non-IST store timezone", async () => {
+    const conn = {
+      query: jest.fn().mockImplementation((sql, options = {}) => {
+        const [start, end] = options.replacements || [];
+        if (start === "2026-03-31" && end === "2026-03-31") {
+          return Promise.resolve([{ date: "2026-03-31", hour: 10, total_sales: 25 }]);
+        }
+        if (start === "2026-03-30" && end === "2026-03-30") {
+          return Promise.resolve([{ date: "2026-03-30", hour: 10, total_sales: 15 }]);
+        }
+        return Promise.resolve([]);
+      }),
+    };
+
+    const service = buildMetricsReportService();
+    const response = await service.getHourlySalesCompare({
+      conn,
+      days: 1,
+      now: new Date("2026-03-31T07:30:00Z"),
+      timezone: "Asia/Riyadh",
+    });
+
+    expect(response.timezone).toBe("Asia/Riyadh");
+    expect(response.labels).toHaveLength(11);
+    expect(response.series.current[10]).toBe(25);
+    expect(response.series.yesterday[10]).toBe(15);
   });
 
   test("returns payment sales split with pure filter predicates", async () => {

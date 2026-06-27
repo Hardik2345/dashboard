@@ -56,14 +56,15 @@ export default function KPIs({
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
   const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
-  const todayIst = new Date().toLocaleDateString("en-CA", {
-    timeZone: "Asia/Kolkata",
+  const dashboardTimezone = query?.timezone || "Asia/Kolkata";
+  const todayInDashboardTimezone = new Date().toLocaleDateString("en-CA", {
+    timeZone: dashboardTimezone,
   });
   const webVitalsData = useWebVitals(
     {
       ...query,
-      start: todayIst,
-      end: todayIst,
+      start: todayInDashboardTimezone,
+      end: todayInDashboardTimezone,
     },
     "PERFORMANCE",
   );

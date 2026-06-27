@@ -101,10 +101,12 @@ describe("metricsSnapshotService", () => {
         compareEnd: null,
         aggregate: "",
         filters: { product_id: "sku-1" },
+        timezone: "Asia/Riyadh",
       },
       "hourly",
     );
 
+    expect(response.timezone).toBe("Asia/Riyadh");
     expect(response.points).toHaveLength(24);
     expect(response.points[10].metrics.sessions).toBe(24);
     expect(response.points[10].metrics.atc).toBe(6);
@@ -265,7 +267,7 @@ describe("metricsSnapshotService", () => {
             utm_campaign: "launch",
           },
         ])
-        .mockResolvedValueOnce([{ discount_code: "SAVE10" }]),
+        .mockResolvedValueOnce([{ discount_code: "SAVE10" }])
         .mockResolvedValueOnce([{ city: "Dubai" }, { city: "Mumbai" }]),
     };
     const service = buildMetricsSnapshotService();

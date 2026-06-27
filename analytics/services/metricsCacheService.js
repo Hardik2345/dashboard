@@ -1,17 +1,25 @@
 const { QueryTypes } = require("sequelize");
-const redisClient = require("../shared/db/redis");
 const logger = require("../shared/utils/logger");
-const { getNowIst, formatUtcDate } = require("./metricsFoundation");
+const { DEFAULT_TIMEZONE, getTodayInTimezone, normalizeTimezone, shiftDays } = require("./metricsFoundation");
 
 const MEM_CACHE = new Map();
 const CACHE_TTL_MS = 60 * 1000;
+let defaultRedisClient;
+
+function getDefaultRedisClient() {
+  if (defaultRedisClient === undefined) {
+    defaultRedisClient = require("../shared/db/redis");
+  }
+  return defaultRedisClient;
+}
 
 function buildMetricsCacheService({
   cache = MEM_CACHE,
   ttlMs = CACHE_TTL_MS,
-  client = redisClient,
+  client,
   log = logger,
 } = {}) {
+  const redisClient = client === undefined ? getDefaultRedisClient() : client;
   async function fetchCachedMetrics(brandKey, date) {
     const key = `metrics:${brandKey.toLowerCase()}:${date}`;
     const now = Date.now();
@@ -32,8 +40,8 @@ function buildMetricsCacheService({
     const promise = (async () => {
       try {
         let data = null;
-        if (client) {
-          const raw = await client.get(key);
+        if (redisClient) {
+          const raw = await redisClient.get(key);
           if (raw) {
             data = JSON.parse(raw);
             log.debug(`[REDIS HIT] ${key}`);
@@ -98,9 +106,9 @@ function buildMetricsCacheService({
     }
 
     try {
-      if (client) {
+      if (redisClient) {
         log.debug(`[REDIS MGET] Fetching ${missingKeys.length} keys`);
-        const rawValues = await client.mget(missingKeys);
+        const rawValues = await redisClient.mget(missingKeys);
         rawValues.forEach((raw, index) => {
           const originalIndex = missingIndices[index];
           const key = missingKeys[index];
@@ -157,12 +165,11 @@ function buildMetricsCacheService({
     brandKey,
     conn,
     now = new Date(),
+    timezone = DEFAULT_TIMEZONE,
   }) {
-    const nowIst = getNowIst(now);
-    const todayStr = formatUtcDate(nowIst);
-    const yesterdayStr = formatUtcDate(
-      new Date(nowIst.getTime() - 24 * 60 * 60 * 1000),
-    );
+    const resolvedTimezone = normalizeTimezone(timezone);
+    const todayStr = getTodayInTimezone(resolvedTimezone, now);
+    const yesterdayStr = shiftDays(todayStr, -1);
 
     const keyToday = `hourly_metrics:${brandKey.toLowerCase()}:${todayStr}`;
     const keyYesterday = `hourly_metrics:${brandKey.toLowerCase()}:${yesterdayStr}`;
@@ -172,9 +179,9 @@ function buildMetricsCacheService({
     let todaySource = "db";
     let yesterdaySource = "db";
 
-    if (client) {
+    if (redisClient) {
       try {
-        const results = await client.mget(keyToday, keyYesterday);
+        const results = await redisClient.mget(keyToday, keyYesterday);
         if (results[0]) {
           todayData = JSON.parse(results[0]);
           todaySource = "redis";
@@ -230,6 +237,7 @@ function buildMetricsCacheService({
     return {
       metric: "HOURLY_SALES_SUMMARY",
       brand: brandKey,
+      timezone: resolvedTimezone,
       source:
         todaySource === "redis" && yesterdaySource === "redis"
           ? "redis"

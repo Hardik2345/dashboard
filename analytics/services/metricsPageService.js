@@ -1,5 +1,9 @@
 const { QueryTypes } = require("sequelize");
-const { formatIsoDate } = require("../shared/utils/date");
+const {
+  DEFAULT_TIMEZONE,
+  getTodayInTimezone,
+  normalizeTimezone,
+} = require("../shared/utils/date");
 const {
   queryHourlyProductSessions,
 } = require("./duckdbQueryService");
@@ -15,6 +19,7 @@ function buildMetricsPageService({ cacheService } = {}) {
     end,
     limit = 5,
     resolveShopSubdomain,
+    timezone = DEFAULT_TIMEZONE,
   }) {
     const rows = await conn.query(
       `
@@ -64,6 +69,7 @@ function buildMetricsPageService({ cacheService } = {}) {
 
     return {
       brand_key: brandKey || null,
+      timezone,
       range: { start, end },
       pages,
     };
@@ -75,6 +81,7 @@ function buildMetricsPageService({ cacheService } = {}) {
     start,
     end,
     limit = 50,
+    timezone = DEFAULT_TIMEZONE,
   }) {
     const rows = await conn.query(
       `
@@ -98,6 +105,7 @@ function buildMetricsPageService({ cacheService } = {}) {
 
     return {
       brand_key: brandKey || null,
+      timezone,
       range: { start, end },
       products: rows.map((row, index) => {
         const totalSessions = Number(row.total_sessions || 0);
@@ -122,6 +130,7 @@ function buildMetricsPageService({ cacheService } = {}) {
     start,
     end,
     filters = {},
+    timezone = DEFAULT_TIMEZONE,
   }) {
     const totals = await queryProductKpiTotals({
       conn,
@@ -140,6 +149,7 @@ function buildMetricsPageService({ cacheService } = {}) {
     return {
       product_id: filters.product_id,
       brand_key: brandKey || null,
+      timezone,
       range: { start, end },
       sessions: totalSessions,
       sessions_with_cart_additions: totalAtcSessions,
@@ -152,14 +162,16 @@ function buildMetricsPageService({ cacheService } = {}) {
     };
   }
 
-  async function getHourlySalesSummary({ conn, brandKey, now = new Date() }) {
+  async function getHourlySalesSummary({ conn, brandKey, now = new Date(), timezone = DEFAULT_TIMEZONE }) {
     if (!cacheService) {
       throw new Error("Hourly sales summary cache service unavailable");
     }
-    return cacheService.getHourlySalesSummary({ conn, brandKey, now });
+    return cacheService.getHourlySalesSummary({ conn, brandKey, now, timezone });
   }
 
-  async function getProductTypes({ conn, date = formatIsoDate(new Date()) }) {
+  async function getProductTypes({ conn, date, timezone = DEFAULT_TIMEZONE }) {
+    const resolvedTimezone = normalizeTimezone(timezone);
+    const effectiveDate = date || getTodayInTimezone(resolvedTimezone, new Date());
     const rows = await conn.query(
       `
         SELECT DISTINCT product_type
@@ -174,7 +186,8 @@ function buildMetricsPageService({ cacheService } = {}) {
     );
 
     return {
-      date,
+      date: effectiveDate,
+      timezone: resolvedTimezone,
       types: rows.map((row) => row.product_type),
     };
   }
@@ -185,6 +198,7 @@ function buildMetricsPageService({ cacheService } = {}) {
     start,
     end,
     filters = {},
+    timezone = DEFAULT_TIMEZONE,
   }) {
     const startD = new Date(start);
     const endD = new Date(end);
@@ -256,6 +270,7 @@ function buildMetricsPageService({ cacheService } = {}) {
     const dateTag = start === end ? start : `${start}_to_${end}`;
     return {
       filename: `hourly_product_sessions_${brandKey || "all"}_${dateTag}.csv`,
+      timezone,
       csv: lines.join("\n"),
     };
   }

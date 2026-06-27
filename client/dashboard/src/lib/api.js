@@ -779,6 +779,7 @@ export async function getOrderSplit(args) {
       (total > 0 ? (partially_paid_orders / total) * 100 : 0),
   );
   return {
+    timezone: json?.timezone || "Asia/Kolkata",
     cod_orders,
     prepaid_orders,
     partially_paid_orders,
@@ -814,6 +815,7 @@ export async function getPaymentSalesSplit(args) {
   );
   // Backward-compatible return shape with new fields appended
   return {
+    timezone: json?.timezone || "Asia/Kolkata",
     cod_sales,
     prepaid_sales,
     partial_sales,
@@ -1037,6 +1039,7 @@ export async function getHourlySalesSummary(args = {}) {
   const json = await getJSON("/metrics/hourly-sales-summary", params);
   return {
     data: json?.data || null,
+    timezone: json?.timezone || "Asia/Kolkata",
     error: json?.__error,
   };
 }
@@ -1063,7 +1066,7 @@ export async function getHourlyTrend(args) {
   return {
     points: Array.isArray(json?.points) ? json.points : [],
     range: json?.range || null,
-    timezone: json?.timezone || "IST",
+    timezone: json?.timezone || "Asia/Kolkata",
     alignHour: typeof json?.alignHour === "number" ? json.alignHour : null,
     comparison: comparison
       ? {
@@ -1102,7 +1105,7 @@ export async function getDailyTrend(args) {
         ? { range: json.comparison.range || null, days: json.comparison.days }
         : null,
     range: json?.range || null,
-    timezone: json?.timezone || "IST",
+    timezone: json?.timezone || "Asia/Kolkata",
     error: json?.__error,
   };
 }
@@ -1130,7 +1133,7 @@ export async function getMonthlyTrend(args) {
           }
         : null,
     range: json?.range || null,
-    timezone: json?.timezone || "IST",
+    timezone: json?.timezone || "Asia/Kolkata",
     error: json?.__error,
   };
 }

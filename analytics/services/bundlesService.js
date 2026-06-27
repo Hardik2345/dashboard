@@ -1,10 +1,12 @@
 const { QueryTypes } = require("sequelize");
 const { normalizeRangeQuery } = require("./metricsRequestNormalizer");
+const { DEFAULT_TIMEZONE, normalizeTimezone } = require("./metricsFoundation");
 
 function normalizeBundleRequest(query = {}, options = {}) {
   const range = normalizeRangeQuery(query, {
     defaultToToday: true,
     allowDateAlias: false,
+    timezone: options.timezone,
   });
   if (!range.ok) {
     return range;
@@ -50,12 +52,14 @@ function normalizeBundleRequest(query = {}, options = {}) {
       bundleProductId: bundleProductIds[0] || "",
       bundleProductIds,
       brandKey: (query.brand_key || "").toString().trim().toUpperCase(),
+      timezone: normalizeTimezone(range.timezone || options.timezone || DEFAULT_TIMEZONE),
     },
   };
 }
 
 function buildBundlesService() {
-  async function getBundleOptions({ conn, start, end }) {
+  async function getBundleOptions({ conn, start, end, timezone }) {
+    const resolvedTimezone = normalizeTimezone(timezone || DEFAULT_TIMEZONE);
     const sql = `
       SELECT
         m.bundle_product_id,
@@ -77,6 +81,7 @@ function buildBundlesService() {
     });
 
     return {
+      timezone: resolvedTimezone,
       bundles: rows.map((row) => ({
         bundle_product_id: String(row.bundle_product_id || ""),
         bundle_name: row.bundle_name || "",
@@ -85,7 +90,8 @@ function buildBundlesService() {
     };
   }
 
-  async function getBundleSummary({ conn, start, end }) {
+  async function getBundleSummary({ conn, start, end, timezone }) {
+    const resolvedTimezone = normalizeTimezone(timezone || DEFAULT_TIMEZONE);
     const sql = `
       SELECT
         d.bundle_product_id,
@@ -107,6 +113,7 @@ function buildBundlesService() {
     });
 
     return {
+      timezone: resolvedTimezone,
       rows: rows.map((row) => ({
         bundle_product_id: String(row.bundle_product_id || ""),
         bundle_name: row.bundle_name || "",
@@ -117,12 +124,13 @@ function buildBundlesService() {
     };
   }
 
-  async function getBundleProducts({ conn, start, end, bundleProductIds = [] }) {
+  async function getBundleProducts({ conn, start, end, bundleProductIds = [], timezone }) {
+    const resolvedTimezone = normalizeTimezone(timezone || DEFAULT_TIMEZONE);
     const filteredBundleIds = Array.isArray(bundleProductIds)
       ? bundleProductIds.filter(Boolean)
       : [];
     if (filteredBundleIds.length === 0) {
-      return { rows: [] };
+      return { timezone: resolvedTimezone, rows: [] };
     }
 
     const bundlePlaceholders = filteredBundleIds.map(() => "?").join(", ");
@@ -145,6 +153,7 @@ function buildBundlesService() {
     });
 
     return {
+      timezone: resolvedTimezone,
       rows: rows.map((row) => ({
         child_product_sku: row.child_product_sku || "",
         child_product_title: row.child_product_title || "",

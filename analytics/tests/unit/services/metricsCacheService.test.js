@@ -119,6 +119,7 @@ describe("metricsCacheService", () => {
 
     expect(result.metric).toBe("HOURLY_SALES_SUMMARY");
     expect(result.brand).toBe("TMC");
+    expect(result.timezone).toBe("Asia/Kolkata");
     expect(result.source).toBe("mixed");
     expect(result.data.today.source).toBe("redis");
     expect(result.data.yesterday.source).toBe("db");
@@ -132,5 +133,34 @@ describe("metricsCacheService", () => {
         number_of_atc_sessions: 10,
       },
     ]);
+  });
+
+  test("builds hourly sales summary keys from store timezone", async () => {
+    const client = {
+      mget: jest.fn().mockResolvedValue([null, null]),
+    };
+    const conn = {
+      query: jest.fn().mockResolvedValue([]),
+    };
+    const service = buildMetricsCacheService({
+      cache: new Map(),
+      client,
+      log: { debug: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    });
+
+    const result = await service.getHourlySalesSummary({
+      brandKey: "AJMAL_KSA",
+      conn,
+      now: new Date("2026-03-30T21:30:00Z"),
+      timezone: "Asia/Riyadh",
+    });
+
+    expect(result.timezone).toBe("Asia/Riyadh");
+    expect(result.data.today.date).toBe("2026-03-31");
+    expect(result.data.yesterday.date).toBe("2026-03-30");
+    expect(client.mget).toHaveBeenCalledWith(
+      "hourly_metrics:ajmal_ksa:2026-03-31",
+      "hourly_metrics:ajmal_ksa:2026-03-30",
+    );
   });
 });

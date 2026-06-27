@@ -38,7 +38,8 @@ function ensurePool(route) {
     idleTimeout: POOL_IDLE,
     queueLimit: 0,
     enableKeepAlive: true,
-    timezone: '+05:30',
+    timezone: 'Z',
+    dateStrings: true,
     ssl: { rejectUnauthorized: false },
   });
 
@@ -59,14 +60,6 @@ async function runQuery(pool, route, sql, options = {}) {
     throw err;
   }
   try {
-    if (!conn.__tzSet) {
-      try {
-        await conn.query("SET time_zone = '+05:30'");
-      } catch {
-        // ignore; fall back to driver-level timezone
-      }
-      conn.__tzSet = true;
-    }
     if (route.dbName) {
       await conn.query('USE ??', [route.dbName]);
     }
