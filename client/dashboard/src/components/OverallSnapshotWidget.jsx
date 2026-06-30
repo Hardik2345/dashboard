@@ -36,6 +36,12 @@ import { resolveBrandCurrency } from "../lib/currency.js";
 
 const MAX_VISIBLE_METRICS = 2;
 const DEFAULT_SELECTED_METRICS = ["cvr", "net_revenue"];
+const STORAGE_KEY = "overall_snapshot_ui_state_v1";
+const DEFAULT_SORT_MODE = {
+  type: "metric",
+  metricId: "cvr",
+  direction: "asc",
+};
 
 const METRIC_CATALOG = [
   {
@@ -168,6 +174,81 @@ function getMetricSortValue(metricConfig, metrics) {
   return metricConfig.getValue(rawMetric);
 }
 
+function normalizeBrandOption(brand) {
+  const brandKey =
+    typeof brand === "string"
+      ? brand.toString().trim().toUpperCase()
+      : (brand?.brand_key || brand?.key || "").toString().trim().toUpperCase();
+  if (!brandKey) return null;
+
+  return {
+    brand_key: brandKey,
+    brand_name:
+      (brand?.brand_name || brand?.name || brandKey).toString().trim() || brandKey,
+  };
+}
+
+function areArraysEqual(left, right) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+function isMetricSortMode(sortMode) {
+  return (
+    sortMode?.type === "metric" &&
+    !!METRIC_BY_ID[sortMode?.metricId] &&
+    (sortMode?.direction === "asc" || sortMode?.direction === "desc")
+  );
+}
+
+function parseStoredUiState() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) {
+      return {
+        selectedBrandKeys: [],
+        sortMode: DEFAULT_SORT_MODE,
+      };
+    }
+
+    const parsed = JSON.parse(stored);
+    if (Array.isArray(parsed)) {
+      return {
+        selectedBrandKeys: parsed
+          .map((value) => value?.toString?.().trim().toUpperCase())
+          .filter(Boolean),
+        sortMode: DEFAULT_SORT_MODE,
+      };
+    }
+
+    return {
+      selectedBrandKeys: Array.isArray(parsed?.selectedBrandKeys)
+        ? parsed.selectedBrandKeys
+            .map((value) => value?.toString?.().trim().toUpperCase())
+            .filter(Boolean)
+        : [],
+      sortMode:
+        parsed?.sortMode?.type === "custom"
+          ? { type: "custom" }
+          : isMetricSortMode(parsed?.sortMode)
+            ? {
+                type: "metric",
+                metricId: parsed.sortMode.metricId,
+                direction: parsed.sortMode.direction,
+              }
+            : DEFAULT_SORT_MODE,
+    };
+  } catch (error) {
+    console.error("Failed to load Overall Snapshot UI state", error);
+    return {
+      selectedBrandKeys: [],
+      sortMode: DEFAULT_SORT_MODE,
+    };
+  }
+}
+
 function SnapshotMetricBlock({ metricConfig, rawMetric, brandKey }) {
   const delta = formatDelta(metricConfig, rawMetric);
   const tone =
@@ -201,7 +282,14 @@ function SnapshotMetricBlock({ metricConfig, rawMetric, brandKey }) {
       >
         {formatMetricValue(metricConfig, rawMetric, brandKey)}
       </Typography>
-      <Typography variant="caption" sx={{ fontWeight: 800, color: tone, fontSize: { xs: "0.7rem", md: "0.75rem" } }}>
+      <Typography
+        variant="caption"
+        sx={{
+          fontWeight: 800,
+          color: tone,
+          fontSize: { xs: "0.7rem", md: "0.75rem" },
+        }}
+      >
         {delta ? `${delta.label} vs previous` : "No comparison data"}
       </Typography>
     </Stack>
@@ -226,20 +314,6 @@ function SnapshotCardSkeleton() {
       </CardContent>
     </Card>
   );
-}
-
-function normalizeBrandOption(brand) {
-  const brandKey =
-    typeof brand === "string"
-      ? brand.toString().trim().toUpperCase()
-      : (brand?.brand_key || brand?.key || "").toString().trim().toUpperCase();
-  if (!brandKey) return null;
-
-  return {
-    brand_key: brandKey,
-    brand_name:
-      (brand?.brand_name || brand?.name || brandKey).toString().trim() || brandKey,
-  };
 }
 
 function SortableBrandTile({ brand, selectedMetrics, onBrandSelect }) {
@@ -294,7 +368,12 @@ function SortableBrandTile({ brand, selectedMetrics, onBrandSelect }) {
             : undefined,
         }}
       >
-        <CardContent sx={{ p: { xs: 1.5, md: 1.75 }, "&:last-child": { pb: { xs: 1.5, md: 1.75 } } }}>
+        <CardContent
+          sx={{
+            p: { xs: 1.5, md: 1.75 },
+            "&:last-child": { pb: { xs: 1.5, md: 1.75 } },
+          }}
+        >
           <Stack spacing={{ xs: 1.2, md: 1.5 }}>
             <Stack direction="row" justifyContent="space-between" spacing={1.5}>
               <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0}>
@@ -380,7 +459,11 @@ function SortableBrandTile({ brand, selectedMetrics, onBrandSelect }) {
                 </Box>
                 {onBrandSelect && (
                   <ChevronRightIcon
-                    sx={{ color: "text.secondary", mt: 0.45, display: { xs: "none", md: "block" } }}
+                    sx={{
+                      color: "text.secondary",
+                      mt: 0.45,
+                      display: { xs: "none", md: "block" },
+                    }}
                   />
                 )}
               </Stack>
@@ -396,7 +479,7 @@ function SortableBrandTile({ brand, selectedMetrics, onBrandSelect }) {
               }}
             >
               <Grid container spacing={{ xs: 1.1, md: 1.8 }}>
-                {selectedMetrics.map((metricId, index) => {
+                {selectedMetrics.map((metricId) => {
                   const metricConfig = METRIC_BY_ID[metricId];
                   if (!metricConfig) return null;
 
@@ -412,14 +495,6 @@ function SortableBrandTile({ brand, selectedMetrics, onBrandSelect }) {
                           py: { xs: 1, md: 0 },
                         }}
                       >
-                        {index > 0 && (
-                          <Box
-                            sx={{
-                              display: { xs: "none", sm: "block" },
-                              position: "absolute",
-                            }}
-                          />
-                        )}
                         <SnapshotMetricBlock
                           metricConfig={metricConfig}
                           rawMetric={brand.metrics?.[metricConfig.summaryKey]}
@@ -444,39 +519,43 @@ export default function OverallSnapshotWidget({
   brandsLoading = false,
   onBrandSelect,
 }) {
+  const initialUiState = parseStoredUiState();
   const [selectedMetrics, setSelectedMetrics] = useState(DEFAULT_SELECTED_METRICS);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
-  const [selectedBrandKeys, setSelectedBrandKeys] = useState(() => {
-    try {
-      const stored = localStorage.getItem("overall_snapshot_selected_brands");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load selected brands from localStorage", e);
-    }
-    return [];
-  });
-  const [sortMetric, setSortMetric] = useState(DEFAULT_SELECTED_METRICS[0]);
+  const [selectedBrandKeys, setSelectedBrandKeys] = useState(
+    initialUiState.selectedBrandKeys,
+  );
+  const [sortMode, setSortMode] = useState(initialUiState.sortMode);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [snapshot, setSnapshot] = useState({ brands: [], metric_keys: [] });
 
-  useEffect(() => {
-    if (selectedBrandKeys.length > 0) {
-      localStorage.setItem("overall_snapshot_selected_brands", JSON.stringify(selectedBrandKeys));
-    }
-  }, [selectedBrandKeys]);
+  const brandKeysDependency = useMemo(
+    () =>
+      (Array.isArray(brands) ? brands : [])
+        .map((brand) => (typeof brand === "string" ? brand : brand?.key))
+        .filter(Boolean)
+        .join(","),
+    [brands],
+  );
 
-  const brandKeysDependency = useMemo(() => {
-    return (Array.isArray(brands) ? brands : [])
-      .map((brand) => (typeof brand === "string" ? brand : brand?.key))
-      .filter(Boolean)
-      .join(",");
-  }, [brands]);
+  const snapshotRequestBrandKeys = useMemo(
+    () =>
+      (Array.isArray(brands) ? brands : [])
+        .map((brand) => (typeof brand === "string" ? brand : brand?.key))
+        .filter(Boolean),
+    [brands],
+  );
+
+  useEffect(() => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        selectedBrandKeys,
+        sortMode,
+      }),
+    );
+  }, [selectedBrandKeys, sortMode]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -496,9 +575,7 @@ export default function OverallSnapshotWidget({
       sales_channel: query?.sales_channel,
       device_type: query?.device_type,
       discount_code: query?.discount_code,
-      brand_keys: (Array.isArray(brands) ? brands : [])
-        .map((brand) => (typeof brand === "string" ? brand : brand?.key))
-        .filter(Boolean),
+      brand_keys: snapshotRequestBrandKeys,
       signal: controller.signal,
     })
       .then((response) => {
@@ -536,6 +613,7 @@ export default function OverallSnapshotWidget({
     query?.utm_medium,
     query?.utm_term,
     query?.utm_source,
+    snapshotRequestBrandKeys,
   ]);
 
   const availableMetrics = useMemo(() => {
@@ -566,44 +644,33 @@ export default function OverallSnapshotWidget({
         if (!next.includes(metricId)) next.push(metricId);
       }
 
-      for (const metricId of fallback) {
-        if (next.length >= MAX_VISIBLE_METRICS) break;
-        if (!next.includes(metricId)) next.push(metricId);
-      }
-
       for (const metric of availableMetrics) {
         if (next.length >= MAX_VISIBLE_METRICS) break;
         if (!next.includes(metric.id)) next.push(metric.id);
       }
+
       return next.slice(0, MAX_VISIBLE_METRICS);
     });
   }, [availableMetrics, loading, snapshot.metric_keys]);
 
   useEffect(() => {
-    if (!selectedMetrics.includes(sortMetric)) {
-      setSortMetric(selectedMetrics[0] || "");
-    }
-  }, [selectedMetrics, sortMetric]);
+    if (!selectedMetrics.length) return;
 
-  const orderedBrands = useMemo(() => {
-    const metricConfig = METRIC_BY_ID[sortMetric] || METRIC_BY_ID[selectedMetrics[0]];
-    const items = Array.isArray(snapshot.brands) ? [...snapshot.brands] : [];
-    if (!metricConfig) return items;
-
-    return items
-      .sort((left, right) => {
-        const leftValue = getMetricSortValue(metricConfig, left.metrics);
-        const rightValue = getMetricSortValue(metricConfig, right.metrics);
-        if (leftValue !== rightValue) {
-          return sortMetric === "cvr"
-            ? leftValue - rightValue
-            : rightValue - leftValue;
-        }
-        return String(left.brand_name || left.brand_key || "").localeCompare(
-          String(right.brand_name || right.brand_key || ""),
-        );
-      });
-  }, [selectedMetrics, snapshot.brands, sortMetric]);
+    setSortMode((prev) => {
+      if (prev?.type === "custom") return prev;
+      if (
+        isMetricSortMode(prev) &&
+        selectedMetrics.includes(prev.metricId)
+      ) {
+        return prev;
+      }
+      return {
+        type: "metric",
+        metricId: selectedMetrics[0],
+        direction: "asc",
+      };
+    });
+  }, [selectedMetrics]);
 
   const allBrandOptions = useMemo(() => {
     const seen = new Set();
@@ -616,7 +683,7 @@ export default function OverallSnapshotWidget({
       options.push(normalized);
     }
 
-    for (const brand of orderedBrands) {
+    for (const brand of Array.isArray(snapshot.brands) ? snapshot.brands : []) {
       const normalized = normalizeBrandOption(brand);
       if (!normalized || seen.has(normalized.brand_key)) continue;
       seen.add(normalized.brand_key);
@@ -624,52 +691,133 @@ export default function OverallSnapshotWidget({
     }
 
     return options;
-  }, [brands, orderedBrands]);
+  }, [brands, snapshot.brands]);
+
+  const brandDataByKey = useMemo(() => {
+    const map = new Map();
+
+    for (const brand of allBrandOptions) {
+      map.set(brand.brand_key, {
+        brand_key: brand.brand_key,
+        brand_name: brand.brand_name,
+        status: "unavailable",
+        metrics: null,
+      });
+    }
+
+    for (const brand of Array.isArray(snapshot.brands) ? snapshot.brands : []) {
+      const normalized = normalizeBrandOption(brand);
+      if (!normalized) continue;
+      map.set(normalized.brand_key, {
+        ...brand,
+        brand_key: normalized.brand_key,
+        brand_name: normalized.brand_name,
+      });
+    }
+
+    return map;
+  }, [allBrandOptions, snapshot.brands]);
+
+  const sortBrandKeys = useMemo(
+    () => (brandKeys, nextSortMode) => {
+      if (!isMetricSortMode(nextSortMode)) return brandKeys;
+
+      const metricConfig = METRIC_BY_ID[nextSortMode.metricId];
+      return [...brandKeys].sort((leftKey, rightKey) => {
+        const leftBrand = brandDataByKey.get(leftKey);
+        const rightBrand = brandDataByKey.get(rightKey);
+        const leftValue = getMetricSortValue(metricConfig, leftBrand?.metrics);
+        const rightValue = getMetricSortValue(metricConfig, rightBrand?.metrics);
+
+        if (leftValue !== rightValue) {
+          return nextSortMode.direction === "asc"
+            ? leftValue - rightValue
+            : rightValue - leftValue;
+        }
+
+        return String(leftBrand?.brand_name || leftKey).localeCompare(
+          String(rightBrand?.brand_name || rightKey),
+        );
+      });
+    },
+    [brandDataByKey],
+  );
 
   useEffect(() => {
-    if (allBrandOptions.length === 0) return;
+    if (!allBrandOptions.length) return;
 
     setSelectedBrandKeys((prev) => {
-      const availableKeys = allBrandOptions
-        .map((brand) => brand.brand_key)
-        .filter(Boolean);
+      const availableKeys = allBrandOptions.map((brand) => brand.brand_key);
       const availableSet = new Set(availableKeys);
       const kept = prev.filter((brandKey) => availableSet.has(brandKey));
-      
-      if (kept.length > 0) {
-        const prevComparable =
-          prev.length === kept.length &&
-          prev.every((brandKey, index) => brandKey === kept[index]);
-        return prevComparable ? prev : kept;
-      }
+      const baseKeys = kept.length > 0 ? kept : availableKeys;
+      const nextKeys =
+        sortMode?.type === "metric" ? sortBrandKeys(baseKeys, sortMode) : baseKeys;
 
-      return availableKeys;
+      return areArraysEqual(prev, nextKeys) ? prev : nextKeys;
     });
-  }, [allBrandOptions]);
+  }, [allBrandOptions, sortBrandKeys, sortMode]);
 
-  const visibleBrands = useMemo(() => {
-    const snapshotByKey = new Map(
-      orderedBrands.map((brand) => [brand.brand_key, brand]),
-    );
-    const fallbackByKey = new Map(
-      allBrandOptions.map((brand) => [
-        brand.brand_key,
+  const visibleBrands = useMemo(
+    () =>
+      selectedBrandKeys
+        .map((brandKey) => brandDataByKey.get(brandKey))
+        .filter(Boolean),
+    [brandDataByKey, selectedBrandKeys],
+  );
+
+  const sortingOptions = useMemo(() => {
+    const options = [];
+
+    if (sortMode?.type === "custom") {
+      options.push({
+        value: "custom",
+        label: "Custom",
+      });
+    }
+
+    for (const metricId of selectedMetrics) {
+      const metric = METRIC_BY_ID[metricId];
+      if (!metric) continue;
+
+      options.push(
         {
-          brand_key: brand.brand_key,
-          brand_name: brand.brand_name,
-          status: "unavailable",
-          metrics: null,
+          value: `metric:${metricId}:asc`,
+          label: `${metric.label} (Low to High)`,
         },
-      ]),
-    );
-    const activeKeys = selectedBrandKeys.length
-      ? selectedBrandKeys
-      : allBrandOptions.map((brand) => brand.brand_key);
+        {
+          value: `metric:${metricId}:desc`,
+          label: `${metric.label} (High to Low)`,
+        },
+      );
+    }
 
-    return activeKeys
-      .map((brandKey) => snapshotByKey.get(brandKey) || fallbackByKey.get(brandKey))
-      .filter(Boolean);
-  }, [allBrandOptions, orderedBrands, selectedBrandKeys]);
+    return options;
+  }, [selectedMetrics, sortMode]);
+
+  const sortSelectValue =
+    sortMode?.type === "custom"
+      ? "custom"
+      : `metric:${sortMode?.metricId || selectedMetrics[0]}:${sortMode?.direction || "asc"}`;
+
+  const handleSortChange = (value) => {
+    if (value === "custom") return;
+
+    const [type, metricId, direction] = value.split(":");
+    if (
+      type !== "metric" ||
+      !selectedMetrics.includes(metricId) ||
+      !["asc", "desc"].includes(direction)
+    ) {
+      return;
+    }
+
+    setSortMode({
+      type: "metric",
+      metricId,
+      direction,
+    });
+  };
 
   const handleMetricClick = (metricId) => {
     setSelectedMetrics((prev) => {
@@ -679,13 +827,11 @@ export default function OverallSnapshotWidget({
       }
       return [metricId, ...prev].slice(0, MAX_VISIBLE_METRICS);
     });
-    setSortMetric(metricId);
   };
 
   const handleBrandChipClick = (brandKey) => {
     setSelectedBrandKeys((prev) => {
-      const isSelected = prev.includes(brandKey);
-      if (isSelected) {
+      if (prev.includes(brandKey)) {
         if (prev.length === 1) return prev;
         return prev.filter((key) => key !== brandKey);
       }
@@ -723,12 +869,14 @@ export default function OverallSnapshotWidget({
 
   const handleBrandTileDragEnd = ({ active, over }) => {
     if (!over || active.id === over.id) return;
+
     setSelectedBrandKeys((prev) => {
       const oldIndex = prev.indexOf(active.id);
       const newIndex = prev.indexOf(over.id);
       if (oldIndex === -1 || newIndex === -1) return prev;
       return arrayMove(prev, oldIndex, newIndex);
     });
+    setSortMode({ type: "custom" });
   };
 
   return (
@@ -739,12 +887,15 @@ export default function OverallSnapshotWidget({
         bgcolor: { xs: "transparent", md: "background.paper" },
         backgroundImage: {
           xs: "none",
-          md: "radial-gradient(circle at top left, rgba(11,107,203,0.12), transparent 22%), linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0))"
+          md: "radial-gradient(circle at top left, rgba(11,107,203,0.12), transparent 22%), linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0))",
         },
         overflow: "hidden",
         "&.MuiPaper-root": {
           border: { xs: "none !important", md: "1px solid" },
-          borderColor: { xs: "transparent !important", md: "rgba(255,255,255,0.12)" },
+          borderColor: {
+            xs: "transparent !important",
+            md: "rgba(255,255,255,0.12)",
+          },
         },
       }}
     >
@@ -760,7 +911,6 @@ export default function OverallSnapshotWidget({
             }}
           >
             <Stack spacing={{ xs: 1.15, md: 2 }}>
-              {/* Header Row */}
               <Stack
                 direction="row"
                 justifyContent="space-between"
@@ -783,7 +933,6 @@ export default function OverallSnapshotWidget({
                 </Stack>
 
                 <Stack direction="row" spacing={1.5} alignItems="center">
-                  {/* Sorting Select (always visible on desktop) */}
                   <Stack
                     direction="row"
                     spacing={1}
@@ -801,10 +950,10 @@ export default function OverallSnapshotWidget({
                     >
                       SORTING
                     </Typography>
-                    <FormControl size="small" sx={{ width: 180 }}>
+                    <FormControl size="small" sx={{ width: 220 }}>
                       <Select
-                        value={sortMetric}
-                        onChange={(event) => setSortMetric(event.target.value)}
+                        value={sortSelectValue}
+                        onChange={(event) => handleSortChange(event.target.value)}
                         sx={{
                           borderRadius: "12px",
                           minHeight: 32,
@@ -814,20 +963,15 @@ export default function OverallSnapshotWidget({
                           },
                         }}
                       >
-                        {selectedMetrics.map((metricId) => {
-                          const metric = METRIC_BY_ID[metricId];
-                          if (!metric) return null;
-                          return (
-                            <MenuItem key={metricId} value={metricId}>
-                              {metric.label} {metricId === "cvr" ? "(Low to High)" : "(High to Low)"}
-                            </MenuItem>
-                          );
-                        })}
+                        {sortingOptions.map((option) => (
+                          <MenuItem key={option.value} value={option.value}>
+                            {option.label}
+                          </MenuItem>
+                        ))}
                       </Select>
                     </FormControl>
                   </Stack>
 
-                  {/* Configure Button (Visible on all viewports) */}
                   <ButtonBase
                     onClick={() => setShowMobileFilters((prev) => !prev)}
                     sx={{
@@ -837,7 +981,9 @@ export default function OverallSnapshotWidget({
                       py: 0.5,
                       borderRadius: "8px",
                       border: "1px solid rgba(255,255,255,0.08)",
-                      bgcolor: showMobileFilters ? "rgba(91,163,224,0.14)" : "rgba(255,255,255,0.03)",
+                      bgcolor: showMobileFilters
+                        ? "rgba(91,163,224,0.14)"
+                        : "rgba(255,255,255,0.03)",
                       color: "text.primary",
                       fontSize: "0.74rem",
                       fontWeight: 800,
@@ -847,17 +993,10 @@ export default function OverallSnapshotWidget({
                   </ButtonBase>
                 </Stack>
               </Stack>
-              {/* Collapsible Content (Animated with Collapse) */}
+
               <Collapse in={showMobileFilters}>
-                {/* Desktop Content */}
-                <Box
-                  sx={{
-                    display: { xs: "none", md: "block" },
-                    pt: 1.5,
-                  }}
-                >
+                <Box sx={{ display: { xs: "none", md: "block" }, pt: 1.5 }}>
                   <Stack spacing={2}>
-                    {/* Metric Palette */}
                     <Stack spacing={0.8}>
                       <Typography
                         variant="caption"
@@ -869,13 +1008,7 @@ export default function OverallSnapshotWidget({
                       >
                         METRIC PALETTE
                       </Typography>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          flexWrap: "wrap",
-                          gap: 0.8,
-                        }}
-                      >
+                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.8 }}>
                         {availableMetrics.map((metric) => {
                           const selected = selectedMetrics.includes(metric.id);
                           return (
@@ -914,7 +1047,6 @@ export default function OverallSnapshotWidget({
                       </Box>
                     </Stack>
 
-                    {/* Brands selector */}
                     <Stack spacing={0.8}>
                       <Stack
                         direction="row"
@@ -937,15 +1069,9 @@ export default function OverallSnapshotWidget({
                         </Typography>
                       </Stack>
                       <Typography variant="caption" color="text.secondary">
-                        Drag the tile handle to reorder brands. The arrangement is saved after refresh.
+                        Drag the tile handle to reorder brands. Manual reordering switches sorting to Custom.
                       </Typography>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          flexWrap: "wrap",
-                          gap: 0.8,
-                        }}
-                      >
+                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.8 }}>
                         {allBrandOptions.map((brand) => {
                           const brandKey = brand.brand_key;
                           const selected = selectedBrandKeys.includes(brandKey);
@@ -970,7 +1096,6 @@ export default function OverallSnapshotWidget({
                                 color: selected ? "primary.light" : "text.primary",
                                 fontSize: "0.74rem",
                                 fontWeight: 800,
-                                opacity: 1,
                                 cursor: "pointer",
                                 transition: "all 160ms ease",
                                 "&:hover": {
@@ -1017,21 +1142,9 @@ export default function OverallSnapshotWidget({
                   </Stack>
                 </Box>
 
-                {/* Mobile Collapsible Content */}
-                <Box
-                  sx={{
-                    display: { xs: "block", md: "none" },
-                    pt: 1,
-                  }}
-                >
+                <Box sx={{ display: { xs: "block", md: "none" }, pt: 1 }}>
                   <Stack spacing={1.5}>
-                    {/* Mobile Sorting */}
-                    <Stack
-                      direction="row"
-                      spacing={1.5}
-                      alignItems="center"
-                      sx={{ mt: 0.5 }}
-                    >
+                    <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mt: 0.5 }}>
                       <Typography
                         variant="caption"
                         sx={{
@@ -1045,8 +1158,8 @@ export default function OverallSnapshotWidget({
                       </Typography>
                       <FormControl size="small" fullWidth>
                         <Select
-                          value={sortMetric}
-                          onChange={(event) => setSortMetric(event.target.value)}
+                          value={sortSelectValue}
+                          onChange={(event) => handleSortChange(event.target.value)}
                           sx={{
                             borderRadius: "12px",
                             minHeight: 32,
@@ -1056,20 +1169,15 @@ export default function OverallSnapshotWidget({
                             },
                           }}
                         >
-                          {selectedMetrics.map((metricId) => {
-                            const metric = METRIC_BY_ID[metricId];
-                            if (!metric) return null;
-                            return (
-                              <MenuItem key={metricId} value={metricId}>
-                                {metric.label} {metricId === "cvr" ? "(Low to High)" : "(High to Low)"}
-                              </MenuItem>
-                            );
-                          })}
+                          {sortingOptions.map((option) => (
+                            <MenuItem key={option.value} value={option.value}>
+                              {option.label}
+                            </MenuItem>
+                          ))}
                         </Select>
                       </FormControl>
                     </Stack>
 
-                    {/* Metric Palette */}
                     <Stack spacing={0.8}>
                       <Typography
                         variant="caption"
@@ -1131,13 +1239,12 @@ export default function OverallSnapshotWidget({
                       </Box>
                     </Stack>
 
-                    {/* Brands selector */}
                     <Stack spacing={0.8}>
-                    <Stack
-                      direction="row"
-                      spacing={1}
-                      alignItems="center"
-                      justifyContent="space-between"
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        justifyContent="space-between"
                       >
                         <Typography
                           variant="caption"
@@ -1145,102 +1252,101 @@ export default function OverallSnapshotWidget({
                             fontWeight: 900,
                             color: "text.secondary",
                             letterSpacing: "0.1em",
+                          }}
+                        >
+                          BRANDS IN VIEW
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                          {selectedBrandKeys.length} selected
+                        </Typography>
+                      </Stack>
+                      <Typography variant="caption" color="text.secondary">
+                        Drag the tile handle to reorder brands. Manual reordering switches sorting to Custom.
+                      </Typography>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          flexWrap: "nowrap",
+                          overflowX: "auto",
+                          gap: 0.8,
+                          pb: 0.5,
+                          "&::-webkit-scrollbar": { display: "none" },
+                          msOverflowStyle: "none",
+                          scrollbarWidth: "none",
                         }}
                       >
-                        BRANDS IN VIEW
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-                        {selectedBrandKeys.length} selected
-                      </Typography>
-                    </Stack>
-                    <Typography variant="caption" color="text.secondary">
-                      Drag the tile handle to reorder brands. The arrangement is saved after refresh.
-                    </Typography>
-                    <Box
-                      sx={{
-                        display: "flex",
-                        flexWrap: "nowrap",
-                        overflowX: "auto",
-                        gap: 0.8,
-                        pb: 0.5,
-                        "&::-webkit-scrollbar": { display: "none" },
-                        msOverflowStyle: "none",
-                        scrollbarWidth: "none",
-                      }}
-                    >
-                      {allBrandOptions.map((brand) => {
-                        const brandKey = brand.brand_key;
-                        const selected = selectedBrandKeys.includes(brandKey);
-                        return (
-                          <ButtonBase
-                            key={brandKey}
-                            onClick={() => handleBrandChipClick(brandKey)}
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 0.8,
-                              px: 1.2,
-                              py: 0.6,
-                              borderRadius: "12px",
-                              border: "1px solid",
-                              borderColor: selected
-                                ? "rgba(91,163,224,0.48)"
-                                : "rgba(255,255,255,0.08)",
-                              bgcolor: selected
-                                ? "rgba(91,163,224,0.18)"
-                                : "rgba(255,255,255,0.04)",
-                              color: selected ? "primary.light" : "text.primary",
-                              fontSize: "0.74rem",
-                              fontWeight: 800,
-                              opacity: 1,
-                              cursor: "pointer",
-                              transition: "all 160ms ease",
-                              "&:hover": {
-                                borderColor: selected
-                                  ? "rgba(91,163,224,0.62)"
-                                  : "rgba(255,255,255,0.16)",
-                                bgcolor: selected
-                                  ? "rgba(91,163,224,0.22)"
-                                  : "rgba(255,255,255,0.08)",
-                              },
-                            }}
-                          >
-                            <Box
+                        {allBrandOptions.map((brand) => {
+                          const brandKey = brand.brand_key;
+                          const selected = selectedBrandKeys.includes(brandKey);
+                          return (
+                            <ButtonBase
+                              key={brandKey}
+                              onClick={() => handleBrandChipClick(brandKey)}
                               sx={{
-                                width: 12,
-                                height: 12,
-                                borderRadius: "50%",
-                                border: "2px solid",
-                                borderColor: selected ? "primary.light" : "rgba(255,255,255,0.3)",
                                 display: "flex",
                                 alignItems: "center",
-                                justifyContent: "center",
-                                flexShrink: 0,
+                                gap: 0.8,
+                                px: 1.2,
+                                py: 0.6,
+                                borderRadius: "12px",
+                                border: "1px solid",
+                                borderColor: selected
+                                  ? "rgba(91,163,224,0.48)"
+                                  : "rgba(255,255,255,0.08)",
+                                bgcolor: selected
+                                  ? "rgba(91,163,224,0.18)"
+                                  : "rgba(255,255,255,0.04)",
+                                color: selected ? "primary.light" : "text.primary",
+                                fontSize: "0.74rem",
+                                fontWeight: 800,
+                                cursor: "pointer",
                                 transition: "all 160ms ease",
+                                "&:hover": {
+                                  borderColor: selected
+                                    ? "rgba(91,163,224,0.62)"
+                                    : "rgba(255,255,255,0.16)",
+                                  bgcolor: selected
+                                    ? "rgba(91,163,224,0.22)"
+                                    : "rgba(255,255,255,0.08)",
+                                },
                               }}
                             >
-                              {selected && (
-                                <Box
-                                  sx={{
-                                    width: 5,
-                                    height: 5,
-                                    borderRadius: "50%",
-                                    bgcolor: "primary.light",
-                                  }}
-                                />
-                              )}
-                            </Box>
-                            <span>{brand.brand_name || brandKey}</span>
-                          </ButtonBase>
-                        );
-                      })}
-                    </Box>
+                              <Box
+                                sx={{
+                                  width: 12,
+                                  height: 12,
+                                  borderRadius: "50%",
+                                  border: "2px solid",
+                                  borderColor: selected ? "primary.light" : "rgba(255,255,255,0.3)",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  flexShrink: 0,
+                                  transition: "all 160ms ease",
+                                }}
+                              >
+                                {selected && (
+                                  <Box
+                                    sx={{
+                                      width: 5,
+                                      height: 5,
+                                      borderRadius: "50%",
+                                      bgcolor: "primary.light",
+                                    }}
+                                  />
+                                )}
+                              </Box>
+                              <span>{brand.brand_name || brandKey}</span>
+                            </ButtonBase>
+                          );
+                        })}
+                      </Box>
+                    </Stack>
                   </Stack>
-                </Stack>
-              </Box>
-            </Collapse>
-          </Stack>
-        </Box>
+                </Box>
+              </Collapse>
+            </Stack>
+          </Box>
 
           {error && !loading && (
             <Alert severity="warning" sx={{ borderRadius: 3 }}>
@@ -1288,7 +1394,7 @@ export default function OverallSnapshotWidget({
                   </Grid>
                 ))}
 
-              {!loading && !brandsLoading && orderedBrands.length === 0 && (
+              {!loading && !brandsLoading && snapshot.brands.length === 0 && (
                 <Grid size={12}>
                   <Alert severity="info" sx={{ borderRadius: 3 }}>
                     No brands are available for this snapshot.
@@ -1296,7 +1402,7 @@ export default function OverallSnapshotWidget({
                 </Grid>
               )}
 
-              {!loading && !brandsLoading && orderedBrands.length > 0 && visibleBrands.length === 0 && (
+              {!loading && !brandsLoading && snapshot.brands.length > 0 && visibleBrands.length === 0 && (
                 <Grid size={12}>
                   <Alert severity="info" sx={{ borderRadius: 3 }}>
                     Select at least one brand to show snapshot cards.
