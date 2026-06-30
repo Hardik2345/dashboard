@@ -15,11 +15,26 @@ import {
 } from "@mui/material";
 import Grid from "@mui/material/Grid2";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import {
+  closestCenter,
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  rectSortingStrategy,
+  SortableContext,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { getOverallSnapshot } from "../lib/api.js";
 import { resolveBrandCurrency } from "../lib/currency.js";
 
 const MAX_VISIBLE_METRICS = 2;
-const MAX_VISIBLE_BRANDS = 6;
 const DEFAULT_SELECTED_METRICS = ["cvr", "net_revenue"];
 
 const METRIC_CATALOG = [
@@ -227,6 +242,202 @@ function normalizeBrandOption(brand) {
   };
 }
 
+function SortableBrandTile({ brand, selectedMetrics, onBrandSelect }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({
+      id: brand.brand_key,
+    });
+
+  return (
+    <Grid size={{ xs: 12, md: 6, xl: 4 }}>
+      <Card
+        ref={setNodeRef}
+        variant="outlined"
+        onClick={() => onBrandSelect?.(brand.brand_key)}
+        sx={{
+          height: "100%",
+          borderRadius: { xs: "10px", md: "16px" },
+          boxShadow: "none",
+          bgcolor: { xs: "background.paper", md: "rgba(255,255,255,0.035)" },
+          backgroundImage: {
+            xs: "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0))",
+            md: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))",
+          },
+          cursor: onBrandSelect ? "pointer" : "default",
+          transition:
+            transition ||
+            "transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease",
+          transform: CSS.Transform.toString(transform),
+          opacity: isDragging ? 0.78 : 1,
+          zIndex: isDragging ? 2 : "auto",
+          "&.MuiPaper-root": {
+            border: "1px solid",
+            borderColor:
+              brand.status === "ready"
+                ? "rgba(91,163,224,0.25)"
+                : "rgba(148,163,184,0.35)",
+          },
+          "&:hover": onBrandSelect
+            ? {
+                transform: {
+                  xs: CSS.Transform.toString(transform),
+                  md:
+                    transform
+                      ? CSS.Transform.toString(transform)
+                      : "translateY(-2px)",
+                },
+                boxShadow: { xs: "none", md: "0 20px 34px rgba(0,0,0,0.16)" },
+                "&.MuiPaper-root": {
+                  borderColor: "rgba(91,163,224,0.35)",
+                },
+              }
+            : undefined,
+        }}
+      >
+        <CardContent sx={{ p: { xs: 1.5, md: 1.75 }, "&:last-child": { pb: { xs: 1.5, md: 1.75 } } }}>
+          <Stack spacing={{ xs: 1.2, md: 1.5 }}>
+            <Stack direction="row" justifyContent="space-between" spacing={1.5}>
+              <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0}>
+                <Box
+                  sx={{
+                    width: { xs: 32, md: 36 },
+                    height: { xs: 32, md: 36 },
+                    borderRadius: { xs: "10px", md: "14px" },
+                    display: "grid",
+                    placeItems: "center",
+                    bgcolor:
+                      brand.status === "ready"
+                        ? "rgba(11,107,203,0.12)"
+                        : "rgba(148,163,184,0.12)",
+                    color:
+                      brand.status === "ready"
+                        ? "primary.main"
+                        : "text.secondary",
+                    fontWeight: 900,
+                    fontSize: { xs: "0.9rem", md: "1.05rem" },
+                  }}
+                >
+                  {String(brand.brand_name || brand.brand_key || "?")
+                    .charAt(0)
+                    .toUpperCase()}
+                </Box>
+                <Stack minWidth={0} spacing={0.35}>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      fontWeight: 900,
+                      letterSpacing: "-0.02em",
+                      fontSize: { xs: "0.95rem", md: "1.05rem" },
+                    }}
+                  >
+                    {brand.brand_name || brand.brand_key}
+                  </Typography>
+                  <Stack direction="row" spacing={0.8} alignItems="center">
+                    <Box
+                      sx={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "999px",
+                        bgcolor:
+                          brand.status === "ready"
+                            ? "success.main"
+                            : "text.disabled",
+                      }}
+                    />
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ fontWeight: 700, fontSize: "0.72rem" }}
+                    >
+                      {brand.status === "ready"
+                        ? "Snapshot ready"
+                        : "Temporarily unavailable"}
+                    </Typography>
+                  </Stack>
+                </Stack>
+              </Stack>
+
+              <Stack direction="row" spacing={0.5} alignItems="flex-start">
+                <Box
+                  {...attributes}
+                  {...listeners}
+                  onClick={(event) => event.stopPropagation()}
+                  sx={{
+                    display: "grid",
+                    placeItems: "center",
+                    width: 28,
+                    height: 28,
+                    borderRadius: "10px",
+                    color: "text.secondary",
+                    cursor: "grab",
+                    touchAction: "none",
+                    "&:active": {
+                      cursor: "grabbing",
+                    },
+                  }}
+                >
+                  <DragIndicatorIcon sx={{ fontSize: 18 }} />
+                </Box>
+                {onBrandSelect && (
+                  <ChevronRightIcon
+                    sx={{ color: "text.secondary", mt: 0.45, display: { xs: "none", md: "block" } }}
+                  />
+                )}
+              </Stack>
+            </Stack>
+
+            <Box
+              sx={{
+                borderRadius: { xs: "0px", md: "20px" },
+                border: { xs: "none", md: "1px solid rgba(255,255,255,0.06)" },
+                bgcolor: { xs: "transparent", md: "rgba(0,0,0,0.12)" },
+                px: { xs: 0, md: 1.25 },
+                py: { xs: 0, md: 1.1 },
+              }}
+            >
+              <Grid container spacing={{ xs: 1.1, md: 1.8 }}>
+                {selectedMetrics.map((metricId, index) => {
+                  const metricConfig = METRIC_BY_ID[metricId];
+                  if (!metricConfig) return null;
+
+                  return (
+                    <Grid key={`${brand.brand_key}-${metricId}`} size={{ xs: 6, sm: 6 }}>
+                      <Box
+                        sx={{
+                          height: "100%",
+                          borderRadius: { xs: "14px", md: "0px" },
+                          border: { xs: "1px solid rgba(255,255,255,0.05)", md: "none" },
+                          bgcolor: { xs: "rgba(0,0,0,0.2)", md: "transparent" },
+                          px: { xs: 1.25, md: 0 },
+                          py: { xs: 1, md: 0 },
+                        }}
+                      >
+                        {index > 0 && (
+                          <Box
+                            sx={{
+                              display: { xs: "none", sm: "block" },
+                              position: "absolute",
+                            }}
+                          />
+                        )}
+                        <SnapshotMetricBlock
+                          metricConfig={metricConfig}
+                          rawMetric={brand.metrics?.[metricConfig.summaryKey]}
+                          brandKey={brand.brand_key}
+                        />
+                      </Box>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            </Box>
+          </Stack>
+        </CardContent>
+      </Card>
+    </Grid>
+  );
+}
+
 export default function OverallSnapshotWidget({
   query,
   brands = [],
@@ -241,7 +452,7 @@ export default function OverallSnapshotWidget({
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.slice(0, MAX_VISIBLE_BRANDS);
+          return parsed;
         }
       }
     } catch (e) {
@@ -383,7 +594,11 @@ export default function OverallSnapshotWidget({
       .sort((left, right) => {
         const leftValue = getMetricSortValue(metricConfig, left.metrics);
         const rightValue = getMetricSortValue(metricConfig, right.metrics);
-        if (leftValue !== rightValue) return rightValue - leftValue;
+        if (leftValue !== rightValue) {
+          return sortMetric === "cvr"
+            ? leftValue - rightValue
+            : rightValue - leftValue;
+        }
         return String(left.brand_name || left.brand_key || "").localeCompare(
           String(right.brand_name || right.brand_key || ""),
         );
@@ -428,12 +643,7 @@ export default function OverallSnapshotWidget({
         return prevComparable ? prev : kept;
       }
 
-      const next = [];
-      for (const brandKey of availableKeys) {
-        if (next.length >= MAX_VISIBLE_BRANDS) break;
-        next.push(brandKey);
-      }
-      return next;
+      return availableKeys;
     });
   }, [allBrandOptions]);
 
@@ -454,7 +664,7 @@ export default function OverallSnapshotWidget({
     );
     const activeKeys = selectedBrandKeys.length
       ? selectedBrandKeys
-      : allBrandOptions.slice(0, MAX_VISIBLE_BRANDS).map((brand) => brand.brand_key);
+      : allBrandOptions.map((brand) => brand.brand_key);
 
     return activeKeys
       .map((brandKey) => snapshotByKey.get(brandKey) || fallbackByKey.get(brandKey))
@@ -478,12 +688,8 @@ export default function OverallSnapshotWidget({
       if (isSelected) {
         if (prev.length === 1) return prev;
         return prev.filter((key) => key !== brandKey);
-      } else {
-        if (prev.length >= MAX_VISIBLE_BRANDS) {
-          return prev;
-        }
-        return [...prev, brandKey];
       }
+      return [...prev, brandKey];
     });
   };
 
@@ -496,7 +702,34 @@ export default function OverallSnapshotWidget({
     [selectedMetrics],
   );
 
-  const maxReached = selectedBrandKeys.length >= MAX_VISIBLE_BRANDS;
+  const brandTileIds = useMemo(
+    () => visibleBrands.map((brand) => brand.brand_key),
+    [visibleBrands],
+  );
+
+  const dragSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 140,
+        tolerance: 8,
+      },
+    }),
+  );
+
+  const handleBrandTileDragEnd = ({ active, over }) => {
+    if (!over || active.id === over.id) return;
+    setSelectedBrandKeys((prev) => {
+      const oldIndex = prev.indexOf(active.id);
+      const newIndex = prev.indexOf(over.id);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  };
 
   return (
     <Card
@@ -586,7 +819,7 @@ export default function OverallSnapshotWidget({
                           if (!metric) return null;
                           return (
                             <MenuItem key={metricId} value={metricId}>
-                              {metric.label} (High to Low)
+                              {metric.label} {metricId === "cvr" ? "(Low to High)" : "(High to Low)"}
                             </MenuItem>
                           );
                         })}
@@ -700,9 +933,12 @@ export default function OverallSnapshotWidget({
                           BRANDS IN VIEW
                         </Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-                          {selectedBrandKeys.length}/{MAX_VISIBLE_BRANDS} selected
+                          {selectedBrandKeys.length} selected
                         </Typography>
                       </Stack>
+                      <Typography variant="caption" color="text.secondary">
+                        Drag the tile handle to reorder brands. The arrangement is saved after refresh.
+                      </Typography>
                       <Box
                         sx={{
                           display: "flex",
@@ -713,12 +949,10 @@ export default function OverallSnapshotWidget({
                         {allBrandOptions.map((brand) => {
                           const brandKey = brand.brand_key;
                           const selected = selectedBrandKeys.includes(brandKey);
-                          const isDisabled = maxReached && !selected;
                           return (
                             <ButtonBase
                               key={brandKey}
                               onClick={() => handleBrandChipClick(brandKey)}
-                              disabled={isDisabled}
                               sx={{
                                 display: "flex",
                                 alignItems: "center",
@@ -736,8 +970,8 @@ export default function OverallSnapshotWidget({
                                 color: selected ? "primary.light" : "text.primary",
                                 fontSize: "0.74rem",
                                 fontWeight: 800,
-                                opacity: isDisabled ? 0.45 : 1,
-                                cursor: isDisabled ? "not-allowed" : "pointer",
+                                opacity: 1,
+                                cursor: "pointer",
                                 transition: "all 160ms ease",
                                 "&:hover": {
                                   borderColor: selected
@@ -827,7 +1061,7 @@ export default function OverallSnapshotWidget({
                             if (!metric) return null;
                             return (
                               <MenuItem key={metricId} value={metricId}>
-                                {metric.label} (High to Low)
+                                {metric.label} {metricId === "cvr" ? "(Low to High)" : "(High to Low)"}
                               </MenuItem>
                             );
                           })}
@@ -899,11 +1133,11 @@ export default function OverallSnapshotWidget({
 
                     {/* Brands selector */}
                     <Stack spacing={0.8}>
-                      <Stack
-                        direction="row"
-                        spacing={1}
-                        alignItems="center"
-                        justifyContent="space-between"
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                      justifyContent="space-between"
                       >
                         <Typography
                           variant="caption"
@@ -916,9 +1150,12 @@ export default function OverallSnapshotWidget({
                         BRANDS IN VIEW
                       </Typography>
                       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-                        {selectedBrandKeys.length}/{MAX_VISIBLE_BRANDS} selected
+                        {selectedBrandKeys.length} selected
                       </Typography>
                     </Stack>
+                    <Typography variant="caption" color="text.secondary">
+                      Drag the tile handle to reorder brands. The arrangement is saved after refresh.
+                    </Typography>
                     <Box
                       sx={{
                         display: "flex",
@@ -934,12 +1171,10 @@ export default function OverallSnapshotWidget({
                       {allBrandOptions.map((brand) => {
                         const brandKey = brand.brand_key;
                         const selected = selectedBrandKeys.includes(brandKey);
-                        const isDisabled = maxReached && !selected;
                         return (
                           <ButtonBase
                             key={brandKey}
                             onClick={() => handleBrandChipClick(brandKey)}
-                            disabled={isDisabled}
                             sx={{
                               display: "flex",
                               alignItems: "center",
@@ -957,8 +1192,8 @@ export default function OverallSnapshotWidget({
                               color: selected ? "primary.light" : "text.primary",
                               fontSize: "0.74rem",
                               fontWeight: 800,
-                              opacity: isDisabled ? 0.45 : 1,
-                              cursor: isDisabled ? "not-allowed" : "pointer",
+                              opacity: 1,
+                              cursor: "pointer",
                               transition: "all 160ms ease",
                               "&:hover": {
                                 borderColor: selected
@@ -1069,160 +1304,24 @@ export default function OverallSnapshotWidget({
                 </Grid>
               )}
 
-              {!loading &&
-                !brandsLoading &&
-                visibleBrands.map((brand) => (
-                  <Grid key={brand.brand_key} size={{ xs: 12, md: 6, xl: 4 }}>
-                    <Card
-                      variant="outlined"
-                      onClick={() => onBrandSelect?.(brand.brand_key)}
-                      sx={{
-                        height: "100%",
-                        borderRadius: { xs: "10px", md: "16px" },
-                        boxShadow: "none",
-                        bgcolor: { xs: "background.paper", md: "rgba(255,255,255,0.035)" },
-                        backgroundImage: {
-                          xs: "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0))",
-                          md: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))"
-                        },
-                        cursor: onBrandSelect ? "pointer" : "default",
-                        transition:
-                          "transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease",
-                        "&.MuiPaper-root": {
-                          border: "1px solid",
-                          borderColor: brand.status === "ready"
-                            ? "rgba(91,163,224,0.25)"
-                            : "rgba(148,163,184,0.35)",
-                        },
-                        "&:hover": onBrandSelect
-                          ? {
-                              transform: { xs: "none", md: "translateY(-2px)" },
-                              boxShadow: { xs: "none", md: "0 20px 34px rgba(0,0,0,0.16)" },
-                              "&.MuiPaper-root": {
-                                borderColor: "rgba(91,163,224,0.35)",
-                              }
-                            }
-                          : undefined,
-                      }}
-                    >
-                      <CardContent sx={{ p: { xs: 1.5, md: 1.75 }, "&:last-child": { pb: { xs: 1.5, md: 1.75 } } }}>
-                        <Stack spacing={{ xs: 1.2, md: 1.5 }}>
-                          <Stack direction="row" justifyContent="space-between" spacing={1.5}>
-                            <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0}>
-                              <Box
-                                sx={{
-                                  width: { xs: 32, md: 36 },
-                                  height: { xs: 32, md: 36 },
-                                  borderRadius: { xs: "10px", md: "14px" },
-                                  display: "grid",
-                                  placeItems: "center",
-                                  bgcolor:
-                                    brand.status === "ready"
-                                      ? "rgba(11,107,203,0.12)"
-                                      : "rgba(148,163,184,0.12)",
-                                  color:
-                                    brand.status === "ready"
-                                      ? "primary.main"
-                                      : "text.secondary",
-                                  fontWeight: 900,
-                                  fontSize: { xs: "0.9rem", md: "1.05rem" },
-                                }}
-                              >
-                                {String(brand.brand_name || brand.brand_key || "?")
-                                  .charAt(0)
-                                  .toUpperCase()}
-                              </Box>
-                              <Stack minWidth={0} spacing={0.35}>
-                                <Typography
-                                  variant="h6"
-                                  sx={{
-                                    fontWeight: 900,
-                                    letterSpacing: "-0.02em",
-                                    fontSize: { xs: "0.95rem", md: "1.05rem" },
-                                  }}
-                                >
-                                  {brand.brand_name || brand.brand_key}
-                                </Typography>
-                                <Stack direction="row" spacing={0.8} alignItems="center">
-                                  <Box
-                                    sx={{
-                                      width: 6,
-                                      height: 6,
-                                      borderRadius: "999px",
-                                      bgcolor:
-                                        brand.status === "ready"
-                                          ? "success.main"
-                                          : "text.disabled",
-                                    }}
-                                  />
-                                  <Typography
-                                    variant="caption"
-                                    color="text.secondary"
-                                    sx={{ fontWeight: 700, fontSize: "0.72rem" }}
-                                  >
-                                    {brand.status === "ready"
-                                      ? "Snapshot ready"
-                                      : "Temporarily unavailable"}
-                                  </Typography>
-                                </Stack>
-                              </Stack>
-                            </Stack>
-
-                            {onBrandSelect && (
-                              <ChevronRightIcon sx={{ color: "text.secondary", mt: 0.45, display: { xs: "none", md: "block" } }} />
-                            )}
-                          </Stack>
-
-                          <Box
-                            sx={{
-                              borderRadius: { xs: "0px", md: "20px" },
-                              border: { xs: "none", md: "1px solid rgba(255,255,255,0.06)" },
-                              bgcolor: { xs: "transparent", md: "rgba(0,0,0,0.12)" },
-                              px: { xs: 0, md: 1.25 },
-                              py: { xs: 0, md: 1.1 },
-                            }}
-                          >
-                            <Grid container spacing={{ xs: 1.1, md: 1.8 }}>
-                              {selectedMetrics.map((metricId, index) => {
-                                const metricConfig = METRIC_BY_ID[metricId];
-                                if (!metricConfig) return null;
-
-                                return (
-                                  <Grid key={`${brand.brand_key}-${metricId}`} size={{ xs: 6, sm: 6 }}>
-                                    <Box
-                                      sx={{
-                                        height: "100%",
-                                        borderRadius: { xs: "14px", md: "0px" },
-                                        border: { xs: "1px solid rgba(255,255,255,0.05)", md: "none" },
-                                        bgcolor: { xs: "rgba(0,0,0,0.2)", md: "transparent" },
-                                        px: { xs: 1.25, md: 0 },
-                                        py: { xs: 1, md: 0 },
-                                      }}
-                                    >
-                                      {index > 0 && (
-                                        <Box
-                                          sx={{
-                                            display: { xs: "none", sm: "block" },
-                                            position: "absolute",
-                                          }}
-                                        />
-                                      )}
-                                      <SnapshotMetricBlock
-                                        metricConfig={metricConfig}
-                                        rawMetric={brand.metrics?.[metricConfig.summaryKey]}
-                                        brandKey={brand.brand_key}
-                                      />
-                                    </Box>
-                                  </Grid>
-                                );
-                              })}
-                            </Grid>
-                          </Box>
-                        </Stack>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                ))}
+              {!loading && !brandsLoading && visibleBrands.length > 0 && (
+                <DndContext
+                  sensors={dragSensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleBrandTileDragEnd}
+                >
+                  <SortableContext items={brandTileIds} strategy={rectSortingStrategy}>
+                    {visibleBrands.map((brand) => (
+                      <SortableBrandTile
+                        key={brand.brand_key}
+                        brand={brand}
+                        selectedMetrics={selectedMetrics}
+                        onBrandSelect={onBrandSelect}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              )}
             </Grid>
           </Box>
         </Stack>
