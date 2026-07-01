@@ -1684,6 +1684,7 @@ export default function ProductConversionTable({
         align: "right",
         format: formatPercent,
       },
+      { id: "ci_events", label: "CI Events", align: "right" },
       { id: "orders", label: "Orders", align: "right" },
       {
         id: "sales",
@@ -1788,6 +1789,7 @@ export default function ProductConversionTable({
       "landing_page_path",
       "sessions",
       "atc_rate",
+      "ci_events",
       "orders",
       "cvr",
     ];
@@ -1819,6 +1821,7 @@ export default function ProductConversionTable({
   const [columnWidths, setColumnWidths] = useState({
     landing_page_path: 320,
     sessions: 120,
+    ci_events: 120,
     orders: 120,
     cvr: 100,
     atc: 120,

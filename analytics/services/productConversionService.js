@@ -9,6 +9,7 @@ const ALLOWED_SORT = new Map([
   ["sessions", "sessions"],
   ["atc", "atc"],
   ["atc_rate", "atc_rate"],
+  ["ci_events", "ci_events"],
   ["orders", "orders"],
   ["sales", "sales"],
   ["cvr", "cvr"],
@@ -21,6 +22,7 @@ const VALID_FILTER_FIELDS = new Set([
   "sessions",
   "atc",
   "atc_rate",
+  "ci_events",
   "orders",
   "sales",
   "cvr",
@@ -33,6 +35,7 @@ const CSV_HEADERS = [
   "sessions",
   "atc",
   "atc_rate",
+  "ci_events",
   "orders",
   "sales",
   "cvr",
@@ -44,6 +47,7 @@ const PREVIOUS_HEADER_MAP = {
   sessions: "prev_sessions",
   atc: "prev_atc",
   atc_rate: "prev_atc_rate",
+  ci_events: "prev_ci_events",
   orders: "prev_orders",
   sales: "prev_sales",
   cvr: "prev_cvr",
@@ -96,6 +100,8 @@ function buildMetricFilterExpression(field) {
       return "s.atc";
     case "atc_rate":
       return "(CASE WHEN s.sessions > 0 THEN s.atc / s.sessions * 100 ELSE 0 END)";
+    case "ci_events":
+      return "COALESCE(c.ci_events, 0)";
     case "orders":
       return "COALESCE(o.orders, 0)";
     case "sales":
@@ -235,6 +241,24 @@ function buildBaseCte(spec, includeCompare = false) {
         AND product_id IS NOT NULL
       GROUP BY product_id
     ),
+    product_variant_map AS (
+      SELECT
+        variant_id,
+        MAX(product_id) AS product_id
+      FROM shopify_orders
+      WHERE variant_id IS NOT NULL
+        AND product_id IS NOT NULL
+      GROUP BY variant_id
+    ),
+    ci_60d AS (
+      SELECT
+        pvm.product_id,
+        SUM(COALESCE(d.checkout_initiated_count, 0)) AS ci_events
+      FROM daily_ci_events_summary d
+      JOIN product_variant_map pvm ON pvm.variant_id = d.variant_id
+      WHERE d.date >= ? AND d.date <= ?
+      GROUP BY pvm.product_id
+    ),
     sessions_60d AS (
       SELECT
         product_id,
@@ -259,10 +283,19 @@ function buildBaseCte(spec, includeCompare = false) {
             completedOrderCutoffTime,
             spec.start,
             spec.end,
+            spec.start,
+            spec.end,
             spec.end,
             cutoffCtx.cutoffHour,
           ]
-        : [spec.start, spec.end, spec.start, spec.end],
+        : [
+            spec.start,
+            spec.end,
+            spec.start,
+            spec.end,
+            spec.start,
+            spec.end,
+          ],
     };
   }
 
@@ -279,6 +312,15 @@ function buildBaseCte(spec, includeCompare = false) {
           ${currentRangeIncludesToday ? "AND (created_date < ? OR created_time < ?)" : ""}
           AND product_id IS NOT NULL
         GROUP BY product_id
+      ),
+      previous_ci AS (
+        SELECT
+          pvm.product_id,
+          SUM(COALESCE(d.checkout_initiated_count, 0)) AS ci_events
+        FROM daily_ci_events_summary d
+        JOIN product_variant_map pvm ON pvm.variant_id = d.variant_id
+        WHERE d.date >= ? AND d.date <= ?
+        GROUP BY pvm.product_id
       ),
       previous_sessions AS (
         SELECT
@@ -304,12 +346,16 @@ function buildBaseCte(spec, includeCompare = false) {
           completedOrderCutoffTime,
           spec.start,
           spec.end,
+          spec.start,
+          spec.end,
           spec.end,
           cutoffCtx.cutoffHour,
           spec.compareStart,
           spec.compareEnd,
           spec.compareEnd,
           completedOrderCutoffTime,
+          spec.compareStart,
+          spec.compareEnd,
           spec.compareStart,
           spec.compareEnd,
           spec.compareEnd,
@@ -320,6 +366,10 @@ function buildBaseCte(spec, includeCompare = false) {
           spec.end,
           spec.start,
           spec.end,
+          spec.start,
+          spec.end,
+          spec.compareStart,
+          spec.compareEnd,
           spec.compareStart,
           spec.compareEnd,
           spec.compareStart,
@@ -336,6 +386,7 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         COALESCE(ps.sessions, 0) AS prev_sessions,
         COALESCE(ps.atc, 0) AS prev_atc,
         CASE WHEN ps.sessions > 0 THEN ROUND(ps.atc / ps.sessions * 100, 4) ELSE 0 END AS prev_atc_rate,
+        COALESCE(pc.ci_events, 0) AS prev_ci_events,
         COALESCE(po.orders, 0) AS prev_orders,
         COALESCE(po.sales, 0) AS prev_sales,
         CASE WHEN ps.sessions > 0 THEN ROUND(COALESCE(po.orders, 0) / ps.sessions * 100, 4) ELSE 0 END AS prev_cvr`
@@ -343,6 +394,7 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
   const previousJoins = includeCompare
     ? `
       LEFT JOIN previous_sessions ps ON ${useMappingBase ? "m.landing_page_path" : "s.landing_page_path"} = ps.landing_page_path
+      LEFT JOIN previous_ci pc ON ${useMappingBase ? "m.product_id" : "s.product_id"} = pc.product_id
       LEFT JOIN previous_orders po ON ${useMappingBase ? "m.product_id" : "s.product_id"} = po.product_id
     `
     : "";
@@ -361,6 +413,7 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         COALESCE(s.sessions, 0) AS sessions,
         COALESCE(s.atc, 0) AS atc,
         CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
+        COALESCE(c.ci_events, 0) AS ci_events,
         COALESCE(o.orders, 0) AS orders,
         COALESCE(o.sales, 0) AS sales,
         CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr,
@@ -368,6 +421,7 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         ${previousSelect}
       FROM product_landing_mapping m
       LEFT JOIN sessions_60d s ON m.landing_page_path = s.landing_page_path
+      LEFT JOIN ci_60d c ON m.product_id = c.product_id
       LEFT JOIN orders_60d o ON m.product_id = o.product_id
       ${previousJoins}
     `
@@ -378,12 +432,14 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         s.sessions,
         s.atc,
         CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
+        COALESCE(c.ci_events, 0) AS ci_events,
         COALESCE(o.orders, 0) AS orders,
         COALESCE(o.sales, 0) AS sales,
         CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr,
         ${inventoryCol}
         ${previousSelect}
       FROM sessions_60d s
+      LEFT JOIN ci_60d c ON s.product_id = c.product_id
       LEFT JOIN orders_60d o ON s.product_id = o.product_id
       ${previousJoins}
     `;
@@ -408,10 +464,12 @@ function buildCountSql(spec, useMappingBase, whereClause) {
     ? `
       FROM product_landing_mapping m
       LEFT JOIN sessions_60d s ON m.landing_page_path = s.landing_page_path
+      LEFT JOIN ci_60d c ON m.product_id = c.product_id
       LEFT JOIN orders_60d o ON m.product_id = o.product_id
     `
     : `
       FROM sessions_60d s
+      LEFT JOIN ci_60d c ON s.product_id = c.product_id
       LEFT JOIN orders_60d o ON s.product_id = o.product_id
     `;
   return {
@@ -435,6 +493,7 @@ function normalizeRows(rows, includeCompare = false) {
     sessions: Number(row.sessions || 0),
     atc: Number(row.atc || 0),
     atc_rate: Number(row.atc_rate || 0),
+    ci_events: Number(row.ci_events || 0),
     orders: Number(row.orders || 0),
     sales: Number(row.sales || 0),
     cvr: Number(row.cvr || 0),
@@ -445,12 +504,13 @@ function normalizeRows(rows, includeCompare = false) {
     calculation_date: row.calculation_date || null,
     previous: includeCompare
       ? {
-          sessions: Number(row.prev_sessions || 0),
-          atc: Number(row.prev_atc || 0),
-          atc_rate: Number(row.prev_atc_rate || 0),
-          orders: Number(row.prev_orders || 0),
-          sales: Number(row.prev_sales || 0),
-          cvr: Number(row.prev_cvr || 0),
+        sessions: Number(row.prev_sessions || 0),
+        atc: Number(row.prev_atc || 0),
+        atc_rate: Number(row.prev_atc_rate || 0),
+        ci_events: Number(row.prev_ci_events || 0),
+        orders: Number(row.prev_orders || 0),
+        sales: Number(row.prev_sales || 0),
+        cvr: Number(row.prev_cvr || 0),
         }
       : null,
   }));
