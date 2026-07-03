@@ -3278,12 +3278,41 @@ export default function App() {
                         style={{ width: "100%" }}
                       >
                         <Suspense fallback={<SectionFallback count={2} />}>
-                          <OverallSnapshotWidget
-                            query={overallSnapshotQuery}
-                            brands={snapshotBrands}
-                            brandsLoading={isAuthor && authorBrandsLoading}
-                            onBrandSelect={handleOverallSnapshotBrandSelect}
-                          />
+                          <Stack spacing={{ xs: 1.25, md: 0 }}>
+                            {isMobile && (
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  justifyContent: "flex-end",
+                                  overflowX: "auto",
+                                  pb: 0.25,
+                                  "&::-webkit-scrollbar": { display: "none" },
+                                  msOverflowStyle: "none",
+                                  scrollbarWidth: "none",
+                                }}
+                              >
+                                <UnifiedFilterBar
+                                  range={normalizedRange}
+                                  onRangeChange={handleRangeChange}
+                                  brandKey=""
+                                  brands={[]}
+                                  onBrandChange={() => {}}
+                                  isAuthor={false}
+                                  compareMode={compareMode}
+                                  onCompareModeChange={handleCompareModeChange}
+                                  compareDateRange={compareDateRange}
+                                  onCompareDateRangeChange={handleCompareDateRangeChange}
+                                  hideAllExceptDate
+                                />
+                              </Box>
+                            )}
+                            <OverallSnapshotWidget
+                              query={overallSnapshotQuery}
+                              brands={snapshotBrands}
+                              brandsLoading={isAuthor && authorBrandsLoading}
+                              onBrandSelect={handleOverallSnapshotBrandSelect}
+                            />
+                          </Stack>
                         </Suspense>
                       </motion.div>
                     )}
