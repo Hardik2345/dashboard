@@ -221,7 +221,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
         fetchData();
 
         return () => { cancelled = true; };
-    }, [query.start, query.end, query.brand_key, query.product_id, query.refreshKey, query.utm_source, query.utm_medium, query.utm_campaign, query.sales_channel, query.discount_code, convertAmount]);
+    }, [query.start, query.end, query.brand_key, query.product_id, query.refreshKey, query.utm_source, query.utm_medium, query.utm_campaign, query.sales_channel, query.device_type, query.discount_code, query.city, convertAmount]);
 
     const renderChart = (title, chartData, totalLabel, rawTotal) => (
         <div className="flex flex-col items-center flex-1 min-w-0">

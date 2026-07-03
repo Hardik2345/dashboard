@@ -524,6 +524,7 @@ export default memo(function PaymentSplitTrend({ query }) {
     deviceType,
     productId,
     discountCode,
+    query?.city,
     compareStart,
     compareEnd,
     convertAmount,
