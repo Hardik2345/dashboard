@@ -1089,7 +1089,7 @@ export default function App() {
           getOrderSplit(generalMetricsQuery),
           getPaymentSalesSplit(generalMetricsQuery),
           getTrafficSourceSplit({
-            ...generalMetricsQuery,
+            ...trendMetricsQuery,
             mappingRules: trafficSplitRules,
           }),
           buildWebVitalsSnapshot(generalMetricsQuery, webVitalsMetric),
@@ -2194,7 +2194,7 @@ export default function App() {
       payment_trend: <PaymentSplitTrend query={generalMetricsQuery} />,
       traffic_split: (
         <TrafficSourceSplit
-          query={generalMetricsQuery}
+          query={trendMetricsQuery}
           compareMode={compareMode}
           mappingRules={trafficSplitRules}
         />
@@ -2263,7 +2263,7 @@ export default function App() {
       payment_trend: <PaymentSplitTrend query={generalMetricsQuery} />,
       traffic_split: (
         <TrafficSourceSplit
-          query={generalMetricsQuery}
+          query={trendMetricsQuery}
           compareMode={compareMode}
           mappingRules={trafficSplitRules}
         />
