@@ -309,5 +309,69 @@ describe("metricsReportService", () => {
       rows: [{ date: "2026-03-10", utm_source: "google" }],
       prev_range: { start: "2026-03-07", end: "2026-03-09" },
     });
+    expect(conn.query.mock.calls[0][0]).toContain("FROM overall_traffic_split");
+    expect(conn.query.mock.calls[0][1].replacements).toEqual([
+      "2026-03-10",
+      "2026-03-12",
+      "2026-03-07",
+      "2026-03-09",
+    ]);
+  });
+
+  test("returns product-scoped traffic source split for a single product", async () => {
+    const conn = {
+      query: jest.fn().mockResolvedValue([
+        { date: "2026-03-10", utm_source: '[{\"utm_name\":\"google\",\"sessions\":5}]' },
+      ]),
+    };
+
+    const service = buildMetricsReportService();
+    const response = await service.getTrafficSourceSplit({
+      conn,
+      start: "2026-03-10",
+      end: "2026-03-12",
+      productId: "7987757023402",
+    });
+
+    expect(response).toEqual({
+      rows: [{ date: "2026-03-10", utm_source: '[{\"utm_name\":\"google\",\"sessions\":5}]' }],
+      prev_range: { start: "2026-03-07", end: "2026-03-09" },
+    });
+    expect(conn.query.mock.calls[0][0]).toContain("FROM product_traffic_split");
+    expect(conn.query.mock.calls[0][0]).toContain("WHERE ((date >= ? AND date <= ?) OR (date >= ? AND date <= ?))");
+    expect(conn.query.mock.calls[0][0]).toContain("AND product_id = ?");
+    expect(conn.query.mock.calls[0][1].replacements).toEqual([
+      "2026-03-10",
+      "2026-03-12",
+      "2026-03-07",
+      "2026-03-09",
+      "7987757023402",
+    ]);
+  });
+
+  test("returns product-scoped traffic source split for multiple products", async () => {
+    const conn = {
+      query: jest.fn().mockResolvedValue([
+        { date: "2026-03-10", utm_source: "[]" },
+      ]),
+    };
+
+    const service = buildMetricsReportService();
+    await service.getTrafficSourceSplit({
+      conn,
+      start: "2026-03-10",
+      end: "2026-03-12",
+      productId: ["7987757023402", "7987757383850"],
+    });
+
+    expect(conn.query.mock.calls[0][0]).toContain("FROM product_traffic_split");
+    expect(conn.query.mock.calls[0][0]).toContain("AND product_id IN (?)");
+    expect(conn.query.mock.calls[0][1].replacements).toEqual([
+      "2026-03-10",
+      "2026-03-12",
+      "2026-03-07",
+      "2026-03-09",
+      ["7987757023402", "7987757383850"],
+    ]);
   });
 });
