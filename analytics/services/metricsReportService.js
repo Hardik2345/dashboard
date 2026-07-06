@@ -157,6 +157,16 @@ function getBucketSpan(buckets) {
   };
 }
 
+function normalizeProductIds(productId) {
+  if (Array.isArray(productId)) {
+    return productId
+      .map((value) => (value == null ? "" : String(value).trim()))
+      .filter(Boolean);
+  }
+  const normalized = productId == null ? "" : String(productId).trim();
+  return normalized ? [normalized] : [];
+}
+
 async function fetchHourlySalesRange(conn, start, end) {
   if (!start || !end) return [];
   return conn.query(
@@ -183,6 +193,7 @@ function buildMetricsReportService() {
     end,
     compareStart = null,
     compareEnd = null,
+    productId = "",
   }) {
     const previousRange = resolveCompareRange(
       start,
@@ -190,22 +201,36 @@ function buildMetricsReportService() {
       compareStart,
       compareEnd,
     );
-    const rows = await conn.query(
-      `
-        SELECT date, utm_source
-        FROM overall_traffic_split
-        WHERE (date >= ? AND date <= ?) OR (date >= ? AND date <= ?)
-      `,
-      {
-        type: QueryTypes.SELECT,
-        replacements: [
-          start,
-          end,
-          previousRange?.start || start,
-          previousRange?.end || end,
-        ],
-      },
-    );
+    const productIds = normalizeProductIds(productId);
+    const useProductScopedSource = productIds.length > 0;
+    const dateReplacements = [
+      start,
+      end,
+      previousRange?.start || start,
+      previousRange?.end || end,
+    ];
+
+    let sql = `
+      SELECT date, utm_source
+      FROM ${useProductScopedSource ? "product_traffic_split" : "overall_traffic_split"}
+      WHERE ((date >= ? AND date <= ?) OR (date >= ? AND date <= ?))
+    `;
+    const replacements = [...dateReplacements];
+
+    if (useProductScopedSource) {
+      if (productIds.length === 1) {
+        sql += ` AND product_id = ?`;
+        replacements.push(productIds[0]);
+      } else {
+        sql += ` AND product_id IN (?)`;
+        replacements.push(productIds);
+      }
+    }
+
+    const rows = await conn.query(sql, {
+      type: QueryTypes.SELECT,
+      replacements,
+    });
     return {
       rows,
       prev_range: previousRange,

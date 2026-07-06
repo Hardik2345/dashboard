@@ -26,6 +26,7 @@ function buildSplitController({ reportService }) {
             end,
             compareStart: req.query.compare_start || null,
             compareEnd: req.query.compare_end || null,
+            productId: req.query.product_id || "",
             timezone: req.tenantRoute?.timezone,
           }),
         );
