@@ -42,7 +42,7 @@ const FunnelChart = React.memo(function FunnelChart({
 
     const firstPct = getPct(data[0]?.value || 1);
     const lastPct = getPct(data[count - 1]?.value || 1);
-    const flowLength = Math.max(1, count - 1); 
+    const flowLength = Math.max(1, count - 1);
 
     const getInterpolatedPct = (x) => {
       // The triangle flows flawlessly until the last stage
@@ -242,7 +242,7 @@ const FunnelChart = React.memo(function FunnelChart({
                     if (state && state.activeTooltipIndex !== undefined) {
                       const dataIndex = Math.min(
                         Math.floor(state.activeTooltipIndex / 2),
-                        data.length - 1
+                        data.length - 1,
                       );
                       if (dataIndex >= 0) {
                         setHoveredIndex(dataIndex);

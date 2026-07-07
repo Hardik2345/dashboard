@@ -1514,7 +1514,7 @@ const MemoizedTable = memo(
                     <DeltaBadge
                       current={curr}
                       previous={prev}
-                      isPercent={col.id === "cvr"}
+                      isPercent={["atc_rate", "checkout_rate", "cvr"].includes(col.id)}
                     />
                   );
                 }
@@ -1685,6 +1685,12 @@ export default function ProductConversionTable({
         format: formatPercent,
       },
       { id: "ci_events", label: "CI Events", align: "right" },
+      {
+        id: "checkout_rate",
+        label: "Checkout Rate",
+        align: "right",
+        format: formatPercent,
+      },
       { id: "orders", label: "Orders", align: "right" },
       {
         id: "sales",
@@ -1822,6 +1828,7 @@ export default function ProductConversionTable({
     landing_page_path: 320,
     sessions: 120,
     ci_events: 120,
+    checkout_rate: 120,
     orders: 120,
     cvr: 100,
     atc: 120,

@@ -18,6 +18,7 @@ export function validateFilter(newFilter, currentFilters) {
         sessions: { min: 0, max: Infinity },
         atc: { min: 0, max: Infinity },
         sales: { min: 0, max: Infinity },
+        checkout_rate: { min: 0, max: Infinity },
         cvr: { min: 0, max: 100 }, // CVR is 0-100%
     };
 
