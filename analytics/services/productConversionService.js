@@ -10,6 +10,7 @@ const ALLOWED_SORT = new Map([
   ["atc", "atc"],
   ["atc_rate", "atc_rate"],
   ["ci_events", "ci_events"],
+  ["checkout_rate", "checkout_rate"],
   ["orders", "orders"],
   ["sales", "sales"],
   ["cvr", "cvr"],
@@ -23,6 +24,7 @@ const VALID_FILTER_FIELDS = new Set([
   "atc",
   "atc_rate",
   "ci_events",
+  "checkout_rate",
   "orders",
   "sales",
   "cvr",
@@ -36,6 +38,7 @@ const CSV_HEADERS = [
   "atc",
   "atc_rate",
   "ci_events",
+  "checkout_rate",
   "orders",
   "sales",
   "cvr",
@@ -48,6 +51,7 @@ const PREVIOUS_HEADER_MAP = {
   atc: "prev_atc",
   atc_rate: "prev_atc_rate",
   ci_events: "prev_ci_events",
+  checkout_rate: "prev_checkout_rate",
   orders: "prev_orders",
   sales: "prev_sales",
   cvr: "prev_cvr",
@@ -102,6 +106,8 @@ function buildMetricFilterExpression(field) {
       return "(CASE WHEN s.sessions > 0 THEN s.atc / s.sessions * 100 ELSE 0 END)";
     case "ci_events":
       return "COALESCE(c.ci_events, 0)";
+    case "checkout_rate":
+      return "(CASE WHEN s.sessions > 0 THEN COALESCE(c.ci_events, 0) / s.sessions * 100 ELSE 0 END)";
     case "orders":
       return "COALESCE(o.orders, 0)";
     case "sales":
@@ -387,6 +393,7 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         COALESCE(ps.atc, 0) AS prev_atc,
         CASE WHEN ps.sessions > 0 THEN ROUND(ps.atc / ps.sessions * 100, 4) ELSE 0 END AS prev_atc_rate,
         COALESCE(pc.ci_events, 0) AS prev_ci_events,
+        CASE WHEN ps.sessions > 0 THEN ROUND(COALESCE(pc.ci_events, 0) / ps.sessions * 100, 4) ELSE 0 END AS prev_checkout_rate,
         COALESCE(po.orders, 0) AS prev_orders,
         COALESCE(po.sales, 0) AS prev_sales,
         CASE WHEN ps.sessions > 0 THEN ROUND(COALESCE(po.orders, 0) / ps.sessions * 100, 4) ELSE 0 END AS prev_cvr`
@@ -414,6 +421,7 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         COALESCE(s.atc, 0) AS atc,
         CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
         COALESCE(c.ci_events, 0) AS ci_events,
+        CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(c.ci_events, 0) / s.sessions * 100, 4) ELSE 0 END AS checkout_rate,
         COALESCE(o.orders, 0) AS orders,
         COALESCE(o.sales, 0) AS sales,
         CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr,
@@ -433,6 +441,7 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         s.atc,
         CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
         COALESCE(c.ci_events, 0) AS ci_events,
+        CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(c.ci_events, 0) / s.sessions * 100, 4) ELSE 0 END AS checkout_rate,
         COALESCE(o.orders, 0) AS orders,
         COALESCE(o.sales, 0) AS sales,
         CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr,
@@ -494,6 +503,7 @@ function normalizeRows(rows, includeCompare = false) {
     atc: Number(row.atc || 0),
     atc_rate: Number(row.atc_rate || 0),
     ci_events: Number(row.ci_events || 0),
+    checkout_rate: Number(row.checkout_rate || 0),
     orders: Number(row.orders || 0),
     sales: Number(row.sales || 0),
     cvr: Number(row.cvr || 0),
@@ -508,6 +518,7 @@ function normalizeRows(rows, includeCompare = false) {
         atc: Number(row.prev_atc || 0),
         atc_rate: Number(row.prev_atc_rate || 0),
         ci_events: Number(row.prev_ci_events || 0),
+        checkout_rate: Number(row.prev_checkout_rate || 0),
         orders: Number(row.prev_orders || 0),
         sales: Number(row.prev_sales || 0),
         cvr: Number(row.prev_cvr || 0),

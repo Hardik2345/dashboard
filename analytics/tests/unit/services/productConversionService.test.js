@@ -29,6 +29,7 @@ describe("productConversionService", () => {
               atc: 25,
               atc_rate: 25,
               ci_events: 14,
+              checkout_rate: 14,
               orders: 8,
               sales: 640,
               cvr: 8,
@@ -36,6 +37,7 @@ describe("productConversionService", () => {
               prev_atc: 16,
               prev_atc_rate: 20,
               prev_ci_events: 9,
+              prev_checkout_rate: 11.25,
               prev_orders: 6,
               prev_sales: 480,
               prev_cvr: 7.5,
@@ -79,6 +81,7 @@ describe("productConversionService", () => {
       atc: 25,
       atc_rate: 25,
       ci_events: 14,
+      checkout_rate: 14,
       orders: 8,
       sales: 640,
       cvr: 8,
@@ -87,6 +90,7 @@ describe("productConversionService", () => {
         atc: 16,
         atc_rate: 20,
         ci_events: 9,
+        checkout_rate: 11.25,
         orders: 6,
         sales: 480,
         cvr: 7.5,
@@ -108,6 +112,7 @@ describe("productConversionService", () => {
               atc: 25,
               atc_rate: 25,
               ci_events: 14,
+              checkout_rate: 14,
               orders: 8,
               sales: 640,
               cvr: 8,
@@ -115,6 +120,7 @@ describe("productConversionService", () => {
               prev_atc: 16,
               prev_atc_rate: 20,
               prev_ci_events: 9,
+              prev_checkout_rate: 11.25,
               prev_orders: 6,
               prev_sales: 480,
               prev_cvr: 7.5,
@@ -131,7 +137,7 @@ describe("productConversionService", () => {
       end: "2026-03-31",
       compare_start: "2026-03-30",
       compare_end: "2026-03-30",
-      visible_columns: JSON.stringify(["sessions", "ci_events", "cvr"]),
+      visible_columns: JSON.stringify(["sessions", "ci_events", "checkout_rate", "cvr"]),
     });
 
     const response = await service.getProductConversionCsv({
@@ -145,15 +151,17 @@ describe("productConversionService", () => {
       "landing_page_path",
       "sessions",
       "ci_events",
+      "checkout_rate",
       "cvr",
       "prev_sessions",
       "prev_ci_events",
+      "prev_checkout_rate",
       "prev_cvr",
     ]);
     expect(response.csv).toContain(
-      "landing_page_path,sessions,ci_events,cvr,prev_sessions,prev_ci_events,prev_cvr",
+      "landing_page_path,sessions,ci_events,checkout_rate,cvr,prev_sessions,prev_ci_events,prev_checkout_rate,prev_cvr",
     );
-    expect(response.csv).toContain("/products/a,100,14,8,80,9,7.5");
+    expect(response.csv).toContain("/products/a,100,14,14,8,80,9,11.25,7.5");
   });
 
   test("uses completed-hour cutoff symmetrically for compare mode when current range includes today", async () => {
