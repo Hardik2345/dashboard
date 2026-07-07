@@ -80,13 +80,15 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
   };
 
   const markAsRead = async () => {
-    const unreadIds = notifications.filter((n) => !n.read).map((n) => n._id);
-    if (!unreadIds.length) return;
+    if (unreadCount <= 0) return;
 
     try {
-      await doPut("/push/notifications/read", { message_ids: unreadIds });
+      // Mark all unread notifications in the backend so the badge count
+      // does not get stuck on older or hidden items outside the current list.
+      await doPut("/push/notifications/read", {});
       setUnreadCount(0);
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      fetchNotifications();
     } catch (error) {
       console.error("Failed to mark notifications as read", error);
     }
