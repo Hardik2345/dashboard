@@ -107,7 +107,7 @@ function buildMetricFilterExpression(field) {
     case "ci_events":
       return "COALESCE(c.ci_events, 0)";
     case "checkout_rate":
-      return "(CASE WHEN s.sessions > 0 THEN COALESCE(c.ci_events, 0) / s.sessions * 100 ELSE 0 END)";
+      return "(CASE WHEN s.atc > 0 THEN COALESCE(c.ci_events, 0) / s.atc * 100 ELSE 0 END)";
     case "orders":
       return "COALESCE(o.orders, 0)";
     case "sales":
@@ -393,7 +393,7 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         COALESCE(ps.atc, 0) AS prev_atc,
         CASE WHEN ps.sessions > 0 THEN ROUND(ps.atc / ps.sessions * 100, 4) ELSE 0 END AS prev_atc_rate,
         COALESCE(pc.ci_events, 0) AS prev_ci_events,
-        CASE WHEN ps.sessions > 0 THEN ROUND(COALESCE(pc.ci_events, 0) / ps.sessions * 100, 4) ELSE 0 END AS prev_checkout_rate,
+        CASE WHEN ps.atc > 0 THEN ROUND(COALESCE(pc.ci_events, 0) / ps.atc * 100, 4) ELSE 0 END AS prev_checkout_rate,
         COALESCE(po.orders, 0) AS prev_orders,
         COALESCE(po.sales, 0) AS prev_sales,
         CASE WHEN ps.sessions > 0 THEN ROUND(COALESCE(po.orders, 0) / ps.sessions * 100, 4) ELSE 0 END AS prev_cvr`
@@ -421,7 +421,7 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         COALESCE(s.atc, 0) AS atc,
         CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
         COALESCE(c.ci_events, 0) AS ci_events,
-        CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(c.ci_events, 0) / s.sessions * 100, 4) ELSE 0 END AS checkout_rate,
+        CASE WHEN s.atc > 0 THEN ROUND(COALESCE(c.ci_events, 0) / s.atc * 100, 4) ELSE 0 END AS checkout_rate,
         COALESCE(o.orders, 0) AS orders,
         COALESCE(o.sales, 0) AS sales,
         CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr,
@@ -441,7 +441,7 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         s.atc,
         CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
         COALESCE(c.ci_events, 0) AS ci_events,
-        CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(c.ci_events, 0) / s.sessions * 100, 4) ELSE 0 END AS checkout_rate,
+        CASE WHEN s.atc > 0 THEN ROUND(COALESCE(c.ci_events, 0) / s.atc * 100, 4) ELSE 0 END AS checkout_rate,
         COALESCE(o.orders, 0) AS orders,
         COALESCE(o.sales, 0) AS sales,
         CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr,

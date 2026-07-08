@@ -1822,15 +1822,15 @@ function buildMetricsSnapshotService(deps = {}) {
         checkout_rate: discountActive || cityActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
-              computeRatePercent(checkoutInitiatedPair.current, current.total_sessions),
-              computeRatePercent(checkoutInitiatedPair.previous, previous.total_sessions),
+              computeRatePercent(checkoutInitiatedPair.current, current.total_atc_sessions),
+              computeRatePercent(checkoutInitiatedPair.previous, previous.total_atc_sessions),
               computeRatePercent(
                 checkoutInitiatedDeltaPair.current,
-                deltaCurrentRowTwo.total_sessions,
+                deltaCurrentRowTwo.total_atc_sessions,
               ),
               computeRatePercent(
                 checkoutInitiatedDeltaPair.previous,
-                deltaPreviousRowTwo.total_sessions,
+                deltaPreviousRowTwo.total_atc_sessions,
               ),
             ),
         atc_rate: discountActive
