@@ -1,6 +1,8 @@
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const mongoose = require('mongoose');
 const authRoutes = require('./routes/auth.routes');
+const DomainRule = require('./models/DomainRule.model');
 const {
     initObservability,
     sentryErrorMiddleware,
@@ -49,6 +51,38 @@ app.use('/auth', authRoutes);
 
 // Health check
 app.get('/health', (req, res) => res.status(200).send('OK'));
+app.get('/health/monitor', async (_req, res) => {
+    const dependencies = {
+        mongo: {
+            status: 'DOWN',
+            message: 'mongo_not_connected',
+        },
+    };
+
+    try {
+        if (mongoose.connection.readyState !== 1) {
+            throw new Error('mongo_not_connected');
+        }
+        await DomainRule.findOne({}).select('_id').lean();
+        dependencies.mongo = {
+            status: 'UP',
+            message: 'query_ok',
+        };
+        return res.status(200).json({
+            ok: true,
+            service: 'auth-service',
+            message: 'dependencies_healthy',
+            dependencies,
+        });
+    } catch (error) {
+        return res.status(503).json({
+            ok: false,
+            service: 'auth-service',
+            message: error.message,
+            dependencies,
+        });
+    }
+});
 
 // Standard error handler
 app.use(sentryErrorMiddleware);

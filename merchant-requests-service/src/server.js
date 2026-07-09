@@ -8,6 +8,7 @@ const { backfillMerchantRequestWorkflow } = require("./services/migrations");
 const { ensureFallbackBrandConfig } = require("./services/brandProvisioning");
 const { initSocket } = require("./services/socket");
 const { reconcileTodoist } = require("./services/reconcileService");
+const { registerWithHealthMonitor } = require("./healthMonitorRegistration");
 
 async function start() {
   validateConfig();
@@ -33,6 +34,28 @@ async function start() {
 
   server.listen(config.port, () => {
     console.log(`[merchant-requests] listening on :${config.port}`);
+    registerWithHealthMonitor({
+      serviceName: "merchant-requests-service",
+      baseUrl: "http://merchant-requests-service:4020",
+      healthEndpoint: "/health",
+      endpoints: [
+        {
+          path: "/health",
+          method: "GET",
+          critical: true,
+          intervalSeconds: 30,
+          expectedStatus: 200,
+        },
+        {
+          path: "/health/monitor",
+          method: "GET",
+          critical: true,
+          intervalSeconds: 60,
+          expectedStatus: 200,
+        },
+      ],
+      dependencies: ["mongo"],
+    }).catch(() => {});
   });
 
   const timer = setInterval(() => {

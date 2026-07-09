@@ -1,6 +1,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const app = require('./app');
+const { registerWithHealthMonitor } = require('./healthMonitorRegistration');
 const { recordMongoConnectionError, captureError } = require('./observability');
 
 const PORT = process.env.PORT || 4010;
@@ -30,6 +31,28 @@ const startServer = async () => {
 
   app.listen(PORT, () => {
     console.log(`Sessions-service running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+    registerWithHealthMonitor({
+      serviceName: 'sessions-service',
+      baseUrl: 'http://sessions-service:4010',
+      healthEndpoint: '/health',
+      endpoints: [
+        {
+          path: '/health',
+          method: 'GET',
+          critical: true,
+          intervalSeconds: 30,
+          expectedStatus: 200,
+        },
+        {
+          path: '/health/monitor',
+          method: 'GET',
+          critical: true,
+          intervalSeconds: 60,
+          expectedStatus: 200,
+        },
+      ],
+      dependencies: ['mongo'],
+    }).catch(() => {});
   });
 };
 

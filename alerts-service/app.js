@@ -3,7 +3,9 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const fs = require("fs");
 const mongoose = require("mongoose");
+const path = require("path");
 
 const logger = require("./utils/logger");
 const {
@@ -31,7 +33,7 @@ const ItemQtyPush = require("./models/itemQtyPush");
 const { sendToAll } = require("./utils/fcm");
 const PipelineCreds = require("./models/pipelineCreds");
 const { getPool } = require("./utils/db");
-
+const { registerWithHealthMonitor } = require("./healthMonitorRegistration");
 
 const app = express();
 app.use(helmet());
@@ -42,13 +44,202 @@ initObservability(app);
 // --- Mongo Connection --------------------------------------------------------
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017";
 const MONGO_DB = process.env.MONGO_DB || "alerts";
+const TEST_FAILURE_STATE_FILE = process.env.ALERTS_TEST_FAILURE_FILE
+  || path.join("/tmp", "alerts-service-test-failure.json");
 
 mongoose.set("strictQuery", true);
+
+function defaultFailureState() {
+  return {
+    active: false,
+    scenarioId: null,
+    enabledAt: null,
+    type: "application_exception",
+    healthMessage: "dependencies_healthy",
+    functionalStatusCode: 503,
+    functionalCode: "simulated_alerts_service_failure",
+    functionalMessage:
+      "Simulated alert processing failure after dependency validation completed successfully.",
+    failingSubsystem: "notification_dispatch",
+    failureStage: "post-validation fanout",
+    retryable: true,
+    dependencies: {
+      mongo: {
+        status: "UP",
+        message: "Connected",
+      },
+      redis: {
+        status: "UP",
+        message: "Connected",
+      },
+    },
+    stack: [
+      "Error: Simulated alert dispatch failure",
+      "    at dispatchAlertBatch (/app/services/notificationDispatcher.js:184:17)",
+      "    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)",
+      "    at async handleIncomingAlert (/app/app.js:1:1)",
+    ],
+  };
+}
+
+function readFailureState() {
+  try {
+    if (!fs.existsSync(TEST_FAILURE_STATE_FILE)) {
+      return defaultFailureState();
+    }
+
+    const raw = fs.readFileSync(TEST_FAILURE_STATE_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    return {
+      ...defaultFailureState(),
+      ...parsed,
+      dependencies: parsed?.dependencies || defaultFailureState().dependencies,
+      stack: Array.isArray(parsed?.stack) ? parsed.stack : defaultFailureState().stack,
+    };
+  } catch (_error) {
+    return defaultFailureState();
+  }
+}
+
+function buildHealthMonitorPayload(state) {
+  if (!state.active) {
+    return {
+      ok: true,
+      service: "alerts-service",
+      message: "dependencies_healthy",
+      dependencies: state.dependencies,
+    };
+  }
+
+  return {
+    ok: false,
+    service: "alerts-service",
+    message: state.healthMessage,
+    scenarioId: state.scenarioId,
+    type: state.type,
+    failingSubsystem: state.failingSubsystem,
+    failureStage: state.failureStage,
+    retryable: state.retryable,
+    enabledAt: state.enabledAt,
+    dependencies: state.dependencies,
+  };
+}
+
+function buildHealthPayload(state) {
+  if (!state.active) {
+    return { ok: true };
+  }
+
+  return {
+    ok: false,
+    service: "alerts-service",
+    message: state.healthMessage,
+    scenarioId: state.scenarioId,
+    type: state.type,
+    failingSubsystem: state.failingSubsystem,
+    failureStage: state.failureStage,
+    retryable: state.retryable,
+    enabledAt: state.enabledAt,
+  };
+}
+
+function buildFunctionalFailurePayload(state, req) {
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+  return {
+    error: state.functionalCode,
+    message: state.functionalMessage,
+    service: "alerts-service",
+    scenarioId: state.scenarioId,
+    type: state.type,
+    failingSubsystem: state.failingSubsystem,
+    failureStage: state.failureStage,
+    retryable: state.retryable,
+    requestId,
+    method: req.method,
+    path: req.originalUrl,
+    enabledAt: state.enabledAt,
+    dependencies: state.dependencies,
+    diagnostics: {
+      probableCause:
+        "Application-layer failure after dependency checks passed. Container remains healthy but alert workflows are blocked.",
+      stack: state.stack,
+    },
+  };
+}
 
 // ---- Routes -----------------------------------------------------------------
 const alertConfigEventPublisher = buildAlertConfigEventPublisher();
 
-app.get("/health", (_req, res) => res.json({ ok: true }));
+app.get("/health", (_req, res) => {
+  const failureState = readFailureState();
+  if (failureState.active) {
+    return res.status(503).json(buildHealthPayload(failureState));
+  }
+
+  return res.json({ ok: true });
+});
+app.get("/health/monitor", async (_req, res) => {
+  const failureState = readFailureState();
+  if (failureState.active) {
+    return res.status(503).json(buildHealthMonitorPayload(failureState));
+  }
+
+  const dependencies = {
+    mongo: {
+      status: "DOWN",
+      message: "mongo_not_connected",
+    },
+    redis: {
+      status: "DOWN",
+      message: "redis_not_reachable",
+    },
+  };
+
+  try {
+    if (mongoose.connection.readyState === 1) {
+      dependencies.mongo = {
+        status: "UP",
+        message: "connection_ready",
+      };
+    }
+
+    try {
+      await redis.ping();
+      dependencies.redis = {
+        status: "UP",
+        message: "ping_ok",
+      };
+    } catch (error) {
+      dependencies.redis = {
+        status: "DOWN",
+        message: error.message,
+      };
+    }
+
+    const ok = Object.values(dependencies).every((entry) => entry.status === "UP");
+    const message = ok
+      ? "dependencies_healthy"
+      : Object.entries(dependencies)
+          .filter(([, entry]) => entry.status !== "UP")
+          .map(([name, entry]) => `${name}:${entry.message}`)
+          .join(", ");
+
+    return res.status(ok ? 200 : 503).json({
+      ok,
+      service: "alerts-service",
+      message,
+      dependencies,
+    });
+  } catch (error) {
+    return res.status(503).json({
+      ok: false,
+      service: "alerts-service",
+      message: error.message,
+      dependencies,
+    });
+  }
+});
 
 const redis = require("./utils/redis");
 
@@ -208,6 +399,27 @@ async function runInventoryCacheRefresh() {
     inventoryCacheRefreshInFlight = false;
   }
 }
+
+app.use((req, res, next) => {
+  if (req.path === "/health" || req.path === "/health/monitor" || req.path === "/metrics") {
+    return next();
+  }
+
+  const failureState = readFailureState();
+  if (!failureState.active) {
+    return next();
+  }
+
+  logger.error("[test-failure-mode] Blocking alerts-service request", {
+    method: req.method,
+    path: req.originalUrl,
+    scenarioId: failureState.scenarioId,
+  });
+
+  return res
+    .status(Number(failureState.functionalStatusCode) || 503)
+    .json(buildFunctionalFailurePayload(failureState, req));
+});
 
 app.use(
   "/alerts",
@@ -805,6 +1017,28 @@ async function start() {
         "[alerts-service] brands loaded:",
         Object.keys(getBrands()).join(", ") || "(none)",
       );
+      registerWithHealthMonitor({
+        serviceName: "alerts-service",
+        baseUrl: "http://alerts-service:5005",
+        healthEndpoint: "/health",
+        endpoints: [
+          {
+            path: "/health",
+            method: "GET",
+            critical: true,
+            intervalSeconds: 30,
+            expectedStatus: 200,
+          },
+          {
+            path: "/health/monitor",
+            method: "GET",
+            critical: true,
+            intervalSeconds: 60,
+            expectedStatus: 200,
+          },
+        ],
+        dependencies: ["mongo", "redis"],
+      }).catch(() => {});
 
       // Warm inventory cache in the background so service health is not blocked
       // on cross-brand DB/Redis work during container startup.

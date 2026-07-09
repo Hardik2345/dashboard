@@ -12,7 +12,10 @@ const {
   captureError,
 } = require("./observability");
 const { connectMongo } = require("./shared/db/mongo");
+const { mongoose } = require("./shared/db/mongo");
+const redis = require("./shared/db/redis");
 const { sequelize } = require("./shared/db/mainSequelize");
+const { registerWithHealthMonitor } = require("./healthMonitorRegistration");
 const { buildMetricsRouter } = require("./modules/metrics");
 const { buildProductConversionRouter } = require("./modules/product-conversion");
 const { buildBundlesRouter } = require("./modules/bundles");
@@ -30,6 +33,82 @@ app.use(helmet());
 initObservability(app);
 
 app.get("/health", (_req, res) => res.json({ ok: true, service: "analytics" }));
+app.get("/health/monitor", async (_req, res) => {
+  const dependencies = {
+    mongo: {
+      status: "DOWN",
+      message: "mongo_not_connected",
+    },
+    mysql: {
+      status: "DOWN",
+      message: "mysql_not_reachable",
+    },
+    redis: {
+      status: "DOWN",
+      message: "redis_not_reachable",
+    },
+  };
+
+  if (mongoose.connection.readyState === 1) {
+    dependencies.mongo = {
+      status: "UP",
+      message: "connection_ready",
+    };
+  }
+
+  try {
+    await sequelize.query("SELECT 1");
+    dependencies.mysql = {
+      status: "UP",
+      message: "query_ok",
+    };
+  } catch (error) {
+    dependencies.mysql = {
+      status: "DOWN",
+      message: error.message,
+    };
+  }
+
+  try {
+    await redis.ping();
+    dependencies.redis = {
+      status: "UP",
+      message: "ping_ok",
+    };
+  } catch (error) {
+    dependencies.redis = {
+      status: "DOWN",
+      message: error.message,
+    };
+  }
+
+  const ok = Object.values(dependencies).every((entry) => entry.status === "UP");
+  const message = ok
+    ? "dependencies_healthy"
+    : Object.entries(dependencies)
+        .filter(([, entry]) => entry.status !== "UP")
+        .map(([name, entry]) => `${name}:${entry.message}`)
+        .join(", ");
+
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      throw new Error(message || "mongo_not_connected");
+    }
+    return res.status(ok ? 200 : 503).json({
+      ok,
+      service: "analytics-service",
+      message,
+      dependencies,
+    });
+  } catch (error) {
+    return res.status(503).json({
+      ok: false,
+      service: "analytics-service",
+      message: error.message,
+      dependencies,
+    });
+  }
+});
 
 const allowedOrigins = (process.env.CORS_ORIGIN || "")
   .split(",")
@@ -86,6 +165,28 @@ async function init() {
   
   const server = app.listen(port, () => {
     logger.info(`Metrics API running on :${port}`);
+    registerWithHealthMonitor({
+      serviceName: "analytics-service",
+      baseUrl: "http://analytics-service:3006",
+      healthEndpoint: "/health",
+      endpoints: [
+        {
+          path: "/health",
+          method: "GET",
+          critical: true,
+          intervalSeconds: 30,
+          expectedStatus: 200,
+        },
+        {
+          path: "/health/monitor",
+          method: "GET",
+          critical: true,
+          intervalSeconds: 60,
+          expectedStatus: 200,
+        },
+      ],
+      dependencies: ["mongo", "mysql", "redis"],
+    }).catch(() => {});
     require("./config/brands")
       .fetchBrandIds()
       .catch((err) => {

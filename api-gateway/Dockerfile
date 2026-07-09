@@ -9,7 +9,9 @@ RUN apk add --no-cache perl curl \
 
 COPY gateway/nginx.conf conf/nginx.conf
 COPY gateway/lua gateway/lua
+COPY scripts/start-openresty.sh /usr/local/bin/start-openresty.sh
+RUN chmod +x /usr/local/bin/start-openresty.sh
 
 EXPOSE 18080
 
-CMD ["openresty", "-g", "daemon off;"]
+CMD ["/usr/local/bin/start-openresty.sh"]

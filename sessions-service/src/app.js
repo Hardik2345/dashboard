@@ -3,6 +3,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
+const mongoose = require('mongoose');
+const Session = require('./models/Session');
 const sessionRoutes = require('./routes/sessionRoutes');
 const {
   initObservability,
@@ -35,6 +37,38 @@ app.use('/sessions', sessionsLimiter, sessionRoutes);
 // General health check
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'UP' });
+});
+app.get('/health/monitor', async (_req, res) => {
+  const dependencies = {
+    mongo: {
+      status: 'DOWN',
+      message: 'mongo_not_connected',
+    },
+  };
+
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      throw new Error('mongo_not_connected');
+    }
+    await Session.findOne({}).select('_id').lean();
+    dependencies.mongo = {
+      status: 'UP',
+      message: 'query_ok',
+    };
+    return res.status(200).json({
+      ok: true,
+      service: 'sessions-service',
+      message: 'dependencies_healthy',
+      dependencies,
+    });
+  } catch (error) {
+    return res.status(503).json({
+      ok: false,
+      service: 'sessions-service',
+      message: error.message,
+      dependencies,
+    });
+  }
 });
 
 // Error handler

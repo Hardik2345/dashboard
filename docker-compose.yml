@@ -1,6 +1,31 @@
 version: "3.9"
 
 services:
+  health-monitor-service:
+    container_name: health-monitor-service-main
+    build:
+      context: ./health-monitor-service
+      dockerfile: Dockerfile
+    ports:
+      - "4015:4015"
+    env_file:
+      - ./health-monitor-service/.env.example
+      - .env
+    environment:
+      NODE_ENV: production
+      HEALTH_MONITOR_PORT: 4015
+    restart: unless-stopped
+    networks:
+      - saas-net
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:4015/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   api-gateway:
     container_name: api-gateway-main
     build:
