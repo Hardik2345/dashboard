@@ -23,10 +23,26 @@ const getPipelineBrands = async () => {
 /**
  * Returns a specific pipeline credentials record by brand_id.
  * @param {number} brandId
+ * @param {Object} options
  * @returns {Promise<Object|null>}
  */
-const getPipelineCredsById = async (brandId) => {
-  return PipelineCreds.findOne({ brand_id: brandId }).lean();
+const getPipelineCredsById = async (
+  brandId,
+  { returnDecrypted = false } = {},
+) => {
+  const doc = await PipelineCreds.findOne({ brand_id: brandId }).lean();
+  if (!doc) return null;
+
+  if (!returnDecrypted) {
+    return doc;
+  }
+
+  return {
+    ...doc,
+    db_password: PipelineCreds.decrypt(doc.db_password || ""),
+    access_token: PipelineCreds.decrypt(doc.access_token || ""),
+    speed_key: PipelineCreds.decrypt(doc.speed_key || ""),
+  };
 };
 
 const validateSpeedKey = async ({ brandKey, speedKey }) => {
