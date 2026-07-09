@@ -103,8 +103,15 @@ router.get("/brands", async (req, res) => {
 // GET /pipeline/brands/:id
 router.get("/brands/:id", async (req, res) => {
   const { id } = req.params;
+  const returnDecrypted =
+    (process.env.RETURN_DECRYPTED_PIPELINECREDS || "")
+      .toString()
+      .trim()
+      .toLowerCase() === "true";
   try {
-    const creds = await pipelineService.getPipelineCredsById(Number(id));
+    const creds = await pipelineService.getPipelineCredsById(Number(id), {
+      returnDecrypted,
+    });
     if (!creds) {
       return res.status(404).json({ error: "brand_not_found" });
     }
