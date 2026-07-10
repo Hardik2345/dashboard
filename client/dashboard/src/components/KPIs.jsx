@@ -56,18 +56,7 @@ export default function KPIs({
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
   const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
-  const dashboardTimezone = query?.timezone || "Asia/Kolkata";
-  const todayInDashboardTimezone = new Date().toLocaleDateString("en-CA", {
-    timeZone: dashboardTimezone,
-  });
-  const webVitalsData = useWebVitals(
-    {
-      ...query,
-      start: todayInDashboardTimezone,
-      end: todayInDashboardTimezone,
-    },
-    "PERFORMANCE",
-  );
+  const webVitalsData = useWebVitals(query, "PERFORMANCE");
 
   const scopeLabel = useMemo(() => {
     if (!isProductScoped) return "All products";
@@ -1139,68 +1128,27 @@ export default function KPIs({
               size={{ xs: 12, sm: 6, md: 3 }}
               sx={{ order: { xs: 8, md: 0 } }}
             >
-              <Card
-                elevation={0}
-                sx={{
-                  height: "100%",
-                  border: "1px solid",
-                  borderColor: "divider",
-                  bgcolor: "background.paper",
-                  boxShadow:
-                    "0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)",
-                }}
-              >
-                <CardContent
-                  sx={{
-                    minHeight: 110,
-                    p: { xs: 1.25, md: 1.5 },
-                    "&:last-child": { pb: { xs: 1.25, md: 1.5 } },
-                    display: "grid",
-                    placeItems: "center",
-                    textAlign: "center",
-                  }}
-                >
-                  {webVitalsData.loading ? (
-                    <Box sx={{ width: "100%" }}>
-                      <Skeleton
-                        variant="text"
-                        width={150}
-                        sx={{ mx: "auto", mb: 1 }}
-                      />
-                      <Skeleton
-                        variant="text"
-                        width={90}
-                        height={44}
-                        sx={{ mx: "auto", mb: 1 }}
-                      />
-                      <Skeleton
-                        variant="text"
-                        width={140}
-                        sx={{ mx: "auto" }}
-                      />
-                    </Box>
-                  ) : (
-                    <Box>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{ mb: 1 }}
-                      >
-                        Web Performance(Avg)
-                      </Typography>
-                      <Typography
-                        variant="h5"
-                        sx={{ fontWeight: 700, lineHeight: 1, mb: 1 }}
-                      >
-                        {nfFloat.format(webVitalsData.performanceAvg ?? 0)}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Today's performance score
-                      </Typography>
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
+              <KPIStat
+                label="Web Performance(Avg)"
+                value={webVitalsData.performanceAvg ?? 0}
+                loading={webVitalsData.loading}
+                deltaLoading={webVitalsData.loading}
+                formatter={(v) => nfFloat.format(v)}
+                delta={
+                  typeof webVitalsData.performanceChange === "number"
+                    ? {
+                        value: webVitalsData.performanceChange,
+                        direction:
+                          webVitalsData.performanceChange > 0
+                            ? "up"
+                            : webVitalsData.performanceChange < 0
+                              ? "down"
+                              : "flat",
+                      }
+                    : undefined
+                }
+                centerOnMobile={true}
+              />
             </Grid>
           )}
       </Grid>

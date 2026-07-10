@@ -453,6 +453,22 @@ export async function getDashboardSummary(args) {
   };
 }
 
+export async function getWebPerformanceSummary(args) {
+  const params = appendBrandKey(
+    {
+      start: args.start || args.date,
+      end: args.end || args.date || args.start,
+      timezone: args.timezone,
+    },
+    args,
+  );
+  const res = await doGet("/metrics/web-performance-summary", params);
+  if (res.error) {
+    return { __error: true };
+  }
+  return res.data || {};
+}
+
 export async function getOverallSnapshot(args = {}) {
   const params = {
     start: args.start || args.date,

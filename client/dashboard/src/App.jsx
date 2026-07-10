@@ -2233,7 +2233,7 @@ export default function App() {
           productLabel={selectedProductLabel}
           utmOptions={utmOptions}
           showRow="mobile_top"
-          showWebVitals={false}
+          showWebVitals={hasPermission("web_vitals")}
           showCiEvents={hasPermission("ci_events")}
           compareMode={compareMode}
         />

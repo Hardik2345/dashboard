@@ -4,6 +4,46 @@ const {
   normalizeMetricRequest,
 } = require('./requestNormalizer');
 
+function getPreviousDateWindow(start, end) {
+  const startDate = new Date(`${start}T00:00:00Z`);
+  const endDate = new Date(`${end}T00:00:00Z`);
+  const dayCount = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+  const prevEnd = new Date(startDate);
+  prevEnd.setUTCDate(prevEnd.getUTCDate() - 1);
+  const prevStart = new Date(prevEnd);
+  prevStart.setUTCDate(prevStart.getUTCDate() - dayCount + 1);
+  return {
+    prevStart: prevStart.toISOString().slice(0, 10),
+    prevEnd: prevEnd.toISOString().slice(0, 10),
+  };
+}
+
+async function fetchDailyPerformanceAverages(conn, start, end) {
+  const rows = await conn.query(
+    `
+      SELECT date, AVG(avg_performance) AS avg_performance
+      FROM daily_web_vitals_summary
+      WHERE date >= ? AND date <= ?
+      GROUP BY date
+      ORDER BY date ASC
+    `,
+    {
+      type: QueryTypes.SELECT,
+      replacements: [start, end],
+    },
+  );
+
+  return rows.map((row) => ({
+    date: row.date,
+    avg_performance: Number(row.avg_performance),
+  }));
+}
+
+function calculatePeriodAverage(rows) {
+  if (!rows.length) return null;
+  return rows.reduce((sum, row) => sum + Number(row.avg_performance || 0), 0) / rows.length;
+}
+
 function buildSummaryController({ metricsService }) {
   return {
     dashboardSummary: async (req, res) => {
@@ -66,6 +106,45 @@ function buildSummaryController({ metricsService }) {
         return res.json(snapshot);
       } catch (e) {
         return handleControllerError(res, e, "dashboard-summary-brands failed");
+      }
+    },
+
+    webPerformanceSummary: async (req, res) => {
+      try {
+        const normalized = normalizeMetricRequest(req, {
+          defaultToToday: false,
+          requireBoth: true,
+        });
+        if (!normalized.ok) {
+          return res.status(normalized.status).json(normalized.body);
+        }
+        if (!normalized.spec.conn) {
+          throw new Error('Database connection missing (tenant router required)');
+        }
+
+        const { start, end, conn } = normalized.spec;
+        const { prevStart, prevEnd } = getPreviousDateWindow(start, end);
+
+        const [dailyAverages, previousDailyAverages] = await Promise.all([
+          fetchDailyPerformanceAverages(conn, start, end),
+          fetchDailyPerformanceAverages(conn, prevStart, prevEnd),
+        ]);
+
+        const currentAvg = calculatePeriodAverage(dailyAverages);
+        const previousAvg = calculatePeriodAverage(previousDailyAverages);
+        const changePercent =
+          previousAvg && currentAvg != null
+            ? ((currentAvg - previousAvg) / previousAvg) * 100
+            : null;
+
+        return res.json({
+          daily_averages: dailyAverages,
+          current_avg: currentAvg,
+          previous_avg: previousAvg,
+          change_percent: changePercent,
+        });
+      } catch (e) {
+        return handleControllerError(res, e, 'web-performance-summary failed');
       }
     },
 
