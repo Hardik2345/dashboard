@@ -69,7 +69,7 @@ const WebVitals = ({
     }
     setLocalMetric(nextMetric);
   };
-  const { topPages, loading } = useWebVitals(query, metric);
+  const { topPages, loading, isSingleDateSelection } = useWebVitals(query, metric);
 
   return (
     <StatBox
@@ -157,6 +157,20 @@ const WebVitals = ({
               <Skeleton variant="text" width="40%" />
             </Box>
           ))
+        ) : !isSingleDateSelection ? (
+          <Box
+            sx={{
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              minHeight: 180,
+            }}
+          >
+            <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
+              Top 5 pages are shown only for a single selected date.
+            </Typography>
+          </Box>
         ) : topPages.length === 0 ? (
           <Box
             sx={{

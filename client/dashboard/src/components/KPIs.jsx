@@ -56,7 +56,9 @@ export default function KPIs({
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
   const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
-  const webVitalsData = useWebVitals(query, "PERFORMANCE");
+  const webVitalsData = useWebVitals(query, "PERFORMANCE", {
+    usePerformanceSummary: true,
+  });
 
   const scopeLabel = useMemo(() => {
     if (!isProductScoped) return "All products";

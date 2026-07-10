@@ -4,7 +4,9 @@ import useWebVitals from "../hooks/useWebVitals.js";
 const nfFloat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 
 export default function WebPerformancePanel({ query }) {
-  const { performanceAvg, loading } = useWebVitals(query, "PERFORMANCE");
+  const { performanceAvg, loading } = useWebVitals(query, "PERFORMANCE", {
+    usePerformanceSummary: true,
+  });
 
   return (
     <Card

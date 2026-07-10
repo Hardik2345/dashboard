@@ -10,14 +10,16 @@ const METRIC_KEYS = {
     PERFORMANCE: "performance",
 };
 
-export default function useWebVitals(query, metric = 'FCP') {
+export default function useWebVitals(query, metric = 'FCP', options = {}) {
     const [data, setData] = useState({
         performanceAvg: null,
         performancePrev: null,
         performanceChange: null,
         topPages: [],
+        isSingleDateSelection: true,
         loading: true,
     });
+    const usePerformanceSummary = options?.usePerformanceSummary === true;
 
     const { user } = useAppSelector((state) => state.auth);
     const globalBrandKey = useAppSelector((state) => state.brand.brand);
@@ -128,7 +130,7 @@ export default function useWebVitals(query, metric = 'FCP') {
 
         const getWebVitalsData = async () => {
             if (!brand_name || !start_date || !end_date) {
-                if (!cancelled) setData(prev => ({ ...prev, loading: false }));
+                if (!cancelled) setData(prev => ({ ...prev, loading: false, isSingleDateSelection: true }));
                 return;
             }
 
@@ -136,9 +138,16 @@ export default function useWebVitals(query, metric = 'FCP') {
 
             const { prev_start, prev_end } = getPreviousDateWindow(start_date, end_date);
             const metricKey = METRIC_KEYS[metric] || 'fcp';
+            const isSingleDateSelection = start_date === end_date;
 
             const [performanceSummary, currentData, prevData] = await Promise.all([
-                fetchPerformanceSummary(start_date, end_date),
+                usePerformanceSummary
+                    ? fetchPerformanceSummary(start_date, end_date)
+                    : Promise.resolve({
+                        current_avg: null,
+                        previous_avg: null,
+                        change_percent: null,
+                    }),
                 fetchData(start_date, end_date),
                 fetchData(prev_start, prev_end)
             ]);
@@ -148,22 +157,31 @@ export default function useWebVitals(query, metric = 'FCP') {
             if (
                 !currentData.length &&
                 !prevData.length &&
-                performanceSummary.current_avg == null &&
-                performanceSummary.previous_avg == null
+                (!usePerformanceSummary || (
+                    performanceSummary.current_avg == null &&
+                    performanceSummary.previous_avg == null
+                ))
             ) {
                 setData({
                     performanceAvg: null,
                     performancePrev: null,
                     performanceChange: null,
                     topPages: [],
+                    isSingleDateSelection,
                     loading: false,
                 });
                 return;
             }
 
-            const curPerf = performanceSummary.current_avg;
-            const prevPerf = performanceSummary.previous_avg;
-            const perfChange = performanceSummary.change_percent;
+            const curPerf = usePerformanceSummary
+                ? performanceSummary.current_avg
+                : currentData.reduce((a, b) => a + b.performance, 0) / (currentData.length || 1);
+            const prevPerf = usePerformanceSummary
+                ? performanceSummary.previous_avg
+                : prevData.reduce((a, b) => a + b.performance, 0) / (prevData.length || 1);
+            const perfChange = usePerformanceSummary
+                ? performanceSummary.change_percent
+                : prevPerf > 0 ? ((curPerf - prevPerf) / prevPerf) * 100 : null;
 
             const todayPages = calculatePageMetric(currentData, metricKey);
             const yesterdayPages = calculatePageMetric(prevData, metricKey);
@@ -182,15 +200,18 @@ export default function useWebVitals(query, metric = 'FCP') {
             });
 
             const isDesc = metric === "SESSIONS" || metric === "PERFORMANCE";
-            const top5 = combined
-                .sort((a, b) => (isDesc ? b.avg - a.avg : a.avg - b.avg))
-                .slice(0, 5);
+            const top5 = isSingleDateSelection
+                ? combined
+                    .sort((a, b) => (isDesc ? b.avg - a.avg : a.avg - b.avg))
+                    .slice(0, 5)
+                : [];
 
             setData({
                 performanceAvg: curPerf,
                 performancePrev: prevPerf,
                 performanceChange: perfChange,
                 topPages: top5,
+                isSingleDateSelection,
                 loading: false,
             });
         };
@@ -198,7 +219,7 @@ export default function useWebVitals(query, metric = 'FCP') {
         getWebVitalsData();
 
         return () => { cancelled = true; };
-    }, [activeBrandKey, brand_name, start_date, end_date, metric, query?.timezone]);
+    }, [activeBrandKey, brand_name, start_date, end_date, metric, query?.timezone, usePerformanceSummary]);
 
     return data;
 }
