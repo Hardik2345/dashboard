@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAppSelector } from '../state/hooks.js';
+import { getWebPerformanceSummary } from '../lib/api.js';
 
 const METRIC_KEYS = {
     FCP: "fcp",
@@ -78,6 +79,37 @@ export default function useWebVitals(query, metric = 'FCP') {
             }
         };
 
+        const fetchPerformanceSummary = async (start, end) => {
+            if (!activeBrandKey || !start || !end) {
+                return {
+                    current_avg: null,
+                    previous_avg: null,
+                    change_percent: null,
+                };
+            }
+
+            const json = await getWebPerformanceSummary({
+                brand_key: activeBrandKey,
+                start,
+                end,
+                timezone: query?.timezone,
+            });
+
+            if (json?.__error) {
+                return {
+                    current_avg: null,
+                    previous_avg: null,
+                    change_percent: null,
+                };
+            }
+
+            return {
+                current_avg: json?.current_avg ?? null,
+                previous_avg: json?.previous_avg ?? null,
+                change_percent: json?.change_percent ?? null,
+            };
+        };
+
         const calculatePageMetric = (results, metricKey) => {
             const grouped = {};
             results.forEach((p) => {
@@ -105,14 +137,20 @@ export default function useWebVitals(query, metric = 'FCP') {
             const { prev_start, prev_end } = getPreviousDateWindow(start_date, end_date);
             const metricKey = METRIC_KEYS[metric] || 'fcp';
 
-            const [currentData, prevData] = await Promise.all([
+            const [performanceSummary, currentData, prevData] = await Promise.all([
+                fetchPerformanceSummary(start_date, end_date),
                 fetchData(start_date, end_date),
                 fetchData(prev_start, prev_end)
             ]);
 
             if (cancelled) return;
 
-            if (!currentData.length && !prevData.length) {
+            if (
+                !currentData.length &&
+                !prevData.length &&
+                performanceSummary.current_avg == null &&
+                performanceSummary.previous_avg == null
+            ) {
                 setData({
                     performanceAvg: null,
                     performancePrev: null,
@@ -123,9 +161,9 @@ export default function useWebVitals(query, metric = 'FCP') {
                 return;
             }
 
-            const curPerf = currentData.reduce((a, b) => a + b.performance, 0) / (currentData.length || 1);
-            const prevPerf = prevData.reduce((a, b) => a + b.performance, 0) / (prevData.length || 1);
-            const perfChange = prevPerf > 0 ? ((curPerf - prevPerf) / prevPerf) * 100 : null;
+            const curPerf = performanceSummary.current_avg;
+            const prevPerf = performanceSummary.previous_avg;
+            const perfChange = performanceSummary.change_percent;
 
             const todayPages = calculatePageMetric(currentData, metricKey);
             const yesterdayPages = calculatePageMetric(prevData, metricKey);
@@ -160,7 +198,7 @@ export default function useWebVitals(query, metric = 'FCP') {
         getWebVitalsData();
 
         return () => { cancelled = true; };
-    }, [brand_name, start_date, end_date, metric]);
+    }, [activeBrandKey, brand_name, start_date, end_date, metric, query?.timezone]);
 
     return data;
 }

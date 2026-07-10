@@ -4,17 +4,7 @@ import useWebVitals from "../hooks/useWebVitals.js";
 const nfFloat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 
 export default function WebPerformancePanel({ query }) {
-  const todayIst = new Date().toLocaleDateString("en-CA", {
-    timeZone: "Asia/Kolkata",
-  });
-  const { performanceAvg, loading } = useWebVitals(
-    {
-      ...query,
-      start: todayIst,
-      end: todayIst,
-    },
-    "PERFORMANCE",
-  );
+  const { performanceAvg, loading } = useWebVitals(query, "PERFORMANCE");
 
   return (
     <Card
@@ -49,7 +39,7 @@ export default function WebPerformancePanel({ query }) {
               {nfFloat.format(performanceAvg ?? 0)}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
-              Today's performance score
+              Performance score for selected period
             </Typography>
           </Box>
         )}

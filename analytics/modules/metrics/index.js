@@ -85,6 +85,7 @@ function buildMetricsRouter(sequelize) {
   router.get('/summary', requireTrustedPrincipal, authorizeBrandContext, summary.dashboardSummary);
   router.get('/summary/brands', requireTrustedPrincipal, summary.dashboardSummaryBrands);
   router.get('/summary-filter-options', requireTrustedPrincipal, authorizeBrandContext, summary.summaryFilterOptions);
+  router.get('/web-performance-summary', requireTrustedPrincipal, authorizeBrandContext, summary.webPerformanceSummary);
   router.get('/top-pdps', allowTopPdpsWithoutAuth, ensureTopPdpsBrandDb, product.topProductPages);
   router.get('/top-products', authOrApiKey, ensureBrandDb, product.topProducts);
   router.get('/product-kpis', authOrApiKey, ensureBrandDb, product.productKpis);
