@@ -1,0 +1,24 @@
+{
+  "name": "health-monitor-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.1.0",
+    "mongoose": "^8.18.0",
+    "nodemailer": "^7.0.5",
+    "node-cron": "^4.2.1"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^10.2.0",
+    "nodemon": "^3.1.10",
+    "supertest": "^7.1.4"
+  }
+}
