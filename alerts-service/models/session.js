@@ -13,7 +13,7 @@ const sessionSchema = new mongoose.Schema(
         "page_viewed",
         "add_to_cart_rs",
         "video_open",
-        "video_add_to_cart",
+        "video_add_to_cart_click",
         "video_more_info",
         "video_close",
       ],
