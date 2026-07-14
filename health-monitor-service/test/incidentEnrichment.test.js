@@ -95,6 +95,7 @@ test("incident enrichment updates incident metadata and sends enriched email", a
     redis: "UP",
   });
   assert.equal(updatedDoc.totalRetries, 2);
+  assert.ok(updatedDoc.lastAlertedAt instanceof Date);
   assert.equal(emailPayload.incident.incidentId, "incident-1");
   assert.equal(emailPayload.enrichment.logs, "one\ntwo");
 });

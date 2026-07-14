@@ -3,6 +3,7 @@ dotenv.config();
 
 const mongoose = require('mongoose');
 const app = require('./app');
+const { registerWithHealthMonitor } = require('./healthMonitor');
 const logger = require('./utils/logger');
 const { recordMongoConnectionError, captureError } = require('./observability');
 
@@ -18,6 +19,7 @@ mongoose.connect(MONGODB_URI)
         logger.info('Connected to MongoDB');
         app.listen(PORT, () => {
             logger.info(`Auth Service running on port ${PORT}`);
+            registerWithHealthMonitor(app.buildHealthMonitorRegistrationPayload(), logger);
         });
     })
     .catch(err => {

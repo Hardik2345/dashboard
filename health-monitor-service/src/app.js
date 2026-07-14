@@ -1,5 +1,6 @@
 const express = require("express");
 const { buildRegisterRouter } = require("./routes/register");
+const { buildEventsRouter } = require("./routes/events");
 
 function buildApp(deps) {
   const app = express();
@@ -14,6 +15,14 @@ function buildApp(deps) {
     buildRegisterRouter({
       registryService: deps.registryService,
       schedulerService: deps.schedulerService,
+      logger: deps.logger,
+    }),
+  );
+
+  app.use(
+    "/events",
+    buildEventsRouter({
+      applicationEventService: deps.applicationEventService,
       logger: deps.logger,
     }),
   );

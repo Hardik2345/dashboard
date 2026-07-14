@@ -81,6 +81,10 @@ function extractFailurePayload(failure) {
   return {};
 }
 
+function isApplicationIncident(incident) {
+  return incident?.incidentType === "application_failure";
+}
+
 function buildFailureDetails(incident, failure) {
   const payload = extractFailurePayload(failure);
   const message = toSentenceCase(
@@ -113,6 +117,17 @@ function buildFailureDetails(incident, failure) {
       label: "Retryable",
       value:
         typeof payload.retryable === "boolean" ? (payload.retryable ? "Yes" : "No") : "",
+    },
+    {
+      label: "Error Code",
+      value: payload.errorCode || payload.code || "",
+    },
+    {
+      label: "Route",
+      value:
+        failure?.applicationEvent?.normalizedPath
+        || failure?.applicationEvent?.path
+        || "",
     },
   ].filter((row) => row.value);
 
@@ -166,6 +181,10 @@ function getStatusPresentation(status) {
 }
 
 function buildOpenHeadline(details) {
+  if (details.payload?.normalizedPath && details.payload?.message) {
+    return truncate(details.payload.message.replace(/\.$/, ""), 60);
+  }
+
   if (details.payload?.failingSubsystem) {
     return `${humanizeIdentifier(details.payload.failingSubsystem)} Failure`;
   }
@@ -182,6 +201,10 @@ function buildOpenHeadline(details) {
 
 function buildOpenSubtitle(incident, failure) {
   const statusCode = failure?.responseCode != null ? `HTTP ${failure.responseCode}` : "an error";
+  if (isApplicationIncident(incident)) {
+    const route = failure?.applicationEvent?.normalizedPath || incident.endpoint;
+    return `${incident.service} returned ${statusCode} on ${route}.`;
+  }
   return `${incident.service} returned ${statusCode} during the scheduled health check.`;
 }
 
@@ -417,10 +440,13 @@ function buildOpenEmail({ incident, failure, enrichment }) {
 }
 
 function buildPlainResolvedText(incident) {
+  const recoveredText = isApplicationIncident(incident)
+    ? `${incident.service} recovered for ${incident.endpoint} after application failures stopped.`
+    : `${incident.service} recovered for ${incident.endpoint}.`;
   return [
     "Datum Health Monitor",
     "Incident Resolved",
-    `${incident.service} recovered for ${incident.endpoint}.`,
+    recoveredText,
     "",
     `Service: ${incident.service}`,
     `Endpoint: ${incident.endpoint}`,
@@ -437,9 +463,12 @@ function buildPlainResolvedText(incident) {
 
 function buildResolvedEmail(incident) {
   const palette = getRecoveryPalette();
+  const recoveredText = isApplicationIncident(incident)
+    ? `${incident.service} recovered for ${incident.endpoint} after application failures stopped.`
+    : `${incident.service} recovered for ${incident.endpoint}.`;
   const bodyHtml = `
     <div style="font-size:28px;line-height:34px;font-weight:700;color:#102a43;">Incident Resolved</div>
-    <div style="padding-top:8px;font-size:15px;line-height:22px;color:#486581;">${escapeHtml(`${incident.service} recovered for ${incident.endpoint}.`)}</div>
+    <div style="padding-top:8px;font-size:15px;line-height:22px;color:#486581;">${escapeHtml(recoveredText)}</div>
     ${renderCard(
       "Resolution Details",
       renderKeyValueTable([

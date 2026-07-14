@@ -8,6 +8,7 @@ const { buildAuthMiddleware } = require("./middleware/auth");
 const { buildRequestsRouter } = require("./routes/requests");
 const { buildWebhookRouter } = require("./routes/webhook");
 const { TodoistClient } = require("./services/todoistClient");
+const { collectRoutes, createHealthMonitorReporter } = require("./healthMonitor");
 
 function buildApp(overrides = {}) {
   const config = overrides.config || getConfig();
@@ -19,6 +20,8 @@ function buildApp(overrides = {}) {
     });
 
   const app = express();
+  const webhookRouter = buildWebhookRouter(config, { todoistClient });
+  const requestsRouter = buildRequestsRouter({ config, todoistClient });
   app.set("trust proxy", 1);
   app.use(helmet());
   app.use(
@@ -27,18 +30,24 @@ function buildApp(overrides = {}) {
       credentials: true,
     }),
   );
+  app.use(createHealthMonitorReporter({
+    serviceName: "merchant-requests-service",
+    baseUrl: "http://merchant-requests-service:4020",
+  }));
 
   app.get("/health", (_req, res) => res.json({ ok: true, service: "merchant-requests" }));
+  app.get("/health/monitor", (_req, res) =>
+    res.json({ ok: true, service: "merchant-requests-service", message: "probe_ok" }));
   app.use(
     "/merchant-requests/todoist/webhook",
     express.raw({ type: "*/*", limit: "1mb" }),
-    buildWebhookRouter(config, { todoistClient }),
+    webhookRouter,
   );
   app.use(express.json({ limit: "1mb" }));
   app.use(
     "/merchant-requests",
     buildAuthMiddleware(config),
-    buildRequestsRouter({ config, todoistClient }),
+    requestsRouter,
   );
 
   app.use((err, _req, res, _next) => {
@@ -51,7 +60,35 @@ function buildApp(overrides = {}) {
     });
   });
 
-  return { app, config, todoistClient };
+  return {
+    app,
+    config,
+    todoistClient,
+    buildHealthMonitorRegistrationPayload() {
+      return {
+        serviceName: "merchant-requests-service",
+        baseUrl: "http://merchant-requests-service:4020",
+        healthEndpoint: "/health",
+        dependencies: ["mongo"],
+        endpoints: [
+          { path: "/health", method: "GET", critical: true, intervalSeconds: 30, successStatusFamily: "2xx" },
+          { path: "/health/monitor", method: "GET", critical: true, intervalSeconds: 60, successStatusFamily: "2xx" },
+        ],
+        discoveredRoutes: [
+          ...collectRoutes(app, { sourceModule: "src/app.js" }),
+          ...collectRoutes(webhookRouter, {
+            mountPath: "/merchant-requests/todoist/webhook",
+            sourceModule: "src/routes/webhook.js",
+          }),
+          ...collectRoutes(requestsRouter, {
+            mountPath: "/merchant-requests",
+            sourceModule: "src/routes/requests.js",
+            mountMiddlewareNames: ["buildAuthMiddleware"],
+          }),
+        ],
+      };
+    },
+  };
 }
 
 module.exports = { buildApp };

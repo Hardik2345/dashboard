@@ -3,6 +3,7 @@ require("dotenv").config();
 const http = require("http");
 const { validateConfig } = require("./config");
 const { buildApp } = require("./app");
+const { registerWithHealthMonitor } = require("./healthMonitor");
 const { connectDB } = require("./db");
 const { backfillMerchantRequestWorkflow } = require("./services/migrations");
 const { ensureFallbackBrandConfig } = require("./services/brandProvisioning");
@@ -11,7 +12,7 @@ const { reconcileTodoist } = require("./services/reconcileService");
 
 async function start() {
   validateConfig();
-  const { app, config, todoistClient } = buildApp();
+  const { app, config, todoistClient, buildHealthMonitorRegistrationPayload } = buildApp();
   await connectDB(config);
   await backfillMerchantRequestWorkflow();
   await ensureFallbackBrandConfig({ todoistClient, config });
@@ -33,6 +34,7 @@ async function start() {
 
   server.listen(config.port, () => {
     console.log(`[merchant-requests] listening on :${config.port}`);
+    registerWithHealthMonitor(buildHealthMonitorRegistrationPayload());
   });
 
   const timer = setInterval(() => {

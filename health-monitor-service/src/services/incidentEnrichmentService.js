@@ -25,6 +25,14 @@ function buildDependencySummary(payload) {
   return summary;
 }
 
+function normalizeLogsPayload(logsPayload) {
+  if (!logsPayload) return [];
+  if (Array.isArray(logsPayload.lines)) return logsPayload.lines;
+  if (Array.isArray(logsPayload)) return logsPayload;
+  if (typeof logsPayload === "string") return logsPayload.split("\n");
+  return [];
+}
+
 function createIncidentEnrichmentService({
   logger,
   evidenceService,
@@ -32,35 +40,49 @@ function createIncidentEnrichmentService({
   emailLogTruncationLength,
 }) {
   async function enrichIncident({ incident, failure, serviceDoc, retryAttempts }) {
+    return enrichIncidentInternal({
+      incident,
+      failure,
+      serviceDoc,
+      retryAttempts,
+      sendEmail: true,
+    });
+  }
+
+  async function enrichIncidentInternal({
+    incident,
+    failure,
+    serviceDoc,
+    retryAttempts,
+    sendEmail,
+  }) {
     const resolvedServiceDoc =
       serviceDoc || (await Service.findOne({ serviceName: incident.service }).lean());
-
-    if (!resolvedServiceDoc) {
-      logger.warn("incident.enrichment_missing_service", {
-        incidentId: incident.incidentId,
-        service: incident.service,
-      });
-      return incident;
-    }
 
     const results = {};
 
     const [apiResponseResult, healthProbeResult, logResult] = await Promise.allSettled([
       evidenceService.collectApiResponse({ incident, failure }),
-      evidenceService.collectHealthProbe({ incident, serviceDoc: resolvedServiceDoc }),
-      evidenceService.collectApplicationLogs({ incident, serviceDoc: resolvedServiceDoc }),
+      resolvedServiceDoc
+        ? evidenceService.collectHealthProbe({ incident, serviceDoc: resolvedServiceDoc })
+        : Promise.reject(new Error("service_doc_unavailable")),
+      resolvedServiceDoc
+        ? evidenceService.collectApplicationLogs({ incident, serviceDoc: resolvedServiceDoc })
+        : Promise.reject(new Error("service_doc_unavailable")),
     ]);
     results.apiResponse = apiResponseResult;
     results.healthProbe = healthProbeResult;
     results.applicationLogs = logResult;
 
     const dependencyResult = await Promise.allSettled([
-      evidenceService.collectDependencyCheck({
-        incident,
-        serviceDoc: resolvedServiceDoc,
-        probeResponse:
-          results.healthProbe.status === "fulfilled" ? results.healthProbe.value.response : null,
-      }),
+      resolvedServiceDoc
+        ? evidenceService.collectDependencyCheck({
+          incident,
+          serviceDoc: resolvedServiceDoc,
+          probeResponse:
+            results.healthProbe.status === "fulfilled" ? results.healthProbe.value.response : null,
+        })
+        : Promise.reject(new Error("service_doc_unavailable")),
     ]);
     results.dependencyCheck = dependencyResult[0];
 
@@ -72,35 +94,42 @@ function createIncidentEnrichmentService({
     const logsPayload =
       results.applicationLogs.status === "fulfilled" ? results.applicationLogs.value.payload : null;
 
+    const updateDoc = {
+      evidenceCount,
+      dependencySummary: buildDependencySummary(dependencyPayload),
+      lastProbeStatus: probeResponse?.status ?? null,
+      lastProbeMessage: buildProbeMessage(probeResponse),
+      totalRetries: retryAttempts ?? incident.totalRetries ?? 0,
+    };
+
+    if (sendEmail) {
+      updateDoc.lastAlertedAt = new Date();
+    }
+
     const updatedIncident = await Incident.findOneAndUpdate(
       { incidentId: incident.incidentId },
-      {
-        $set: {
-          evidenceCount,
-          dependencySummary: buildDependencySummary(dependencyPayload),
-          lastProbeStatus: probeResponse?.status ?? null,
-          lastProbeMessage: buildProbeMessage(probeResponse),
-          totalRetries: retryAttempts ?? incident.totalRetries ?? 0,
-        },
-      },
+      { $set: updateDoc },
       { new: true },
     );
 
-    await emailService.sendIncidentOpened({
-      incident: updatedIncident || incident,
-      failure,
-      enrichment: {
-        healthProbe: probeResponse,
-        dependencyPayload,
-        logs: truncateLines(logsPayload?.lines || [], emailLogTruncationLength),
-      },
-    });
+    if (sendEmail) {
+      await emailService.sendIncidentOpened({
+        incident: updatedIncident || incident,
+        failure,
+        enrichment: {
+          healthProbe: probeResponse,
+          dependencyPayload,
+          logs: truncateLines(normalizeLogsPayload(logsPayload), emailLogTruncationLength),
+        },
+      });
+    }
 
     return updatedIncident || incident;
   }
 
   return {
     enrichIncident,
+    enrichIncidentInternal,
   };
 }
 

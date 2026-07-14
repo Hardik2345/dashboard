@@ -1,7 +1,30 @@
 const nodemailer = require("nodemailer");
 const { buildOpenEmail, buildResolvedEmail } = require("./emailTemplates");
 
-function createEmailService({ logger, smtp, notificationAuditService }) {
+function buildAlertKey(incident) {
+  if (!incident) return "";
+  if (incident.incidentType === "application_failure") {
+    return [
+      incident.incidentType,
+      incident.service,
+      incident.resolutionKey || incident.endpoint,
+      incident.fingerprint || "",
+    ].join("::");
+  }
+
+  return [
+    incident.incidentType || "health_check",
+    incident.service,
+    incident.endpoint,
+  ].join("::");
+}
+
+function createEmailService({
+  logger,
+  smtp,
+  notificationAuditService,
+  openIncidentEmailReminderIntervalMs = 30 * 60 * 1000,
+}) {
   const enabled = Boolean(
     smtp.host && smtp.port && smtp.user && smtp.pass && smtp.recipients.length > 0,
   );
@@ -25,6 +48,8 @@ function createEmailService({ logger, smtp, notificationAuditService }) {
       logger.warn("email.skipped", { reason: "smtp_not_configured", ...meta });
       await notificationAuditService.recordAttempt({
         incidentId: meta.incidentId,
+        alertKey: meta.alertKey,
+        event: meta.event,
         recipients,
         subject: fullSubject,
         status: "SKIPPED",
@@ -43,6 +68,8 @@ function createEmailService({ logger, smtp, notificationAuditService }) {
       });
       await notificationAuditService.recordAttempt({
         incidentId: meta.incidentId,
+        alertKey: meta.alertKey,
+        event: meta.event,
         recipients,
         subject: fullSubject,
         status: "SENT",
@@ -52,6 +79,8 @@ function createEmailService({ logger, smtp, notificationAuditService }) {
     } catch (error) {
       await notificationAuditService.recordAttempt({
         incidentId: meta.incidentId,
+        alertKey: meta.alertKey,
+        event: meta.event,
         recipients,
         subject: fullSubject,
         status: "FAILED",
@@ -67,8 +96,33 @@ function createEmailService({ logger, smtp, notificationAuditService }) {
   }
 
   async function sendIncidentOpened({ incident, failure, enrichment }) {
-    return sendMail(buildOpenEmail({ incident, failure, enrichment }), {
+    const alertKey = buildAlertKey(incident);
+    const message = buildOpenEmail({ incident, failure, enrichment });
+    const recentlySent = await notificationAuditService.wasRecentOpenAlertSent({
+      alertKey,
+      withinMs: openIncidentEmailReminderIntervalMs,
+    });
+
+    if (recentlySent) {
+      logger.warn("email.open_throttled", {
+        incidentId: incident.incidentId,
+        alertKey,
+      });
+      await notificationAuditService.recordAttempt({
+        incidentId: incident.incidentId,
+        alertKey,
+        event: "open",
+        recipients: smtp.recipients,
+        subject: `${smtp.subjectPrefix} ${message.subject}`.trim(),
+        status: "SKIPPED",
+        error: "open_alert_throttled",
+      });
+      return false;
+    }
+
+    return sendMail(message, {
       incidentId: incident.incidentId,
+      alertKey,
       event: "open",
     });
   }
@@ -76,6 +130,7 @@ function createEmailService({ logger, smtp, notificationAuditService }) {
   async function sendIncidentResolved(incident) {
     return sendMail(buildResolvedEmail(incident), {
       incidentId: incident.incidentId,
+      alertKey: buildAlertKey(incident),
       event: "resolve",
     });
   }

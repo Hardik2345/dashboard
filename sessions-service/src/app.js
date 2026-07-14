@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const sessionRoutes = require('./routes/sessionRoutes');
+const { collectRoutes, createHealthMonitorReporter } = require('./healthMonitor');
 const {
   initObservability,
   sentryErrorMiddleware,
@@ -21,6 +22,10 @@ app.use(cors({
 app.use(express.json());
 app.use(morgan('dev'));
 initObservability(app);
+app.use(createHealthMonitorReporter({
+  serviceName: 'sessions-service',
+  baseUrl: 'http://sessions-service:4010',
+}));
 
 // Rate limiting for the sessions endpoint
 const sessionsLimiter = rateLimit({
@@ -37,6 +42,14 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'UP' });
 });
 
+app.get('/health/monitor', (req, res) => {
+  res.status(200).json({
+    ok: true,
+    service: 'sessions-service',
+    message: 'probe_ok',
+  });
+});
+
 // Error handler
 app.use(sentryErrorMiddleware);
 app.use((err, req, res, next) => {
@@ -49,3 +62,19 @@ app.use((err, req, res, next) => {
 });
 
 module.exports = app;
+module.exports.buildHealthMonitorRegistrationPayload = function buildHealthMonitorRegistrationPayload() {
+  return {
+    serviceName: 'sessions-service',
+    baseUrl: 'http://sessions-service:4010',
+    healthEndpoint: '/health',
+    dependencies: ['mongo'],
+    endpoints: [
+      { path: '/health', method: 'GET', critical: true, intervalSeconds: 30, successStatusFamily: '2xx' },
+      { path: '/health/monitor', method: 'GET', critical: true, intervalSeconds: 60, successStatusFamily: '2xx' },
+    ],
+    discoveredRoutes: [
+      ...collectRoutes(app, { sourceModule: 'src/app.js' }),
+      ...collectRoutes(sessionRoutes, { mountPath: '/sessions', sourceModule: 'src/routes/sessionRoutes.js' }),
+    ],
+  };
+};
