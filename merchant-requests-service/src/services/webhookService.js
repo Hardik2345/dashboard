@@ -1,4 +1,5 @@
 const MerchantRequest = require("../models/MerchantRequest");
+const TodoistSyncJob = require("../models/TodoistSyncJob");
 const TodoistUser = require("../models/TodoistUser");
 const TodoistWebhookDelivery = require("../models/TodoistWebhookDelivery");
 const BrandTodoistConfig = require("../models/BrandTodoistConfig");
@@ -19,9 +20,47 @@ function labelsFromTask(task = {}) {
   return labels.map((label) => String(label));
 }
 
+function hasLabelSnapshot(task = {}) {
+  return Object.prototype.hasOwnProperty.call(task, "labels") ||
+    Object.prototype.hasOwnProperty.call(task, "label_names");
+}
+
 function hasRequiredLabels(task) {
   const labels = labelsFromTask(task).map((label) => label.toLowerCase());
   return labels.includes("merchant-request");
+}
+
+function isTodoistImportedRequest(request) {
+  return request?.requester?.user_id === "todoist";
+}
+
+async function softRemoveImportedRequest(request, task) {
+  request.todoist_labels = labelsFromTask(task);
+  request.sync.last_synced_at = new Date();
+
+  if (request.removed_at) {
+    await request.save();
+    return { removed: true, changed: false };
+  }
+
+  request.removed_at = new Date();
+  request.removal_reason = "todoist_tag_removed";
+  await request.save();
+  await TodoistSyncJob.updateMany(
+    { request_id: request._id, status: { $in: ["pending", "running"] } },
+    {
+      $set: {
+        status: "cancelled",
+        locked_at: null,
+        last_error: "request_soft_removed",
+      },
+    },
+  );
+  await appendEvent(request, "request_removed", "todoist", {
+    data: { reason: request.removal_reason },
+  });
+  emitRequestEvent("merchant-request:removed", request);
+  return { removed: true, changed: true };
 }
 
 function labelValue(labels, prefix) {
@@ -164,6 +203,22 @@ async function importRequestFromTodoistTask(task, { todoistClient, config, event
 }
 
 async function applyTaskUpdate(request, task, _brandConfig, eventName = "") {
+  const labelSnapshotPresent = hasLabelSnapshot(task);
+  if (isTodoistImportedRequest(request) && labelSnapshotPresent && !hasRequiredLabels(task)) {
+    return softRemoveImportedRequest(request, task);
+  }
+
+  if (request.removed_at) {
+    if (!isTodoistImportedRequest(request) || !labelSnapshotPresent || !hasRequiredLabels(task)) {
+      return { removed: true, ignored: true };
+    }
+    request.removed_at = null;
+    request.removal_reason = "";
+    await appendEvent(request, "request_restored", "todoist", {
+      data: { reason: "todoist_tag_restored" },
+    });
+  }
+
   if (isTaskCompleted(task, eventName) && request.status !== "done") {
     request.status = "done";
     request.sync.todoist_status_status = "synced";
@@ -219,7 +274,7 @@ async function applyTaskUpdate(request, task, _brandConfig, eventName = "") {
     }
   }
 
-  request.todoist_labels = labelsFromTask(task);
+  if (labelSnapshotPresent) request.todoist_labels = labelsFromTask(task);
   request.todoist_url =
     normalizeTodoistTaskUrl({
       ...task,
@@ -228,6 +283,7 @@ async function applyTaskUpdate(request, task, _brandConfig, eventName = "") {
     request.todoist_url;
   await request.save();
   emitRequestEvent("merchant-request:updated", request);
+  return { removed: false };
 }
 
 async function applyNoteEvent(request, note) {
@@ -298,7 +354,7 @@ async function processTodoistWebhook(payload, deliveryId, config, deps = {}) {
 
     if (eventName.startsWith("item:") && !imported) {
       await applyTaskUpdate(request, data, null, eventName);
-    } else if (eventName.startsWith("note:")) {
+    } else if (eventName.startsWith("note:") && !request.removed_at) {
       await applyNoteEvent(request, data);
     }
 
@@ -320,7 +376,9 @@ module.exports = {
   applyNoteEvent,
   applyTaskUpdate,
   dueDateFromTask,
+  hasLabelSnapshot,
   hasRequiredLabels,
+  isTodoistImportedRequest,
   importRequestFromTodoistTask,
   isTaskCompleted,
   processTodoistWebhook,

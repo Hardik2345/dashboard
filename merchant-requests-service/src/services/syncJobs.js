@@ -83,6 +83,13 @@ async function completeJob(job) {
   await job.save();
 }
 
+async function cancelJob(job, reason = "request_soft_removed") {
+  job.status = "cancelled";
+  job.locked_at = null;
+  job.last_error = reason;
+  await job.save();
+}
+
 async function failOrRetryJob(job, err) {
   job.attempts += 1;
   job.last_error = err?.message || String(err);
@@ -101,6 +108,10 @@ async function processJob(job, { todoistClient, config }) {
     job.status = "failed";
     job.last_error = "request_not_found";
     await job.save();
+    return;
+  }
+  if (request.removed_at) {
+    await cancelJob(job);
     return;
   }
 

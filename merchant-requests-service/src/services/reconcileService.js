@@ -71,7 +71,7 @@ async function _runReconcile({ todoistClient, config }) {
       const taskId = String(note.item_id || note.task_id || "");
       if (!taskId) continue;
       const request = await MerchantRequest.findOne({ todoist_task_id: taskId });
-      if (!request) continue;
+      if (!request || request.removed_at) continue;
       await applyNoteEvent(request, note);
     }
 

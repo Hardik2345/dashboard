@@ -17,7 +17,7 @@ const todoistSyncJobSchema = new mongoose.Schema(
     payload: { type: mongoose.Schema.Types.Mixed, default: {} },
     status: {
       type: String,
-      enum: ["pending", "running", "completed", "failed"],
+      enum: ["pending", "running", "completed", "failed", "cancelled"],
       default: "pending",
       index: true,
     },
