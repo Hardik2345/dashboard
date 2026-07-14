@@ -1,6 +1,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const app = require('./app');
+const { registerWithHealthMonitor } = require('./healthMonitor');
 const { recordMongoConnectionError, captureError } = require('./observability');
 
 const PORT = process.env.PORT || 4010;
@@ -30,6 +31,7 @@ const startServer = async () => {
 
   app.listen(PORT, () => {
     console.log(`Sessions-service running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+    registerWithHealthMonitor(app.buildHealthMonitorRegistrationPayload(), console);
   });
 };
 

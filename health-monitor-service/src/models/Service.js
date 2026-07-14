@@ -6,7 +6,13 @@ const endpointSchema = new mongoose.Schema(
     method: { type: String, required: true, uppercase: true, trim: true },
     critical: { type: Boolean, default: false },
     intervalSeconds: { type: Number, required: true, min: 1 },
-    expectedStatus: { type: Number, default: 200, min: 100, max: 599 },
+    expectedStatus: { type: Number, default: undefined, min: 100, max: 599 },
+    successStatusFamily: {
+      type: String,
+      enum: ["2xx"],
+      default: "2xx",
+      trim: true,
+    },
   },
   { _id: false },
 );

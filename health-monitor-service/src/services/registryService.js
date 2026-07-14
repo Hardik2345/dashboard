@@ -1,12 +1,43 @@
 const Service = require("../models/Service");
 
+const DEFAULT_SUCCESS_STATUS_FAMILY = "2xx";
+
+function normalizeExpectedStatus(value) {
+  if (value == null || value === "") {
+    return undefined;
+  }
+
+  const next = Number(value);
+  if (!Number.isInteger(next) || next < 100 || next > 599) {
+    return undefined;
+  }
+
+  return next;
+}
+
+function normalizeSuccessStatusFamily(value) {
+  if (value == null || value === "") {
+    return DEFAULT_SUCCESS_STATUS_FAMILY;
+  }
+
+  const normalized = String(value).trim();
+  return normalized === DEFAULT_SUCCESS_STATUS_FAMILY
+    ? normalized
+    : DEFAULT_SUCCESS_STATUS_FAMILY;
+}
+
 function normalizeEndpoint(endpoint, defaultIntervalSeconds) {
+  const expectedStatus = normalizeExpectedStatus(endpoint.expectedStatus);
   return {
     path: String(endpoint.path || "").trim(),
     method: String(endpoint.method || "GET").trim().toUpperCase(),
     critical: Boolean(endpoint.critical),
     intervalSeconds: Number(endpoint.intervalSeconds || defaultIntervalSeconds),
-    expectedStatus: Number(endpoint.expectedStatus || 200),
+    ...(expectedStatus != null ? { expectedStatus } : {}),
+    successStatusFamily:
+      expectedStatus != null
+        ? normalizeSuccessStatusFamily(endpoint.successStatusFamily)
+        : normalizeSuccessStatusFamily(endpoint.successStatusFamily),
   };
 }
 
@@ -50,7 +81,11 @@ function normalizeDependencies(payload) {
   };
 }
 
-function createRegistryService({ logger, defaultEndpointIntervalSeconds }) {
+function createRegistryService({
+  logger,
+  defaultEndpointIntervalSeconds,
+  routeCatalogService = null,
+}) {
   async function register(payload) {
     const validationError = validateRegistrationPayload(payload);
     if (validationError) {
@@ -80,6 +115,13 @@ function createRegistryService({ logger, defaultEndpointIntervalSeconds }) {
         nextDoc.dependencies = normalizedDependencies.dependencies;
       }
       await Service.create(nextDoc);
+      if (routeCatalogService) {
+        await routeCatalogService.upsertRoutes({
+          serviceName: payload.serviceName,
+          baseUrl: payload.baseUrl,
+          discoveredRoutes: payload.discoveredRoutes,
+        });
+      }
       logger.info("service.registered", { serviceName: payload.serviceName });
       return { message: "Registered Successfully", changed: true };
     }
@@ -98,6 +140,13 @@ function createRegistryService({ logger, defaultEndpointIntervalSeconds }) {
     existing.lastRegistrationAt = now;
     if (normalizedDependencies.shouldUpdate) {
       existing.dependencies = normalizedDependencies.dependencies;
+    }
+    if (routeCatalogService) {
+      await routeCatalogService.upsertRoutes({
+        serviceName: payload.serviceName,
+        baseUrl: payload.baseUrl,
+        discoveredRoutes: payload.discoveredRoutes,
+      });
     }
 
     if (newEndpoints.length > 0) {
@@ -134,4 +183,8 @@ module.exports = {
   createRegistryService,
   getEndpointKey,
   normalizeDependencies,
+  normalizeEndpoint,
+  normalizeExpectedStatus,
+  normalizeSuccessStatusFamily,
+  DEFAULT_SUCCESS_STATUS_FAMILY,
 };

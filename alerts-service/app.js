@@ -31,6 +31,11 @@ const ItemQtyPush = require("./models/itemQtyPush");
 const { sendToAll } = require("./utils/fcm");
 const PipelineCreds = require("./models/pipelineCreds");
 const { getPool } = require("./utils/db");
+const {
+  collectRoutes,
+  createHealthMonitorReporter,
+  registerWithHealthMonitor,
+} = require("./healthMonitor");
 
 
 const app = express();
@@ -38,6 +43,11 @@ app.use(helmet());
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 initObservability(app);
+app.use(createHealthMonitorReporter({
+  serviceName: "alerts-service",
+  baseUrl: "http://alerts-service:5005",
+  logger,
+}));
 
 // --- Mongo Connection --------------------------------------------------------
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017";
@@ -47,8 +57,17 @@ mongoose.set("strictQuery", true);
 
 // ---- Routes -----------------------------------------------------------------
 const alertConfigEventPublisher = buildAlertConfigEventPublisher();
+const alertsRouter = buildAlertsRouter({
+  Alert,
+  AlertChannel,
+  BrandAlertChannel,
+  getNextSeq,
+  alertConfigEventPublisher,
+});
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
+app.get("/health/monitor", (_req, res) =>
+  res.json({ ok: true, service: "alerts-service", message: "probe_ok" }));
 
 const redis = require("./utils/redis");
 
@@ -212,13 +231,7 @@ async function runInventoryCacheRefresh() {
 app.use(
   "/alerts",
   requireAuthor,
-  buildAlertsRouter({
-    Alert,
-    AlertChannel,
-    BrandAlertChannel,
-    getNextSeq,
-    alertConfigEventPublisher,
-  }),
+  alertsRouter,
 );
 const Session = require("./models/session");
 
@@ -805,6 +818,24 @@ async function start() {
         "[alerts-service] brands loaded:",
         Object.keys(getBrands()).join(", ") || "(none)",
       );
+      registerWithHealthMonitor({
+        serviceName: "alerts-service",
+        baseUrl: "http://alerts-service:5005",
+        healthEndpoint: "/health",
+        dependencies: ["mongo", "redis"],
+        endpoints: [
+          { path: "/health", method: "GET", critical: true, intervalSeconds: 30, successStatusFamily: "2xx" },
+          { path: "/health/monitor", method: "GET", critical: true, intervalSeconds: 60, successStatusFamily: "2xx" },
+        ],
+        discoveredRoutes: [
+          ...collectRoutes(app, { sourceModule: "app.js" }),
+          ...collectRoutes(alertsRouter, {
+            mountPath: "/alerts",
+            sourceModule: "routes/alerts.js",
+            mountMiddlewareNames: ["requireAuthor"],
+          }),
+        ],
+      }, logger);
 
       // Warm inventory cache in the background so service health is not blocked
       // on cross-brand DB/Redis work during container startup.

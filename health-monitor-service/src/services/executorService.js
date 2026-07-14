@@ -1,9 +1,28 @@
 const { requestJson } = require("./httpClient");
+const { DEFAULT_SUCCESS_STATUS_FAMILY } = require("./registryService");
 
 function summarizeResponse(payload) {
   if (payload == null) return "";
   if (typeof payload === "string") return payload;
   return JSON.stringify(payload);
+}
+
+function isSuccessStatus(status, endpoint = {}) {
+  const numericStatus = Number(status);
+  if (!Number.isInteger(numericStatus)) {
+    return false;
+  }
+
+  if (Number.isInteger(endpoint.expectedStatus)) {
+    return numericStatus === endpoint.expectedStatus;
+  }
+
+  const family = endpoint.successStatusFamily || DEFAULT_SUCCESS_STATUS_FAMILY;
+  if (family === "2xx") {
+    return numericStatus >= 200 && numericStatus < 300;
+  }
+
+  return false;
 }
 
 function createExecutorService({ logger, requestTimeoutMs }) {
@@ -16,7 +35,7 @@ function createExecutorService({ logger, requestTimeoutMs }) {
         timeoutMs: requestTimeoutMs,
       });
       const latency = Date.now() - startedAt;
-      const success = response.status === endpoint.expectedStatus;
+      const success = isSuccessStatus(response.status, endpoint);
       const result = {
         service: serviceDoc.serviceName,
         endpoint: `${endpoint.method} ${endpoint.path}`,
@@ -60,4 +79,4 @@ function createExecutorService({ logger, requestTimeoutMs }) {
   };
 }
 
-module.exports = { createExecutorService };
+module.exports = { createExecutorService, isSuccessStatus, summarizeResponse };

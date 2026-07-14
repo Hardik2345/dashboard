@@ -23,6 +23,11 @@ const { buildShopifyRouter } = require("./modules/shopify");
 const { buildNotificationsRouter } = require("./modules/notifications");
 const { buildDashboardRouter } = require("./modules/dashboard");
 const { buildSessionAnalyticsRouter } = require("./routes/sessionAnalytics.routes");
+const {
+  collectRoutes,
+  createHealthMonitorReporter,
+  registerWithHealthMonitor,
+} = require("./healthMonitor");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -30,6 +35,8 @@ app.use(helmet());
 initObservability(app);
 
 app.get("/health", (_req, res) => res.json({ ok: true, service: "analytics" }));
+app.get("/health/monitor", (_req, res) =>
+  res.json({ ok: true, service: "analytics-service", message: "probe_ok" }));
 
 const allowedOrigins = (process.env.CORS_ORIGIN || "")
   .split(",")
@@ -50,21 +57,37 @@ app.use(
 );
 
 app.use(express.json({ limit: "60mb" }));
+app.use(createHealthMonitorReporter({
+  serviceName: "analytics-service",
+  baseUrl: "http://analytics-service:3006",
+  logger,
+}));
 
 app.get("/", (_req, res) => {
   res.json({ message: "datum backend is running" });
 });
 
-app.use("/metrics", buildMetricsRouter(sequelize));
-app.use("/metrics", buildProductConversionRouter());
-app.use("/metrics", buildBundlesRouter());
-app.use("/dashboard", buildDashboardRouter());
-app.use("/session-analytics", buildSessionAnalyticsRouter());
-app.use("/external", buildExternalRouter());
-app.use("/", buildUploadsRouter());
-app.use("/", buildApiKeysRouter(sequelize));
-app.use("/shopify", buildShopifyRouter(sequelize));
-app.use("/notifications", buildNotificationsRouter());
+const metricsRouter = buildMetricsRouter(sequelize);
+const productConversionRouter = buildProductConversionRouter();
+const bundlesRouter = buildBundlesRouter();
+const dashboardRouter = buildDashboardRouter();
+const sessionAnalyticsRouter = buildSessionAnalyticsRouter();
+const externalRouter = buildExternalRouter();
+const uploadsRouter = buildUploadsRouter();
+const apiKeysRouter = buildApiKeysRouter(sequelize);
+const shopifyRouter = buildShopifyRouter(sequelize);
+const notificationsRouter = buildNotificationsRouter();
+
+app.use("/metrics", metricsRouter);
+app.use("/metrics", productConversionRouter);
+app.use("/metrics", bundlesRouter);
+app.use("/dashboard", dashboardRouter);
+app.use("/session-analytics", sessionAnalyticsRouter);
+app.use("/external", externalRouter);
+app.use("/", uploadsRouter);
+app.use("/", apiKeysRouter);
+app.use("/shopify", shopifyRouter);
+app.use("/notifications", notificationsRouter);
 app.use(sentryErrorMiddleware);
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
@@ -94,6 +117,29 @@ async function init() {
           error: err.message,
         });
       });
+    registerWithHealthMonitor({
+      serviceName: "analytics-service",
+      baseUrl: "http://analytics-service:3006",
+      healthEndpoint: "/health",
+      dependencies: ["mongo", "mysql", "redis"],
+      endpoints: [
+        { path: "/health", method: "GET", critical: true, intervalSeconds: 30, successStatusFamily: "2xx" },
+        { path: "/health/monitor", method: "GET", critical: true, intervalSeconds: 60, successStatusFamily: "2xx" },
+      ],
+      discoveredRoutes: [
+        ...collectRoutes(app, { sourceModule: "app.js" }),
+        ...collectRoutes(metricsRouter, { mountPath: "/metrics", sourceModule: "modules/metrics/index.js" }),
+        ...collectRoutes(productConversionRouter, { mountPath: "/metrics", sourceModule: "modules/product-conversion/index.js" }),
+        ...collectRoutes(bundlesRouter, { mountPath: "/metrics", sourceModule: "modules/bundles/index.js" }),
+        ...collectRoutes(dashboardRouter, { mountPath: "/dashboard", sourceModule: "modules/dashboard/index.js" }),
+        ...collectRoutes(sessionAnalyticsRouter, { mountPath: "/session-analytics", sourceModule: "routes/sessionAnalytics.routes.js" }),
+        ...collectRoutes(externalRouter, { mountPath: "/external", sourceModule: "modules/external/index.js" }),
+        ...collectRoutes(uploadsRouter, { mountPath: "/", sourceModule: "modules/uploads/index.js" }),
+        ...collectRoutes(apiKeysRouter, { mountPath: "/", sourceModule: "modules/api-keys/index.js" }),
+        ...collectRoutes(shopifyRouter, { mountPath: "/shopify", sourceModule: "modules/shopify/index.js" }),
+        ...collectRoutes(notificationsRouter, { mountPath: "/notifications", sourceModule: "modules/notifications/index.js" }),
+      ],
+    }, logger);
   });
 
   return server;

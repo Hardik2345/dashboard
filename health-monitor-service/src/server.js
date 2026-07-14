@@ -15,6 +15,8 @@ const { createNotificationAuditService } = require("./services/notificationAudit
 const { createDockerLogProvider } = require("./services/logProviders/dockerLogProvider");
 const { createEvidenceService } = require("./services/evidenceService");
 const { createIncidentEnrichmentService } = require("./services/incidentEnrichmentService");
+const { createRouteCatalogService } = require("./services/routeCatalogService");
+const { createApplicationEventService } = require("./services/applicationEventService");
 const { buildApp } = require("./app");
 
 async function start() {
@@ -26,9 +28,11 @@ async function start() {
     mongoDb: config.mongoDb,
   });
 
+  const routeCatalogService = createRouteCatalogService({ logger });
   const registryService = createRegistryService({
     logger,
     defaultEndpointIntervalSeconds: config.defaultEndpointIntervalSeconds,
+    routeCatalogService,
   });
   const monitorRunService = createMonitorRunService({
     responseSummaryMaxLength: config.responseSummaryMaxLength,
@@ -38,6 +42,7 @@ async function start() {
     logger,
     smtp: config.smtp,
     notificationAuditService,
+    openIncidentEmailReminderIntervalMs: config.openIncidentEmailReminderIntervalMs,
   });
   const logProvider = createDockerLogProvider({
     socketPath: config.dockerSocketPath,
@@ -63,6 +68,16 @@ async function start() {
     logger,
     emailService,
     incidentEnrichmentService,
+    openIncidentEmailReminderIntervalMs: config.openIncidentEmailReminderIntervalMs,
+  });
+  const applicationEventService = createApplicationEventService({
+    logger,
+    incidentService,
+    fourXxThresholdCount: config.applicationFailureFourXxThresholdCount,
+    fourXxThresholdWindowMs: config.applicationFailureFourXxWindowMs,
+    reopenCooldownMs: config.applicationFailureReopenCooldownMs,
+    payloadStringMaxLength: config.applicationEventPayloadMaxLength,
+    headerValueMaxLength: config.applicationEventHeaderValueMaxLength,
   });
   const executorService = createExecutorService({
     logger,
@@ -92,6 +107,7 @@ async function start() {
     logger,
     registryService,
     schedulerService,
+    applicationEventService,
   });
 
   const server = app.listen(config.port, () => {
@@ -126,6 +142,8 @@ async function start() {
       executorService,
       retryService,
       monitorRunService,
+      routeCatalogService,
+      applicationEventService,
     },
   };
 }

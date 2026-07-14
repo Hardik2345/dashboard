@@ -3,6 +3,8 @@ const { mongoose } = require("../db/mongo");
 const notificationSchema = new mongoose.Schema(
   {
     incidentId: { type: String, required: true, index: true },
+    alertKey: { type: String, default: "", index: true },
+    event: { type: String, default: "", index: true },
     recipients: { type: [String], default: [] },
     subject: { type: String, required: true },
     status: {

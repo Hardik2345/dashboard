@@ -2,6 +2,7 @@ const http = require('http');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const app = require('./app');
+const { registerWithHealthMonitor } = require('./healthMonitor');
 const connectDB = require('./utils/db');
 const socketUtils = require('./utils/socket');
 
@@ -17,4 +18,5 @@ const PORT = process.env.PORT || 3004;
 
 server.listen(PORT, () => {
     console.log(`[TenantRouter] Service (with Socket.io) started on port ${PORT}`);
+    registerWithHealthMonitor(app.buildHealthMonitorRegistrationPayload());
 });
