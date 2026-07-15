@@ -71,6 +71,10 @@ function normalizeCategory(value) {
   return normalized;
 }
 
+function findActiveRequestById(id) {
+  return MerchantRequest.findOne({ _id: id, removed_at: null });
+}
+
 function normalizePriorityCaps(input = {}) {
   const caps = { ...DEFAULT_PRIORITY_CAPS };
   for (const priority of PRIORITIES) {
@@ -104,6 +108,7 @@ async function assertPriorityCapAvailable(brandKey, priority) {
     brand_key: brandKey,
     priority,
     status: { $ne: "done" },
+    removed_at: null,
   });
   if (activeCount >= limit) {
     const err = new Error("priority_cap_reached");
@@ -156,7 +161,7 @@ async function createRequest(input, principal, deps) {
 
 async function listRequests(query, principal) {
   assertPermission(principal, "requests_panel");
-  const filter = {};
+  const filter = { removed_at: null };
 
   if (principal.isAuthor) {
     if (query.brand_key) filter.brand_key = normalizeBrandKey(query.brand_key);
@@ -186,7 +191,7 @@ async function listRequests(query, principal) {
 
 async function getRequestWithEvents(id, principal) {
   assertPermission(principal, "requests_panel");
-  const request = await MerchantRequest.findById(id);
+  const request = await findActiveRequestById(id);
   if (!request || !canAccessBrand(principal, request.brand_key)) {
     const err = new Error("request_not_found");
     err.statusCode = 404;
@@ -217,7 +222,7 @@ function sanitizeMerchantEvent(event) {
 
 async function addComment(id, body, principal, deps) {
   assertPermission(principal, "requests_panel");
-  const request = await MerchantRequest.findById(id);
+  const request = await findActiveRequestById(id);
   if (!request || !canAccessBrand(principal, request.brand_key)) {
     const err = new Error("request_not_found");
     err.statusCode = 404;
@@ -240,13 +245,13 @@ async function addComment(id, body, principal, deps) {
   const job = await enqueueSyncJob(request._id, "create_comment", { content, local_comment_id: localCommentId });
   emitRequestEvent("merchant-request:commented", request, { comment: { content, local_comment_id: localCommentId } });
   await processJob(job, { todoistClient: deps.todoistClient, config: deps.config });
-  return MerchantRequest.findById(request._id);
+  return findActiveRequestById(request._id);
 }
 
 async function updateStatus(id, body, principal, deps) {
   assertAuthor(principal);
   const status = normalizeStatus(body.status);
-  const request = await MerchantRequest.findById(id);
+  const request = await findActiveRequestById(id);
   if (!request) {
     const err = new Error("request_not_found");
     err.statusCode = 404;
@@ -261,7 +266,7 @@ async function updateStatus(id, body, principal, deps) {
   const job = await enqueueSyncJob(request._id, status === "done" ? "complete_task" : "update_status", { status });
   emitRequestEvent("merchant-request:updated", request);
   await processJob(job, { todoistClient: deps.todoistClient, config: deps.config });
-  return MerchantRequest.findById(request._id);
+  return findActiveRequestById(request._id);
 }
 
 async function updateAssignee(id, body, principal, deps) {
@@ -272,7 +277,7 @@ async function updateAssignee(id, body, principal, deps) {
     err.statusCode = 400;
     throw err;
   }
-  const request = await MerchantRequest.findById(id);
+  const request = await findActiveRequestById(id);
   if (!request) {
     const err = new Error("request_not_found");
     err.statusCode = 404;
@@ -304,13 +309,13 @@ async function updateAssignee(id, body, principal, deps) {
   });
   emitRequestEvent("merchant-request:updated", request);
   await processJob(job, { todoistClient: deps.todoistClient, config: deps.config });
-  return MerchantRequest.findById(request._id);
+  return findActiveRequestById(request._id);
 }
 
 async function updateDueDate(id, body, principal, deps) {
   assertAuthor(principal);
   const dueDate = normalizeDueDate(body.due_date);
-  const request = await MerchantRequest.findById(id);
+  const request = await findActiveRequestById(id);
   if (!request) {
     const err = new Error("request_not_found");
     err.statusCode = 404;
@@ -328,7 +333,7 @@ async function updateDueDate(id, body, principal, deps) {
   const job = await enqueueSyncJob(request._id, "update_due_date", { due_date: dueDate });
   emitRequestEvent("merchant-request:updated", request);
   await processJob(job, { todoistClient: deps.todoistClient, config: deps.config });
-  return MerchantRequest.findById(request._id);
+  return findActiveRequestById(request._id);
 }
 
 module.exports = {

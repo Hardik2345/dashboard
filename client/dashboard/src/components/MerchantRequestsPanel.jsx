@@ -1060,10 +1060,20 @@ export default function MerchantRequestsPanel({
       fetchRequests({ silent: true });
     };
 
+    const removeRequest = (payload) => {
+      if (payload?.request_id && payload.request_id === selectedIdRef.current) {
+        setSelectedId("");
+        setSelectedDetail(null);
+        setMobileShowDetail(false);
+      }
+      fetchRequests({ silent: true });
+    };
+
     socket.on("merchant-request:created", refresh);
     socket.on("merchant-request:updated", refresh);
     socket.on("merchant-request:commented", refresh);
     socket.on("merchant-request:sync_failed", refresh);
+    socket.on("merchant-request:removed", removeRequest);
 
     const poll = setInterval(() => {
       if (document.visibilityState === "visible") {
