@@ -678,6 +678,7 @@ export default function BundlesPanel({
 
   const productColumns = useMemo(
     () => [
+      { id: "child_product_sku", label: "SKU", sortable: true },
       { id: "child_product_title", label: "Product Name", sortable: true },
       { id: "orders", label: "Allocated Orders", sortable: true, align: "right" },
       { id: "sales", label: "Sales", sortable: true, align: "right" },
@@ -1031,6 +1032,7 @@ export default function BundlesPanel({
         renderCell={(row, column) => {
           if (column.id === "orders") return formatInteger(row.orders);
           if (column.id === "sales") return formatCurrency(row.sales, convertAmount);
+          if (column.id === "child_product_sku") return row.child_product_sku || "-";
           return row.child_product_title || "-";
         }}
       />
