@@ -358,7 +358,10 @@ async function queryUtmAggregateTotals(
     sql += ` AND metric_hour <= ?`;
     replacements.push(cutoffHour);
   }
-  sql = appendUtmWhere(sql, replacements, source.filters, true);
+  // Aggregate UTM tables already store canonical bucket values like literal
+  // "direct", so they should be filtered by exact value instead of the
+  // raw-table null/blank-aware direct mapping.
+  sql = appendUtmWhere(sql, replacements, source.filters, false);
 
   const rows = await conn.query(sql, {
     type: QueryTypes.SELECT,
@@ -427,7 +430,10 @@ async function queryUtmAggregatePair(
     combinedEnd,
   ];
 
-  sql = appendUtmWhere(sql, replacements, source.filters, true);
+  // Aggregate UTM tables already store canonical bucket values like literal
+  // "direct", so they should be filtered by exact value instead of the
+  // raw-table null/blank-aware direct mapping.
+  sql = appendUtmWhere(sql, replacements, source.filters, false);
 
   const rows = await conn.query(sql, {
     type: QueryTypes.SELECT,
@@ -485,7 +491,10 @@ async function queryUtmAggregateRows(
       sql += ` AND metric_hour <= ?`;
       replacements.push(cutoffHour);
     }
-    sql = appendUtmWhere(sql, replacements, source.filters, true);
+    // Aggregate UTM tables already store canonical bucket values like literal
+    // "direct", so they should be filtered by exact value instead of the
+    // raw-table null/blank-aware direct mapping.
+    sql = appendUtmWhere(sql, replacements, source.filters, false);
     sql += ` GROUP BY metric_date, metric_hour ORDER BY metric_date ASC, metric_hour ASC`;
   } else {
     sql = `
@@ -498,7 +507,10 @@ async function queryUtmAggregateRows(
       FROM ${source.table}
       WHERE metric_date >= ? AND metric_date <= ?
     `;
-    sql = appendUtmWhere(sql, replacements, source.filters, true);
+    // Aggregate UTM tables already store canonical bucket values like literal
+    // "direct", so they should be filtered by exact value instead of the
+    // raw-table null/blank-aware direct mapping.
+    sql = appendUtmWhere(sql, replacements, source.filters, false);
     sql += ` GROUP BY metric_date ORDER BY metric_date ASC`;
   }
 
