@@ -237,7 +237,17 @@ test("creation enforces default priority caps per brand and excludes done reques
   assert.equal(capped.body.limit, 3);
   assert.equal(capped.body.active_count, 3);
 
-  await MerchantRequest.updateOne({ title: "Normal 0" }, { $set: { status: "done" } });
+  await MerchantRequest.updateOne(
+    { title: "Normal 0" },
+    { $set: { removed_at: new Date(), removal_reason: "todoist_tag_removed" } },
+  );
+  const afterRemoval = await request(app)
+    .post("/merchant-requests")
+    .set(merchantHeaders("TMC"))
+    .send({ brand_key: "TMC", title: "Allowed after removal", category: "Feature Request", priority: "normal" });
+  assert.equal(afterRemoval.status, 201);
+
+  await MerchantRequest.updateOne({ title: "Normal 1" }, { $set: { status: "done" } });
   const afterDone = await request(app)
     .post("/merchant-requests")
     .set(merchantHeaders("TMC"))
@@ -527,6 +537,134 @@ test("webhook ignores untagged Todoist task even if it is in Merchant Raised", a
   assert.equal(await MerchantRequest.countDocuments({ todoist_task_id: "todoist-untagged" }), 0);
 });
 
+test("removing and restoring merchant-request soft-removes and restores an imported request", async () => {
+  const reqDoc = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "todoist", name: "Todoist" },
+    title: "Imported lifecycle",
+    category: "Issues",
+    status: "submitted",
+    todoist_task_id: "todoist-soft-remove",
+    todoist_labels: ["Datum", "merchant-request", "brand:TMC"],
+    sync: { todoist_task_status: "synced" },
+  });
+  const job = await TodoistSyncJob.create({
+    request_id: reqDoc._id,
+    type: "create_comment",
+    payload: { content: "pending" },
+    status: "pending",
+  });
+  const app = appWithTodoist({});
+
+  const removed = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-soft-remove",
+        labels: ["Datum", "brand:TMC"],
+      },
+    },
+    "delivery-soft-remove",
+  );
+  assert.equal(removed.status, 200);
+
+  let stored = await MerchantRequest.findById(reqDoc._id).lean();
+  assert.ok(stored.removed_at);
+  assert.equal(stored.removal_reason, "todoist_tag_removed");
+  assert.deepEqual(stored.todoist_labels, ["Datum", "brand:TMC"]);
+  assert.equal((await TodoistSyncJob.findById(job._id).lean()).status, "cancelled");
+
+  const listWhileRemoved = await request(app).get("/merchant-requests").set(authorHeaders("TMC"));
+  assert.equal(listWhileRemoved.status, 200);
+  assert.equal(listWhileRemoved.body.requests.length, 0);
+  assert.equal((await request(app).get(`/merchant-requests/${reqDoc._id}`).set(authorHeaders("TMC"))).status, 404);
+  assert.equal(
+    (
+      await request(app)
+        .patch(`/merchant-requests/${reqDoc._id}/status`)
+        .set(authorHeaders("TMC"))
+        .send({ status: "done" })
+    ).status,
+    404,
+  );
+
+  await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: { id: "todoist-soft-remove", labels: ["Datum", "brand:TMC"] },
+    },
+    "delivery-soft-remove-repeat",
+  );
+  assert.equal(
+    await MerchantRequestEvent.countDocuments({ request_id: reqDoc._id, type: "request_removed" }),
+    1,
+  );
+
+  const restored = await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "todoist-soft-remove",
+        labels: ["Datum", "merchant-request", "brand:TMC"],
+      },
+    },
+    "delivery-soft-restore",
+  );
+  assert.equal(restored.status, 200);
+
+  stored = await MerchantRequest.findById(reqDoc._id).lean();
+  assert.equal(stored.removed_at, null);
+  assert.equal(stored.removal_reason, "");
+  assert.equal(await MerchantRequest.countDocuments({ todoist_task_id: "todoist-soft-remove" }), 1);
+  assert.equal(
+    await MerchantRequestEvent.countDocuments({ request_id: reqDoc._id, type: "request_restored" }),
+    1,
+  );
+  const listAfterRestore = await request(app).get("/merchant-requests").set(authorHeaders("TMC"));
+  assert.equal(listAfterRestore.body.requests.length, 1);
+  assert.equal(listAfterRestore.body.requests[0].id, String(reqDoc._id));
+});
+
+test("partial Todoist events and Datum-created requests are not soft-removed", async () => {
+  const imported = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "todoist", name: "Todoist" },
+    title: "Partial event",
+    category: "Issues",
+    todoist_task_id: "todoist-partial-event",
+    todoist_labels: ["merchant-request", "brand:TMC"],
+  });
+  const datum = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "merchant-1" },
+    title: "Datum request",
+    category: "Issues",
+    todoist_task_id: "datum-task-label-removed",
+    todoist_labels: ["merchant-request", "brand:TMC"],
+  });
+  const app = appWithTodoist({});
+
+  await signedTodoistPost(
+    app,
+    { event_name: "item:updated", event_data: { id: "todoist-partial-event", priority: 2 } },
+    "delivery-partial-no-labels",
+  );
+  await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: { id: "datum-task-label-removed", labels: ["Datum", "brand:TMC"] },
+    },
+    "delivery-datum-label-removed",
+  );
+
+  assert.equal((await MerchantRequest.findById(imported._id).lean()).removed_at, null);
+  assert.equal((await MerchantRequest.findById(datum._id).lean()).removed_at, null);
+});
+
 test("imported assigned and completed tasks map to assigned and done", async () => {
   await seedBrandConfig("TMC");
   const app = appWithTodoist({});
@@ -567,6 +705,14 @@ test("imported assigned and completed tasks map to assigned and done", async () 
 
 test("reconcile imports unlinked tagged Todoist task", async () => {
   await seedBrandConfig("TMC");
+  const existingImported = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "todoist", name: "Todoist" },
+    title: "Reconcile removal",
+    category: "Issues",
+    todoist_task_id: "todoist-reconcile-remove",
+    todoist_labels: ["merchant-request", "brand:TMC"],
+  });
   const todoistClient = {
     listProjects: async () => [],
     sync: async () => ({
@@ -575,6 +721,11 @@ test("reconcile imports unlinked tagged Todoist task", async () => {
           id: "todoist-reconcile-import",
           content: "Reconcile import",
           labels: ["merchant-request", "brand:TMC"],
+        },
+        {
+          id: "todoist-reconcile-remove",
+          content: "Reconcile removal",
+          labels: ["brand:TMC"],
         },
       ],
       collaborators: [],
@@ -586,10 +737,11 @@ test("reconcile imports unlinked tagged Todoist task", async () => {
 
   const result = await reconcileTodoist({ todoistClient, config: testConfig() });
 
-  assert.equal(result.tasks_processed, 1);
+  assert.equal(result.tasks_processed, 2);
   const imported = await MerchantRequest.findOne({ todoist_task_id: "todoist-reconcile-import" }).lean();
   assert.equal(imported.brand_key, "TMC");
   assert.equal(imported.title, "Reconcile import");
+  assert.ok((await MerchantRequest.findById(existingImported._id).lean()).removed_at);
 });
 
 test("existing linked Todoist task updates without duplicate import", async () => {
@@ -829,4 +981,38 @@ test("processDueJobs claims jobs atomically", async () => {
   assert.equal(createCommentCalls, 1);
   const job = await TodoistSyncJob.findOne({ request_id: reqDoc._id });
   assert.equal(job.status, "completed");
+});
+
+test("processDueJobs cancels work for a soft-removed request", async () => {
+  const reqDoc = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "todoist", name: "Todoist" },
+    title: "Removed job",
+    category: "Issues",
+    todoist_task_id: "removed-job-task",
+    removed_at: new Date(),
+    removal_reason: "todoist_tag_removed",
+  });
+  await TodoistSyncJob.create({
+    request_id: reqDoc._id,
+    type: "create_comment",
+    payload: { content: "must not sync" },
+    status: "pending",
+    next_attempt_at: new Date(),
+  });
+
+  let createCommentCalls = 0;
+  const { processDueJobs } = require("../src/services/syncJobs");
+  await processDueJobs({
+    todoistClient: {
+      createComment: async () => {
+        createCommentCalls += 1;
+        return { id: "should-not-exist" };
+      },
+    },
+    config: testConfig(),
+  });
+
+  assert.equal(createCommentCalls, 0);
+  assert.equal((await TodoistSyncJob.findOne({ request_id: reqDoc._id }).lean()).status, "cancelled");
 });

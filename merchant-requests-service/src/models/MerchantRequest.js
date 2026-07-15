@@ -86,6 +86,8 @@ const merchantRequestSchema = new mongoose.Schema(
     todoist_url: { type: String, default: "" },
     todoist_section_id: { type: String, default: "" },
     todoist_labels: { type: [String], default: [] },
+    removed_at: { type: Date, default: null, index: true },
+    removal_reason: { type: String, default: "" },
     sync: { type: syncSchema, default: () => ({}) },
     closed_at: { type: Date, default: null },
   },
@@ -93,6 +95,7 @@ const merchantRequestSchema = new mongoose.Schema(
 );
 
 merchantRequestSchema.index({ brand_key: 1, status: 1, updated_at: -1 });
+merchantRequestSchema.index({ brand_key: 1, removed_at: 1, status: 1, updated_at: -1 });
 
 merchantRequestSchema.pre("validate", function normalizeLegacyValues() {
   if (this.status && LEGACY_STATUS_MAP[this.status]) {
