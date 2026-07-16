@@ -3,7 +3,7 @@ import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, Menu
 import { useTheme, alpha } from '@mui/material/styles';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, LabelList
+  BarChart, Bar, LabelList, Line
 } from 'recharts';
 import { getHourlyTrend, getDailyTrend, getMonthlyTrend } from '../lib/api.js';
 import { useInrCurrency } from '../lib/currency.js';
@@ -16,6 +16,10 @@ const MAIN_COLOR = '#10b981';
 
 const CustomTooltip = ({ active, payload, label, formatter }) => {
   if (!active || !payload || !payload.length) return null;
+  const filteredPayload = payload.filter((entry) => {
+    if (entry?.dataKey !== 'primaryTailValue') return true;
+    return !payload.some((candidate) => candidate?.dataKey === 'primaryValue');
+  });
 
   return (
     <Box
@@ -32,7 +36,7 @@ const CustomTooltip = ({ active, payload, label, formatter }) => {
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 500 }}>
         {label}
       </Typography>
-      {payload.map((entry, index) => (
+      {filteredPayload.map((entry, index) => (
         <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
           <Box
             sx={{
@@ -88,7 +92,40 @@ function formatRangeLabel(range) {
   return `${sMonth} ${sDay}, ${sYear} - ${eMonth} ${eDay}, ${eYear}`;
 }
 
-export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
+const WEEKLY_LABEL_THRESHOLD = 60;
+const WEEK_SIZE_DAYS = 7;
+
+function aggregateMetrics(points = []) {
+  return points.reduce((acc, point) => {
+    const metrics = point?.metrics || {};
+    Object.entries(metrics).forEach(([key, value]) => {
+      const numericValue = Number(value || 0);
+      acc[key] = (acc[key] || 0) + numericValue;
+    });
+    return acc;
+  }, {});
+}
+
+function buildWeeklyBuckets(points = [], comparisonPoints = [], accessor) {
+  const bucketCount = Math.ceil(points.length / WEEK_SIZE_DAYS);
+
+  return Array.from({ length: bucketCount }, (_, index) => {
+    const startIdx = index * WEEK_SIZE_DAYS;
+    const endIdx = startIdx + WEEK_SIZE_DAYS;
+    const currentBucket = points.slice(startIdx, endIdx);
+    const comparisonBucket = comparisonPoints.slice(startIdx, endIdx);
+
+    return {
+      label: `Week ${index + 1}`,
+      value: accessor(aggregateMetrics(currentBucket)),
+      comparisonValue: comparisonBucket.length
+        ? accessor(aggregateMetrics(comparisonBucket))
+        : null,
+    };
+  });
+}
+
+export default memo(function HourlySalesCompare({ query, metric = 'sales', isLongRange = false }) {
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState([]);
   const [viewMode, setViewMode] = useState('hourly');
@@ -192,6 +229,13 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
     const e = new Date(end);
     return Math.ceil((e - s) / (1000 * 60 * 60 * 24)) + 1;
   }, [start, end]);
+  const useWeeklyBuckets = viewMode === 'daily' && daysInRange > WEEKLY_LABEL_THRESHOLD;
+
+  useEffect(() => {
+    if (isLongRange && viewMode === 'hourly') {
+      setViewMode('daily');
+    }
+  }, [isLongRange, viewMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -237,30 +281,43 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
           points = Array.isArray(res.points) ? res.points : [];
           const timezone = res.timezone || 'Asia/Kolkata';
           const todayInStoreTimezone = new Date().toLocaleDateString('en-CA', { timeZone: timezone });
+          const isCurrentStoreDay = start === todayInStoreTimezone;
+          let currentHour = null;
           if (viewMode === 'hourly' && start === todayInStoreTimezone) {
-            const currentHour = parseInt(new Date().toLocaleTimeString('en-US', { timeZone: timezone, hour12: false, hour: 'numeric' }));
+            currentHour = parseInt(new Date().toLocaleTimeString('en-US', { timeZone: timezone, hour12: false, hour: 'numeric' }));
             points = points.filter(p => p.hour <= currentHour);
           }
           comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
+          points = points.map((point) => ({
+            ...point,
+            __isInProgressHour:
+              isCurrentStoreDay &&
+              Number.isInteger(currentHour) &&
+              point?.hour === currentHour,
+          }));
         }
 
-        const data = points.map((p, i) => {
-          let label = p.date;
-          if (viewMode === 'hourly') label = formatHourLabel(p.hour);
-          else {
-            const dt = new Date(`${p.date}T00:00:00Z`);
-            if (!Number.isNaN(dt.getTime())) {
-              if (viewMode === 'monthly') label = MONTH_NAMES[dt.getUTCMonth()];
-              else label = `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
-            }
-          }
+        const data = useWeeklyBuckets
+          ? buildWeeklyBuckets(points, comparisonPoints, configNext.accessor)
+          : points.map((p, i) => {
+              let label = p.date;
+              if (viewMode === 'hourly') label = formatHourLabel(p.hour);
+              else {
+                const dt = new Date(`${p.date}T00:00:00Z`);
+                if (!Number.isNaN(dt.getTime())) {
+                  if (viewMode === 'monthly') label = MONTH_NAMES[dt.getUTCMonth()];
+                  else label = `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
+                }
+              }
 
-          return {
-            label,
-            value: configNext.accessor(p.metrics || {}),
-            comparisonValue: comparisonPoints[i] ? configNext.accessor(comparisonPoints[i].metrics || {}) : null
-          };
-        });
+              return {
+                label,
+                hour: typeof p.hour === 'number' ? p.hour : null,
+                isInProgressHour: Boolean(p.__isInProgressHour),
+                value: configNext.accessor(p.metrics || {}),
+                comparisonValue: comparisonPoints[i] ? configNext.accessor(comparisonPoints[i].metrics || {}) : null
+              };
+            });
 
         setRangeLabels({
           current: formatRangeLabel(res.range),
@@ -279,7 +336,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
 
     loadData();
     return () => { cancelled = true; };
-  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, productId, discountCode, query?.city, compare, compareStart, compareEnd, convertAmount]);
+  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, productId, discountCode, query?.city, compare, compareStart, compareEnd, convertAmount, useWeeklyBuckets]);
 
   const toggleLine = (line) => {
     setVisibleLines(prev =>
@@ -289,6 +346,36 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
 
   const config = metricConfig[metric] || metricConfig.sales;
   const shouldTiltDateLabels = chartData.length > 30;
+  const decoratedHourlyChartData = useMemo(() => {
+    if (viewMode !== 'hourly' || chartData.length === 0) return chartData;
+    const lastPoint = chartData[chartData.length - 1];
+    const hasInProgressTail =
+      chartData.length >= 2 &&
+      lastPoint?.isInProgressHour &&
+      typeof lastPoint?.hour === 'number' &&
+      typeof chartData[chartData.length - 2]?.hour === 'number';
+
+    if (!hasInProgressTail) {
+      return chartData.map((point) => ({
+        ...point,
+        primaryValue: point.value,
+        primaryTailValue: null,
+      }));
+    }
+
+    return chartData.map((point, index) => ({
+      ...point,
+      primaryValue: index === chartData.length - 1 ? null : point.value,
+      primaryTailValue:
+        index >= chartData.length - 2 ? point.value : null,
+    }));
+  }, [chartData, viewMode]);
+  const showHourlyTail = useMemo(() => {
+    if (viewMode !== 'hourly' || chartData.length < 2) return false;
+    const lastPoint = chartData[chartData.length - 1];
+    return Boolean(lastPoint?.isInProgressHour);
+  }, [chartData, viewMode]);
+  const showWeeklyValueLabels = viewMode !== 'hourly' && !useWeeklyBuckets;
 
   return (
     <Card elevation={0} sx={{
@@ -377,7 +464,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                 '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
               }}
             >
-              <MenuItem value="hourly">Hourly</MenuItem>
+              <MenuItem value="hourly" disabled={isLongRange}>Hourly</MenuItem>
               <MenuItem value="daily">Daily</MenuItem>
               {daysInRange >= 30 && <MenuItem value="monthly">Monthly</MenuItem>}
             </Select>
@@ -394,7 +481,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
           <Box sx={{ width: '100%', height: 270, flexGrow: 1 }}>
             <ResponsiveContainer width="100%" height="100%">
               {viewMode === 'hourly' ? (
-                <AreaChart data={chartData} margin={{ top: 25, right: 20, left: 15, bottom: shouldTiltDateLabels ? 28 : 5 }}>
+                <AreaChart data={decoratedHourlyChartData} margin={{ top: 25, right: 20, left: 15, bottom: shouldTiltDateLabels ? 28 : 5 }}>
                   <defs>
                     <linearGradient id="gradient-main" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={MAIN_COLOR} stopOpacity={0.1} />
@@ -443,7 +530,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                   <Area
                     type="monotone"
                     hide={!visibleLines.includes('primary')}
-                    dataKey="value"
+                    dataKey="primaryValue"
                     name={rangeLabels.current || 'Current'}
                     stroke={MAIN_COLOR}
                     strokeWidth={2.5}
@@ -452,8 +539,19 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     activeDot={{ r: 6, fill: MAIN_COLOR, stroke: 'white', strokeWidth: 3 }}
                     dot={{ r: 3, fill: 'white', stroke: MAIN_COLOR, strokeWidth: 1.5 }}
                   >
-                    {viewMode !== 'hourly' && <LabelList dataKey="value" position="top" formatter={config.compactFormatter} fontSize={9} offset={8} fill={theme.palette.text.primary} />}
                   </Area>
+                  <Line
+                    type="monotone"
+                    hide={!visibleLines.includes('primary') || !showHourlyTail}
+                    dataKey="primaryTailValue"
+                    name={`${rangeLabels.current || 'Current'} (In progress)`}
+                    stroke={MAIN_COLOR}
+                    strokeDasharray="4 4"
+                    strokeWidth={2.5}
+                    dot={{ r: 3, fill: 'white', stroke: MAIN_COLOR, strokeWidth: 1.5 }}
+                    activeDot={{ r: 6, fill: MAIN_COLOR, stroke: 'white', strokeWidth: 3 }}
+                    connectNulls={false}
+                  />
                 </AreaChart>
               ) : (
                 <BarChart data={chartData} margin={{ top: 25, right: 20, left: 15, bottom: shouldTiltDateLabels ? 28 : 5 }} barGap={0}>
@@ -500,7 +598,7 @@ export default memo(function HourlySalesCompare({ query, metric = 'sales' }) {
                     radius={[4, 4, 0, 0]}
                     maxBarSize={40}
                   >
-                    {viewMode !== 'hourly' && <LabelList dataKey="value" position="top" formatter={config.compactFormatter} fontSize={9} offset={8} fill={theme.palette.text.primary} />}
+                    {showWeeklyValueLabels && <LabelList dataKey="value" position="top" formatter={config.compactFormatter} fontSize={9} offset={8} fill={theme.palette.text.primary} />}
                   </Bar>
                 </BarChart>
               )}

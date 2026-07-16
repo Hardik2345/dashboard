@@ -58,6 +58,7 @@ export default function KPIs({
   const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
   const webVitalsData = useWebVitals(query, "PERFORMANCE", {
     usePerformanceSummary: true,
+    disabled: !showWebVitals,
   });
 
   const scopeLabel = useMemo(() => {

@@ -31,6 +31,7 @@ import Sidebar from "./components/Sidebar.jsx";
 import LayoutPanelsIcon from "./components/ui/LayoutPanelsIcon.jsx";
 import SidebarToggle from "./components/ui/SidebarToggle.jsx";
 import InlineDashboardLayoutEditor from "./components/InlineDashboardLayoutEditor.jsx";
+import DashboardUnavailableCard from "./components/DashboardUnavailableCard.jsx";
 
 import {
   LayoutGrid,
@@ -111,6 +112,7 @@ const LogsPanel = lazy(() => import("./components/LogsPanel.jsx"));
 
 import {
   listAuthorBrands,
+  getDataRestrictionConfig,
   getTopProducts,
   getDashboardSummary,
   getSummaryFilterOptions,
@@ -124,7 +126,11 @@ import {
   saveDashboardLayout,
 } from "./lib/api.js";
 import { initializeSessionTracking } from "./lib/sessionTracker.js";
-import { isRangeOver30DaysInclusive } from "./lib/dateRange.js";
+import {
+  DEFAULT_DATA_RESTRICTION_CONFIG,
+  getDataRestrictionDescription,
+  isRangeOverDataRestrictionPeriod,
+} from "./lib/dateRange.js";
 import { setFrontendUserContext } from "./observability.js";
 import {
   DASHBOARD_LAYOUT_DEFAULTS,
@@ -313,6 +319,17 @@ export default function App() {
     [range],
   );
   const normalizedRange = useMemo(() => [start, end], [start, end]);
+  const [dataRestrictionConfig, setDataRestrictionConfig] = useState(
+    DEFAULT_DATA_RESTRICTION_CONFIG,
+  );
+  const isLongRangeDashboard = useMemo(
+    () => isRangeOverDataRestrictionPeriod(start, end, dataRestrictionConfig),
+    [start, end, dataRestrictionConfig],
+  );
+  const dataRestrictionDescription = useMemo(
+    () => getDataRestrictionDescription(dataRestrictionConfig),
+    [dataRestrictionConfig],
+  );
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
 
   const isAuthor = !!user?.isAuthor;
@@ -322,6 +339,29 @@ export default function App() {
   const [authorBrandsLoading, setAuthorBrandsLoading] = useState(false);
   // New state to strictly track if the initial fetch has completed
   const [brandsLoaded, setBrandsLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getDataRestrictionConfig()
+      .then((config) => {
+        if (cancelled) return;
+        setDataRestrictionConfig({
+          enabled:
+            typeof config?.enabled === "boolean"
+              ? config.enabled
+              : DEFAULT_DATA_RESTRICTION_CONFIG.enabled,
+          periodDays:
+            Number.isFinite(Number(config?.periodDays)) &&
+            Number(config.periodDays) > 0
+              ? Number(config.periodDays)
+              : DEFAULT_DATA_RESTRICTION_CONFIG.periodDays,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   const authorBrandKey = useMemo(
     () => (globalBrandKey || "").toString().trim().toUpperCase(),
@@ -2017,6 +2057,35 @@ export default function App() {
   );
 
   const renderDashboardExtras = useCallback(() => {
+    if (isLongRangeDashboard) {
+      return (
+        <Stack spacing={3} sx={{ mt: 2 }}>
+          {!isAuthor && hasPermission("sessions_drop_off_funnel") && (
+            <DashboardUnavailableCard
+              title="Sessions Drop-off Funnel"
+              description={dataRestrictionDescription}
+              minHeight={250}
+            />
+          )}
+          {!isAuthor && hasPermission("product_conversion") && (
+            <Box>
+              <Typography
+                variant="subtitle2"
+                color="text.secondary"
+                sx={{ mb: 1.5, fontWeight: 500, ml: 1 }}
+              >
+                Product Performance
+              </Typography>
+              <DashboardUnavailableCard
+                title="Product Performance"
+                description={dataRestrictionDescription}
+                minHeight={300}
+              />
+            </Box>
+          )}
+        </Stack>
+      );
+    }
     return (
       <>
         {!isAuthor &&
@@ -2110,9 +2179,11 @@ export default function App() {
     );
   }, [
     activeBrandKey,
+    dataRestrictionDescription,
     funnelData,
     hasPermission,
     isAuthor,
+    isLongRangeDashboard,
     viewerPermissions,
   ]);
 
@@ -2147,7 +2218,13 @@ export default function App() {
           />
         </Stack>
       ),
-      overall_snapshot: (
+      overall_snapshot: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Overall Snapshot"
+          description={dataRestrictionDescription}
+          minHeight={320}
+        />
+      ) : (
         <OverallSnapshotWidget
           query={overallSnapshotQuery}
           brands={snapshotBrands}
@@ -2166,11 +2243,20 @@ export default function App() {
             <HourlySalesCompare
               query={trendMetricsQuery}
               metric={selectedMetric}
+              isLongRange={isLongRangeDashboard}
             />
           </Grid>
           {hasPermission("web_vitals") && (
             <Grid size={{ xs: 12, md: 3 }}>
-              <WebPerformancePanel query={generalMetricsQuery} />
+              {isLongRangeDashboard ? (
+                <DashboardUnavailableCard
+                  title="Web Performance(Avg)"
+                  description={dataRestrictionDescription}
+                  minHeight={310}
+                />
+              ) : (
+                <WebPerformancePanel query={generalMetricsQuery} />
+              )}
             </Grid>
           )}
         </Grid>
@@ -2178,21 +2264,59 @@ export default function App() {
       payment_split: hasPermission("web_vitals") ? (
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 8 }}>
-            <ModeOfPayment query={generalMetricsQuery} />
+            {isLongRangeDashboard ? (
+              <DashboardUnavailableCard
+                title="Mode of Payment"
+                description={dataRestrictionDescription}
+                minHeight={310}
+              />
+            ) : (
+              <ModeOfPayment query={generalMetricsQuery} />
+            )}
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
-            <WebVitals
-              query={generalMetricsQuery}
-              metric={webVitalsMetric}
-              onMetricChange={setWebVitalsMetric}
-            />
+            {isLongRangeDashboard ? (
+              <DashboardUnavailableCard
+                title="Top 5 Pages"
+                description={dataRestrictionDescription}
+                minHeight={380}
+              />
+            ) : (
+              <WebVitals
+                query={generalMetricsQuery}
+                metric={webVitalsMetric}
+                onMetricChange={setWebVitalsMetric}
+              />
+            )}
           </Grid>
         </Grid>
       ) : (
-        <ModeOfPayment query={generalMetricsQuery} />
+        isLongRangeDashboard ? (
+          <DashboardUnavailableCard
+            title="Mode of Payment"
+            description={dataRestrictionDescription}
+            minHeight={310}
+          />
+        ) : (
+          <ModeOfPayment query={generalMetricsQuery} />
+        )
       ),
-      payment_trend: <PaymentSplitTrend query={generalMetricsQuery} />,
-      traffic_split: (
+      payment_trend: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Payment Trend"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
+        <PaymentSplitTrend query={generalMetricsQuery} />
+      ),
+      traffic_split: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Traffic Split"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
         <TrafficSourceSplit
           query={trendMetricsQuery}
           compareMode={compareMode}
@@ -2217,6 +2341,8 @@ export default function App() {
         trafficSplitRules,
         trendMetricsQuery,
         utmOptions,
+        dataRestrictionDescription,
+        isLongRangeDashboard,
       webVitalsMetric,
     ],
   );
@@ -2233,12 +2359,18 @@ export default function App() {
           productLabel={selectedProductLabel}
           utmOptions={utmOptions}
           showRow="mobile_top"
-          showWebVitals={hasPermission("web_vitals")}
+          showWebVitals={!isLongRangeDashboard && hasPermission("web_vitals")}
           showCiEvents={hasPermission("ci_events")}
           compareMode={compareMode}
         />
       ),
-      overall_snapshot: (
+      overall_snapshot: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Overall Snapshot"
+          description={dataRestrictionDescription}
+          minHeight={320}
+        />
+      ) : (
         <OverallSnapshotWidget
           query={overallSnapshotQuery}
           brands={snapshotBrands}
@@ -2250,18 +2382,47 @@ export default function App() {
         <HourlySalesCompare
           query={trendMetricsQuery}
           metric={selectedMetric}
+          isLongRange={isLongRangeDashboard}
         />
       ),
-      top_pages: (
+      top_pages: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Top 5 Pages"
+          description={dataRestrictionDescription}
+          minHeight={380}
+        />
+      ) : (
         <WebVitals
           query={generalMetricsQuery}
           metric={webVitalsMetric}
           onMetricChange={setWebVitalsMetric}
         />
       ),
-      payment_split: <ModeOfPayment query={generalMetricsQuery} />,
-      payment_trend: <PaymentSplitTrend query={generalMetricsQuery} />,
-      traffic_split: (
+      payment_split: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Mode of Payment"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
+        <ModeOfPayment query={generalMetricsQuery} />
+      ),
+      payment_trend: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Payment Trend"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
+        <PaymentSplitTrend query={generalMetricsQuery} />
+      ),
+      traffic_split: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Traffic Split"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
         <TrafficSourceSplit
           query={trendMetricsQuery}
           compareMode={compareMode}
@@ -2286,6 +2447,8 @@ export default function App() {
         trafficSplitRules,
         trendMetricsQuery,
         utmOptions,
+        dataRestrictionDescription,
+        isLongRangeDashboard,
       webVitalsMetric,
     ],
   );
@@ -2508,7 +2671,11 @@ export default function App() {
   // Centralized UTM clearing for > 30 days
   useEffect(() => {
     if (!start || !end) return;
-    const isOver30 = isRangeOver30DaysInclusive(start, end);
+    const isOver30 = isRangeOverDataRestrictionPeriod(
+      start,
+      end,
+      dataRestrictionConfig,
+    );
     const hasUtm = Object.values(utm).some((v) =>
       Array.isArray(v) ? v.length > 0 : !!v,
     );
@@ -2518,7 +2685,7 @@ export default function App() {
         setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }),
       );
     }
-  }, [start, end, utm, dispatch]);
+  }, [start, end, utm, dispatch, dataRestrictionConfig]);
 
   // Fetch UTM Options (Lifted from MobileTopBar)
   // Fetch UTM Options (Lifted from MobileTopBar)
@@ -2536,6 +2703,10 @@ export default function App() {
 
   useEffect(() => {
     if (!activeBrandKey) return;
+    if (isLongRangeDashboard) {
+      setUtmOptions({ brand_key: activeBrandKey });
+      return;
+    }
 
     getSummaryFilterOptions({
       brand_key: activeBrandKey,
@@ -2548,7 +2719,7 @@ export default function App() {
         }
       })
       .catch(() => {});
-  }, [lastFetchParams, activeBrandKey, start, end]);
+  }, [lastFetchParams, activeBrandKey, start, end, isLongRangeDashboard]);
 
   // Sync funnel data with product table's Curr date when on Funnels tab
   useEffect(() => {
@@ -3018,6 +3189,7 @@ export default function App() {
                         onCompareModeChange={handleCompareModeChange}
                         compareDateRange={compareDateRange}
                         onCompareDateRangeChange={handleCompareDateRangeChange}
+                        dataRestrictionConfig={dataRestrictionConfig}
                         hideAllExceptDate
                       />
                     </Box>
@@ -3075,6 +3247,7 @@ export default function App() {
                           discount: hasPermission("discount_filter"),
                         }}
                         utmOptions={utmOptions}
+                        dataRestrictionConfig={dataRestrictionConfig}
                         onDownload={handleDownloadSnapshot}
                         children={
                           canCustomizeDashboardLayout ? (
@@ -3142,6 +3315,7 @@ export default function App() {
                       value={normalizedRange}
                       onChange={handleRangeChange}
                       brandKey={activeBrandKey}
+                      dataRestrictionConfig={dataRestrictionConfig}
                       compareMode={compareMode}
                       onCompareModeChange={handleCompareModeChange}
                       compareDateRange={compareDateRange}
@@ -3206,6 +3380,7 @@ export default function App() {
                   showDiscountFilter={hasPermission("discount_filter")}
                   utmOptions={utmOptions}
                   dateRange={normalizedRange}
+                  dataRestrictionConfig={dataRestrictionConfig}
                   isDark={darkMode === "dark"}
                 />
               </Box>
@@ -3302,6 +3477,7 @@ export default function App() {
                                   onCompareModeChange={handleCompareModeChange}
                                   compareDateRange={compareDateRange}
                                   onCompareDateRangeChange={handleCompareDateRangeChange}
+                                  dataRestrictionConfig={dataRestrictionConfig}
                                   hideAllExceptDate
                                 />
                               </Box>
