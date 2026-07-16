@@ -12,7 +12,7 @@ const privacyContent = (
       <ul style={{ margin: 0, paddingLeft: '1.1em' }}>
         <li>Usage Data: Information about how you use the app (e.g., sessions, clicks, device info).</li>
         <li>Personal Data (if applicable): Name, email, or account details you provide voluntarily.</li>
-        <li>Cookies & Analytics: Used to improve app performance and user experience.</li>
+        <li>Cookies & Analytics: Used to improve app performance and user experience, including Microsoft Clarity session analytics on Datum.</li>
       </ul>
     </Typography>
     <Typography variant="subtitle2">2. How We Use Your Information</Typography>
@@ -26,7 +26,7 @@ const privacyContent = (
     <Typography variant="subtitle2">3. Data Security</Typography>
     <Typography variant="body2">We use industry-standard security measures to protect your data from unauthorized access, alteration, or disclosure.</Typography>
     <Typography variant="subtitle2">4. Sharing of Data</Typography>
-    <Typography variant="body2">We do not sell or rent your data. We may share limited information with trusted service providers who help us operate the app (e.g., analytics, hosting).</Typography>
+    <Typography variant="body2">We do not sell or rent your data. We may share limited information with trusted service providers who help us operate the app (e.g., analytics, hosting), including Microsoft Clarity for product usage analysis.</Typography>
     <Typography variant="subtitle2">5. Updates to this Policy</Typography>
     <Typography variant="body2">We may update this Privacy Policy periodically. The latest version will always be available here.</Typography>
     <Typography variant="body2">For any questions regarding this policy, please contact us at <Link href="mailto:hello@trytechit.co">hello@trytechit.co</Link>.</Typography>
