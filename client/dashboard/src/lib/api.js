@@ -453,6 +453,20 @@ export async function getDashboardSummary(args) {
   };
 }
 
+export async function getDataRestrictionConfig() {
+  const res = await doGet("/metrics/data-restriction-config");
+  if (res.error) {
+    return { enabled: true, periodDays: 30, __error: true };
+  }
+  return {
+    enabled:
+      typeof res.data?.enabled === "boolean" ? res.data.enabled : true,
+    periodDays: Number.isFinite(Number(res.data?.periodDays))
+      ? Number(res.data.periodDays)
+      : 30,
+  };
+}
+
 export async function getWebPerformanceSummary(args) {
   const params = appendBrandKey(
     {

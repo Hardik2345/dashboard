@@ -9,6 +9,10 @@ const {
   parseRangeQuery,
   ensureBrandSequelize,
 } = require('./requestNormalizer');
+const {
+  isRangeOverDataRestrictionPeriod,
+  buildLongRangeUnavailablePayload,
+} = require('./longRangeGate');
 
 function buildSplitController({ reportService }) {
   return {
@@ -17,6 +21,21 @@ function buildSplitController({ reportService }) {
         const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
         if (!parsed.ok) return res.status(400).json({ error: 'Invalid date range' });
         const { start, end } = parsed.data;
+        if (isRangeOverDataRestrictionPeriod(start, end)) {
+          return res.json(
+            buildLongRangeUnavailablePayload({
+              meta: null,
+              google: null,
+              direct: null,
+              others: null,
+              meta_breakdown: [],
+              others_breakdown: [],
+              total_sessions: 0,
+              total_atc_sessions: 0,
+              prev_range: null,
+            }),
+          );
+        }
         const brandConn = ensureBrandSequelize(req);
         if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
         return res.json(
@@ -40,6 +59,16 @@ function buildSplitController({ reportService }) {
         const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
         if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
         const { start, end } = parsed.data;
+        if (isRangeOverDataRestrictionPeriod(start, end)) {
+          return res.json(
+            buildLongRangeUnavailablePayload({
+              total: 0,
+              prepaid_orders: 0,
+              cod_orders: 0,
+              partially_paid_orders: 0,
+            }),
+          );
+        }
         const brandConn = ensureBrandSequelize(req);
         if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
         const { hourLte } = parseHourLte(req.query.hour_lte);
@@ -65,6 +94,16 @@ function buildSplitController({ reportService }) {
         const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
         if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
         const { start, end } = parsed.data;
+        if (isRangeOverDataRestrictionPeriod(start, end)) {
+          return res.json(
+            buildLongRangeUnavailablePayload({
+              total: 0,
+              prepaid_sales: 0,
+              cod_sales: 0,
+              partial_sales: 0,
+            }),
+          );
+        }
         const brandConn = ensureBrandSequelize(req);
         if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
         const { hourLte } = parseHourLte(req.query.hour_lte);

@@ -3,6 +3,11 @@ const { handleControllerError } = require('../../shared/middleware/handleControl
 const {
   normalizeMetricRequest,
 } = require('./requestNormalizer');
+const {
+  getDataRestrictionConfig,
+  isRangeOverDataRestrictionPeriod,
+  buildLongRangeUnavailablePayload,
+} = require('./longRangeGate');
 
 function getPreviousDateWindow(start, end) {
   const startDate = new Date(`${start}T00:00:00Z`);
@@ -80,6 +85,12 @@ function buildSummaryController({ metricsService }) {
         if (!normalized.spec.conn) {
           throw new Error('Database connection missing (tenant router required)');
         }
+        if (isRangeOverDataRestrictionPeriod(normalized.spec.start, normalized.spec.end)) {
+          return res.json({
+            filter_options: {},
+            ...buildLongRangeUnavailablePayload(),
+          });
+        }
         return res.json({
           filter_options: await metricsService.getSummaryFilterOptions({
             conn: normalized.spec.conn,
@@ -98,6 +109,13 @@ function buildSummaryController({ metricsService }) {
         const normalized = normalizeMetricRequest(req, { defaultToToday: true });
         if (!normalized.ok) {
           return res.status(normalized.status).json(normalized.body);
+        }
+        if (isRangeOverDataRestrictionPeriod(normalized.spec.start, normalized.spec.end)) {
+          return res.json({
+            brands: [],
+            metric_keys: [],
+            ...buildLongRangeUnavailablePayload(),
+          });
         }
         const snapshot = await metricsService.getOverallSnapshot({
           user: req.user || {},
@@ -120,6 +138,16 @@ function buildSummaryController({ metricsService }) {
         }
         if (!normalized.spec.conn) {
           throw new Error('Database connection missing (tenant router required)');
+        }
+        if (isRangeOverDataRestrictionPeriod(normalized.spec.start, normalized.spec.end)) {
+          return res.json(
+            buildLongRangeUnavailablePayload({
+              daily_averages: [],
+              current_avg: null,
+              previous_avg: null,
+              change_percent: null,
+            }),
+          );
         }
 
         const { start, end, conn } = normalized.spec;
@@ -145,6 +173,14 @@ function buildSummaryController({ metricsService }) {
         });
       } catch (e) {
         return handleControllerError(res, e, 'web-performance-summary failed');
+      }
+    },
+
+    dataRestrictionConfig: async (_req, res) => {
+      try {
+        return res.json(getDataRestrictionConfig());
+      } catch (e) {
+        return handleControllerError(res, e, 'data-restriction-config failed');
       }
     },
 

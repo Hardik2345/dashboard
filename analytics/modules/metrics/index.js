@@ -83,6 +83,7 @@ function buildMetricsRouter(sequelize) {
   router.get('/payment-sales-split', ...protectedBrand, split.paymentSalesSplit);
   router.get('/traffic-source-split', ...protectedBrand, split.trafficSourceSplit);
   router.get('/summary', requireTrustedPrincipal, authorizeBrandContext, summary.dashboardSummary);
+  router.get('/data-restriction-config', requireTrustedPrincipal, summary.dataRestrictionConfig);
   router.get('/summary/brands', requireTrustedPrincipal, summary.dashboardSummaryBrands);
   router.get('/summary-filter-options', requireTrustedPrincipal, authorizeBrandContext, summary.summaryFilterOptions);
   router.get('/web-performance-summary', requireTrustedPrincipal, authorizeBrandContext, summary.webPerformanceSummary);

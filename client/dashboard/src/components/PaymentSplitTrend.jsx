@@ -68,6 +68,8 @@ const MONTH_NAMES = [
   "Nov",
   "Dec",
 ];
+const WEEKLY_LABEL_THRESHOLD = 60;
+const WEEK_SIZE_DAYS = 7;
 
 function buildMetricConfig(formatConvertedAmount) {
   return {
@@ -217,6 +219,50 @@ function formatDayLabel(date) {
   return `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
 }
 
+function buildWeeklyPaymentBuckets(points = []) {
+  const bucketCount = Math.ceil(points.length / WEEK_SIZE_DAYS);
+
+  return Array.from({ length: bucketCount }, (_, index) => {
+    const startIdx = index * WEEK_SIZE_DAYS;
+    const endIdx = startIdx + WEEK_SIZE_DAYS;
+    const currentBucket = points.slice(startIdx, endIdx);
+    const previousBucket = points.slice(startIdx, endIdx);
+
+    const sumBucket = (bucket, key) =>
+      bucket.reduce((sum, point) => sum + Number(point?.[key] || 0), 0);
+
+    const currentPrepaid = sumBucket(currentBucket, "currentPrepaid");
+    const currentCod = sumBucket(currentBucket, "currentCod");
+    const currentPartial = sumBucket(currentBucket, "currentPartial");
+    const currentTotal = sumBucket(currentBucket, "currentTotal");
+    const comparisonPrepaid = sumBucket(previousBucket, "comparisonPrepaid");
+    const comparisonCod = sumBucket(previousBucket, "comparisonCod");
+    const comparisonPartial = sumBucket(previousBucket, "comparisonPartial");
+    const comparisonTotal = sumBucket(previousBucket, "comparisonTotal");
+
+    return {
+      label: `Week ${index + 1}`,
+      currentPrepaid,
+      currentCod,
+      currentPartial,
+      currentTotal,
+      currentPrepaidPct: currentTotal > 0 ? (currentPrepaid / currentTotal) * 100 : 0,
+      currentCodPct: currentTotal > 0 ? (currentCod / currentTotal) * 100 : 0,
+      currentPartialPct: currentTotal > 0 ? (currentPartial / currentTotal) * 100 : 0,
+      comparisonPrepaid,
+      comparisonCod,
+      comparisonPartial,
+      comparisonTotal,
+      comparisonPrepaidPct:
+        comparisonTotal > 0 ? (comparisonPrepaid / comparisonTotal) * 100 : 0,
+      comparisonCodPct:
+        comparisonTotal > 0 ? (comparisonCod / comparisonTotal) * 100 : 0,
+      comparisonPartialPct:
+        comparisonTotal > 0 ? (comparisonPartial / comparisonTotal) * 100 : 0,
+    };
+  });
+}
+
 function buildTooltipRows(payload = [], chartMode, formatter) {
   return payload
     .filter((entry) => Number(entry.value || 0) > 0)
@@ -349,6 +395,7 @@ export default memo(function PaymentSplitTrend({ query }) {
     selectedSeriesKeys.includes(series.key),
   );
   const selectedDayCount = getInclusiveDayCount(start, end);
+  const useWeeklyBuckets = selectedDayCount > WEEKLY_LABEL_THRESHOLD;
   const showBarPercentLabels = isMobile
     ? selectedDayCount <= 8
     : selectedDayCount <= 15;
@@ -427,68 +474,70 @@ export default memo(function PaymentSplitTrend({ query }) {
         const currentPoints = currentSeries.slice(0, pointCount);
         const previousPoints = comparisonSeries.slice(0, pointCount);
 
-        setChartData(
-          currentPoints.map((point, index) => ({
-            label: formatDayLabel(point.date),
-            ...(function buildPointMetrics() {
-              const currentPrepaid =
-                metric === "orders"
-                  ? Number(point.orders?.prepaid_orders || 0)
-                  : convertAmount(point.sales?.prepaid_sales || 0);
-              const currentCod =
-                metric === "orders"
-                  ? Number(point.orders?.cod_orders || 0)
-                  : convertAmount(point.sales?.cod_sales || 0);
-              const currentPartial =
-                metric === "orders"
-                  ? Number(point.orders?.partially_paid_orders || 0)
-                  : convertAmount(point.sales?.partial_sales || 0);
-              const currentTotal =
-                metric === "orders"
-                  ? Number(point.orders?.total || 0)
-                  : convertAmount(point.sales?.total || 0);
-              const comparisonPrepaid = previousPoints[index]
-                ? metric === "orders"
-                  ? Number(previousPoints[index].orders?.prepaid_orders || 0)
-                  : convertAmount(previousPoints[index].sales?.prepaid_sales || 0)
-                : 0;
-              const comparisonCod = previousPoints[index]
-                ? metric === "orders"
-                  ? Number(previousPoints[index].orders?.cod_orders || 0)
-                  : convertAmount(previousPoints[index].sales?.cod_sales || 0)
-                : 0;
-              const comparisonPartial = previousPoints[index]
-                ? metric === "orders"
-                  ? Number(previousPoints[index].orders?.partially_paid_orders || 0)
-                  : convertAmount(previousPoints[index].sales?.partial_sales || 0)
-                : 0;
-              const comparisonTotal = previousPoints[index]
-                ? metric === "orders"
-                  ? Number(previousPoints[index].orders?.total || 0)
-                  : convertAmount(previousPoints[index].sales?.total || 0)
-                : 0;
+        const dailyChartData = currentPoints.map((point, index) => {
+          const currentPrepaid =
+            metric === "orders"
+              ? Number(point.orders?.prepaid_orders || 0)
+              : convertAmount(point.sales?.prepaid_sales || 0);
+          const currentCod =
+            metric === "orders"
+              ? Number(point.orders?.cod_orders || 0)
+              : convertAmount(point.sales?.cod_sales || 0);
+          const currentPartial =
+            metric === "orders"
+              ? Number(point.orders?.partially_paid_orders || 0)
+              : convertAmount(point.sales?.partial_sales || 0);
+          const currentTotal =
+            metric === "orders"
+              ? Number(point.orders?.total || 0)
+              : convertAmount(point.sales?.total || 0);
+          const comparisonPrepaid = previousPoints[index]
+            ? metric === "orders"
+              ? Number(previousPoints[index].orders?.prepaid_orders || 0)
+              : convertAmount(previousPoints[index].sales?.prepaid_sales || 0)
+            : 0;
+          const comparisonCod = previousPoints[index]
+            ? metric === "orders"
+              ? Number(previousPoints[index].orders?.cod_orders || 0)
+              : convertAmount(previousPoints[index].sales?.cod_sales || 0)
+            : 0;
+          const comparisonPartial = previousPoints[index]
+            ? metric === "orders"
+              ? Number(previousPoints[index].orders?.partially_paid_orders || 0)
+              : convertAmount(previousPoints[index].sales?.partial_sales || 0)
+            : 0;
+          const comparisonTotal = previousPoints[index]
+            ? metric === "orders"
+              ? Number(previousPoints[index].orders?.total || 0)
+              : convertAmount(previousPoints[index].sales?.total || 0)
+            : 0;
 
-              return {
-                currentPrepaid,
-                currentCod,
-                currentPartial,
-                currentTotal,
-                currentPrepaidPct: currentTotal > 0 ? (currentPrepaid / currentTotal) * 100 : 0,
-                currentCodPct: currentTotal > 0 ? (currentCod / currentTotal) * 100 : 0,
-                currentPartialPct: currentTotal > 0 ? (currentPartial / currentTotal) * 100 : 0,
-                comparisonPrepaid,
-                comparisonCod,
-                comparisonPartial,
-                comparisonTotal,
-                comparisonPrepaidPct:
-                  comparisonTotal > 0 ? (comparisonPrepaid / comparisonTotal) * 100 : 0,
-                comparisonCodPct:
-                  comparisonTotal > 0 ? (comparisonCod / comparisonTotal) * 100 : 0,
-                comparisonPartialPct:
-                  comparisonTotal > 0 ? (comparisonPartial / comparisonTotal) * 100 : 0,
-              };
-            })(),
-          })),
+          return {
+            label: formatDayLabel(point.date),
+            currentPrepaid,
+            currentCod,
+            currentPartial,
+            currentTotal,
+            currentPrepaidPct: currentTotal > 0 ? (currentPrepaid / currentTotal) * 100 : 0,
+            currentCodPct: currentTotal > 0 ? (currentCod / currentTotal) * 100 : 0,
+            currentPartialPct: currentTotal > 0 ? (currentPartial / currentTotal) * 100 : 0,
+            comparisonPrepaid,
+            comparisonCod,
+            comparisonPartial,
+            comparisonTotal,
+            comparisonPrepaidPct:
+              comparisonTotal > 0 ? (comparisonPrepaid / comparisonTotal) * 100 : 0,
+            comparisonCodPct:
+              comparisonTotal > 0 ? (comparisonCod / comparisonTotal) * 100 : 0,
+            comparisonPartialPct:
+              comparisonTotal > 0 ? (comparisonPartial / comparisonTotal) * 100 : 0,
+          };
+        });
+
+        setChartData(
+          useWeeklyBuckets
+            ? buildWeeklyPaymentBuckets(dailyChartData)
+            : dailyChartData,
         );
         setRangeLabels({
           current: formatRangeLabel({ start, end }),
@@ -528,6 +577,7 @@ export default memo(function PaymentSplitTrend({ query }) {
     compareStart,
     compareEnd,
     convertAmount,
+    useWeeklyBuckets,
   ]);
 
   const toggleBar = (bar) => {
@@ -560,6 +610,7 @@ export default memo(function PaymentSplitTrend({ query }) {
       }}
     />
   );
+  const showWeeklyBarPercentLabels = showBarPercentLabels && !useWeeklyBuckets;
 
   return (
     <Card
@@ -922,7 +973,7 @@ export default memo(function PaymentSplitTrend({ query }) {
                       radius={[4, 4, 0, 0]}
                       maxBarSize={28}
                     >
-                      {showBarPercentLabels &&
+                      {showWeeklyBarPercentLabels &&
                         renderBarPercentLabel(series.comparisonPctKey)}
                     </Bar>
                   ))}
@@ -936,7 +987,7 @@ export default memo(function PaymentSplitTrend({ query }) {
                       radius={[4, 4, 0, 0]}
                       maxBarSize={28}
                     >
-                      {showBarPercentLabels &&
+                      {showWeeklyBarPercentLabels &&
                         renderBarPercentLabel(series.currentPctKey)}
                     </Bar>
                   ))}
