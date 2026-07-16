@@ -2079,6 +2079,26 @@ export default function ProductConversionTable({
     return found?.label || null;
   }, [compareStart, compareEnd]);
 
+  const showHourlyCompareAvailabilityWarning = useMemo(() => {
+    if (!compareMode) return false;
+
+    const hourlyDataCutoff = dayjs().startOf("day").subtract(6, "day");
+    const currentStart = start ? dayjs(start).startOf("day") : null;
+    const currentEnd = end ? dayjs(end).startOf("day") : currentStart;
+    const previousStart = compareStart ? dayjs(compareStart).startOf("day") : null;
+    const previousEnd = compareEnd ? dayjs(compareEnd).startOf("day") : previousStart;
+
+    const isRangeOutsideHourlyWindow = (rangeStart, rangeEnd) => {
+      if (!rangeStart || !rangeEnd) return false;
+      return rangeStart.isBefore(hourlyDataCutoff) || rangeEnd.isBefore(hourlyDataCutoff);
+    };
+
+    return (
+      isRangeOutsideHourlyWindow(currentStart, currentEnd) ||
+      isRangeOutsideHourlyWindow(previousStart, previousEnd)
+    );
+  }, [compareMode, start, end, compareStart, compareEnd]);
+
   const handleCompareModeChange = (e) => {
     const isCompare = e.target.value === "compare";
 
@@ -2513,6 +2533,20 @@ export default function ProductConversionTable({
           />
         </Box>
       </Box>
+
+      {showHourlyCompareAvailabilityWarning && (
+        <Alert
+          severity="warning"
+          sx={{
+            py: 0.5,
+            px: 1.25,
+            alignItems: "center",
+            "& .MuiAlert-message": { fontSize: "0.8rem" },
+          }}
+        >
+          Hourly compare data is only available for the last 7 days. Selected range is outside that window.
+        </Alert>
+      )}
 
       {/* Filter Summary / Active Chips (optional display if panel is closed) */}
       {/* Filter Summary / Active Chips (Scrollable Row) */}
