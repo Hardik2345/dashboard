@@ -69,6 +69,7 @@ const NAV_ITEMS = [
       { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
       { id: "session-analytics", label: "Dashboard Sessions", icon: Activity },
       { id: "product-conversion", label: "Funnels", icon: Filter },
+      { id: "daily-funnel", label: "Daily Funnel", icon: Table2 },
       { id: "bundles", label: "Bundles", icon: Table2 },
       { id: "inventory", label: "Inventory", icon: Package },
       { id: "alerts", label: "Alerts", icon: Bell },

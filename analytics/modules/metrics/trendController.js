@@ -46,6 +46,21 @@ function buildTrendController({ metricsService }) {
       }
     },
 
+    dailyFunnel: async (req, res) => {
+      try {
+        const normalized = normalizeMetricRequest(req, { requireBoth: true });
+        if (!normalized.ok) {
+          return res.status(normalized.status).json(normalized.body);
+        }
+        if (!normalized.spec.conn) {
+          return res.status(500).json({ error: 'Brand DB connection unavailable' });
+        }
+        return res.json(await metricsService.getDailyFunnel(normalized.spec));
+      } catch (e) {
+        return handleControllerError(res, e, 'daily-funnel failed');
+      }
+    },
+
     monthlyTrend: async (req, res) => {
       try {
         const normalized = normalizeMetricRequest(req, { requireBoth: true });

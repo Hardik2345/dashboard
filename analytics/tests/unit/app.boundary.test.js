@@ -32,6 +32,7 @@ describe("analytics app boundary", () => {
     expect(routePaths).toContain("/traffic-source-split");
     expect(routePaths).toContain("/hourly-trend");
     expect(routePaths).toContain("/daily-trend");
+    expect(routePaths).toContain("/daily-funnel");
     expect(routePaths).toContain("/monthly-trend");
     expect(routePaths).toContain("/top-products");
     expect(routePaths).toContain("/product-kpis");

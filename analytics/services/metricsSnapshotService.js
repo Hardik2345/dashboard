@@ -1960,6 +1960,82 @@ function buildMetricsSnapshotService(deps = {}) {
             months: previousRows,
           }
         : null,
+      };
+  }
+
+  async function getDailyFunnel(spec) {
+    const timezone = normalizeTimezone(spec.timezone);
+    const [baseRows, paymentRows, discountRows] = await Promise.all([
+      fetchDailyRows(spec.conn, spec.start, spec.end, {}),
+      spec.conn.query(
+        `
+          SELECT
+            DATE_FORMAT(date, '%Y-%m-%d') AS date,
+            COALESCE(SUM(prepaid_orders), 0) AS prepaid_orders,
+            COALESCE(SUM(cod_orders), 0) AS cod_orders,
+            COALESCE(SUM(partially_paid_orders), 0) AS partially_paid_orders
+          FROM overall_summary
+          WHERE date >= ? AND date <= ?
+          GROUP BY date
+          ORDER BY date ASC
+        `,
+        {
+          type: QueryTypes.SELECT,
+          replacements: [spec.start, spec.end],
+        },
+      ),
+      spec.conn.query(
+        `
+          SELECT
+            DATE_FORMAT(date, '%Y-%m-%d') AS date,
+            COALESCE(SUM(total_discounts_given), 0) AS discount_amount
+          FROM discount_summary
+          WHERE date >= ? AND date <= ?
+          GROUP BY date
+          ORDER BY date ASC
+        `,
+        {
+          type: QueryTypes.SELECT,
+          replacements: [spec.start, spec.end],
+        },
+      ),
+    ]);
+
+    const baseMap = new Map(
+      (Array.isArray(baseRows) ? baseRows : []).map((row) => [String(row.date), row]),
+    );
+    const paymentMap = new Map(
+      (Array.isArray(paymentRows) ? paymentRows : []).map((row) => [String(row.date), row]),
+    );
+    const discountMap = new Map(
+      (Array.isArray(discountRows) ? discountRows : []).map((row) => [String(row.date), row]),
+    );
+
+    const rows = buildSeriesBuckets(spec.start, spec.end)
+      .map((date) => {
+        const base = baseMap.get(date) || {};
+        const payment = paymentMap.get(date) || {};
+        const discount = discountMap.get(date) || {};
+
+        return {
+          date,
+          sales: Number(base.sales || 0),
+          sessions: Number(base.sessions || 0),
+          atc_sessions: Number(base.atc || 0),
+          ci_events: Number(base.ci_events || 0),
+          orders: Number(base.orders || 0),
+          discount_amount: Number(discount.discount_amount || 0),
+          prepaid_orders: Number(payment.prepaid_orders || 0),
+          cod_orders: Number(payment.cod_orders || 0),
+          partially_paid_orders: Number(payment.partially_paid_orders || 0),
+        };
+      })
+      .sort((left, right) => right.date.localeCompare(left.date));
+
+    return {
+      timezone,
+      range: { start: spec.start, end: spec.end },
+      rows,
     };
   }
 
@@ -1968,6 +2044,7 @@ function buildMetricsSnapshotService(deps = {}) {
     getSnapshotPair,
     getDashboardSummary,
     getTrend,
+    getDailyFunnel,
     getSummaryFilterOptions,
   };
 }

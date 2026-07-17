@@ -1142,6 +1142,23 @@ export async function getDailyTrend(args) {
   };
 }
 
+export async function getDailyFunnel(args = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+    },
+    args,
+  );
+  const json = await getJSON("/metrics/daily-funnel", params);
+  return {
+    rows: Array.isArray(json?.rows) ? json.rows : [],
+    range: json?.range || null,
+    timezone: json?.timezone || "Asia/Kolkata",
+    error: json?.__error,
+  };
+}
+
 export async function getMonthlyTrend(args) {
   const base = { start: args.start, end: args.end };
   if (args.compare_start) base.compare_start = args.compare_start;

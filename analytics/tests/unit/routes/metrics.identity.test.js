@@ -13,6 +13,7 @@ const mockController = {
   productKpis: handler("productKpis"),
   hourlyTrend: handler("hourlyTrend"),
   dailyTrend: handler("dailyTrend"),
+  dailyFunnel: handler("dailyFunnel"),
   monthlyTrend: handler("monthlyTrend"),
   productConversion: handler("productConversion"),
   productConversionCsv: handler("productConversionCsv"),
@@ -177,6 +178,37 @@ describe("metrics router identity edge", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({ ok: true, handler: "topProducts" });
     expect(mockApiKeyAuth).toHaveBeenCalled();
+    expect(mockBrandContext).toHaveBeenCalled();
+  });
+
+  test("guards daily funnel behind the dedicated permission", async () => {
+    const router = createRouter();
+
+    const forbidden = await invoke(router, {
+      method: "GET",
+      url: "/daily-funnel",
+      headers: {
+        "x-user-id": "u-1",
+        "x-brand-key": "TMC",
+        "x-role": "user",
+      },
+    });
+
+    expect(forbidden.statusCode).toBe(403);
+
+    const allowed = await invoke(router, {
+      method: "GET",
+      url: "/daily-funnel",
+      headers: {
+        "x-user-id": "u-2",
+        "x-brand-key": "TMC",
+        "x-role": "user",
+        "x-permissions": "daily_funnel_panel",
+      },
+    });
+
+    expect(allowed.statusCode).toBe(200);
+    expect(allowed.body).toEqual({ ok: true, handler: "dailyFunnel" });
     expect(mockBrandContext).toHaveBeenCalled();
   });
 });

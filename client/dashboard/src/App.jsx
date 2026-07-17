@@ -50,6 +50,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { id: "session-analytics", label: "Dashboard Sessions", icon: Activity },
   { id: "product-conversion", label: "Funnels", icon: Filter },
+  { id: "daily-funnel", label: "Daily Funnel", icon: Table2 },
   { id: "bundles", label: "Bundles", icon: Table2 },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "alerts", label: "Alerts", icon: Bell },
@@ -66,6 +67,7 @@ const TAB_ROUTE_MAP = {
   dashboard: "/dashboard",
   "session-analytics": "/session-analytics",
   "product-conversion": "/funnels",
+  "daily-funnel": "/daily-funnel",
   bundles: "/bundles",
   inventory: "/inventory",
   alerts: "/alerts",
@@ -218,6 +220,9 @@ const NotificationsLog = lazy(
 );
 const ProductConversionTable = lazy(
   () => import("./components/ProductConversionTable.jsx"),
+);
+const DailyFunnelPanel = lazy(
+  () => import("./components/DailyFunnelPanel.jsx"),
 );
 const InventoryTable = lazy(() => import("./components/InventoryTable.jsx"));
 const BundlesPanel = lazy(() => import("./components/BundlesPanel.jsx"));
@@ -656,6 +661,11 @@ export default function App() {
     return hasPermission("bundles_panel");
   }, [hasPermission, isAuthor]);
 
+  const canAccessDailyFunnelPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("daily_funnel_panel");
+  }, [hasPermission, isAuthor]);
+
   const canAccessRequestsPanel = useMemo(() => {
     if (isAuthor) return true;
     return hasPermission("requests_panel");
@@ -681,12 +691,14 @@ export default function App() {
     const tabs = ["dashboard"];
     if (canAccessOverallSnapshotPanel) tabs.unshift("overall-snapshot");
     if (canAccessSessionAnalyticsPanel) tabs.push("session-analytics");
+    if (canAccessDailyFunnelPanel) tabs.push("daily-funnel");
     if (canAccessRequestsPanel) tabs.push("requests");
     if (canAccessBundlesPanel) tabs.push("bundles");
     if (canAccessInventoryPanel) tabs.push("inventory");
     return tabs;
   }, [
     canAccessOverallSnapshotPanel,
+    canAccessDailyFunnelPanel,
     canAccessBundlesPanel,
     canAccessInventoryPanel,
     canAccessRequestsPanel,
@@ -726,6 +738,16 @@ export default function App() {
       );
       return;
     }
+    if (authorTab === "daily-funnel" && !canAccessDailyFunnelPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
     if (authorTab === "requests" && !canAccessRequestsPanel) {
       navigate(
         {
@@ -749,6 +771,7 @@ export default function App() {
     authorTab,
     defaultLandingTab,
     canAccessOverallSnapshotPanel,
+    canAccessDailyFunnelPanel,
     canAccessBundlesPanel,
     canAccessInventoryPanel,
     canAccessRequestsPanel,
@@ -3709,6 +3732,27 @@ export default function App() {
                           />
                         </Suspense>
                       )}
+
+                    {canAccessDailyFunnelPanel &&
+                      authorTab === "daily-funnel" &&
+                      (hasBrand ? (
+                        <Suspense fallback={<SectionFallback count={2} height={240} />}>
+                          <DailyFunnelPanel
+                            brandKey={activeBrandKey}
+                            initialStartDate={start}
+                            initialEndDate={end}
+                          />
+                        </Suspense>
+                      ) : (
+                        <Paper
+                          variant="outlined"
+                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to view daily funnel metrics.
+                          </Typography>
+                        </Paper>
+                      ))}
 
                     {/* Author-only tabs */}
                     {isAuthor &&

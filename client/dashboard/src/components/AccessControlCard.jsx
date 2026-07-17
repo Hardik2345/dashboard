@@ -76,6 +76,7 @@ const PERMISSION_OPTIONS = [
   "requests_timeline",
   "bundles_panel",
   "inventory_panel",
+  "daily_funnel_panel",
   "product_filter",
   "utm_filter",
   "discount_filter",
