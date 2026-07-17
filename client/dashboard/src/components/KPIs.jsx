@@ -19,8 +19,10 @@ const nfPct = new Intl.NumberFormat(undefined, {
 
 export default function KPIs({
   query,
-  selectedMetric,
+  selectedMetrics = [],
+  activeMetric = null,
   onSelectMetric,
+  onToggleMetric,
   onLoaded,
   onFunnelData,
   productId,
@@ -160,7 +162,7 @@ export default function KPIs({
             sales_channel: salesChannel,
             device_type: deviceType,
             discount_code: discountCode,
-            city: query?.city,
+            city,
           }
         : {
             start,
@@ -172,7 +174,7 @@ export default function KPIs({
             sales_channel: salesChannel,
             device_type: deviceType,
             discount_code: discountCode,
-            city: query?.city,
+            city,
           };
       if (compareStart && compareEnd) {
         base.compare_start = compareStart;
@@ -379,9 +381,17 @@ export default function KPIs({
   const totalSessions =
     data.cvr?.total_sessions || data.funnel?.total_sessions || 0;
   const totalAtcSessions = data.funnel?.total_atc_sessions || 0;
+  const selectedMetricSet = useMemo(
+    () => new Set(Array.isArray(selectedMetrics) ? selectedMetrics : []),
+    [selectedMetrics],
+  );
   const cvrDeltaValue = data.cvrDelta
     ? (data.cvrDelta.diff_pct ?? data.cvrDelta.diff_pp)
     : undefined;
+
+  const isMetricSelected = (metricKey) => selectedMetricSet.has(metricKey);
+  const isAnyMetricSelected = (metricKeys) =>
+    metricKeys.some((metricKey) => selectedMetricSet.has(metricKey));
 
   const formatUTM = (key, val, options) => {
     if (!val || !Array.isArray(val) || val.length === 0) return null;
@@ -429,7 +439,9 @@ export default function KPIs({
     data.funnel,
     data.sessDelta,
     data.atcDelta,
+    data.ciDelta,
     data.ordersDelta,
+    data.cvrDelta,
     loading,
     deltaLoading,
     onFunnelData,
@@ -495,7 +507,11 @@ export default function KPIs({
                 onSelect={
                   onSelectMetric ? () => onSelectMetric("orders") : undefined
                 }
-                selected={selectedMetric === "orders"}
+                onSelectionToggle={
+                  onToggleMetric ? () => onToggleMetric("orders") : undefined
+                }
+                selected={activeMetric === "orders"}
+                selectionIndicatorSelected={isMetricSelected("orders")}
                 compareValue={
                   compareMode && data.prevOrders != null
                     ? data.prevOrders
@@ -594,7 +610,11 @@ export default function KPIs({
                 onSelect={
                   onSelectMetric ? () => onSelectMetric("sales") : undefined
                 }
-                selected={selectedMetric === "sales"}
+                onSelectionToggle={
+                  onToggleMetric ? () => onToggleMetric("sales") : undefined
+                }
+                selected={activeMetric === "sales"}
+                selectionIndicatorSelected={isMetricSelected("sales")}
                 activeColor={revenueMode === "G" ? "#10b981" : "#3b82f6"}
                 compareValue={
                   compareMode && data.prevSales != null
@@ -631,7 +651,11 @@ export default function KPIs({
                 onSelect={
                   onSelectMetric ? () => onSelectMetric("aov") : undefined
                 }
-                selected={selectedMetric === "aov"}
+                onSelectionToggle={
+                  onToggleMetric ? () => onToggleMetric("aov") : undefined
+                }
+                selected={activeMetric === "aov"}
+                selectionIndicatorSelected={isMetricSelected("aov")}
                 compareValue={
                   compareMode && data.prevAov != null
                     ? convertAmount(data.prevAov)
@@ -742,6 +766,8 @@ export default function KPIs({
                       : undefined
                 }
                 selected={false}
+                selectionIndicatorSelected={false}
+                showSelectionIndicator={false}
                 activeColor={cancellationMode === "C" ? "#ef4444" : "#f59e0b"}
                 invertDeltaColor={true}
                 compareValue={
@@ -790,7 +816,13 @@ export default function KPIs({
                     ? () => onSelectMetric("sessions")
                     : undefined
                 }
-                selected={selectedMetric === "sessions"}
+                onSelectionToggle={
+                  onToggleMetric && !data.unavailable?.sessions
+                    ? () => onToggleMetric("sessions")
+                    : undefined
+                }
+                selected={activeMetric === "sessions"}
+                selectionIndicatorSelected={isMetricSelected("sessions")}
                 compareValue={
                   compareMode && data.prevSessions != null
                     ? data.prevSessions
@@ -823,14 +855,14 @@ export default function KPIs({
                     onClick={(e) => {
                       e.stopPropagation();
                       const nextMode = atcMode === "R" ? "S" : "R";
+                      const previousMetric = atcMode === "R" ? "atc_rate" : "atc";
+                      const nextMetric = nextMode === "R" ? "atc_rate" : "atc";
                       setAtcMode(nextMode);
-                      // Auto-update graph if the card is currently selected
-                      if (
-                        selectedMetric === "atc" ||
-                        selectedMetric === "atc_rate"
-                      ) {
-                        if (typeof onSelectMetric === "function") {
-                          onSelectMetric(nextMode === "R" ? "atc_rate" : "atc");
+                      if (isAnyMetricSelected(["atc", "atc_rate"])) {
+                        if (typeof onToggleMetric === "function") {
+                          onToggleMetric(nextMetric, {
+                            replaceMetricKey: previousMetric,
+                          });
                         }
                       }
                     }}
@@ -910,9 +942,15 @@ export default function KPIs({
                     ? () => onSelectMetric(atcMode === "R" ? "atc_rate" : "atc")
                     : undefined
                 }
-                selected={
-                  selectedMetric === "atc" || selectedMetric === "atc_rate"
+                onSelectionToggle={
+                  onToggleMetric && !data.unavailable?.atc
+                    ? () => onToggleMetric(atcMode === "R" ? "atc_rate" : "atc")
+                    : undefined
                 }
+                selected={
+                  activeMetric === "atc" || activeMetric === "atc_rate"
+                }
+                selectionIndicatorSelected={isAnyMetricSelected(["atc", "atc_rate"])}
                 activeColor={atcMode === "S" ? "#f59e0b" : "#10b981"}
                 compareValue={
                   compareMode
@@ -959,15 +997,16 @@ export default function KPIs({
                       onClick={(e) => {
                         e.stopPropagation();
                         const nextMode = checkoutMode === "R" ? "C" : "R";
+                        const previousMetric =
+                          checkoutMode === "R" ? "checkout_rate" : "ci_events";
+                        const nextMetric =
+                          nextMode === "R" ? "checkout_rate" : "ci_events";
                         setCheckoutMode(nextMode);
-                        if (
-                          selectedMetric === "ci_events" ||
-                          selectedMetric === "checkout_rate"
-                        ) {
-                          if (typeof onSelectMetric === "function") {
-                            onSelectMetric(
-                              nextMode === "R" ? "checkout_rate" : "ci_events",
-                            );
+                        if (isAnyMetricSelected(["ci_events", "checkout_rate"])) {
+                          if (typeof onToggleMetric === "function") {
+                            onToggleMetric(nextMetric, {
+                              replaceMetricKey: previousMetric,
+                            });
                           }
                         }
                       }}
@@ -1057,10 +1096,21 @@ export default function KPIs({
                           )
                       : undefined
                   }
-                  selected={
-                    selectedMetric === "ci_events" ||
-                    selectedMetric === "checkout_rate"
+                  onSelectionToggle={
+                    onToggleMetric && !data.unavailable?.ci
+                      ? () =>
+                          onToggleMetric(
+                            checkoutMode === "R"
+                              ? "checkout_rate"
+                              : "ci_events",
+                          )
+                      : undefined
                   }
+                  selected={
+                    activeMetric === "ci_events" ||
+                    activeMetric === "checkout_rate"
+                  }
+                  selectionIndicatorSelected={isAnyMetricSelected(["ci_events", "checkout_rate"])}
                   activeColor={
                     checkoutMode === "R"
                       ? "#10b981"
@@ -1115,7 +1165,13 @@ export default function KPIs({
                   ? () => onSelectMetric("cvr")
                   : undefined
               }
-              selected={selectedMetric === "cvr"}
+              onSelectionToggle={
+                onToggleMetric && !data.unavailable?.cvr
+                  ? () => onToggleMetric("cvr")
+                  : undefined
+              }
+              selected={activeMetric === "cvr"}
+              selectionIndicatorSelected={isMetricSelected("cvr")}
               compareValue={
                 compareMode && data.prevCvr != null
                   ? data.prevCvr / 100
@@ -1151,6 +1207,15 @@ export default function KPIs({
                     : undefined
                 }
                 centerOnMobile={true}
+                activeColor="#06b6d4"
+                onSelect={
+                  onSelectMetric ? () => onSelectMetric("performance") : undefined
+                }
+                onSelectionToggle={
+                  onToggleMetric ? () => onToggleMetric("performance") : undefined
+                }
+                selected={activeMetric === "performance"}
+                selectionIndicatorSelected={isMetricSelected("performance")}
               />
             </Grid>
           )}

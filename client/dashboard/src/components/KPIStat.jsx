@@ -12,7 +12,9 @@ export default function KPIStat({
   formatter,
   delta,
   onSelect,
+  onSelectionToggle,
   selected,
+  selectionIndicatorSelected,
   centerOnMobile = false,
   action,
   sx = {},
@@ -21,9 +23,16 @@ export default function KPIStat({
   compareFormatter,
   invertDeltaColor = false,
   unavailable = false,
+  showSelectionIndicator,
 }) {
   const theme = useTheme();
   const clickable = typeof onSelect === "function" && !unavailable;
+  const selectionClickable =
+    typeof onSelectionToggle === "function" && !unavailable;
+  const shouldShowSelectionIndicator =
+    typeof showSelectionIndicator === "boolean"
+      ? showSelectionIndicator
+      : selectionClickable;
 
   const handleKeyDown = (event) => {
     if (!clickable) return;
@@ -31,6 +40,13 @@ export default function KPIStat({
       event.preventDefault();
       onSelect();
     }
+  };
+
+  const handleSelectionToggle = (event) => {
+    if (!selectionClickable) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onSelectionToggle();
   };
 
   const goodColor = "#10b981"; // Green
@@ -111,11 +127,62 @@ export default function KPIStat({
               position: "absolute",
               top: { xs: "auto", md: 12 },
               bottom: { xs: 10, md: "auto" },
-              right: { xs: 10, md: 12 },
+              left: { xs: 10, md: "auto" },
+              right: { xs: "auto", md: 12 },
               zIndex: 10,
             }}
           >
             {action}
+          </Box>
+        )}
+        {shouldShowSelectionIndicator && (
+          <Box
+            component="button"
+            type="button"
+            aria-pressed={Boolean(selectionIndicatorSelected)}
+            aria-label={`${selectionIndicatorSelected ? "Deselect" : "Select"} ${label}`}
+            onClick={handleSelectionToggle}
+            sx={{
+              position: "absolute",
+              right: 12,
+              bottom: 12,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              border: "1.5px solid",
+              borderColor: selectionIndicatorSelected
+                ? activeColor
+                : alpha(theme.palette.text.secondary, 0.35),
+              bgcolor: selectionIndicatorSelected ? activeColor : "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all 0.18s ease",
+              boxShadow: selectionIndicatorSelected
+                ? `0 2px 6px ${alpha(activeColor, 0.35)}`
+                : "none",
+              cursor: selectionClickable ? "pointer" : "default",
+              p: 0,
+              outline: "none",
+              appearance: "none",
+              WebkitAppearance: "none",
+              "&:focus-visible": {
+                boxShadow: `0 0 0 2px ${alpha(activeColor, 0.28)}`,
+              },
+            }}
+          >
+            {selectionIndicatorSelected && (
+              <Box
+                component="span"
+                sx={{
+                  width: 7,
+                  height: 4,
+                  borderLeft: "2px solid #fff",
+                  borderBottom: "2px solid #fff",
+                  transform: "rotate(-45deg) translateY(-1px)",
+                }}
+              />
+            )}
           </Box>
         )}
         {loading ? (

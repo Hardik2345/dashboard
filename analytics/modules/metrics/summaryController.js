@@ -151,7 +151,12 @@ function buildSummaryController({ metricsService }) {
         }
 
         const { start, end, conn } = normalized.spec;
-        const { prevStart, prevEnd } = getPreviousDateWindow(start, end);
+        const compareStart = req.query.compare_start?.toString().trim();
+        const compareEnd = req.query.compare_end?.toString().trim();
+        const { prevStart, prevEnd } =
+          compareStart && compareEnd
+            ? { prevStart: compareStart, prevEnd: compareEnd }
+            : getPreviousDateWindow(start, end);
 
         const [dailyAverages, previousDailyAverages] = await Promise.all([
           fetchDailyPerformanceAverages(conn, start, end),
@@ -167,6 +172,7 @@ function buildSummaryController({ metricsService }) {
 
         return res.json({
           daily_averages: dailyAverages,
+          previous_daily_averages: previousDailyAverages,
           current_avg: currentAvg,
           previous_avg: previousAvg,
           change_percent: changePercent,

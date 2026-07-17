@@ -473,6 +473,8 @@ export async function getWebPerformanceSummary(args) {
       start: args.start || args.date,
       end: args.end || args.date || args.start,
       timezone: args.timezone,
+      compare_start: args.compare_start,
+      compare_end: args.compare_end,
     },
     args,
   );

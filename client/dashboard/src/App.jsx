@@ -153,18 +153,25 @@ import {
 import { setBrand } from "./state/slices/brandSlice.js";
 import {
   DEFAULT_PRODUCT_OPTION,
-  DEFAULT_TREND_METRIC,
   setProductSelection,
   setRange,
   setCompareMode,
   setCompareDateRange,
-  setSelectedMetric,
+  setTrendMetricSelection,
   setUtm,
   setSalesChannel,
   setDeviceType,
   setDiscountCode,
   setCity,
 } from "./state/slices/filterSlice.js";
+import {
+  CI_TREND_METRICS,
+  DEFAULT_TREND_METRIC,
+  DISCOUNT_ALLOWED_TREND_METRICS,
+  normalizeTrendMetric,
+  sanitizeTrendMetricSelection,
+  toggleTrendMetricSelection,
+} from "./lib/trendSelection.js";
 import MobileTopBar from "./components/MobileTopBar.jsx";
 const MobileFilterDrawer = lazy(
   () => import("./components/MobileFilterDrawer.jsx"),
@@ -228,17 +235,6 @@ function formatDate(dt) {
   return dt ? dayjs(dt).format("YYYY-MM-DD") : undefined;
 }
 
-const TREND_METRICS = new Set([
-  "sales",
-  "orders",
-  "sessions",
-  "cvr",
-  "atc",
-  "ci_events",
-  "checkout_rate",
-  "atc_rate",
-  "aov",
-]);
 const WEB_VITAL_METRIC_KEYS = {
   FCP: "fcp",
   LCP: "lcp",
@@ -295,7 +291,8 @@ export default function App() {
     range,
     compareMode,
     compareDateRange,
-    selectedMetric,
+    selectedMetrics,
+    activeMetric,
     productSelection,
     utm,
     discountCode,
@@ -644,6 +641,9 @@ export default function App() {
   );
   const canCustomizeDashboardLayout = hasPermission(
     "dashboard_layout_customize",
+  );
+  const canMultiSelectableKpiCards = hasPermission(
+    "multiselectable_kpi_cards",
   );
 
   const canAccessInventoryPanel = useMemo(() => {
@@ -1880,28 +1880,75 @@ export default function App() {
 
   const handleSelectMetric = useCallback(
     (metricKey) => {
-      if (!metricKey) return;
-      if (
-        (metricKey === "ci_events" || metricKey === "checkout_rate") &&
-        !hasPermission("ci_events")
-      ) {
-        dispatch(setSelectedMetric("sales"));
-        return;
-      }
-      if (
-        discountCode &&
-        !["orders", "sales", "aov", "ci_events"].includes(metricKey)
-      ) {
-        dispatch(setSelectedMetric("sales"));
-        return;
-      }
+      const normalizedMetric = normalizeTrendMetric(metricKey);
+      if (!normalizedMetric) return;
+
       dispatch(
-        setSelectedMetric(
-          TREND_METRICS.has(metricKey) ? metricKey : DEFAULT_TREND_METRIC,
+        setTrendMetricSelection(
+          sanitizeTrendMetricSelection(
+            [],
+            normalizedMetric,
+          ),
         ),
       );
     },
-    [dispatch, discountCode, hasPermission],
+    [dispatch],
+  );
+
+  const handleToggleMetric = useCallback(
+    (metricKey, options = {}) => {
+      if (!canMultiSelectableKpiCards) return;
+      const normalizedMetric = normalizeTrendMetric(metricKey);
+      if (!normalizedMetric) return;
+
+      const nextSelection = toggleTrendMetricSelection(
+        selectedMetrics,
+        activeMetric,
+        normalizedMetric,
+        options,
+      );
+
+      let allowedMetrics = Array.isArray(nextSelection.selectedMetrics)
+        ? [...nextSelection.selectedMetrics]
+        : [];
+
+      if (!hasPermission("ci_events")) {
+        allowedMetrics = allowedMetrics.filter(
+          (entry) => !CI_TREND_METRICS.has(entry),
+        );
+      }
+      if (discountCode) {
+        allowedMetrics = allowedMetrics.filter((entry) =>
+          DISCOUNT_ALLOWED_TREND_METRICS.has(entry),
+        );
+      }
+
+      const fallbackMetric =
+        nextSelection.activeMetric &&
+        (!discountCode ||
+          DISCOUNT_ALLOWED_TREND_METRICS.has(nextSelection.activeMetric)) &&
+        (hasPermission("ci_events") ||
+          !CI_TREND_METRICS.has(nextSelection.activeMetric))
+          ? nextSelection.activeMetric
+          : DEFAULT_TREND_METRIC;
+
+      dispatch(
+        setTrendMetricSelection(
+          sanitizeTrendMetricSelection(
+            allowedMetrics,
+            nextSelection.activeMetric || fallbackMetric,
+          ),
+        ),
+      );
+    },
+    [
+      activeMetric,
+      canMultiSelectableKpiCards,
+      dispatch,
+      discountCode,
+      hasPermission,
+      selectedMetrics,
+    ],
   );
 
   const handleRangeChange = useCallback(
@@ -2193,8 +2240,12 @@ export default function App() {
         <Stack spacing={{ xs: 1, md: 1 }}>
           <KPIs
             query={trendMetricsQuery}
-            selectedMetric={selectedMetric}
+            selectedMetrics={selectedMetrics}
+            activeMetric={activeMetric}
             onSelectMetric={handleSelectMetric}
+            onToggleMetric={
+              canMultiSelectableKpiCards ? handleToggleMetric : undefined
+            }
             onFunnelData={handleFunnelData}
             productId={selectedProductIds}
             productLabel={selectedProductLabel}
@@ -2206,8 +2257,12 @@ export default function App() {
           />
           <KPIs
             query={trendMetricsQuery}
-            selectedMetric={selectedMetric}
+            selectedMetrics={selectedMetrics}
+            activeMetric={activeMetric}
             onSelectMetric={handleSelectMetric}
+            onToggleMetric={
+              canMultiSelectableKpiCards ? handleToggleMetric : undefined
+            }
             productId={selectedProductIds}
             productLabel={selectedProductLabel}
             utmOptions={utmOptions}
@@ -2242,7 +2297,9 @@ export default function App() {
           >
             <HourlySalesCompare
               query={trendMetricsQuery}
-              metric={selectedMetric}
+              selectedMetrics={selectedMetrics}
+              activeMetric={activeMetric}
+              compareMode={compareMode}
               isLongRange={isLongRangeDashboard}
             />
           </Grid>
@@ -2255,7 +2312,15 @@ export default function App() {
                   minHeight={310}
                 />
               ) : (
-                <WebPerformancePanel query={generalMetricsQuery} />
+                <WebPerformancePanel
+                  query={generalMetricsQuery}
+                  selectedMetrics={selectedMetrics}
+                  activeMetric={activeMetric}
+                  onSelectMetric={handleSelectMetric}
+                  onToggleMetric={
+                    canMultiSelectableKpiCards ? handleToggleMetric : undefined
+                  }
+                />
               )}
             </Grid>
           )}
@@ -2330,11 +2395,14 @@ export default function App() {
         handleOverallSnapshotBrandSelect,
         handleFunnelData,
         handleSelectMetric,
+        handleToggleMetric,
+        canMultiSelectableKpiCards,
         hasPermission,
         isAuthor,
         authorBrandsLoading,
         overallSnapshotQuery,
-        selectedMetric,
+        selectedMetrics,
+        activeMetric,
         selectedProductIds,
         selectedProductLabel,
         snapshotBrands,
@@ -2352,8 +2420,12 @@ export default function App() {
       kpi_cards: (
         <KPIs
           query={trendMetricsQuery}
-          selectedMetric={selectedMetric}
+          selectedMetrics={selectedMetrics}
+          activeMetric={activeMetric}
           onSelectMetric={handleSelectMetric}
+          onToggleMetric={
+            canMultiSelectableKpiCards ? handleToggleMetric : undefined
+          }
           onFunnelData={handleFunnelData}
           productId={selectedProductIds}
           productLabel={selectedProductLabel}
@@ -2381,7 +2453,9 @@ export default function App() {
       kpi_trend: (
         <HourlySalesCompare
           query={trendMetricsQuery}
-          metric={selectedMetric}
+          selectedMetrics={selectedMetrics}
+          activeMetric={activeMetric}
+          compareMode={compareMode}
           isLongRange={isLongRangeDashboard}
         />
       ),
@@ -2436,11 +2510,14 @@ export default function App() {
         handleOverallSnapshotBrandSelect,
         handleFunnelData,
         handleSelectMetric,
+        handleToggleMetric,
+        canMultiSelectableKpiCards,
         hasPermission,
         isAuthor,
         authorBrandsLoading,
         overallSnapshotQuery,
-        selectedMetric,
+        selectedMetrics,
+        activeMetric,
         selectedProductIds,
         selectedProductLabel,
         snapshotBrands,
@@ -2645,22 +2722,99 @@ export default function App() {
   }, [discountCode]);
 
   useEffect(() => {
+    if (!canMultiSelectableKpiCards && selectedMetrics.length > 0) {
+      dispatch(
+        setTrendMetricSelection({
+          selectedMetrics: [],
+          activeMetric: activeMetric || DEFAULT_TREND_METRIC,
+        }),
+      );
+    }
+  }, [
+    activeMetric,
+    canMultiSelectableKpiCards,
+    dispatch,
+    selectedMetrics,
+  ]);
+
+  useEffect(() => {
     if (
-      (selectedMetric === "ci_events" || selectedMetric === "checkout_rate") &&
+      selectedMetrics.some((metric) => CI_TREND_METRICS.has(metric)) &&
       !hasPermission("ci_events")
     ) {
-      dispatch(setSelectedMetric("sales"));
+      const nextSelection = sanitizeTrendMetricSelection(
+        selectedMetrics.filter((metric) => !CI_TREND_METRICS.has(metric)),
+        activeMetric,
+      );
+      dispatch(
+        setTrendMetricSelection(
+          nextSelection.selectedMetrics.length
+            ? nextSelection
+            : {
+                selectedMetrics: [],
+                activeMetric:
+                  CI_TREND_METRICS.has(activeMetric)
+                    ? DEFAULT_TREND_METRIC
+                    : activeMetric || DEFAULT_TREND_METRIC,
+              },
+        ),
+      );
     }
-  }, [selectedMetric, hasPermission, dispatch]);
+  }, [activeMetric, dispatch, hasPermission, selectedMetrics]);
+
+  useEffect(() => {
+    if (
+      !hasPermission("web_vitals") &&
+      (activeMetric === "performance" ||
+        selectedMetrics.includes("performance"))
+    ) {
+      const nextSelection = sanitizeTrendMetricSelection(
+        selectedMetrics.filter((metric) => metric !== "performance"),
+        activeMetric === "performance" ? DEFAULT_TREND_METRIC : activeMetric,
+      );
+      dispatch(
+        setTrendMetricSelection(
+          nextSelection.selectedMetrics.length
+            ? nextSelection
+            : {
+                selectedMetrics: [],
+                activeMetric:
+                  activeMetric === "performance"
+                    ? DEFAULT_TREND_METRIC
+                    : activeMetric || DEFAULT_TREND_METRIC,
+              },
+        ),
+      );
+    }
+  }, [activeMetric, dispatch, hasPermission, selectedMetrics]);
 
   useEffect(() => {
     if (
       discountCode &&
-      !["orders", "sales", "aov", "ci_events"].includes(selectedMetric)
+      selectedMetrics.some((metric) => !DISCOUNT_ALLOWED_TREND_METRICS.has(metric))
     ) {
-      dispatch(setSelectedMetric("sales"));
+      const nextSelection = sanitizeTrendMetricSelection(
+        selectedMetrics.filter((metric) =>
+          DISCOUNT_ALLOWED_TREND_METRICS.has(metric),
+        ),
+        activeMetric,
+      );
+      dispatch(
+        setTrendMetricSelection(
+          nextSelection.selectedMetrics.length
+            ? nextSelection
+            : {
+                selectedMetrics: [],
+                activeMetric:
+                  activeMetric &&
+                  DISCOUNT_ALLOWED_TREND_METRICS.has(activeMetric)
+                    ? activeMetric
+                    : DEFAULT_TREND_METRIC,
+              },
+        ),
+      );
     }
-  }, [discountCode, selectedMetric, dispatch]);
+  }, [activeMetric, discountCode, dispatch, selectedMetrics]);
 
   useEffect(() => {
     if (!isAuthor && !hasPermission("discount_filter") && discountCode) {
