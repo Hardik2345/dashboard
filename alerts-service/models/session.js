@@ -34,4 +34,16 @@ const sessionSchema = new mongoose.Schema(
   },
 );
 
+sessionSchema.index(
+  { session_id: 1 },
+  {
+    name: "unique_session_id_for_checkout_events",
+    unique: true,
+    partialFilterExpression: {
+      event_type: { $in: ["checkout_initiated", "buy_now"] },
+      session_id: { $exists: true, $type: "string" },
+    },
+  },
+);
+
 module.exports = mongoose.model("Session", sessionSchema);
