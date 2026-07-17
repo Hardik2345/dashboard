@@ -1,5 +1,6 @@
 const express = require('express');
 const {
+  requirePermission,
   requireTrustedPrincipal,
   requireTrustedAuthor,
 } = require('../../shared/middleware/identityEdge');
@@ -92,6 +93,7 @@ function buildMetricsRouter(sequelize) {
   router.get('/product-kpis', authOrApiKey, ensureBrandDb, product.productKpis);
   router.get('/hourly-trend', ...protectedBrand, trend.hourlyTrend);
   router.get('/daily-trend', ...protectedBrand, trend.dailyTrend);
+  router.get('/daily-funnel', requirePermission('daily_funnel_panel'), brandContext, trend.dailyFunnel);
   router.get('/monthly-trend', ...protectedBrand, trend.monthlyTrend);
   router.get('/hourly-product-sessions/export', requireTrustedAuthor, brandContext, product.hourlyProductSessionsExport);
   router.get('/product-types', authOrApiKey, ensureBrandDb, product.productTypes);

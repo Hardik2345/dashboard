@@ -81,7 +81,7 @@ describe('Auth Flow', () => {
             brand_memberships: [{
                 brand_id: 'TMC',
                 status: 'active',
-                permissions: ['requests_panel', 'requests_timeline', 'multiselectable_kpi_cards']
+                permissions: ['requests_panel', 'requests_timeline', 'multiselectable_kpi_cards', 'daily_funnel_panel']
             }]
         });
 
@@ -90,12 +90,12 @@ describe('Auth Flow', () => {
             role: 'viewer',
             primary_brand_id: 'TMC',
             brand_ids: ['TMC'],
-            permissions: ['requests_panel', 'requests_timeline', 'multiselectable_kpi_cards'],
+            permissions: ['requests_panel', 'requests_timeline', 'multiselectable_kpi_cards', 'daily_funnel_panel'],
             status: 'active'
         });
 
-        expect(createdUser.brand_memberships[0].permissions).toEqual(['requests_panel', 'requests_timeline', 'multiselectable_kpi_cards']);
-        expect(createdRule.permissions).toEqual(['requests_panel', 'requests_timeline', 'multiselectable_kpi_cards']);
+        expect(createdUser.brand_memberships[0].permissions).toEqual(['requests_panel', 'requests_timeline', 'multiselectable_kpi_cards', 'daily_funnel_panel']);
+        expect(createdRule.permissions).toEqual(['requests_panel', 'requests_timeline', 'multiselectable_kpi_cards', 'daily_funnel_panel']);
     });
 
     test('Login Success', async () => {
