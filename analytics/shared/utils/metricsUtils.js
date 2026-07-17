@@ -32,8 +32,8 @@ async function computeReturnCounts({ start, end, conn, filters }) {
       FROM returns_fact rf
       JOIN shopify_orders so ON rf.order_id = so.order_id
     `;
-    if (start) { parts.push("rf.event_date >= ?"); params.push(start); }
-    if (end)   { parts.push("rf.event_date <= ?"); params.push(end); }
+    if (start) { parts.push("rf.order_created_date >= ?"); params.push(start); }
+    if (end)   { parts.push("rf.order_created_date <= ?"); params.push(end); }
     if (filters) {
       const built = buildUtmWhereClause(filters, {
         mapDirectToNull: true,
@@ -55,8 +55,8 @@ async function computeReturnCounts({ start, end, conn, filters }) {
       SUM(CASE WHEN event_type = 'REFUND'  THEN 1 ELSE 0 END) AS refunded_orders
     FROM returns_fact
   `;
-  if (start) { parts.push("event_date >= ?"); params.push(start); }
-  if (end)   { parts.push("event_date <= ?"); params.push(end); }
+  if (start) { parts.push("order_created_date >= ?"); params.push(start); }
+  if (end)   { parts.push("order_created_date <= ?"); params.push(end); }
   sql += parts.length ? ` WHERE ${parts.join(" AND ")}` : "";
   const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements: params });
   return {
