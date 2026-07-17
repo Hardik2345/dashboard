@@ -13,6 +13,8 @@ import {
 } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Line,
   LineChart,
@@ -586,12 +588,12 @@ export default memo(function HourlySalesCompare({
   query,
   selectedMetrics = [],
   activeMetric = null,
-  compareMode = false,
   isLongRange = false,
 }) {
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState([]);
   const [viewMode, setViewMode] = useState("hourly");
+  const [chartMode, setChartMode] = useState("line");
   const [rangeLabels, setRangeLabels] = useState({ current: "", previous: "" });
   const [hiddenMetricIds, setHiddenMetricIds] = useState([]);
   const [visibleRangeLines, setVisibleRangeLines] = useState(["primary"]);
@@ -658,6 +660,7 @@ export default memo(function HourlySalesCompare({
     daysInRange > WEEKLY_LABEL_THRESHOLD &&
     !hasPerformanceSelected;
   const canUseHourlyPaymentTrend = daysInRange === 1;
+  const canUseBarChart = daysInRange <= 3;
   const hasComparisonData = useMemo(
     () =>
       chartData.some(
@@ -697,9 +700,15 @@ export default memo(function HourlySalesCompare({
 
   useEffect(() => {
     setVisibleRangeLines((prev) =>
-      prev.filter((lineKey) => ["primary", "comparison"]),
+      prev.filter((entry) => ["primary", "comparison"].includes(entry)),
     );
   }, [shouldShowCompare]);
+
+  useEffect(() => {
+    if (!canUseBarChart && chartMode === "bar") {
+      setChartMode("line");
+    }
+  }, [canUseBarChart, chartMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1300,6 +1309,7 @@ export default memo(function HourlySalesCompare({
   }, [activeMetricId, processedChartData, visibleDefs]);
 
   const shouldTiltDateLabels = processedChartData.length > 30;
+  const useBarChart = chartMode === "bar";
   const multiChartTitle = activeDef
     ? `${
         viewMode === "daily"
@@ -1496,35 +1506,58 @@ export default memo(function HourlySalesCompare({
             )}
           </Stack>
 
-          <FormControl size="small" sx={{ minWidth: 110 }}>
-            <Select
-              value={viewMode}
-              onChange={(event) => setViewMode(event.target.value)}
-              displayEmpty
-              inputProps={{ "aria-label": "View mode" }}
-              sx={{
-                borderRadius: 2,
-                height: 30,
-                fontSize: 13,
-                fontWeight: 500,
-                bgcolor: alpha(theme.palette.action.active, 0.04),
-                "& .MuiOutlinedInput-notchedOutline": { border: "none" },
-              }}
-            >
-              <MenuItem
-                value="hourly"
-                disabled={
-                  isLongRange ||
-                  hasPerformanceSelected ||
-                  (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend)
-                }
+          <Stack direction="row" spacing={1}>
+            <FormControl size="small" sx={{ minWidth: 110 }}>
+              <Select
+                value={viewMode}
+                onChange={(event) => setViewMode(event.target.value)}
+                displayEmpty
+                inputProps={{ "aria-label": "View mode" }}
+                sx={{
+                  borderRadius: 2,
+                  height: 30,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  bgcolor: alpha(theme.palette.action.active, 0.04),
+                  "& .MuiOutlinedInput-notchedOutline": { border: "none" },
+                }}
               >
-                Hourly
-              </MenuItem>
-              <MenuItem value="daily">Daily</MenuItem>
-              {daysInRange >= 30 && <MenuItem value="monthly">Monthly</MenuItem>}
-            </Select>
-          </FormControl>
+                <MenuItem
+                  value="hourly"
+                  disabled={
+                    isLongRange ||
+                    hasPerformanceSelected ||
+                    (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend)
+                  }
+                >
+                  Hourly
+                </MenuItem>
+                <MenuItem value="daily">Daily</MenuItem>
+                {daysInRange >= 30 && <MenuItem value="monthly">Monthly</MenuItem>}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 100 }}>
+              <Select
+                value={chartMode}
+                onChange={(event) => setChartMode(event.target.value)}
+                displayEmpty
+                inputProps={{ "aria-label": "Chart mode" }}
+                sx={{
+                  borderRadius: 2,
+                  height: 30,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  bgcolor: alpha(theme.palette.action.active, 0.04),
+                  "& .MuiOutlinedInput-notchedOutline": { border: "none" },
+                }}
+              >
+                <MenuItem value="line">Line</MenuItem>
+                <MenuItem value="bar" disabled={!canUseBarChart}>
+                  Bar
+                </MenuItem>
+              </Select>
+            </FormControl>
+          </Stack>
         </Box>
 
         {loading ? (
@@ -1558,15 +1591,162 @@ export default memo(function HourlySalesCompare({
         ) : (
           <Box sx={{ width: "100%", height: 270, flexGrow: 1 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={processedChartData}
-                margin={{
-                  top: 18,
-                  right: activeAxisGroups.length > 1 ? 28 : 12,
-                  left: activeAxisGroups.length > 0 ? 12 : 0,
-                  bottom: shouldTiltDateLabels ? 28 : 5,
-                }}
-              >
+              {useBarChart ? (
+                <BarChart
+                  data={processedChartData}
+                  margin={{
+                    top: 24,
+                    right: activeAxisGroups.length > 1 ? 28 : 12,
+                    left: activeAxisGroups.length > 0 ? 12 : 0,
+                    bottom: shouldTiltDateLabels ? 28 : 5,
+                  }}
+                  barGap={8}
+                >
+                  <CartesianGrid
+                    vertical={false}
+                    strokeDasharray="3 3"
+                    stroke={alpha(theme.palette.divider, 0.5)}
+                  />
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={12}
+                    minTickGap={isMobile ? 15 : 0}
+                    interval={isMobile ? "preserveStartEnd" : 0}
+                    tick={
+                      shouldTiltDateLabels
+                        ? {
+                            fontSize: 10,
+                            fill: theme.palette.text.secondary,
+                            angle: -24,
+                            textAnchor: "end",
+                            dy: 8,
+                          }
+                        : { fontSize: 10, fill: theme.palette.text.secondary }
+                    }
+                    height={shouldTiltDateLabels ? 42 : undefined}
+                  />
+
+                  {shouldShowCompare ? (
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      tickFormatter={activeDef?.compactFormatter}
+                      tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
+                      width={70}
+                      domain={computeAxisDomain(
+                        processedChartData.flatMap((point) => [
+                          point.currentValue,
+                          point.comparisonValue,
+                        ]),
+                        activeDef?.unitKind || "count",
+                      )}
+                    />
+                  ) : (
+                    activeAxisGroups.map((group) => (
+                      <YAxis
+                        key={group.axisGroup}
+                        yAxisId={group.axisGroup}
+                        orientation={group.orientation}
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={8}
+                        tickFormatter={group.defs[0]?.compactFormatter}
+                        tick={{
+                          fontSize: 12,
+                          fill: group.color,
+                          opacity:
+                            hoveredMetric &&
+                            !group.defs.some((def) => def.id === hoveredMetric)
+                              ? 0.4
+                              : 1,
+                        }}
+                        width={70}
+                        domain={group.domain}
+                      />
+                    ))
+                  )}
+
+                  <Tooltip
+                    cursor={{ fill: alpha(theme.palette.divider, 0.2) }}
+                    content={({ active, label, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const point = payload[0]?.payload || {};
+                      return (
+                        <CustomTooltip
+                          active={active}
+                          label={label}
+                          compareMode={shouldShowCompare}
+                          selectedDefs={selectedDefs}
+                          rangeLabels={rangeLabels}
+                          compareFormatter={
+                            activeDef?.formatter || ((value) => String(value ?? 0))
+                          }
+                          compareValue={point.comparisonValue}
+                          currentValue={point.currentValue}
+                          metricValues={point}
+                          hiddenMetricIds={hiddenMetricIds}
+                        />
+                      );
+                    }}
+                  />
+
+                  {shouldShowCompare ? (
+                    <>
+                      <Bar
+                        hide={!visibleRangeLines.includes("comparison")}
+                        dataKey="comparisonValue"
+                        name={rangeLabels.previous || "Previous"}
+                        fill={alpha("#10b981", 0.45)}
+                        radius={[4, 4, 0, 0]}
+                        maxBarSize={26}
+                        onMouseEnter={() => setHoveredMetric("previous")}
+                        onMouseLeave={() => setHoveredMetric(null)}
+                      />
+                      <Bar
+                        hide={!visibleRangeLines.includes("primary")}
+                        dataKey="currentValue"
+                        name={rangeLabels.current || "Current"}
+                        fill="#10b981"
+                        radius={[4, 4, 0, 0]}
+                        maxBarSize={26}
+                        onMouseEnter={() => setHoveredMetric("current")}
+                        onMouseLeave={() => setHoveredMetric(null)}
+                      />
+                    </>
+                  ) : (
+                    visibleDefs.map((def) => {
+                      const muted = hoveredMetric && hoveredMetric !== def.id;
+                      return (
+                        <Bar
+                          key={def.id}
+                          yAxisId={def.axisGroup}
+                          dataKey={`${def.id}PrimaryValue`}
+                          name={def.label}
+                          fill={def.color}
+                          radius={[4, 4, 0, 0]}
+                          maxBarSize={22}
+                          opacity={muted ? 0.28 : 1}
+                          animationDuration={180}
+                          onMouseEnter={() => setHoveredMetric(def.id)}
+                          onMouseLeave={() => setHoveredMetric(null)}
+                        />
+                      );
+                    })
+                  )}
+                </BarChart>
+              ) : (
+                <LineChart
+                  data={processedChartData}
+                  margin={{
+                    top: 18,
+                    right: activeAxisGroups.length > 1 ? 28 : 12,
+                    left: activeAxisGroups.length > 0 ? 12 : 0,
+                    bottom: shouldTiltDateLabels ? 28 : 5,
+                  }}
+                >
                 <CartesianGrid
                   vertical={false}
                   strokeDasharray="3 3"
@@ -1780,7 +1960,8 @@ export default memo(function HourlySalesCompare({
                     );
                   })
                 )}
-              </LineChart>
+                </LineChart>
+              )}
             </ResponsiveContainer>
           </Box>
         )}
