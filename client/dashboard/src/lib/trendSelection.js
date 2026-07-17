@@ -12,6 +12,8 @@ export const TREND_METRICS = [
   "atc_rate",
   "aov",
   "performance",
+  "payment_orders",
+  "payment_sales",
 ];
 
 export const TREND_METRIC_SET = new Set(TREND_METRICS);
@@ -22,6 +24,8 @@ export const DISCOUNT_ALLOWED_TREND_METRICS = new Set([
   "aov",
   "ci_events",
   "performance",
+  "payment_orders",
+  "payment_sales",
 ]);
 
 export function normalizeTrendMetric(metricKey) {

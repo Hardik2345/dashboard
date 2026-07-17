@@ -26,6 +26,8 @@ import {
   getDailyTrend,
   getMonthlyTrend,
   getWebPerformanceSummary,
+  getOrderSplit,
+  getPaymentSalesSplit,
 } from "../lib/api.js";
 import { useInrCurrency } from "../lib/currency.js";
 
@@ -64,6 +66,21 @@ const WEEK_SIZE_DAYS = 7;
 function formatHourLabel(hour) {
   const normalized = hour % 12 === 0 ? 12 : hour % 12;
   return `${normalized}${hour >= 12 ? "pm" : "am"}`;
+}
+
+function buildDateRange(start, end) {
+  if (!start || !end) return [];
+  const dates = [];
+  const cursor = new Date(`${start}T00:00:00Z`);
+  const endDate = new Date(`${end}T00:00:00Z`);
+  if (Number.isNaN(cursor.getTime()) || Number.isNaN(endDate.getTime())) {
+    return dates;
+  }
+  while (cursor <= endDate) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
 }
 
 function formatRangeLabel(range) {
@@ -259,6 +276,105 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
       },
       formatter: (value) => nfFloat2.format(value || 0),
       compactFormatter: (value) => nfCompactFloat.format(value || 0),
+    },
+    payment_orders: {
+      id: "payment_orders",
+      label: "Mode of Payment - Order count",
+      compositeDefs: [
+        {
+          id: "payment_orders_prepaid",
+          parentId: "payment_orders",
+          label: "Prepaid Orders",
+          unitKind: "count",
+          axisGroup: "count",
+          color: "#2cc995",
+          strokeDasharray: "2 0",
+          accessor: (metrics) => Number(metrics?.payment_orders_prepaid || 0),
+          formatter: (value) => nfInt0.format(value || 0),
+          compactFormatter: (value) => nfCompactInt.format(value || 0),
+        },
+        {
+          id: "payment_orders_cod",
+          parentId: "payment_orders",
+          label: "COD Orders",
+          unitKind: "count",
+          axisGroup: "count",
+          color: "#1f5748",
+          strokeDasharray: "4 3",
+          accessor: (metrics) => Number(metrics?.payment_orders_cod || 0),
+          formatter: (value) => nfInt0.format(value || 0),
+          compactFormatter: (value) => nfCompactInt.format(value || 0),
+        },
+        {
+          id: "payment_orders_partial",
+          parentId: "payment_orders",
+          label: "Partially Paid Orders",
+          unitKind: "count",
+          axisGroup: "count",
+          color: "#8da399",
+          strokeDasharray: "6 3",
+          accessor: (metrics) => Number(metrics?.payment_orders_partial || 0),
+          formatter: (value) => nfInt0.format(value || 0),
+          compactFormatter: (value) => nfCompactInt.format(value || 0),
+        },
+      ],
+    },
+    payment_sales: {
+      id: "payment_sales",
+      label: "Mode of Payment - Sales",
+      compositeDefs: [
+        {
+          id: "payment_sales_prepaid",
+          parentId: "payment_sales",
+          label: "Prepaid Sales",
+          unitKind: "currency",
+          axisGroup: "currency",
+          color: "#2cc995",
+          strokeDasharray: "2 0",
+          accessor: (metrics) => Number(metrics?.payment_sales_prepaid || 0),
+          formatter: (value) =>
+            formatConvertedAmount(value || 0, { maximumFractionDigits: 0 }),
+          compactFormatter: (value) =>
+            formatConvertedAmount(value || 0, {
+              notation: "compact",
+              maximumFractionDigits: 1,
+            }),
+        },
+        {
+          id: "payment_sales_cod",
+          parentId: "payment_sales",
+          label: "COD Sales",
+          unitKind: "currency",
+          axisGroup: "currency",
+          color: "#1f5748",
+          strokeDasharray: "4 3",
+          accessor: (metrics) => Number(metrics?.payment_sales_cod || 0),
+          formatter: (value) =>
+            formatConvertedAmount(value || 0, { maximumFractionDigits: 0 }),
+          compactFormatter: (value) =>
+            formatConvertedAmount(value || 0, {
+              notation: "compact",
+              maximumFractionDigits: 1,
+            }),
+        },
+        {
+          id: "payment_sales_partial",
+          parentId: "payment_sales",
+          label: "Partially Paid Sales",
+          unitKind: "currency",
+          axisGroup: "currency",
+          color: "#8da399",
+          strokeDasharray: "6 3",
+          accessor: (metrics) => Number(metrics?.payment_sales_partial || 0),
+          formatter: (value) =>
+            formatConvertedAmount(value || 0, { maximumFractionDigits: 0 }),
+          compactFormatter: (value) =>
+            formatConvertedAmount(value || 0, {
+              notation: "compact",
+              maximumFractionDigits: 1,
+            }),
+        },
+      ],
     },
   };
 }
@@ -517,13 +633,19 @@ export default memo(function HourlySalesCompare({
   }, [activeMetric, effectiveMetricIds]);
   const selectedDefs = useMemo(
     () =>
-      effectiveMetricIds
-        .map((metricId) => metricConfig[metricId])
-        .filter(Boolean),
+      effectiveMetricIds.flatMap((metricId) => {
+        const def = metricConfig[metricId];
+        if (!def) return [];
+        if (Array.isArray(def.compositeDefs)) return def.compositeDefs;
+        return [def];
+      }),
     [effectiveMetricIds, metricConfig],
   );
   const activeDef = activeMetricId ? metricConfig[activeMetricId] : null;
   const hasPerformanceSelected = effectiveMetricIds.includes("performance");
+  const hasPaymentCompositeSelected = effectiveMetricIds.some((metricId) =>
+    ["payment_orders", "payment_sales"].includes(metricId),
+  );
 
   const daysInRange = useMemo(() => {
     if (!start || !end) return 0;
@@ -535,6 +657,7 @@ export default memo(function HourlySalesCompare({
     viewMode === "daily" &&
     daysInRange > WEEKLY_LABEL_THRESHOLD &&
     !hasPerformanceSelected;
+  const canUseHourlyPaymentTrend = daysInRange === 1;
   const hasComparisonData = useMemo(
     () =>
       chartData.some(
@@ -544,19 +667,33 @@ export default memo(function HourlySalesCompare({
       ) || Boolean(rangeLabels.previous),
     [chartData, rangeLabels.previous],
   );
-  const shouldShowCompare = hasComparisonData && effectiveMetricIds.length <= 1;
+  const shouldShowCompare =
+    hasComparisonData &&
+    effectiveMetricIds.length <= 1 &&
+    !hasPaymentCompositeSelected;
 
   useEffect(() => {
-    if ((isLongRange || hasPerformanceSelected) && viewMode === "hourly") {
+    if (
+      (isLongRange ||
+        hasPerformanceSelected ||
+        (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend)) &&
+      viewMode === "hourly"
+    ) {
       setViewMode("daily");
     }
-  }, [hasPerformanceSelected, isLongRange, viewMode]);
+  }, [
+    canUseHourlyPaymentTrend,
+    hasPaymentCompositeSelected,
+    hasPerformanceSelected,
+    isLongRange,
+    viewMode,
+  ]);
 
   useEffect(() => {
     setHiddenMetricIds((prev) =>
-      prev.filter((metricId) => effectiveMetricIds.includes(metricId)),
+      prev.filter((metricId) => selectedDefs.some((def) => def.id === metricId)),
     );
-  }, [effectiveMetricIds]);
+  }, [selectedDefs]);
 
   useEffect(() => {
     setVisibleRangeLines((prev) =>
@@ -712,6 +849,216 @@ export default memo(function HourlySalesCompare({
         const previousPerformanceMap = buildPerformanceMap(
           performanceSummary?.previous_daily_averages,
         );
+        const paymentMetricsByDate = new Map();
+        const paymentMetricsByMonth = new Map();
+        const paymentMetricsByHour = new Map();
+        const previousPaymentMetricsByHour = new Map();
+
+        if (hasPaymentCompositeSelected) {
+          const paymentBaseParams = {
+            brand_key: brandKey,
+            utm_source: utmSource,
+            utm_medium: utmMedium,
+            utm_campaign: utmCampaign,
+            sales_channel: salesChannel,
+            device_type: deviceType,
+            product_id: productId,
+            discount_code: discountCode,
+            city: query?.city,
+          };
+          if (viewMode === "hourly" && canUseHourlyPaymentTrend) {
+            const timezoneMeta = await getOrderSplit({
+              ...paymentBaseParams,
+              start,
+              end,
+            });
+            const splitTimezone = timezoneMeta?.timezone || res.timezone || "Asia/Kolkata";
+            const todayInStoreTimezone = new Date().toLocaleDateString("en-CA", {
+              timeZone: splitTimezone,
+            });
+            const hourLimit =
+              start === todayInStoreTimezone
+                ? Number.parseInt(
+                    new Date().toLocaleTimeString("en-US", {
+                      timeZone: splitTimezone,
+                      hour12: false,
+                      hour: "numeric",
+                    }),
+                    10,
+                  )
+                : 23;
+            const hours = Array.from({ length: hourLimit + 1 }, (_, index) => index);
+
+            const currentHourlySeries = await Promise.all(
+              hours.map(async (hour) => {
+                const [orders, sales] = await Promise.all([
+                  getOrderSplit({ ...paymentBaseParams, start, end, hour_lte: hour }),
+                  getPaymentSalesSplit({
+                    ...paymentBaseParams,
+                    start,
+                    end,
+                    hour_lte: hour,
+                  }),
+                ]);
+                return { hour, orders, sales };
+              }),
+            );
+
+            const previousHourlySeries =
+              compareStart && compareEnd
+                ? await Promise.all(
+                    hours.map(async (hour) => {
+                      const [orders, sales] = await Promise.all([
+                        getOrderSplit({
+                          ...paymentBaseParams,
+                          start: compareStart,
+                          end: compareEnd,
+                          hour_lte: hour,
+                        }),
+                        getPaymentSalesSplit({
+                          ...paymentBaseParams,
+                          start: compareStart,
+                          end: compareEnd,
+                          hour_lte: hour,
+                        }),
+                      ]);
+                      return { hour, orders, sales };
+                    }),
+                  )
+                : [];
+
+            currentHourlySeries.forEach((point, index) => {
+              const previousPoint = index > 0 ? currentHourlySeries[index - 1] : null;
+              const currentValues = {
+                payment_orders_prepaid: Math.max(
+                  0,
+                  Number(point.orders?.prepaid_orders || 0) -
+                    Number(previousPoint?.orders?.prepaid_orders || 0),
+                ),
+                payment_orders_cod: Math.max(
+                  0,
+                  Number(point.orders?.cod_orders || 0) -
+                    Number(previousPoint?.orders?.cod_orders || 0),
+                ),
+                payment_orders_partial: Math.max(
+                  0,
+                  Number(point.orders?.partially_paid_orders || 0) -
+                    Number(previousPoint?.orders?.partially_paid_orders || 0),
+                ),
+                payment_sales_prepaid: convertAmount(
+                  Math.max(
+                    0,
+                    Number(point.sales?.prepaid_sales || 0) -
+                      Number(previousPoint?.sales?.prepaid_sales || 0),
+                  ),
+                ),
+                payment_sales_cod: convertAmount(
+                  Math.max(
+                    0,
+                    Number(point.sales?.cod_sales || 0) -
+                      Number(previousPoint?.sales?.cod_sales || 0),
+                  ),
+                ),
+                payment_sales_partial: convertAmount(
+                  Math.max(
+                    0,
+                    Number(point.sales?.partial_sales || 0) -
+                      Number(previousPoint?.sales?.partial_sales || 0),
+                  ),
+                ),
+              };
+              paymentMetricsByHour.set(point.hour, currentValues);
+            });
+
+            previousHourlySeries.forEach((point, index) => {
+              const previousPoint = index > 0 ? previousHourlySeries[index - 1] : null;
+              const previousValues = {
+                payment_orders_prepaid: Math.max(
+                  0,
+                  Number(point.orders?.prepaid_orders || 0) -
+                    Number(previousPoint?.orders?.prepaid_orders || 0),
+                ),
+                payment_orders_cod: Math.max(
+                  0,
+                  Number(point.orders?.cod_orders || 0) -
+                    Number(previousPoint?.orders?.cod_orders || 0),
+                ),
+                payment_orders_partial: Math.max(
+                  0,
+                  Number(point.orders?.partially_paid_orders || 0) -
+                    Number(previousPoint?.orders?.partially_paid_orders || 0),
+                ),
+                payment_sales_prepaid: convertAmount(
+                  Math.max(
+                    0,
+                    Number(point.sales?.prepaid_sales || 0) -
+                      Number(previousPoint?.sales?.prepaid_sales || 0),
+                  ),
+                ),
+                payment_sales_cod: convertAmount(
+                  Math.max(
+                    0,
+                    Number(point.sales?.cod_sales || 0) -
+                      Number(previousPoint?.sales?.cod_sales || 0),
+                  ),
+                ),
+                payment_sales_partial: convertAmount(
+                  Math.max(
+                    0,
+                    Number(point.sales?.partial_sales || 0) -
+                      Number(previousPoint?.sales?.partial_sales || 0),
+                  ),
+                ),
+              };
+              previousPaymentMetricsByHour.set(point.hour, previousValues);
+            });
+          } else {
+            const currentDates = buildDateRange(start, end);
+            const paymentSeries = await Promise.all(
+              currentDates.map(async (date) => {
+                const [orders, sales] = await Promise.all([
+                  getOrderSplit({ ...paymentBaseParams, start: date, end: date }),
+                  getPaymentSalesSplit({
+                    ...paymentBaseParams,
+                    start: date,
+                    end: date,
+                  }),
+                ]);
+
+                return {
+                  date,
+                  values: {
+                    payment_orders_prepaid: Number(orders?.prepaid_orders || 0),
+                    payment_orders_cod: Number(orders?.cod_orders || 0),
+                    payment_orders_partial: Number(orders?.partially_paid_orders || 0),
+                    payment_sales_prepaid: convertAmount(sales?.prepaid_sales || 0),
+                    payment_sales_cod: convertAmount(sales?.cod_sales || 0),
+                    payment_sales_partial: convertAmount(sales?.partial_sales || 0),
+                  },
+                };
+              }),
+            );
+
+            paymentSeries.forEach(({ date, values }) => {
+              paymentMetricsByDate.set(date, values);
+              const monthKey = String(date).slice(0, 7);
+              const existing = paymentMetricsByMonth.get(monthKey) || {
+                payment_orders_prepaid: 0,
+                payment_orders_cod: 0,
+                payment_orders_partial: 0,
+                payment_sales_prepaid: 0,
+                payment_sales_cod: 0,
+                payment_sales_partial: 0,
+              };
+
+              Object.entries(values).forEach(([key, value]) => {
+                existing[key] = Number(existing[key] || 0) + Number(value || 0);
+              });
+
+              paymentMetricsByMonth.set(monthKey, existing);
+            });
+          }
+        }
 
         const normalizedPoints = points.map((point) => {
           let label = point.date;
@@ -735,15 +1082,27 @@ export default memo(function HourlySalesCompare({
                 : currentPerformanceMap.get(point.date);
           }
 
+          const paymentMetricValues =
+            hasPaymentCompositeSelected
+              ? viewMode === "hourly"
+                ? paymentMetricsByHour.get(point.hour) || {}
+                : point.date
+                  ? viewMode === "monthly"
+                    ? paymentMetricsByMonth.get(String(point.date).slice(0, 7)) || {}
+                    : paymentMetricsByDate.get(point.date) || {}
+                  : {}
+              : {};
+
           return {
             label,
             date: point.date || null,
             hour: typeof point.hour === "number" ? point.hour : null,
             isInProgressHour: Boolean(point.__isInProgressHour),
-            metrics: hasPerformanceSelected
+            metrics: hasPerformanceSelected || hasPaymentCompositeSelected
               ? {
                   ...(point.metrics || {}),
                   performance: performanceValue,
+                  ...paymentMetricValues,
                 }
               : point.metrics || {},
           };
@@ -760,10 +1119,13 @@ export default memo(function HourlySalesCompare({
 
           return {
             date: point.date || null,
-            metrics: hasPerformanceSelected
+            metrics: hasPerformanceSelected || hasPaymentCompositeSelected
               ? {
                   ...(point.metrics || {}),
                   performance: performanceValue,
+                  ...(viewMode === "hourly"
+                    ? previousPaymentMetricsByHour.get(point.hour) || {}
+                    : {}),
                 }
               : point.metrics || {},
           };
@@ -814,7 +1176,10 @@ export default memo(function HourlySalesCompare({
     utmMedium,
     utmSource,
     viewMode,
+    convertAmount,
+    canUseHourlyPaymentTrend,
     hasPerformanceSelected,
+    hasPaymentCompositeSelected,
   ]);
 
   const processedChartData = useMemo(() => {
@@ -918,7 +1283,9 @@ export default memo(function HourlySalesCompare({
 
     return Array.from(groups.values()).map((group, index) => {
       const highlightedDef =
-        group.defs.find((def) => def.id === activeMetricId) || group.defs[0];
+        group.defs.find(
+          (def) => def.id === activeMetricId || def.parentId === activeMetricId,
+        ) || group.defs[0];
       const values = processedChartData.flatMap((point) =>
         group.defs.map((def) => point[def.id]),
       );
@@ -949,7 +1316,7 @@ export default memo(function HourlySalesCompare({
         id: def.id,
         label: def.label,
         color: def.color,
-        active: def.id === activeMetricId,
+        active: def.id === activeMetricId || def.parentId === activeMetricId,
       })),
     [activeMetricId, selectedDefs],
   );
@@ -957,7 +1324,9 @@ export default memo(function HourlySalesCompare({
   const activeAxisGroups = isMobile
     ? axisGroups.filter(
         (group) =>
-          group.defs.some((def) => def.id === activeMetricId) || axisGroups.length === 1,
+          group.defs.some(
+            (def) => def.id === activeMetricId || def.parentId === activeMetricId,
+          ) || axisGroups.length === 1,
       )
     : axisGroups;
 
@@ -1144,7 +1513,11 @@ export default memo(function HourlySalesCompare({
             >
               <MenuItem
                 value="hourly"
-                disabled={isLongRange || hasPerformanceSelected}
+                disabled={
+                  isLongRange ||
+                  hasPerformanceSelected ||
+                  (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend)
+                }
               >
                 Hourly
               </MenuItem>
@@ -1352,12 +1725,22 @@ export default memo(function HourlySalesCompare({
                           dataKey={`${def.id}PrimaryValue`}
                           name={def.label}
                           stroke={def.color}
-                          strokeWidth={def.id === activeMetricId ? 3.5 : 2.4}
+                          strokeWidth={
+                            def.id === activeMetricId || def.parentId === activeMetricId
+                              ? 3.5
+                              : 2.4
+                          }
                           strokeDasharray={def.strokeDasharray}
                           strokeLinecap="round"
                           strokeLinejoin="round"
                           dot={false}
-                          activeDot={{ r: def.id === activeMetricId ? 5 : 4 }}
+                          activeDot={{
+                            r:
+                              def.id === activeMetricId ||
+                              def.parentId === activeMetricId
+                                ? 5
+                                : 4,
+                          }}
                           opacity={muted ? 0.28 : 1}
                           connectNulls={true}
                           animationDuration={180}
@@ -1370,12 +1753,22 @@ export default memo(function HourlySalesCompare({
                           dataKey={`${def.id}PrimaryTailValue`}
                           name={`${def.label} (In progress)`}
                           stroke={def.color}
-                          strokeWidth={def.id === activeMetricId ? 3.5 : 2.4}
+                          strokeWidth={
+                            def.id === activeMetricId || def.parentId === activeMetricId
+                              ? 3.5
+                              : 2.4
+                          }
                           strokeDasharray="4 4"
                           strokeLinecap="round"
                           strokeLinejoin="round"
                           dot={false}
-                          activeDot={{ r: def.id === activeMetricId ? 5 : 4 }}
+                          activeDot={{
+                            r:
+                              def.id === activeMetricId ||
+                              def.parentId === activeMetricId
+                                ? 5
+                                : 4,
+                          }}
                           opacity={muted ? 0.28 : 1}
                           connectNulls={false}
                           animationDuration={180}

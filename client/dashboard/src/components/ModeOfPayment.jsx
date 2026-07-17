@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, Typography, Skeleton, useTheme, Box } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { getOrderSplit, getPaymentSalesSplit } from '../lib/api';
 import dayjs from 'dayjs';
@@ -89,12 +90,33 @@ function getHourlyCutoffForTodayRange(start, end, timezone) {
     return Math.max(0, nowLocal.hour - 1);
 }
 
-const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
+const TREND_RADIOS = {
+    quantity: 'payment_orders',
+    value: 'payment_sales',
+};
+
+const ModeOfPayment = React.memo(function ModeOfPayment({
+    query,
+    selectedMetrics = [],
+    onToggleMetric,
+}) {
     const theme = useTheme();
     const isDark = theme.palette.mode === 'dark';
     const [loading, setLoading] = useState(true);
     const [prevRange, setPrevRange] = useState(null);
-    const { convertAmount, formatConvertedAmount } = useInrCurrency(query?.brand_key, query?.end);
+    const start = query?.start;
+    const end = query?.end;
+    const brandKey = query?.brand_key;
+    const productId = query?.product_id;
+    const utmSource = query?.utm_source;
+    const utmMedium = query?.utm_medium;
+    const utmCampaign = query?.utm_campaign;
+    const salesChannel = query?.sales_channel;
+    const deviceType = query?.device_type;
+    const discountCode = query?.discount_code;
+    const city = query?.city;
+    const timezone = query?.timezone;
+    const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
     const [data, setData] = useState({
         quantity: [],
         value: [],
@@ -104,7 +126,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
 
     useEffect(() => {
         let cancelled = false;
-        if (!query?.start || !query?.end) {
+        if (!start || !end) {
             setLoading(false);
             return;
         }
@@ -113,9 +135,19 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
 
         const fetchData = async () => {
             try {
-                const { start, end, ...rest } = query;
                 const prevRangeData = getPreviousRange(start, end);
                 setPrevRange(prevRangeData);
+                const baseParams = {
+                    brand_key: brandKey,
+                    product_id: productId,
+                    utm_source: utmSource,
+                    utm_medium: utmMedium,
+                    utm_campaign: utmCampaign,
+                    sales_channel: salesChannel,
+                    device_type: deviceType,
+                    discount_code: discountCode,
+                    city,
+                };
 
                 const [
                     currOrders,
@@ -123,17 +155,17 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                     prevFullOrders,
                     prevFullSales
                 ] = await Promise.all([
-                    getOrderSplit({ start, end, ...rest }),
-                    getPaymentSalesSplit({ start, end, ...rest }),
-                    prevRangeData.start ? getOrderSplit({ start: prevRangeData.start, end: prevRangeData.end, ...rest }) : Promise.resolve({}),
-                    prevRangeData.start ? getPaymentSalesSplit({ start: prevRangeData.start, end: prevRangeData.end, ...rest }) : Promise.resolve({})
+                    getOrderSplit({ ...baseParams, start, end }),
+                    getPaymentSalesSplit({ ...baseParams, start, end }),
+                    prevRangeData.start ? getOrderSplit({ ...baseParams, start: prevRangeData.start, end: prevRangeData.end }) : Promise.resolve({}),
+                    prevRangeData.start ? getPaymentSalesSplit({ ...baseParams, start: prevRangeData.start, end: prevRangeData.end }) : Promise.resolve({})
                 ]);
 
-                const splitTimezone = currOrders?.timezone || currSales?.timezone || query?.timezone || 'Asia/Kolkata';
+                const splitTimezone = currOrders?.timezone || currSales?.timezone || timezone || 'Asia/Kolkata';
                 const hourLte = getHourlyCutoffForTodayRange(start, end, splitTimezone);
                 const compareArgs = Number.isInteger(hourLte)
-                    ? { ...rest, hour_lte: hourLte }
-                    : rest;
+                    ? { ...baseParams, hour_lte: hourLte }
+                    : baseParams;
 
                 const [
                     currCompareOrders,
@@ -221,11 +253,66 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
         fetchData();
 
         return () => { cancelled = true; };
-    }, [query.start, query.end, query.brand_key, query.product_id, query.refreshKey, query.utm_source, query.utm_medium, query.utm_campaign, query.sales_channel, query.device_type, query.discount_code, query.city, convertAmount]);
+    }, [start, end, brandKey, productId, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, discountCode, city, timezone, convertAmount, formatConvertedAmount]);
 
-    const renderChart = (title, chartData, totalLabel, rawTotal) => (
+    const renderChart = (title, chartData, totalLabel, rawTotal, trendMetricKey) => (
         <div className="flex flex-col items-center flex-1 min-w-0">
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{title}</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                <Typography variant="body2" color="text.secondary">{title}</Typography>
+                {typeof onToggleMetric === 'function' && (
+                    <Box
+                        component="button"
+                        type="button"
+                        aria-pressed={selectedMetrics.includes(trendMetricKey)}
+                        aria-label={`${selectedMetrics.includes(trendMetricKey) ? 'Deselect' : 'Select'} ${title}`}
+                        onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onToggleMetric(trendMetricKey);
+                        }}
+                        sx={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: '50%',
+                            border: '1.5px solid',
+                            borderColor: selectedMetrics.includes(trendMetricKey)
+                                ? '#10b981'
+                                : alpha(theme.palette.text.secondary, 0.35),
+                            bgcolor: selectedMetrics.includes(trendMetricKey)
+                                ? '#10b981'
+                                : 'transparent',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.18s ease',
+                            boxShadow: selectedMetrics.includes(trendMetricKey)
+                                ? `0 2px 6px ${alpha('#10b981', 0.35)}`
+                                : 'none',
+                            cursor: 'pointer',
+                            p: 0,
+                            outline: 'none',
+                            appearance: 'none',
+                            WebkitAppearance: 'none',
+                            '&:focus-visible': {
+                                boxShadow: `0 0 0 2px ${alpha('#10b981', 0.28)}`,
+                            },
+                        }}
+                    >
+                        {selectedMetrics.includes(trendMetricKey) && (
+                            <Box
+                                component="span"
+                                sx={{
+                                    width: 7,
+                                    height: 4,
+                                    borderLeft: '2px solid #fff',
+                                    borderBottom: '2px solid #fff',
+                                    transform: 'rotate(-45deg) translateY(-1px)',
+                                }}
+                            />
+                        )}
+                    </Box>
+                )}
+            </Box>
             <div className="relative w-full h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -274,7 +361,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
         </div>
     );
 
-    const isToday = query?.end ? dayjs(query.end).isSame(dayjs(), 'day') : false;
+    const isToday = end ? dayjs(end).isSame(dayjs(), 'day') : false;
 
     return (
         <Card elevation={0} sx={{ width: '100%', height: '100%', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
@@ -286,7 +373,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                         </Typography>
                     </Box>
 
-                    {prevRange && query?.start && query?.end && !isToday && (
+                    {prevRange && start && end && !isToday && (
                         <Box>
                             <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', px: 1, py: 0.4, borderRadius: 1.5, display: 'inline-block', fontSize: '0.7rem' }}>
                                 {(() => {
@@ -298,7 +385,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                                         }
                                         return `${start.format('MMM D')} - ${end.format('MMM D')}`;
                                     };
-                                    return `${fmt(query.start, query.end)} vs ${fmt(prevRange.start, prevRange.end)}`;
+                                    return `${fmt(start, end)} vs ${fmt(prevRange.start, prevRange.end)}`;
                                 })()}
                             </Typography>
                         </Box>
@@ -319,8 +406,8 @@ const ModeOfPayment = React.memo(function ModeOfPayment({ query }) {
                 ) : (
                     <div className="mt-4">
                         <div className="flex flex-col gap-8 md:flex-row md:items-start md:gap-6">
-                            {renderChart('By Order count', data.quantity, data.totalQuantity, data.rawTotalQuantity)}
-                            {renderChart('By Sales', data.value, data.totalValue, data.rawTotalValue)}
+                            {renderChart('By Order count', data.quantity, data.totalQuantity, data.rawTotalQuantity, TREND_RADIOS.quantity)}
+                            {renderChart('By Sales', data.value, data.totalValue, data.rawTotalValue, TREND_RADIOS.value)}
                         </div>
                     </div>
                 )}

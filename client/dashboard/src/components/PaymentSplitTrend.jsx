@@ -219,6 +219,42 @@ function formatDayLabel(date) {
   return `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
 }
 
+function formatHourLabel(hour) {
+  const normalized = hour % 12 === 0 ? 12 : hour % 12;
+  return `${normalized}${hour >= 12 ? "pm" : "am"}`;
+}
+
+function getTimezoneParts(date, timezone) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone || "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(date).reduce((acc, part) => {
+    if (part.type !== "literal") acc[part.type] = part.value;
+    return acc;
+  }, {});
+  const hour = Number(parts.hour || 0);
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    hour: hour === 24 ? 0 : hour,
+  };
+}
+
+function getHourlyCutoffForTodayRange(start, end, timezone) {
+  if (!start || !end) return null;
+
+  const nowLocal = getTimezoneParts(new Date(), timezone);
+  const includesToday = start <= nowLocal.date && end >= nowLocal.date;
+
+  if (!includesToday) return null;
+
+  return Math.max(0, nowLocal.hour - 1);
+}
+
 function buildWeeklyPaymentBuckets(points = []) {
   const bucketCount = Math.ceil(points.length / WEEK_SIZE_DAYS);
 
@@ -363,6 +399,7 @@ export default memo(function PaymentSplitTrend({ query }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [metric, setMetric] = useState("orders");
+  const [viewMode, setViewMode] = useState("daily");
   const [chartMode, setChartMode] = useState("line");
   const [selectedSeriesKeys, setSelectedSeriesKeys] = useState(["Prepaid"]);
   const [loading, setLoading] = useState(true);
@@ -384,6 +421,7 @@ export default memo(function PaymentSplitTrend({ query }) {
   const discountCode = query?.discount_code;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
+  const queryTimezone = query?.timezone;
   const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
   const metricConfig = useMemo(
     () => buildMetricConfig(formatConvertedAmount),
@@ -395,6 +433,7 @@ export default memo(function PaymentSplitTrend({ query }) {
     selectedSeriesKeys.includes(series.key),
   );
   const selectedDayCount = getInclusiveDayCount(start, end);
+  const canUseHourly = selectedDayCount === 1;
   const useWeeklyBuckets = selectedDayCount > WEEKLY_LABEL_THRESHOLD;
   const showBarPercentLabels = isMobile
     ? selectedDayCount <= 8
@@ -404,6 +443,12 @@ export default memo(function PaymentSplitTrend({ query }) {
     selectedSeries,
     visibleBars,
   );
+
+  useEffect(() => {
+    if (!canUseHourly && viewMode === "hourly") {
+      setViewMode("daily");
+    }
+  }, [canUseHourly, viewMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -444,6 +489,236 @@ export default memo(function PaymentSplitTrend({ query }) {
       };
 
       try {
+        if (viewMode === "hourly" && canUseHourly) {
+          const timezoneMeta = await getOrderSplit({
+            start,
+            end,
+            ...baseParams,
+          });
+          if (cancelled) return;
+
+          const splitTimezone =
+            timezoneMeta?.timezone || queryTimezone || "Asia/Kolkata";
+          const maxHour = getHourlyCutoffForTodayRange(start, end, splitTimezone);
+          const hourLimit = Number.isInteger(maxHour) ? maxHour : 23;
+          const hours = Array.from({ length: hourLimit + 1 }, (_, index) => index);
+
+          const currentSeries = await Promise.all(
+            hours.map(async (hour) => {
+              const [orders, sales] = await Promise.all([
+                getOrderSplit({ start, end, ...baseParams, hour_lte: hour }),
+                getPaymentSalesSplit({ start, end, ...baseParams, hour_lte: hour }),
+              ]);
+              return { hour, orders, sales };
+            }),
+          );
+
+          const comparisonSeries = comparisonRange
+            ? await Promise.all(
+                hours.map(async (hour) => {
+                  const [orders, sales] = await Promise.all([
+                    getOrderSplit({
+                      start: comparisonRange.start,
+                      end: comparisonRange.end,
+                      ...baseParams,
+                      hour_lte: hour,
+                    }),
+                    getPaymentSalesSplit({
+                      start: comparisonRange.start,
+                      end: comparisonRange.end,
+                      ...baseParams,
+                      hour_lte: hour,
+                    }),
+                  ]);
+                  return { hour, orders, sales };
+                }),
+              )
+            : [];
+
+          const hourlyChartData = currentSeries.map((point, index) => {
+            const previousCurrentPoint = index > 0 ? currentSeries[index - 1] : null;
+            const previousComparisonPoint =
+              index > 0 && comparisonSeries[index - 1]
+                ? comparisonSeries[index - 1]
+                : null;
+            const comparisonPoint = comparisonSeries[index] || null;
+
+            const currentPrepaidRaw =
+              metric === "orders"
+                ? Number(point.orders?.prepaid_orders || 0)
+                : Number(point.sales?.prepaid_sales || 0);
+            const currentCodRaw =
+              metric === "orders"
+                ? Number(point.orders?.cod_orders || 0)
+                : Number(point.sales?.cod_sales || 0);
+            const currentPartialRaw =
+              metric === "orders"
+                ? Number(point.orders?.partially_paid_orders || 0)
+                : Number(point.sales?.partial_sales || 0);
+            const currentTotalRaw =
+              metric === "orders"
+                ? Number(point.orders?.total || 0)
+                : Number(point.sales?.total || 0);
+
+            const previousCurrentPrepaidRaw =
+              metric === "orders"
+                ? Number(previousCurrentPoint?.orders?.prepaid_orders || 0)
+                : Number(previousCurrentPoint?.sales?.prepaid_sales || 0);
+            const previousCurrentCodRaw =
+              metric === "orders"
+                ? Number(previousCurrentPoint?.orders?.cod_orders || 0)
+                : Number(previousCurrentPoint?.sales?.cod_sales || 0);
+            const previousCurrentPartialRaw =
+              metric === "orders"
+                ? Number(previousCurrentPoint?.orders?.partially_paid_orders || 0)
+                : Number(previousCurrentPoint?.sales?.partial_sales || 0);
+            const previousCurrentTotalRaw =
+              metric === "orders"
+                ? Number(previousCurrentPoint?.orders?.total || 0)
+                : Number(previousCurrentPoint?.sales?.total || 0);
+
+            const comparisonPrepaidRaw = comparisonPoint
+              ? metric === "orders"
+                ? Number(comparisonPoint.orders?.prepaid_orders || 0)
+                : Number(comparisonPoint.sales?.prepaid_sales || 0)
+              : 0;
+            const comparisonCodRaw = comparisonPoint
+              ? metric === "orders"
+                ? Number(comparisonPoint.orders?.cod_orders || 0)
+                : Number(comparisonPoint.sales?.cod_sales || 0)
+              : 0;
+            const comparisonPartialRaw = comparisonPoint
+              ? metric === "orders"
+                ? Number(comparisonPoint.orders?.partially_paid_orders || 0)
+                : Number(comparisonPoint.sales?.partial_sales || 0)
+              : 0;
+            const comparisonTotalRaw = comparisonPoint
+              ? metric === "orders"
+                ? Number(comparisonPoint.orders?.total || 0)
+                : Number(comparisonPoint.sales?.total || 0)
+              : 0;
+
+            const previousComparisonPrepaidRaw = previousComparisonPoint
+              ? metric === "orders"
+                ? Number(previousComparisonPoint.orders?.prepaid_orders || 0)
+                : Number(previousComparisonPoint.sales?.prepaid_sales || 0)
+              : 0;
+            const previousComparisonCodRaw = previousComparisonPoint
+              ? metric === "orders"
+                ? Number(previousComparisonPoint.orders?.cod_orders || 0)
+                : Number(previousComparisonPoint.sales?.cod_sales || 0)
+              : 0;
+            const previousComparisonPartialRaw = previousComparisonPoint
+              ? metric === "orders"
+                ? Number(previousComparisonPoint.orders?.partially_paid_orders || 0)
+                : Number(previousComparisonPoint.sales?.partial_sales || 0)
+              : 0;
+            const previousComparisonTotalRaw = previousComparisonPoint
+              ? metric === "orders"
+                ? Number(previousComparisonPoint.orders?.total || 0)
+                : Number(previousComparisonPoint.sales?.total || 0)
+              : 0;
+
+            const currentPrepaidBucket = Math.max(
+              0,
+              currentPrepaidRaw - previousCurrentPrepaidRaw,
+            );
+            const currentCodBucket = Math.max(0, currentCodRaw - previousCurrentCodRaw);
+            const currentPartialBucket = Math.max(
+              0,
+              currentPartialRaw - previousCurrentPartialRaw,
+            );
+            const currentTotalBucket = Math.max(0, currentTotalRaw - previousCurrentTotalRaw);
+
+            const comparisonPrepaidBucket = Math.max(
+              0,
+              comparisonPrepaidRaw - previousComparisonPrepaidRaw,
+            );
+            const comparisonCodBucket = Math.max(
+              0,
+              comparisonCodRaw - previousComparisonCodRaw,
+            );
+            const comparisonPartialBucket = Math.max(
+              0,
+              comparisonPartialRaw - previousComparisonPartialRaw,
+            );
+            const comparisonTotalBucket = Math.max(
+              0,
+              comparisonTotalRaw - previousComparisonTotalRaw,
+            );
+
+            const currentPrepaid =
+              metric === "orders"
+                ? currentPrepaidBucket
+                : convertAmount(currentPrepaidBucket);
+            const currentCod =
+              metric === "orders"
+                ? currentCodBucket
+                : convertAmount(currentCodBucket);
+            const currentPartial =
+              metric === "orders"
+                ? currentPartialBucket
+                : convertAmount(currentPartialBucket);
+            const currentTotal =
+              metric === "orders"
+                ? currentTotalBucket
+                : convertAmount(currentTotalBucket);
+            const comparisonPrepaid =
+              metric === "orders"
+                ? comparisonPrepaidBucket
+                : convertAmount(comparisonPrepaidBucket);
+            const comparisonCod =
+              metric === "orders"
+                ? comparisonCodBucket
+                : convertAmount(comparisonCodBucket);
+            const comparisonPartial =
+              metric === "orders"
+                ? comparisonPartialBucket
+                : convertAmount(comparisonPartialBucket);
+            const comparisonTotal =
+              metric === "orders"
+                ? comparisonTotalBucket
+                : convertAmount(comparisonTotalBucket);
+
+            return {
+              label: formatHourLabel(point.hour),
+              currentPrepaid,
+              currentCod,
+              currentPartial,
+              currentTotal,
+              currentPrepaidPct:
+                currentTotal > 0 ? (currentPrepaid / currentTotal) * 100 : 0,
+              currentCodPct:
+                currentTotal > 0 ? (currentCod / currentTotal) * 100 : 0,
+              currentPartialPct:
+                currentTotal > 0 ? (currentPartial / currentTotal) * 100 : 0,
+              comparisonPrepaid,
+              comparisonCod,
+              comparisonPartial,
+              comparisonTotal,
+              comparisonPrepaidPct:
+                comparisonTotal > 0
+                  ? (comparisonPrepaid / comparisonTotal) * 100
+                  : 0,
+              comparisonCodPct:
+                comparisonTotal > 0 ? (comparisonCod / comparisonTotal) * 100 : 0,
+              comparisonPartialPct:
+                comparisonTotal > 0
+                  ? (comparisonPartial / comparisonTotal) * 100
+                  : 0,
+            };
+          });
+
+          if (cancelled) return;
+
+          setChartData(hourlyChartData);
+          setRangeLabels({
+            current: formatRangeLabel({ start, end }),
+            previous: formatRangeLabel(comparisonRange),
+          });
+          return;
+        }
+
         const currentPromises = currentDates.map(async (date) => {
           const [orders, sales] = await Promise.all([
             getOrderSplit({ start: date, end: date, ...baseParams }),
@@ -564,6 +839,8 @@ export default memo(function PaymentSplitTrend({ query }) {
     start,
     end,
     metric,
+    viewMode,
+    canUseHourly,
     brandKey,
     refreshKey,
     utmSource,
@@ -574,6 +851,7 @@ export default memo(function PaymentSplitTrend({ query }) {
     productId,
     discountCode,
     query?.city,
+    queryTimezone,
     compareStart,
     compareEnd,
     convertAmount,
@@ -651,7 +929,7 @@ export default memo(function PaymentSplitTrend({ query }) {
               color="text.secondary"
               sx={{ fontWeight: 500 }}
             >
-              Day-wise trend - Mode of Payment {config.label}
+              {viewMode === "hourly" ? "Hour-wise trend" : "Day-wise trend"} - Mode of Payment {config.label}
             </Typography>
 
             <Stack
@@ -788,6 +1066,27 @@ export default memo(function PaymentSplitTrend({ query }) {
           </Stack>
 
           <Stack direction="row" spacing={1}>
+            <FormControl size="small" sx={{ minWidth: 110 }}>
+              <Select
+                value={viewMode}
+                onChange={(e) => setViewMode(e.target.value)}
+                inputProps={{ "aria-label": "Payment split view mode" }}
+                sx={{
+                  borderRadius: 2,
+                  height: 30,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  bgcolor: alpha(theme.palette.action.active, 0.04),
+                  "& .MuiOutlinedInput-notchedOutline": { border: "none" },
+                }}
+              >
+                <MenuItem value="hourly" disabled={!canUseHourly}>
+                  Hourly
+                </MenuItem>
+                <MenuItem value="daily">Daily</MenuItem>
+              </Select>
+            </FormControl>
+
             <FormControl size="small" sx={{ minWidth: 110 }}>
               <Select
                 value={chartMode}

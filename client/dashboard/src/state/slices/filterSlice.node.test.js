@@ -92,3 +92,17 @@ test("performance is accepted as a valid trend metric selection", () => {
   assert.deepEqual(nextState.selectedMetrics, ["sales", "performance"]);
   assert.equal(nextState.activeMetric, "performance");
 });
+
+test("payment split trend metrics are accepted as valid selections", () => {
+  const initialState = filterReducer(undefined, { type: "@@INIT" });
+  const nextState = filterReducer(
+    initialState,
+    setTrendMetricSelection({
+      selectedMetrics: ["payment_orders", "payment_sales"],
+      activeMetric: "payment_sales",
+    }),
+  );
+
+  assert.deepEqual(nextState.selectedMetrics, ["payment_orders", "payment_sales"]);
+  assert.equal(nextState.activeMetric, "payment_sales");
+});
