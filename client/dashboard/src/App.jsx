@@ -2336,7 +2336,13 @@ export default function App() {
                 minHeight={310}
               />
             ) : (
-              <ModeOfPayment query={generalMetricsQuery} />
+              <ModeOfPayment
+                query={generalMetricsQuery}
+                selectedMetrics={selectedMetrics}
+                onToggleMetric={
+                  canMultiSelectableKpiCards ? handleToggleMetric : undefined
+                }
+              />
             )}
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
@@ -2363,7 +2369,13 @@ export default function App() {
             minHeight={310}
           />
         ) : (
-          <ModeOfPayment query={generalMetricsQuery} />
+          <ModeOfPayment
+            query={generalMetricsQuery}
+            selectedMetrics={selectedMetrics}
+            onToggleMetric={
+              canMultiSelectableKpiCards ? handleToggleMetric : undefined
+            }
+          />
         )
       ),
       payment_trend: isLongRangeDashboard ? (
@@ -2479,7 +2491,13 @@ export default function App() {
           minHeight={310}
         />
       ) : (
-        <ModeOfPayment query={generalMetricsQuery} />
+        <ModeOfPayment
+          query={generalMetricsQuery}
+          selectedMetrics={selectedMetrics}
+          onToggleMetric={
+            canMultiSelectableKpiCards ? handleToggleMetric : undefined
+          }
+        />
       ),
       payment_trend: isLongRangeDashboard ? (
         <DashboardUnavailableCard
