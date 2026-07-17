@@ -518,12 +518,12 @@ async function getReturnsSnapshotPair(conn, currentRange, previousRange, filters
   const rows = await conn.query(
     `
       SELECT
-        COALESCE(SUM(CASE WHEN event_type = 'CANCEL' AND event_date >= ? AND event_date <= ? THEN 1 ELSE 0 END), 0) AS current_cancelled_orders,
-        COALESCE(SUM(CASE WHEN event_type = 'REFUND' AND event_date >= ? AND event_date <= ? THEN 1 ELSE 0 END), 0) AS current_refunded_orders,
-        COALESCE(SUM(CASE WHEN event_type = 'CANCEL' AND event_date >= ? AND event_date <= ? THEN 1 ELSE 0 END), 0) AS previous_cancelled_orders,
-        COALESCE(SUM(CASE WHEN event_type = 'REFUND' AND event_date >= ? AND event_date <= ? THEN 1 ELSE 0 END), 0) AS previous_refunded_orders
+        COALESCE(SUM(CASE WHEN event_type = 'CANCEL' AND order_created_date >= ? AND order_created_date <= ? THEN 1 ELSE 0 END), 0) AS current_cancelled_orders,
+        COALESCE(SUM(CASE WHEN event_type = 'REFUND' AND order_created_date >= ? AND order_created_date <= ? THEN 1 ELSE 0 END), 0) AS current_refunded_orders,
+        COALESCE(SUM(CASE WHEN event_type = 'CANCEL' AND order_created_date >= ? AND order_created_date <= ? THEN 1 ELSE 0 END), 0) AS previous_cancelled_orders,
+        COALESCE(SUM(CASE WHEN event_type = 'REFUND' AND order_created_date >= ? AND order_created_date <= ? THEN 1 ELSE 0 END), 0) AS previous_refunded_orders
       FROM returns_fact
-      WHERE event_date >= ? AND event_date <= ?
+      WHERE order_created_date >= ? AND order_created_date <= ?
     `,
     {
       type: QueryTypes.SELECT,
