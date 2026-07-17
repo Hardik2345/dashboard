@@ -1,9 +1,12 @@
 import { createSlice } from '@reduxjs/toolkit';
 import dayjs from 'dayjs';
+import {
+  DEFAULT_TREND_METRIC,
+  sanitizeTrendMetricSelection,
+} from '../../lib/trendSelection.js';
 
 const RANGE_KEY = 'pts_date_range_v2';
 const TTL_MS = 30 * 60 * 1000; // 30 minutes
-export const DEFAULT_TREND_METRIC = 'sales';
 export const DEFAULT_PRODUCT_OPTION = { id: '', label: 'All products', detail: 'Whole store' };
 
 function defaultRangeYesterdayToday() {
@@ -73,7 +76,8 @@ const filterSlice = createSlice({
     range: loadInitialRange(),
     compareMode: false,
     compareDateRange: [null, null],
-    selectedMetric: DEFAULT_TREND_METRIC,
+    selectedMetrics: [],
+    activeMetric: DEFAULT_TREND_METRIC,
     productSelection: [DEFAULT_PRODUCT_OPTION],
     utm: loadInitialUtm(),
     discountCode: loadInitialDiscountCode(),
@@ -107,8 +111,13 @@ const filterSlice = createSlice({
       };
       state.compareDateRange = [toIso(start), toIso(end)];
     },
-    setSelectedMetric(state, action) {
-      state.selectedMetric = action.payload || DEFAULT_TREND_METRIC;
+    setTrendMetricSelection(state, action) {
+      const next = sanitizeTrendMetricSelection(
+        action.payload?.selectedMetrics,
+        action.payload?.activeMetric,
+      );
+      state.selectedMetrics = next.selectedMetrics;
+      state.activeMetric = next.activeMetric;
     },
     setProductSelection(state, action) {
       // Support array or single object, normalize to array
@@ -180,5 +189,5 @@ const filterSlice = createSlice({
   },
 });
 
-export const { setRange, setCompareMode, setCompareDateRange, setSelectedMetric, setProductSelection, setUtm, setSalesChannel, setDeviceType, setDiscountCode, setCity } = filterSlice.actions;
+export const { setRange, setCompareMode, setCompareDateRange, setTrendMetricSelection, setProductSelection, setUtm, setSalesChannel, setDeviceType, setDiscountCode, setCity } = filterSlice.actions;
 export default filterSlice.reducer;

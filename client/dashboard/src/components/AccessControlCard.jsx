@@ -91,6 +91,7 @@ const PERMISSION_OPTIONS = [
   "sessions_drop_off_funnel",
   "product_conversion",
   "compare_mode",
+  "multiselectable_kpi_cards",
   "product_conversion:landing_page_path",
   "product_conversion:sessions",
   "product_conversion:atc",

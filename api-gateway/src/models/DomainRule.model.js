@@ -45,6 +45,7 @@ const DomainRuleSchema = new mongoose.Schema({
       'sessions_drop_off_funnel',
       'product_conversion',
       'compare_mode',
+      'multiselectable_kpi_cards',
       "ci_events",
       'product_conversion:landing_page_path',
       'product_conversion:sessions',
