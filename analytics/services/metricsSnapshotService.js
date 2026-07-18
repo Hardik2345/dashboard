@@ -349,6 +349,22 @@ async function queryCityRows(
 
 async function queryCheckoutInitiatedTotals(conn, start, end, cutoffHour = null) {
   const hasCutoff = Number.isInteger(cutoffHour);
+  if (!hasCutoff) {
+    const rows = await conn.query(
+      `
+        SELECT
+          COALESCE(SUM(ci_events), 0) AS total_ci_events
+        FROM overall_summary
+        WHERE date >= ? AND date <= ?
+      `,
+      {
+        type: QueryTypes.SELECT,
+        replacements: [start, end],
+      },
+    );
+    return Number(rows?.[0]?.total_ci_events || 0);
+  }
+
   const sql = `
     SELECT
       COALESCE(SUM(ci_events), 0) AS total_ci_events
