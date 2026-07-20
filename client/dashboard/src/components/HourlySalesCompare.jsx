@@ -191,6 +191,38 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
           maximumFractionDigits: 1,
         }),
     },
+    gross_revenue: {
+      id: "gross_revenue",
+      label: "Gross Revenue",
+      unitKind: "currency",
+      axisGroup: "currency",
+      color: "#10b981",
+      strokeDasharray: "2 0",
+      accessor: (metrics) => convertAmount(metrics?.sales ?? 0),
+      formatter: (value) =>
+        formatConvertedAmount(value || 0, { maximumFractionDigits: 0 }),
+      compactFormatter: (value) =>
+        formatConvertedAmount(value || 0, {
+          notation: "compact",
+          maximumFractionDigits: 1,
+        }),
+    },
+    net_revenue: {
+      id: "net_revenue",
+      label: "Net Revenue",
+      unitKind: "currency",
+      axisGroup: "currency",
+      color: "#3b82f6",
+      strokeDasharray: "6 3",
+      accessor: (metrics) => convertAmount(metrics?.sales ?? 0) / 1.18,
+      formatter: (value) =>
+        formatConvertedAmount(value || 0, { maximumFractionDigits: 0 }),
+      compactFormatter: (value) =>
+        formatConvertedAmount(value || 0, {
+          notation: "compact",
+          maximumFractionDigits: 1,
+        }),
+    },
     sessions: {
       id: "sessions",
       label: "Total Sessions",
@@ -215,6 +247,17 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
     },
     atc: {
       id: "atc",
+      label: "ATC Sessions",
+      unitKind: "count",
+      axisGroup: "count",
+      color: "#eab308",
+      strokeDasharray: "6 3",
+      accessor: (metrics) => Number(metrics?.atc || 0),
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    atc_sessions: {
+      id: "atc_sessions",
       label: "ATC Sessions",
       unitKind: "count",
       axisGroup: "count",

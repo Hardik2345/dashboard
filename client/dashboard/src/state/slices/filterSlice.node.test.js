@@ -106,3 +106,31 @@ test("payment split trend metrics are accepted as valid selections", () => {
   assert.deepEqual(nextState.selectedMetrics, ["payment_orders", "payment_sales"]);
   assert.equal(nextState.activeMetric, "payment_sales");
 });
+
+test("split revenue trend metrics are accepted as distinct selections", () => {
+  const initialState = filterReducer(undefined, { type: "@@INIT" });
+  const nextState = filterReducer(
+    initialState,
+    setTrendMetricSelection({
+      selectedMetrics: ["gross_revenue", "net_revenue"],
+      activeMetric: "net_revenue",
+    }),
+  );
+
+  assert.deepEqual(nextState.selectedMetrics, ["gross_revenue", "net_revenue"]);
+  assert.equal(nextState.activeMetric, "net_revenue");
+});
+
+test("ATC sessions is accepted as a valid split KPI trend metric", () => {
+  const initialState = filterReducer(undefined, { type: "@@INIT" });
+  const nextState = filterReducer(
+    initialState,
+    setTrendMetricSelection({
+      selectedMetrics: ["atc_sessions", "atc_rate"],
+      activeMetric: "atc_sessions",
+    }),
+  );
+
+  assert.deepEqual(nextState.selectedMetrics, ["atc_sessions", "atc_rate"]);
+  assert.equal(nextState.activeMetric, "atc_sessions");
+});

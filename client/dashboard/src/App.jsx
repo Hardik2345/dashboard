@@ -139,6 +139,10 @@ import {
   getVisibleDashboardWidgetIds,
   normalizeDashboardLayout,
 } from "./lib/dashboardLayout.js";
+import {
+  DEFAULT_DESKTOP_KPI_LAYOUT,
+  normalizeDesktopKpiLayout,
+} from "./lib/kpiLayout.js";
 
 import { TextField, Button, Paper, Typography, Chip } from "@mui/material";
 import axios from "axios";
@@ -374,6 +378,7 @@ export default function App() {
     const seen = new Set();
     const list = [];
     for (const m of user.brand_memberships) {
+      if (m?.status !== "active") continue;
       const key = (m.brand_id || "").toString().trim().toUpperCase();
       if (key && !seen.has(key)) {
         seen.add(key);
@@ -813,6 +818,10 @@ export default function App() {
     }
     return productSelection.label || "";
   }, [productSelection]);
+  const dashboardScopeLabel = useMemo(() => {
+    if (!selectedProductIds) return "All products";
+    return selectedProductLabel || selectedProductIds;
+  }, [selectedProductIds, selectedProductLabel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2260,41 +2269,27 @@ export default function App() {
   const desktopWidgetRegistry = useMemo(
     () => ({
       kpi_cards: (
-        <Stack spacing={{ xs: 1, md: 1 }}>
-          <KPIs
-            query={trendMetricsQuery}
-            selectedMetrics={selectedMetrics}
-            activeMetric={activeMetric}
-            onSelectMetric={handleSelectMetric}
-            onToggleMetric={
-              canMultiSelectableKpiCards ? handleToggleMetric : undefined
-            }
-            onFunnelData={handleFunnelData}
-            productId={selectedProductIds}
-            productLabel={selectedProductLabel}
-            utmOptions={utmOptions}
-            showRow={1}
-            showWebVitals={false}
-            showCiEvents={hasPermission("ci_events")}
-            compareMode={compareMode}
-          />
-          <KPIs
-            query={trendMetricsQuery}
-            selectedMetrics={selectedMetrics}
-            activeMetric={activeMetric}
-            onSelectMetric={handleSelectMetric}
-            onToggleMetric={
-              canMultiSelectableKpiCards ? handleToggleMetric : undefined
-            }
-            productId={selectedProductIds}
-            productLabel={selectedProductLabel}
-            utmOptions={utmOptions}
-            showRow={2}
-            showWebVitals={false}
-            showCiEvents={hasPermission("ci_events")}
-            compareMode={compareMode}
-          />
-        </Stack>
+        <KPIs
+          variant="desktop_paged"
+          query={trendMetricsQuery}
+          selectedMetrics={selectedMetrics}
+          activeMetric={activeMetric}
+          onSelectMetric={handleSelectMetric}
+          onToggleMetric={
+            canMultiSelectableKpiCards ? handleToggleMetric : undefined
+          }
+          onFunnelData={handleFunnelData}
+          productId={selectedProductIds}
+          productLabel={selectedProductLabel}
+          utmOptions={utmOptions}
+          showWebVitals={false}
+          showCiEvents={hasPermission("ci_events")}
+          compareMode={compareMode}
+          desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
+          onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
+          canEditDesktopKpis={canCustomizeDashboardLayout}
+          dashboardLayoutEditing={layoutEditMode}
+        />
       ),
       overall_snapshot: isLongRangeDashboard ? (
         <DashboardUnavailableCard
@@ -2428,13 +2423,17 @@ export default function App() {
         compareMode,
         generalMetricsQuery,
         handleOverallSnapshotBrandSelect,
+        handleDesktopKpiLayoutChange,
         handleFunnelData,
         handleSelectMetric,
         handleToggleMetric,
+        canCustomizeDashboardLayout,
         canMultiSelectableKpiCards,
+        effectiveDashboardLayout,
         hasPermission,
         isAuthor,
         authorBrandsLoading,
+        layoutEditMode,
         overallSnapshotQuery,
         selectedMetrics,
         activeMetric,
@@ -2446,6 +2445,9 @@ export default function App() {
         utmOptions,
         dataRestrictionDescription,
         isLongRangeDashboard,
+        effectiveDashboardLayout,
+        handleDesktopKpiLayoutChange,
+        layoutEditMode,
       webVitalsMetric,
     ],
   );
@@ -2454,6 +2456,7 @@ export default function App() {
     () => ({
       kpi_cards: (
         <KPIs
+          key={`mobile-kpis-${layoutEditMode ? "edit" : "view"}-${effectiveDashboardLayout.kpiCardsDesktop.order.join("|")}-${effectiveDashboardLayout.kpiCardsDesktop.pinned.join("|")}`}
           query={trendMetricsQuery}
           selectedMetrics={selectedMetrics}
           activeMetric={activeMetric}
@@ -2469,6 +2472,10 @@ export default function App() {
           showWebVitals={!isLongRangeDashboard && hasPermission("web_vitals")}
           showCiEvents={hasPermission("ci_events")}
           compareMode={compareMode}
+          desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
+          onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
+          canEditDesktopKpis={canCustomizeDashboardLayout}
+          dashboardLayoutEditing={layoutEditMode}
         />
       ),
       overall_snapshot: isLongRangeDashboard ? (
@@ -2572,10 +2579,7 @@ export default function App() {
   );
 
   const handleSaveDashboardLayout = useCallback(async (draftLayout) => {
-    const payload = {
-      desktop: draftLayout.desktop,
-      mobile: draftLayout.mobile,
-    };
+    const payload = normalizeDashboardLayout(draftLayout);
     setIsSavingDashboardLayout(true);
     try {
       const res = await saveDashboardLayout(payload);
@@ -2587,6 +2591,27 @@ export default function App() {
       setIsSavingDashboardLayout(false);
     }
   }, []);
+
+  function handleDesktopKpiLayoutChange(nextKpiLayout, options = {}) {
+    const normalizedKpiLayout = normalizeDesktopKpiLayout(nextKpiLayout);
+
+    if (options.persist && !layoutEditMode) {
+      const nextLayout = normalizeDashboardLayout({
+        ...dashboardLayout,
+        kpiCardsDesktop: normalizedKpiLayout,
+      });
+      handleSaveDashboardLayout(nextLayout);
+      return;
+    }
+
+    setPreviewDashboardLayout((prev) => {
+      const base = normalizeDashboardLayout(prev || dashboardLayout);
+      return normalizeDashboardLayout({
+        ...base,
+        kpiCardsDesktop: normalizedKpiLayout,
+      });
+    });
+  }
 
   const handleOpenLayoutEditor = useCallback(() => {
     if (layoutEditMode) return;
@@ -2617,6 +2642,10 @@ export default function App() {
       return normalizeDashboardLayout({
         ...base,
         [viewport]: [...DASHBOARD_LAYOUT_DEFAULTS[viewport]],
+        kpiCardsDesktop:
+          viewport === "desktop"
+            ? DEFAULT_DESKTOP_KPI_LAYOUT
+            : base.kpiCardsDesktop,
       });
     });
   }, [dashboardLayout, isMobile]);
@@ -3332,10 +3361,7 @@ export default function App() {
                   showMultipleBrands
                 }
                 showCustomizeButton={
-                  isMobile &&
-                  authorTab === "dashboard" &&
-                  hasBrand &&
-                  canCustomizeDashboardLayout
+                  false
                 }
                 onFilterClick={() => setMobileFilterOpen(true)}
                 onCustomizeLayoutClick={handleOpenLayoutEditor}
@@ -3690,23 +3716,59 @@ export default function App() {
                     {authorTab === "dashboard" &&
                       (hasBrand ? (
                         <Suspense fallback={<SectionFallback count={5} />}>
-                          <InlineDashboardLayoutEditor
-                            isEditing={layoutEditMode}
-                            itemIds={activeWidgetIds}
-                            renderWidget={(widgetId) =>
-                              activeWidgetRegistry[widgetId]
-                            }
-                            extraAfterId={extraAfterId}
-                            extras={dashboardExtrasNode}
-                            onOrderChange={handleInlineDashboardReorder}
-                            onSave={() =>
-                              handleSaveDashboardLayout(effectiveDashboardLayout)
-                            }
-                            onCancel={handleCloseLayoutEditor}
-                            onReset={handleResetDashboardLayout}
-                            isDirty={isDashboardLayoutDirty}
-                            isSaving={isSavingDashboardLayout}
-                          />
+                          <Stack spacing={{ xs: 1, md: 1.25 }}>
+                            {!isMobile ? (
+                              <Typography
+                                variant="subtitle2"
+                                color="text.secondary"
+                                sx={{ px: 0.5 }}
+                              >
+                                Scope: {dashboardScopeLabel}
+                              </Typography>
+                            ) : null}
+                            {isMobile ? (
+                              <Stack spacing={{ xs: 1, md: 1 }}>
+                                {activeWidgetIds.flatMap((widgetId) => {
+                                  const nodes = [
+                                    <Box key={widgetId} sx={{ width: "100%" }}>
+                                      {activeWidgetRegistry[widgetId]}
+                                    </Box>,
+                                  ];
+
+                                  if (extraAfterId === widgetId && dashboardExtrasNode) {
+                                    nodes.push(
+                                      <Box
+                                        key={`${widgetId}-extras`}
+                                        sx={{ width: "100%" }}
+                                      >
+                                        {dashboardExtrasNode}
+                                      </Box>,
+                                    );
+                                  }
+
+                                  return nodes;
+                                })}
+                              </Stack>
+                            ) : (
+                              <InlineDashboardLayoutEditor
+                                isEditing={layoutEditMode}
+                                itemIds={activeWidgetIds}
+                                renderWidget={(widgetId) =>
+                                  activeWidgetRegistry[widgetId]
+                                }
+                                extraAfterId={extraAfterId}
+                                extras={dashboardExtrasNode}
+                                onOrderChange={handleInlineDashboardReorder}
+                                onSave={() =>
+                                  handleSaveDashboardLayout(effectiveDashboardLayout)
+                                }
+                                onCancel={handleCloseLayoutEditor}
+                                onReset={handleResetDashboardLayout}
+                                isDirty={isDashboardLayoutDirty}
+                                isSaving={isSavingDashboardLayout}
+                              />
+                            )}
+                          </Stack>
                         </Suspense>
                       ) : (
                         <Paper

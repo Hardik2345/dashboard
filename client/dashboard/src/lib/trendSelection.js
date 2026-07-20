@@ -3,10 +3,13 @@ export const MAX_SELECTED_TREND_METRICS = 3;
 
 export const TREND_METRICS = [
   "sales",
+  "gross_revenue",
+  "net_revenue",
   "orders",
   "sessions",
   "cvr",
   "atc",
+  "atc_sessions",
   "ci_events",
   "checkout_rate",
   "atc_rate",
@@ -21,6 +24,8 @@ export const CI_TREND_METRICS = new Set(["ci_events", "checkout_rate"]);
 export const DISCOUNT_ALLOWED_TREND_METRICS = new Set([
   "orders",
   "sales",
+  "gross_revenue",
+  "net_revenue",
   "aov",
   "ci_events",
   "performance",

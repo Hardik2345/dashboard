@@ -1233,6 +1233,13 @@ export async function getProductKpis(args = {}) {
       : sessions > 0
         ? totalOrders / sessions
         : 0;
+  const rtoOrders = Number(json?.rto_orders || 0);
+  const rtoRate =
+    typeof json?.rto_rate === "number"
+      ? json.rto_rate
+      : totalOrders > 0
+        ? rtoOrders / totalOrders
+        : 0;
 
   return {
     product_id: json?.product_id || args.product_id,
@@ -1243,6 +1250,9 @@ export async function getProductKpis(args = {}) {
     add_to_cart_rate_pct: addToCartRate * 100,
     total_orders: totalOrders,
     total_sales: totalSales,
+    rto_orders: rtoOrders,
+    rto_rate: rtoRate,
+    rto_rate_pct: rtoRate * 100,
     conversion_rate: conversionRate,
     conversion_rate_pct: conversionRate * 100,
     brand_key: json?.brand_key || null,
