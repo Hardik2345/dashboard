@@ -3,6 +3,8 @@ import { useTheme, alpha } from "@mui/material/styles";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 
+const SELECTED_CARD_COLOR = "#10b981";
+
 export default function KPIStat({
   label,
   value,
@@ -17,6 +19,7 @@ export default function KPIStat({
   selectionIndicatorSelected,
   centerOnMobile = false,
   action,
+  bottomRightAccessory,
   sx = {},
   activeColor = "#10b981",
   compareValue,
@@ -67,16 +70,16 @@ export default function KPIStat({
         cursor: clickable ? "pointer" : "default",
         position: "relative",
         border: "1px solid",
-        borderColor: selected ? activeColor : "divider",
+        borderColor: selected ? SELECTED_CARD_COLOR : "divider",
         bgcolor: "background.paper",
         boxShadow: selected
-          ? `0 0 0 1px ${activeColor}, 0 10px 20px ${alpha(activeColor, 0.2)}, 0 6px 6px ${alpha(activeColor, 0.1)}`
+          ? `0 0 0 1px ${SELECTED_CARD_COLOR}, 0 10px 20px ${alpha(SELECTED_CARD_COLOR, 0.2)}, 0 6px 6px ${alpha(SELECTED_CARD_COLOR, 0.1)}`
           : "0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)",
         "&:hover": clickable
           ? {
-              borderColor: selected ? activeColor : "divider",
+              borderColor: selected ? SELECTED_CARD_COLOR : "divider",
               boxShadow: selected
-                ? `0 0 0 1.5px ${activeColor}, 0 14px 28px ${alpha(activeColor, 0.25)}, 0 10px 10px ${alpha(activeColor, 0.15)}`
+                ? `0 0 0 1.5px ${SELECTED_CARD_COLOR}, 0 14px 28px ${alpha(SELECTED_CARD_COLOR, 0.25)}, 0 10px 10px ${alpha(SELECTED_CARD_COLOR, 0.15)}`
                 : "0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23)",
               transform: "translateY(-4px)",
             }
@@ -133,6 +136,20 @@ export default function KPIStat({
             }}
           >
             {action}
+          </Box>
+        )}
+        {bottomRightAccessory && (
+          <Box
+            sx={{
+              position: "absolute",
+              right: shouldShowSelectionIndicator ? 36 : 12,
+              bottom: 8,
+              zIndex: 10,
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            {bottomRightAccessory}
           </Box>
         )}
         {shouldShowSelectionIndicator && (

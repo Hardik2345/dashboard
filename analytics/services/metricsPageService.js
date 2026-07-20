@@ -142,9 +142,11 @@ function buildMetricsPageService({ cacheService } = {}) {
     const totalAtcSessions = totals.total_atc_sessions;
     const totalOrders = totals.total_orders;
     const totalSales = totals.total_sales;
+    const rtoOrders = totals.rto_orders;
     const addToCartRate =
       totalSessions > 0 ? totalAtcSessions / totalSessions : 0;
     const cvr = totalSessions > 0 ? totalOrders / totalSessions : 0;
+    const rtoRate = totalOrders > 0 ? rtoOrders / totalOrders : 0;
 
     return {
       product_id: filters.product_id,
@@ -157,6 +159,9 @@ function buildMetricsPageService({ cacheService } = {}) {
       add_to_cart_rate_pct: addToCartRate * 100,
       total_orders: totalOrders,
       total_sales: totalSales,
+      rto_orders: rtoOrders,
+      rto_rate: rtoRate,
+      rto_rate_pct: rtoRate * 100,
       conversion_rate: cvr,
       conversion_rate_pct: cvr * 100,
     };

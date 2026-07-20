@@ -101,6 +101,10 @@ const pipelineCredsSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    is_active: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },

@@ -1,14 +1,46 @@
-import { useEffect, useState, useMemo } from "react";
+import { cloneElement, useEffect, useMemo, useRef, useState } from "react";
 import Grid from "@mui/material/Grid2";
-import { Stack, Typography, Box, useTheme } from "@mui/material";
-import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
-import Skeleton from "@mui/material/Skeleton";
+import {
+  Box,
+  IconButton,
+  Stack,
+  Tooltip,
+  Typography,
+  useTheme,
+} from "@mui/material";
+import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+import DragIndicatorRoundedIcon from "@mui/icons-material/DragIndicatorRounded";
+import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
+import PushPinRoundedIcon from "@mui/icons-material/PushPinRounded";
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  rectSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { AnimatePresence, motion } from "framer-motion";
 import { GlassChip } from "./ui/GlassChip.jsx";
 import KPIStat from "./KPIStat.jsx";
 import { getDashboardSummary, getProductKpis } from "../lib/api.js";
 import { useInrCurrency } from "../lib/currency.js";
 import useWebVitals from "../hooks/useWebVitals.js";
+import {
+  DEFAULT_DESKTOP_KPI_LAYOUT,
+  deriveRenderedDesktopKpiOrder,
+  MAX_PINNED_KPIS,
+  normalizeDesktopKpiLayout,
+  paginateKpiIds,
+  reorderDesktopKpiLayout,
+} from "../lib/kpiLayout.js";
 
 const nfInt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfFloat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
@@ -16,8 +48,1289 @@ const nfPct = new Intl.NumberFormat(undefined, {
   style: "percent",
   maximumFractionDigits: 2,
 });
+const KPI_PAGE_SLOT_COUNT = 8;
+const MOBILE_KPI_PAGE_SIZE = 6;
+const MOBILE_KPI_SLOT_PLACEHOLDER_HEIGHT = 110;
+
+function deriveMobileTopKpiOrder(layout, defaultIds) {
+  const normalized = normalizeDesktopKpiLayout(layout);
+  const allowed = new Set(defaultIds);
+  const ordered = deriveRenderedDesktopKpiOrder(normalized).filter((id) =>
+    allowed.has(id),
+  );
+
+  for (const id of defaultIds) {
+    if (!ordered.includes(id)) {
+      ordered.push(id);
+    }
+  }
+
+  return ordered;
+}
+
+function mergeMobileTopKpiOrder(layout, topOrder, defaultIds) {
+  const normalized = normalizeDesktopKpiLayout(layout);
+  const allowed = new Set(defaultIds);
+  const queue = [...topOrder.filter((id) => allowed.has(id))];
+  const nextOrder = [];
+
+  for (const id of normalized.order) {
+    if (allowed.has(id)) {
+      nextOrder.push(queue.shift() ?? id);
+    } else {
+      nextOrder.push(id);
+    }
+  }
+
+  while (queue.length > 0) {
+    nextOrder.push(queue.shift());
+  }
+
+  return {
+    ...normalized,
+    order: nextOrder,
+  };
+}
+
+function buildPinAccessory(isPinned, onTogglePin) {
+  return (
+    <Stack direction="row" spacing={0.5} alignItems="center">
+      <Tooltip title={isPinned ? "Unpin KPI" : "Pin KPI"}>
+        <IconButton
+          size="small"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onTogglePin();
+          }}
+          sx={{
+            width: 24,
+            height: 24,
+            color: isPinned ? "#f5c451" : "rgba(255,255,255,0.46)",
+            bgcolor: "rgba(0,0,0,0.18)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            "&:hover": {
+              bgcolor: "rgba(255,255,255,0.08)",
+            },
+          }}
+        >
+          {isPinned ? (
+            <PushPinRoundedIcon sx={{ fontSize: 14 }} />
+          ) : (
+            <PushPinOutlinedIcon sx={{ fontSize: 14 }} />
+          )}
+        </IconButton>
+      </Tooltip>
+    </Stack>
+  );
+}
+
+function MobileEditableKpiCard({
+  card,
+  isPinned = false,
+  onTogglePin,
+  setNodeRef,
+  style,
+  listeners,
+  attributes,
+  isDragging = false,
+}) {
+  const node = cloneElement(card.node, {
+    bottomRightAccessory:
+      typeof onTogglePin === "function"
+        ? buildPinAccessory(isPinned, () => onTogglePin(card.id))
+        : undefined,
+  });
+
+  return (
+    <Box
+      ref={setNodeRef}
+      style={style}
+      sx={{
+        opacity: isDragging ? 0.3 : 1,
+        transformOrigin: "center",
+        position: "relative",
+        "& .mobile-kpi-edit-card": {
+          pointerEvents: "none",
+        },
+      }}
+    >
+      <Box className="mobile-kpi-edit-card">{node}</Box>
+      <Tooltip title="Drag to reorder">
+        <Box
+          {...attributes}
+          {...listeners}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          sx={{
+            position: "absolute",
+            top: 10,
+            right: 12,
+            zIndex: 20,
+            width: 28,
+            height: 28,
+            borderRadius: "10px",
+            display: "grid",
+            placeItems: "center",
+            color: "#dff1ff",
+            bgcolor: "rgba(10,10,10,0.96)",
+            border: "1px solid rgba(91,163,224,0.42)",
+            backdropFilter: "blur(18px)",
+            boxShadow: "0 14px 28px rgba(0,0,0,0.28)",
+            cursor: "grab",
+            touchAction: "none",
+            "&:active": {
+              cursor: "grabbing",
+            },
+          }}
+        >
+          <DragIndicatorRoundedIcon sx={{ fontSize: 16 }} />
+        </Box>
+      </Tooltip>
+    </Box>
+  );
+}
+
+function SortableMobileKpiCard({ id, card, isPinned, onTogglePin }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  return (
+    <MobileEditableKpiCard
+      card={card}
+      isPinned={isPinned}
+      onTogglePin={onTogglePin}
+      setNodeRef={setNodeRef}
+      attributes={attributes}
+      listeners={listeners}
+      isDragging={isDragging}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+    />
+  );
+}
+
+function MobileKpiPages({
+  cards,
+  footerCards = [],
+  kpiLayout = DEFAULT_DESKTOP_KPI_LAYOUT,
+  onKpiLayoutChange,
+  canEdit = false,
+  dashboardLayoutEditing = false,
+}) {
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageDirection, setPageDirection] = useState(1);
+  const [activeId, setActiveId] = useState(null);
+  const [pinMessage, setPinMessage] = useState("");
+  const touchStartXRef = useRef(null);
+  const isEditing = canEdit && dashboardLayoutEditing;
+  const cardsById = useMemo(
+    () => new Map(cards.map((card) => [card.id, card])),
+    [cards],
+  );
+  const defaultIds = useMemo(() => cards.map((card) => card.id), [cards]);
+  const normalizedLayout = useMemo(
+    () => normalizeDesktopKpiLayout(kpiLayout),
+    [kpiLayout],
+  );
+  const pinnedSet = useMemo(
+    () => new Set(normalizedLayout.pinned.filter((id) => defaultIds.includes(id))),
+    [defaultIds, normalizedLayout.pinned],
+  );
+  const derivedOrder = useMemo(
+    () => deriveMobileTopKpiOrder(kpiLayout, defaultIds),
+    [defaultIds, kpiLayout],
+  );
+  const [editingOrder, setEditingOrder] = useState(derivedOrder);
+  const activeOrder = isEditing ? editingOrder : derivedOrder;
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 8 } }),
+  );
+  const pages = useMemo(() => {
+    const nextPages = [];
+    for (let index = 0; index < activeOrder.length; index += MOBILE_KPI_PAGE_SIZE) {
+      nextPages.push(activeOrder.slice(index, index + MOBILE_KPI_PAGE_SIZE));
+    }
+    if (nextPages.length === 0) nextPages.push([]);
+    return nextPages;
+  }, [activeOrder]);
+
+  useEffect(() => {
+    setPageIndex((current) => Math.min(current, Math.max(pages.length - 1, 0)));
+  }, [pages.length]);
+
+  useEffect(() => {
+    setEditingOrder(derivedOrder);
+  }, [derivedOrder, isEditing]);
+
+  useEffect(() => {
+    if (isEditing) return;
+    setPageDirection(1);
+    setPageIndex(0);
+  }, [isEditing, derivedOrder]);
+
+  useEffect(() => {
+    if (!pinMessage) return undefined;
+    const timer = window.setTimeout(() => setPinMessage(""), 2200);
+    return () => window.clearTimeout(timer);
+  }, [pinMessage]);
+
+  const handleTogglePin = (metricId) => {
+    if (pinnedSet.has(metricId)) {
+      const nextLayout = {
+        ...normalizedLayout,
+        pinned: normalizedLayout.pinned.filter((id) => id !== metricId),
+      };
+      if (isEditing) {
+        setEditingOrder(deriveMobileTopKpiOrder(nextLayout, defaultIds));
+      }
+      onKpiLayoutChange?.(nextLayout, { persist: !isEditing });
+      return;
+    }
+
+    if (normalizedLayout.pinned.length >= MAX_PINNED_KPIS) {
+      setPinMessage("You can pin a maximum of 3 KPIs.");
+      return;
+    }
+
+    const nextLayout = {
+      ...normalizedLayout,
+      pinned: [...normalizedLayout.pinned, metricId],
+    };
+    if (isEditing) {
+      setEditingOrder(deriveMobileTopKpiOrder(nextLayout, defaultIds));
+    }
+    onKpiLayoutChange?.(nextLayout, { persist: !isEditing });
+  };
+
+  const handlePageChange = (nextIndex) => {
+    if (nextIndex < 0 || nextIndex >= pages.length || nextIndex === pageIndex) return;
+    setPageDirection(nextIndex > pageIndex ? 1 : -1);
+    setPageIndex(nextIndex);
+  };
+
+  const handleTouchStart = (event) => {
+    if (isEditing) return;
+    touchStartXRef.current = event.changedTouches?.[0]?.clientX ?? null;
+  };
+
+  const handleTouchEnd = (event) => {
+    if (isEditing) return;
+    const startX = touchStartXRef.current;
+    const endX = event.changedTouches?.[0]?.clientX ?? null;
+    touchStartXRef.current = null;
+    if (startX === null || endX === null) return;
+
+    const deltaX = endX - startX;
+    if (Math.abs(deltaX) < 42) return;
+    handlePageChange(deltaX < 0 ? pageIndex + 1 : pageIndex - 1);
+  };
+
+  const pageVariants = {
+    enter: (direction) => ({
+      x: direction > 0 ? 28 : -28,
+      opacity: 0.38,
+    }),
+    center: {
+      x: 0,
+      opacity: 1,
+    },
+    exit: (direction) => ({
+      x: direction > 0 ? -28 : 28,
+      opacity: 0.38,
+    }),
+  };
+
+  const currentPage = pages[pageIndex] || [];
+  const currentPageSlots = Array.from(
+    { length: MOBILE_KPI_PAGE_SIZE },
+    (_, index) => currentPage[index] || null,
+  );
+
+  return (
+    <>
+    <Stack spacing={1.25} sx={{ display: { xs: "flex", md: "none" } }}>
+      {pages.length > 1 ? (
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "flex-end",
+            alignItems: "center",
+            gap: 0.5,
+            minHeight: 28,
+          }}
+        >
+          <IconButton
+            size="small"
+            onClick={() => handlePageChange(pageIndex - 1)}
+            disabled={pageIndex === 0}
+            sx={{
+              color: "rgba(255,255,255,0.7)",
+              "&.Mui-disabled": { color: "rgba(255,255,255,0.22)" },
+            }}
+          >
+            <ChevronLeftRoundedIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+          <Typography variant="caption" color="text.secondary" sx={{ minWidth: 28, textAlign: "center" }}>
+            {pageIndex + 1}/{pages.length}
+          </Typography>
+          <IconButton
+            size="small"
+            onClick={() => handlePageChange(pageIndex + 1)}
+            disabled={pageIndex === pages.length - 1}
+            sx={{
+              color: "rgba(255,255,255,0.7)",
+              "&.Mui-disabled": { color: "rgba(255,255,255,0.22)" },
+            }}
+          >
+            <ChevronRightRoundedIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Box>
+      ) : null}
+      {pinMessage ? (
+        <Typography variant="caption" color="warning.main" sx={{ minHeight: 18 }}>
+          {pinMessage}
+        </Typography>
+      ) : null}
+      {isEditing ? (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={({ active }) => setActiveId(active.id)}
+          onDragCancel={() => setActiveId(null)}
+          onDragEnd={({ active, over }) => {
+            setActiveId(null);
+            if (!over || active.id === over.id) return;
+            if (!activeOrder.includes(active.id) || !activeOrder.includes(over.id)) {
+              return;
+            }
+            const activePinned = pinnedSet.has(active.id);
+            const overPinned = pinnedSet.has(over.id);
+            if (activePinned !== overPinned) return;
+
+            const nextTopOrder = [...activeOrder];
+            const fromIndex = nextTopOrder.indexOf(active.id);
+            const toIndex = nextTopOrder.indexOf(over.id);
+            if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
+              return;
+            }
+            const [moved] = nextTopOrder.splice(fromIndex, 1);
+            nextTopOrder.splice(toIndex, 0, moved);
+            setEditingOrder(nextTopOrder);
+            onKpiLayoutChange?.(
+              mergeMobileTopKpiOrder(normalizedLayout, nextTopOrder, defaultIds),
+            );
+          }}
+        >
+          <SortableContext items={activeOrder} strategy={rectSortingStrategy}>
+            <Stack spacing={1.5}>
+              {pages.map((pageItems, pageNumber) => (
+                <Box
+                  key={`mobile-edit-page-${pageNumber}`}
+                  sx={{
+                    p: 1.2,
+                    borderRadius: "20px",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    bgcolor: "rgba(255,255,255,0.02)",
+                  }}
+                >
+                  <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
+                    Page {pageNumber + 1}
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: 2,
+                    }}
+                  >
+                    {Array.from(
+                      { length: MOBILE_KPI_PAGE_SIZE },
+                      (_, index) => pageItems[index] || null,
+                    ).map((metricId, index) =>
+                      metricId ? (
+                        <SortableMobileKpiCard
+                          key={metricId}
+                          id={metricId}
+                          card={cardsById.get(metricId)}
+                          isPinned={pinnedSet.has(metricId)}
+                          onTogglePin={handleTogglePin}
+                        />
+                      ) : (
+                        <Box
+                          key={`empty-mobile-edit-slot-${pageNumber}-${index}`}
+                          aria-hidden="true"
+                          sx={{
+                            minHeight: MOBILE_KPI_SLOT_PLACEHOLDER_HEIGHT,
+                            borderRadius: "12px",
+                            visibility: "hidden",
+                          }}
+                        />
+                      ),
+                    )}
+                  </Box>
+                </Box>
+              ))}
+            </Stack>
+          </SortableContext>
+        </DndContext>
+      ) : (
+        <Box
+          sx={{ position: "relative", overflow: "hidden" }}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          <AnimatePresence initial={false} custom={pageDirection} mode="wait">
+            <motion.div
+              key={pageIndex}
+              custom={pageDirection}
+              variants={pageVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.22, ease: "easeOut" }}
+            >
+              <Grid container spacing={2} columns={12}>
+                {currentPageSlots.map((metricId, index) =>
+                  metricId ? (
+                    <Grid
+                      key={metricId}
+                      size={cardsById.get(metricId)?.size}
+                      sx={cardsById.get(metricId)?.sx}
+                    >
+                      {cloneElement(cardsById.get(metricId)?.node, {
+                        bottomRightAccessory: buildPinAccessory(
+                          pinnedSet.has(metricId),
+                          () => handleTogglePin(metricId),
+                        ),
+                      })}
+                    </Grid>
+                  ) : (
+                    <Grid
+                      key={`empty-mobile-kpi-slot-${pageIndex}-${index}`}
+                      size={{ xs: 6, sm: 6, md: 3 }}
+                    >
+                      <Box
+                        aria-hidden="true"
+                        sx={{
+                          minHeight: MOBILE_KPI_SLOT_PLACEHOLDER_HEIGHT,
+                          borderRadius: "12px",
+                          visibility: "hidden",
+                        }}
+                      />
+                    </Grid>
+                  ),
+                )}
+              </Grid>
+            </motion.div>
+          </AnimatePresence>
+        </Box>
+      )}
+      {footerCards.length > 0 ? (
+        <Grid container spacing={2} columns={12}>
+          {footerCards.map((card) => (
+            <Grid key={card.id} size={card.size} sx={card.sx}>
+              {card.node}
+            </Grid>
+          ))}
+        </Grid>
+      ) : null}
+    </Stack>
+    </>
+  );
+}
+
+function DesktopKpiCard({
+  metric,
+  isPinned,
+  isEditing,
+  isDragging = false,
+  setNodeRef,
+  style,
+  listeners,
+  attributes,
+  onTogglePin,
+}) {
+  const topAction = metric.action || null;
+  const bottomRightAccessory = (
+    <Stack direction="row" spacing={0.5} alignItems="center">
+      <Tooltip title={isPinned ? "Unpin KPI" : "Pin KPI"}>
+        <IconButton
+          size="small"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onTogglePin(metric.id);
+          }}
+          sx={{
+            width: 26,
+            height: 26,
+            color: isPinned ? "#f5c451" : "rgba(255,255,255,0.46)",
+            bgcolor: "rgba(0,0,0,0.18)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            "&:hover": {
+              bgcolor: "rgba(255,255,255,0.08)",
+            },
+          }}
+        >
+          {isPinned ? (
+            <PushPinRoundedIcon sx={{ fontSize: 16 }} />
+          ) : (
+            <PushPinOutlinedIcon sx={{ fontSize: 16 }} />
+          )}
+        </IconButton>
+      </Tooltip>
+    </Stack>
+  );
+
+  return (
+    <Box
+      ref={setNodeRef}
+      style={style}
+      sx={{
+        opacity: isDragging ? 0.28 : 1,
+        transformOrigin: "center",
+      }}
+    >
+      <KPIStat
+        label={metric.label}
+        value={metric.value}
+        unavailable={metric.unavailable}
+        loading={metric.loading}
+        deltaLoading={metric.deltaLoading}
+        formatter={metric.formatter}
+        delta={metric.delta}
+        onSelect={metric.onSelect}
+        onSelectionToggle={metric.onSelectionToggle}
+        selected={metric.selected}
+        selectionIndicatorSelected={metric.selectionIndicatorSelected}
+        compareValue={metric.compareValue}
+        compareFormatter={metric.compareFormatter}
+        activeColor={metric.activeColor}
+        invertDeltaColor={metric.invertDeltaColor}
+        showSelectionIndicator={metric.showSelectionIndicator}
+        action={
+          <Stack direction="row" spacing={0.75} alignItems="center">
+            {topAction ? (
+              <Box sx={{ display: "flex", alignItems: "center" }}>{topAction}</Box>
+            ) : null}
+            {isEditing && (
+              <Tooltip title="Drag to reorder">
+                <Box
+                  {...attributes}
+                  {...listeners}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  sx={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: "9px",
+                    display: "grid",
+                    placeItems: "center",
+                    color: "rgba(255,255,255,0.72)",
+                    bgcolor: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    cursor: "grab",
+                    touchAction: "none",
+                  }}
+                >
+                  <DragIndicatorRoundedIcon sx={{ fontSize: 16 }} />
+                </Box>
+              </Tooltip>
+            )}
+          </Stack>
+        }
+        bottomRightAccessory={bottomRightAccessory}
+        sx={{
+          transform: isDragging ? "scale(1.01)" : "scale(1)",
+          boxShadow: isDragging
+            ? "0 20px 42px rgba(0,0,0,0.34)"
+            : undefined,
+        }}
+      />
+    </Box>
+  );
+}
+
+function SortableDesktopKpiCard(props) {
+  const { id } = props;
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id, disabled: !props.isEditing });
+
+  return (
+    <DesktopKpiCard
+      {...props}
+      setNodeRef={setNodeRef}
+      isDragging={isDragging}
+      listeners={listeners}
+      attributes={attributes}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+    />
+  );
+}
+
+function buildDesktopMetrics({
+  compareMode,
+  data,
+  deltaLoading,
+  desktopSelectedCardId,
+  formatConvertedAmount,
+  loading,
+  onDesktopCardSelect,
+  onSelectMetric,
+  onToggleMetric,
+  revenueMode,
+  onRevenueModeToggle,
+  atcMode,
+  onAtcModeToggle,
+  checkoutMode,
+  onCheckoutModeToggle,
+  cancellationMode,
+  onCancellationModeToggle,
+  rtoMode,
+  onRtoModeToggle,
+  selectedMetrics,
+  activeMetric,
+  showCiEvents,
+  convertAmount,
+}) {
+  const selectedMetricSet = new Set(Array.isArray(selectedMetrics) ? selectedMetrics : []);
+  const hasSelected = (metricKey) => selectedMetricSet.has(metricKey);
+
+  const createSelectionProps = (cardId, metricKey, unavailable = false) => {
+    if (!metricKey) {
+      return {
+        onSelect: undefined,
+        onSelectionToggle: undefined,
+        selected: false,
+        selectionIndicatorSelected: false,
+        showSelectionIndicator: false,
+      };
+    }
+
+    return {
+      onSelect:
+        onSelectMetric && !unavailable
+          ? () => {
+              onDesktopCardSelect?.(cardId);
+              onSelectMetric(metricKey);
+            }
+          : undefined,
+      onSelectionToggle:
+        onToggleMetric && !unavailable
+          ? () => {
+              onDesktopCardSelect?.(cardId);
+              onToggleMetric(metricKey);
+            }
+          : undefined,
+      selected: activeMetric === metricKey && desktopSelectedCardId === cardId,
+      selectionIndicatorSelected: hasSelected(metricKey),
+      showSelectionIndicator: undefined,
+    };
+  };
+
+  const cards = [
+    {
+      id: "orders",
+      label: "Total Orders",
+      value: data.orders?.value ?? 0,
+      formatter: (value) => nfInt.format(value),
+      delta: data.ordersDelta
+        ? { value: data.ordersDelta.diff_pct, direction: data.ordersDelta.direction }
+        : undefined,
+      compareValue: compareMode && data.prevOrders != null ? data.prevOrders : undefined,
+      compareFormatter: (value) => nfInt.format(value),
+      activeColor: "#10b981",
+      ...createSelectionProps("orders", "orders"),
+    },
+    {
+      id: "revenue",
+      label: revenueMode === "G" ? "Gross Revenue" : "Net Revenue",
+      action: renderToggle({
+        leftActive: revenueMode === "G",
+        leftLabel: "G",
+        rightActive: revenueMode === "N",
+        rightLabel: "N",
+        onClick: onRevenueModeToggle,
+      }),
+      value:
+        revenueMode === "G"
+          ? convertAmount(data.sales?.value ?? 0)
+          : convertAmount(data.sales?.value ?? 0) / 1.18,
+      formatter: (value) => formatConvertedAmount(value, { maximumFractionDigits: 0 }),
+      delta: data.salesDelta
+        ? { value: data.salesDelta.diff_pct, direction: data.salesDelta.direction }
+        : undefined,
+      compareValue:
+        compareMode && data.prevSales != null
+          ? revenueMode === "G"
+            ? convertAmount(data.prevSales)
+            : convertAmount(data.prevSales) / 1.18
+          : undefined,
+      compareFormatter: (value) =>
+        formatConvertedAmount(value, { maximumFractionDigits: 0 }),
+      activeColor: "#10b981",
+      ...createSelectionProps("revenue", "sales"),
+    },
+    {
+      id: "aov",
+      label: "Average Order Value",
+      value: convertAmount(data.aov?.aov ?? 0),
+      formatter: (value) => formatConvertedAmount(value, { maximumFractionDigits: 0 }),
+      delta: data.aovDelta
+        ? { value: data.aovDelta.diff_pct, direction: data.aovDelta.direction }
+        : undefined,
+      compareValue: compareMode && data.prevAov != null ? convertAmount(data.prevAov) : undefined,
+      compareFormatter: (value) =>
+        formatConvertedAmount(value, { maximumFractionDigits: 0 }),
+      activeColor: "#10b981",
+      ...createSelectionProps("aov", "aov"),
+    },
+    {
+      id: "returns",
+      label: cancellationMode === "C" ? "Cancellation Rate" : "Refund Rate",
+      action: renderToggle({
+        leftActive: cancellationMode === "C",
+        leftLabel: "C",
+        rightActive: cancellationMode === "R",
+        rightLabel: "R",
+        leftColor: "error.main",
+        rightColor: "warning.main",
+        onClick: onCancellationModeToggle,
+      }),
+      value:
+        cancellationMode === "C"
+          ? data.returnsData?.cancelled_rate ?? 0
+          : data.returnsData?.refunded_rate ?? 0,
+      formatter: (value) => nfPct.format(value),
+      delta:
+        cancellationMode === "C"
+          ? data.cancelledRateDelta
+            ? { value: data.cancelledRateDelta.diff_pct, direction: data.cancelledRateDelta.direction }
+            : undefined
+          : data.refundedRateDelta
+            ? { value: data.refundedRateDelta.diff_pct, direction: data.refundedRateDelta.direction }
+            : undefined,
+      compareValue:
+        compareMode
+          ? cancellationMode === "C"
+            ? data.prevCancelledRate
+            : data.prevRefundedRate
+          : undefined,
+      compareFormatter: (value) => nfPct.format(value),
+      activeColor: "#ef4444",
+      invertDeltaColor: true,
+      unavailable: data.unavailable?.returns,
+      loading,
+      deltaLoading,
+      selected: false,
+      selectionIndicatorSelected: false,
+      showSelectionIndicator: false,
+    },
+    {
+      id: "sessions",
+      label: "Total Sessions",
+      value: data.totalSessions ?? 0,
+      formatter: (value) => nfInt.format(value),
+      delta: data.sessDelta
+        ? { value: data.sessDelta.diff_pct, direction: data.sessDelta.direction }
+        : undefined,
+      compareValue: compareMode && data.prevSessions != null ? data.prevSessions : undefined,
+      compareFormatter: (value) => nfInt.format(value),
+      activeColor: "#10b981",
+      unavailable: data.unavailable?.sessions,
+      ...createSelectionProps("sessions", "sessions", data.unavailable?.sessions),
+    },
+    {
+      id: "atc",
+      label: atcMode === "R" ? "ATC Rate" : "ATC Sessions",
+      action: renderToggle({
+        leftActive: atcMode === "R",
+        leftLabel: "R",
+        rightActive: atcMode === "S",
+        rightLabel: "S",
+        leftColor: "#f59e0b",
+        onClick: onAtcModeToggle,
+      }),
+      value:
+        atcMode === "R"
+          ? data.totalSessions > 0
+            ? data.totalAtcSessions / data.totalSessions
+            : 0
+          : data.totalAtcSessions,
+      formatter: atcMode === "R" ? (value) => nfPct.format(value) : (value) => nfInt.format(value),
+      delta:
+        atcMode === "R"
+          ? data.atcRateDelta
+            ? { value: data.atcRateDelta.diff_pct, direction: data.atcRateDelta.direction }
+            : undefined
+          : data.atcDelta
+            ? { value: data.atcDelta.diff_pct, direction: data.atcDelta.direction }
+            : undefined,
+      compareValue:
+        compareMode
+          ? atcMode === "R"
+            ? data.prevAtcRate
+            : data.prevAtcSessions
+          : undefined,
+      compareFormatter:
+        atcMode === "R" ? (value) => nfPct.format(value) : (value) => nfInt.format(value),
+      activeColor: "#f59e0b",
+      unavailable: data.unavailable?.atc,
+      ...createSelectionProps("atc", atcMode === "R" ? "atc_rate" : "atc", data.unavailable?.atc),
+    },
+    {
+      id: "checkout",
+      label: checkoutMode === "R" ? "Checkout Rate" : "Checkout Initiated Events",
+      action: renderToggle({
+        leftActive: checkoutMode === "C",
+        leftLabel: "C",
+        rightActive: checkoutMode === "R",
+        rightLabel: "R",
+        leftColor: "primary.main",
+        rightColor: "#10b981",
+        onClick: onCheckoutModeToggle,
+      }),
+      value:
+        checkoutMode === "R"
+          ? data.totalSessions > 0
+            ? (data.totalCiEvents?.value ?? 0) / data.totalSessions
+            : 0
+          : data.totalCiEvents?.value ?? 0,
+      formatter:
+        checkoutMode === "R" ? (value) => nfPct.format(value) : (value) => nfInt.format(value),
+      delta:
+        checkoutMode === "R"
+          ? data.checkoutRateDelta
+            ? { value: data.checkoutRateDelta.diff_pct, direction: data.checkoutRateDelta.direction }
+            : undefined
+          : data.ciDelta
+            ? { value: data.ciDelta.diff_pct, direction: data.ciDelta.direction }
+            : undefined,
+      compareValue:
+        compareMode
+          ? checkoutMode === "R"
+            ? data.prevCheckoutRate
+            : data.prevCiEvents
+          : undefined,
+      compareFormatter:
+        checkoutMode === "R" ? (value) => nfPct.format(value) : (value) => nfInt.format(value),
+      activeColor: "#5ba3e0",
+      unavailable: data.unavailable?.ci,
+      hidden: !showCiEvents,
+      ...createSelectionProps("checkout", checkoutMode === "R" ? "checkout_rate" : "ci_events", data.unavailable?.ci),
+    },
+    {
+      id: "cvr",
+      label: "Conversion Rate",
+      value: data.cvr?.cvr ?? 0,
+      formatter: (value) => nfPct.format(value),
+      delta:
+        typeof data.cvrDeltaValue === "number" && data.cvrDelta
+          ? { value: data.cvrDeltaValue, direction: data.cvrDelta.direction }
+          : undefined,
+      compareValue: compareMode && data.prevCvr != null ? data.prevCvr / 100 : undefined,
+      compareFormatter: (value) => nfPct.format(value),
+      activeColor: "#10b981",
+      unavailable: data.unavailable?.cvr,
+      ...createSelectionProps("cvr", "cvr", data.unavailable?.cvr),
+    },
+    {
+      id: "rto",
+      label: rtoMode === "O" ? "RTO Orders" : "RTO %",
+      action: renderToggle({
+        leftActive: rtoMode === "O",
+        leftLabel: "O",
+        rightActive: rtoMode === "%",
+        rightLabel: "%",
+        leftColor: "warning.main",
+        rightColor: "error.main",
+        onClick: onRtoModeToggle,
+      }),
+      value: rtoMode === "O" ? data.rtoData?.orders ?? 0 : data.rtoData?.rate ?? 0,
+      formatter:
+        rtoMode === "O" ? (value) => nfInt.format(value) : (value) => nfPct.format(value),
+      delta:
+        rtoMode === "O"
+          ? data.rtoOrdersDelta
+            ? { value: data.rtoOrdersDelta.diff_pct, direction: data.rtoOrdersDelta.direction }
+            : undefined
+          : data.rtoRateDelta
+            ? { value: data.rtoRateDelta.diff_pct, direction: data.rtoRateDelta.direction }
+            : undefined,
+      compareValue:
+        compareMode
+          ? rtoMode === "O"
+            ? data.prevRtoOrders
+            : data.prevRtoRate
+          : undefined,
+      compareFormatter:
+        rtoMode === "O" ? (value) => nfInt.format(value) : (value) => nfPct.format(value),
+      activeColor: "#f59e0b",
+      unavailable: data.unavailable?.returns,
+      loading,
+      deltaLoading,
+      selected: false,
+      selectionIndicatorSelected: false,
+      showSelectionIndicator: false,
+    },
+  ];
+
+  return new Map(
+    cards
+      .filter((metric) => !metric.hidden)
+      .map((metric) => [
+        metric.id,
+        {
+          loading,
+          deltaLoading,
+          invertDeltaColor: false,
+          unavailable: false,
+          compareFormatter: metric.formatter,
+          ...metric,
+        },
+      ]),
+  );
+}
+
+function DesktopKpiPages({
+  cardsById,
+  kpiLayout,
+  onKpiLayoutChange,
+  canEdit = false,
+  dashboardLayoutEditing = false,
+}) {
+  const [activeId, setActiveId] = useState(null);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageDirection, setPageDirection] = useState(1);
+  const [pinMessage, setPinMessage] = useState("");
+  const isEditing = canEdit && dashboardLayoutEditing;
+  const normalizedLayout = useMemo(
+    () => normalizeDesktopKpiLayout({
+      ...kpiLayout,
+      order: normalizeDesktopKpiLayout(kpiLayout).order.filter((id) => cardsById.has(id)),
+    }),
+    [cardsById, kpiLayout],
+  );
+  const activeLayout = normalizedLayout;
+  const renderedOrder = useMemo(
+    () => deriveRenderedDesktopKpiOrder(activeLayout).filter((id) => cardsById.has(id)),
+    [activeLayout, cardsById],
+  );
+  const pages = useMemo(() => paginateKpiIds(renderedOrder), [renderedOrder]);
+  const pinnedSet = useMemo(() => new Set(activeLayout.pinned), [activeLayout.pinned]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 8 } }),
+  );
+
+  useEffect(() => {
+    setPageIndex((current) => Math.min(current, pages.length - 1));
+  }, [pages.length]);
+
+  useEffect(() => {
+    if (!pinMessage) return undefined;
+    const timer = window.setTimeout(() => setPinMessage(""), 2200);
+    return () => window.clearTimeout(timer);
+  }, [pinMessage]);
+
+  const handleTogglePin = (metricId) => {
+    if (pinnedSet.has(metricId)) {
+      const nextLayout = {
+        ...activeLayout,
+        pinned: activeLayout.pinned.filter((id) => id !== metricId),
+      };
+      if (!isEditing) {
+        onKpiLayoutChange(nextLayout, { persist: true });
+      } else {
+        onKpiLayoutChange(normalizeDesktopKpiLayout(nextLayout));
+      }
+      return;
+    }
+
+    if (activeLayout.pinned.length >= MAX_PINNED_KPIS) {
+      setPinMessage("You can pin a maximum of 3 KPIs.");
+      return;
+    }
+
+    const nextLayout = {
+      ...activeLayout,
+      pinned: [...activeLayout.pinned, metricId],
+    };
+    if (!isEditing) {
+      onKpiLayoutChange(nextLayout, { persist: true });
+    } else {
+      onKpiLayoutChange(normalizeDesktopKpiLayout(nextLayout));
+    }
+  };
+
+  const handlePageChange = (nextIndex) => {
+    if (nextIndex === pageIndex || nextIndex < 0 || nextIndex >= pages.length) return;
+    setPageDirection(nextIndex > pageIndex ? 1 : -1);
+    setPageIndex(nextIndex);
+  };
+
+  const pageVariants = {
+    enter: (direction) => ({
+      x: direction > 0 ? "10%" : "-10%",
+      opacity: 0.45,
+    }),
+    center: {
+      x: 0,
+      opacity: 1,
+    },
+    exit: (direction) => ({
+      x: direction > 0 ? "-10%" : "10%",
+      opacity: 0.45,
+    }),
+  };
+
+  const currentPage = pages[pageIndex] || [];
+  const currentPageSlots = Array.from({ length: KPI_PAGE_SLOT_COUNT }, (_, index) => currentPage[index] || null);
+
+  return (
+    <>
+    <Stack spacing={1.25}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          minHeight: 34,
+        }}
+      >
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Box sx={{ minHeight: 24 }}>
+            {pinMessage ? (
+              <Typography variant="caption" color="warning.main">
+                {pinMessage}
+              </Typography>
+            ) : null}
+          </Box>
+          {isEditing ? (
+            <Typography variant="caption" color="text.secondary" sx={{ px: 0.5 }}>
+              KPI edit mode: drag within pinned or unpinned groups. Page placement updates automatically.
+            </Typography>
+          ) : null}
+        </Stack>
+        <Stack direction="row" spacing={0.25} alignItems="center">
+          {pages.length > 1 ? (
+            <>
+              <IconButton
+                size="small"
+                onClick={() => handlePageChange(pageIndex - 1)}
+                disabled={pageIndex === 0}
+                sx={{
+                  color: "text.secondary",
+                  bgcolor: "rgba(255,255,255,0.03)",
+                }}
+              >
+                <ChevronLeftRoundedIcon fontSize="small" />
+              </IconButton>
+              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 32, textAlign: "center" }}>
+                {pageIndex + 1}/{pages.length}
+              </Typography>
+              <IconButton
+                size="small"
+                onClick={() => handlePageChange(pageIndex + 1)}
+                disabled={pageIndex === pages.length - 1}
+                sx={{
+                  color: "text.secondary",
+                  bgcolor: "rgba(255,255,255,0.03)",
+                }}
+              >
+                <ChevronRightRoundedIcon fontSize="small" />
+              </IconButton>
+            </>
+          ) : null}
+        </Stack>
+      </Box>
+
+      {isEditing ? (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={({ active }) => setActiveId(active.id)}
+          onDragCancel={() => setActiveId(null)}
+          onDragEnd={({ active, over }) => {
+            setActiveId(null);
+            if (!over || active.id === over.id) return;
+            onKpiLayoutChange(
+              reorderDesktopKpiLayout(activeLayout, active.id, over.id),
+            );
+          }}
+        >
+          <SortableContext items={renderedOrder} strategy={rectSortingStrategy}>
+            <Stack spacing={1.5}>
+              {pages.map((pageItems, pageNumber) => (
+                <Box
+                  key={`edit-page-${pageNumber}`}
+                  sx={{
+                    p: 1.2,
+                    borderRadius: "20px",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    bgcolor: "rgba(255,255,255,0.02)",
+                  }}
+                >
+                  <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
+                    Page {pageNumber + 1}
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                      gap: 2,
+                    }}
+                  >
+                    {pageItems.map((metricId) => (
+                      <SortableDesktopKpiCard
+                        key={metricId}
+                        id={metricId}
+                        metric={cardsById.get(metricId)}
+                        isEditing
+                        isPinned={pinnedSet.has(metricId)}
+                        onTogglePin={handleTogglePin}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+              ))}
+            </Stack>
+          </SortableContext>
+        </DndContext>
+      ) : (
+        <Box sx={{ overflow: "hidden", position: "relative" }}>
+          <AnimatePresence mode="wait" initial={false} custom={pageDirection}>
+            <motion.div
+              key={`page-${pageIndex}`}
+              custom={pageDirection}
+              variants={pageVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.24, ease: "easeOut" }}
+            >
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                  gap: 2,
+                }}
+              >
+                {currentPageSlots.map((metricId, index) =>
+                  metricId ? (
+                    <DesktopKpiCard
+                      key={metricId}
+                      metric={cardsById.get(metricId)}
+                      isPinned={pinnedSet.has(metricId)}
+                      isEditing={false}
+                      onTogglePin={handleTogglePin}
+                    />
+                  ) : (
+                    <Box
+                      key={`empty-kpi-slot-${pageIndex}-${index}`}
+                      aria-hidden="true"
+                      sx={{
+                        minHeight: 110,
+                        borderRadius: "12px",
+                        visibility: "hidden",
+                      }}
+                    />
+                  ),
+                )}
+              </Box>
+            </motion.div>
+          </AnimatePresence>
+        </Box>
+      )}
+    </Stack>
+    </>
+  );
+}
+
+function renderToggle({
+  leftActive,
+  leftLabel,
+  rightActive,
+  rightLabel,
+  leftColor = "primary.main",
+  rightColor = "#3b82f6",
+  onClick,
+}) {
+  return (
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        bgcolor: "background.default",
+        borderRadius: 12,
+        p: 0.5,
+        cursor: "pointer",
+        zIndex: 2,
+        boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
+        border: "1px solid",
+        borderColor: "divider",
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+    >
+      <Box
+        sx={{
+          px: 1,
+          py: 0.25,
+          borderRadius: 10,
+          bgcolor: leftActive ? leftColor : "transparent",
+          color: leftActive ? "primary.contrastText" : "text.secondary",
+          fontSize: "0.65rem",
+          fontWeight: 600,
+        }}
+      >
+        {leftLabel}
+      </Box>
+      <Box
+        sx={{
+          px: 1,
+          py: 0.25,
+          borderRadius: 10,
+          bgcolor: rightActive ? rightColor : "transparent",
+          color: rightActive ? "#fff" : "text.secondary",
+          fontSize: "0.65rem",
+          fontWeight: 600,
+        }}
+      >
+        {rightLabel}
+      </Box>
+    </Box>
+  );
+}
 
 export default function KPIs({
+  variant = "legacy",
   query,
   selectedMetrics = [],
   activeMetric = null,
@@ -27,21 +1340,27 @@ export default function KPIs({
   onFunnelData,
   productId,
   productLabel,
-  utmOptions, // Prop from App
-  showRow = null, // null for both, 1 for row 1, 2 for row 2
+  utmOptions,
+  showRow = null,
   compareMode = false,
   showWebVitals = true,
   showCiEvents = true,
+  desktopKpiLayout,
+  onDesktopKpiLayoutChange,
+  canEditDesktopKpis = false,
+  dashboardLayoutEditing = false,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const [loading, setLoading] = useState(true);
   const [deltaLoading, setDeltaLoading] = useState(true);
   const [data, setData] = useState({});
-  const [revenueMode, setRevenueMode] = useState("G"); // 'T' | 'G'
-  const [atcMode, setAtcMode] = useState("R"); // 'R' (Rate) | 'S' (Sessions)
-  const [checkoutMode, setCheckoutMode] = useState("C"); // 'C' (Count) | 'R' (Rate)
-  const [cancellationMode, setCancellationMode] = useState("C"); // 'C' | 'R'
+  const [revenueMode, setRevenueMode] = useState("G");
+  const [atcMode, setAtcMode] = useState("R");
+  const [checkoutMode, setCheckoutMode] = useState("C");
+  const [cancellationMode, setCancellationMode] = useState("C");
+  const [rtoMode, setRtoMode] = useState("O");
+  const [desktopSelectedCardId, setDesktopSelectedCardId] = useState("orders");
   const start = query?.start;
   const end = query?.end;
   const brandKey = query?.brand_key;
@@ -97,53 +1416,57 @@ export default function KPIs({
 
           const orders = { value: resp.total_orders ?? 0 };
           const sales = { value: resp.total_sales ?? 0 };
-          const aovValue =
-            orders.value > 0 ? resp.total_sales / orders.value : 0;
-
+          const aovValue = orders.value > 0 ? resp.total_sales / orders.value : 0;
           const funnel = {
             total_sessions: resp.sessions ?? 0,
             total_atc_sessions: resp.sessions_with_cart_additions ?? 0,
             total_orders: orders.value,
           };
-
           const cvr = {
             cvr: resp.conversion_rate ?? 0,
             cvr_percent: resp.conversion_rate_pct ?? 0,
-            total_orders: orders.value,
-            total_sessions: funnel.total_sessions,
           };
-
           const aov = {
             aov: aovValue,
-            total_sales: sales.value,
-            total_orders: orders.value,
           };
-
           const returnsData = {
-            cancelled_orders: resp.cancelled_orders ?? 0,
-            refunded_orders: resp.refunded_orders ?? 0,
             cancelled_rate:
-              orders.value > 0
-                ? (resp.cancelled_orders ?? 0) / orders.value
-                : 0,
+              orders.value > 0 ? (resp.cancelled_orders ?? 0) / orders.value : 0,
             refunded_rate:
               orders.value > 0 ? (resp.refunded_orders ?? 0) / orders.value : 0,
           };
+          const rtoData = {
+            orders: resp.rto_orders ?? 0,
+            rate:
+              typeof resp.rto_rate === "number"
+                ? resp.rto_rate
+                : orders.value > 0
+                  ? (resp.rto_orders ?? 0) / orders.value
+                  : 0,
+          };
 
-          setData((prev) => ({
-            ...prev,
+          setData({
             orders,
             sales,
             aov,
             cvr,
             funnel,
             returnsData,
-          }));
+            rtoData,
+            totalSessions: funnel.total_sessions,
+            totalAtcSessions: funnel.total_atc_sessions,
+            totalCiEvents: { value: 0 },
+            unavailable: {
+              sessions: false,
+              atc: false,
+              ci: true,
+              cvr: false,
+              returns: false,
+            },
+          });
           setLoading(false);
           setDeltaLoading(false);
-          if (typeof onLoaded === "function") {
-            onLoaded(new Date());
-          }
+          onLoaded?.(new Date());
         })
         .catch(() => {
           setLoading(false);
@@ -179,10 +1502,9 @@ export default function KPIs({
       if (compareStart && compareEnd) {
         base.compare_start = compareStart;
         base.compare_end = compareEnd;
-        base._t = Date.now(); // cache-bust for compare mode
+        base._t = Date.now();
       }
 
-      // Fetch summary first for fast value rendering (cache-backed)
       getDashboardSummary(base)
         .then((resp) => {
           if (cancelled) return;
@@ -201,32 +1523,25 @@ export default function KPIs({
           const unavailable = {
             sessions: !!m.total_sessions?.unavailable,
             atc: !!m.total_atc_sessions?.unavailable || !!m.atc_rate?.unavailable,
-            ci:
-              !!m.total_ci_events?.unavailable || !!m.checkout_rate?.unavailable,
+            ci: !!m.total_ci_events?.unavailable || !!m.checkout_rate?.unavailable,
             cvr: !!m.conversion_rate?.unavailable,
             returns: !!m.cancelled_orders?.unavailable || !!m.refunded_orders?.unavailable,
           };
-
           const returnsData = {
-            cancelled_orders: m.cancelled_orders?.value ?? 0,
-            refunded_orders: m.refunded_orders?.value ?? 0,
             cancelled_rate:
-              orders.value > 0
-                ? (m.cancelled_orders?.value ?? 0) / orders.value
-                : 0,
+              orders.value > 0 ? (m.cancelled_orders?.value ?? 0) / orders.value : 0,
             refunded_rate:
+              orders.value > 0 ? (m.refunded_orders?.value ?? 0) / orders.value : 0,
+          };
+          const rtoData = {
+            orders: m.rto_orders?.value ?? 0,
+            rate:
               orders.value > 0
-                ? (m.refunded_orders?.value ?? 0) / orders.value
+                ? (m.rto_orders?.value ?? 0) / orders.value
                 : 0,
           };
-
           const cvrVal = m.conversion_rate?.value ?? 0;
-          const cvr = {
-            cvr: cvrVal / 100,
-            cvr_percent: cvrVal,
-            total_orders: orders.value,
-            total_sessions: sessions,
-          };
+          const cvr = { cvr: cvrVal / 100, cvr_percent: cvrVal };
           const funnel = {
             total_sessions: sessions,
             total_atc_sessions: atcSessions,
@@ -234,121 +1549,103 @@ export default function KPIs({
             total_orders: orders.value,
           };
 
-          const ordersDelta = {
-            diff_pct: m.total_orders?.diff_pct ?? 0,
-            direction: m.total_orders?.direction ?? "flat",
-          };
-          const salesDelta = {
-            diff_pct: m.total_sales?.diff_pct ?? 0,
-            direction: m.total_sales?.direction ?? "flat",
-          };
-          const aovDelta = {
-            diff_pct: m.average_order_value?.diff_pct ?? 0,
-            direction: m.average_order_value?.direction ?? "flat",
-          };
-          const cvrDelta = {
-            diff_pct: m.conversion_rate?.diff_pct ?? 0,
-            diff_pp: m.conversion_rate?.diff_pp,
-            direction: m.conversion_rate?.direction ?? "flat",
-          };
-          const sessDelta = {
-            diff_pct: m.total_sessions?.diff_pct ?? 0,
-            direction: m.total_sessions?.direction ?? "flat",
-          };
-          const atcDelta = {
-            diff_pct: m.total_atc_sessions?.diff_pct ?? 0,
-            direction: m.total_atc_sessions?.direction ?? "flat",
-          };
-          const ciDelta = {
-            diff_pct: m.total_ci_events?.diff_pct ?? 0,
-            direction: m.total_ci_events?.direction ?? "flat",
-          };
-          const checkoutRateDelta = {
-            diff_pct: m.checkout_rate?.diff_pct ?? 0,
-            direction: m.checkout_rate?.direction ?? "flat",
-          };
-          const cancelledRateDelta = {
-            diff_pct: m.cancelled_orders?.diff_pct ?? 0,
-            direction: m.cancelled_orders?.direction ?? "flat",
-          };
-          const refundedRateDelta = {
-            diff_pct: m.refunded_orders?.diff_pct ?? 0,
-            direction: m.refunded_orders?.direction ?? "flat",
-          };
-
-          const atcRateDelta = {
-            diff_pct: m.atc_rate?.diff_pct ?? 0,
-            direction: m.atc_rate?.direction ?? "flat",
-          };
-
-          // Extract previous (compare) values when available
-          const cmpOrders = m.total_orders?.previous ?? null;
-          const cmpSales = m.total_sales?.previous ?? null;
-          const cmpAov = m.average_order_value?.previous ?? null;
-          const cmpCvr = m.conversion_rate?.previous ?? null;
-          const cmpSessions = m.total_sessions?.previous ?? null;
-          const cmpAtcSessions = m.total_atc_sessions?.previous ?? null;
-          const cmpCiEvents = m.total_ci_events?.previous ?? null;
-          const cmpCheckoutRate =
-            m.checkout_rate?.previous != null
-              ? m.checkout_rate.previous / 100
-              : cmpSessions != null && cmpCiEvents != null && cmpSessions > 0
-                ? cmpCiEvents / cmpSessions
-                : null;
-          const cmpAtcRate =
-            m.atc_rate?.previous != null
-              ? m.atc_rate.previous / 100
-              : cmpSessions != null && cmpAtcSessions != null && cmpSessions > 0
-                ? cmpAtcSessions / cmpSessions
-                : null;
-          const prevCancelledRate =
-            cmpOrders > 0
-              ? (m.cancelled_orders?.previous ?? 0) / cmpOrders
-              : null;
-          const prevRefundedRate =
-            cmpOrders > 0
-              ? (m.refunded_orders?.previous ?? 0) / cmpOrders
-              : null;
-
-          setData((prev) => ({
-            ...prev,
+          setData({
             orders,
             sales,
             aov,
-            total_ci_events: totalCiEvents,
+            totalCiEvents,
             cvr,
             funnel,
             returnsData,
-            ordersDelta,
-            salesDelta,
-            aovDelta,
-            cvrDelta,
-            sessDelta,
-            atcDelta,
-            ciDelta,
-            checkoutRateDelta,
-            atcRateDelta,
-            cancelledRateDelta,
-            refundedRateDelta,
-            // Compare values
-            prevOrders: cmpOrders,
-            prevSales: cmpSales,
-            prevAov: cmpAov,
-            prevCvr: cmpCvr,
-            prevSessions: cmpSessions,
-            prevAtcSessions: cmpAtcSessions,
-            prevCiEvents: cmpCiEvents,
-            prevCheckoutRate: cmpCheckoutRate,
-            prevAtcRate: cmpAtcRate,
-            prevCancelledRate,
-            prevRefundedRate,
+            rtoData,
+            totalSessions: sessions,
+            totalAtcSessions: atcSessions,
+            ordersDelta: {
+              diff_pct: m.total_orders?.diff_pct ?? 0,
+              direction: m.total_orders?.direction ?? "flat",
+            },
+            salesDelta: {
+              diff_pct: m.total_sales?.diff_pct ?? 0,
+              direction: m.total_sales?.direction ?? "flat",
+            },
+            aovDelta: {
+              diff_pct: m.average_order_value?.diff_pct ?? 0,
+              direction: m.average_order_value?.direction ?? "flat",
+            },
+            cvrDelta: {
+              diff_pct: m.conversion_rate?.diff_pct ?? 0,
+              diff_pp: m.conversion_rate?.diff_pp,
+              direction: m.conversion_rate?.direction ?? "flat",
+            },
+            sessDelta: {
+              diff_pct: m.total_sessions?.diff_pct ?? 0,
+              direction: m.total_sessions?.direction ?? "flat",
+            },
+            atcDelta: {
+              diff_pct: m.total_atc_sessions?.diff_pct ?? 0,
+              direction: m.total_atc_sessions?.direction ?? "flat",
+            },
+            ciDelta: {
+              diff_pct: m.total_ci_events?.diff_pct ?? 0,
+              direction: m.total_ci_events?.direction ?? "flat",
+            },
+            checkoutRateDelta: {
+              diff_pct: m.checkout_rate?.diff_pct ?? 0,
+              direction: m.checkout_rate?.direction ?? "flat",
+            },
+            atcRateDelta: {
+              diff_pct: m.atc_rate?.diff_pct ?? 0,
+              direction: m.atc_rate?.direction ?? "flat",
+            },
+            cancelledRateDelta: {
+              diff_pct: m.cancelled_orders?.diff_pct ?? 0,
+              direction: m.cancelled_orders?.direction ?? "flat",
+            },
+            refundedRateDelta: {
+              diff_pct: m.refunded_orders?.diff_pct ?? 0,
+              direction: m.refunded_orders?.direction ?? "flat",
+            },
+            rtoOrdersDelta: {
+              diff_pct: m.rto_orders?.diff_pct ?? 0,
+              direction: m.rto_orders?.direction ?? "flat",
+            },
+            rtoRateDelta: {
+              diff_pct: m.rto_rate?.diff_pct ?? 0,
+              direction: m.rto_rate?.direction ?? "flat",
+            },
+            prevOrders: m.total_orders?.previous ?? null,
+            prevSales: m.total_sales?.previous ?? null,
+            prevAov: m.average_order_value?.previous ?? null,
+            prevCvr: m.conversion_rate?.previous ?? null,
+            prevSessions: m.total_sessions?.previous ?? null,
+            prevAtcSessions: m.total_atc_sessions?.previous ?? null,
+            prevCiEvents: m.total_ci_events?.previous ?? null,
+            prevCheckoutRate:
+              m.checkout_rate?.previous != null
+                ? m.checkout_rate.previous / 100
+                : null,
+            prevAtcRate:
+              m.atc_rate?.previous != null ? m.atc_rate.previous / 100 : null,
+            prevCancelledRate:
+              (m.total_orders?.previous ?? 0) > 0
+                ? (m.cancelled_orders?.previous ?? 0) / m.total_orders.previous
+                : null,
+            prevRefundedRate:
+              (m.total_orders?.previous ?? 0) > 0
+                ? (m.refunded_orders?.previous ?? 0) / m.total_orders.previous
+                : null,
+            prevRtoOrders: m.rto_orders?.previous ?? null,
+            prevRtoRate:
+              m.rto_rate?.previous != null
+                ? m.rto_rate.previous / 100
+                : (m.total_orders?.previous ?? 0) > 0
+                  ? (m.rto_orders?.previous ?? 0) / m.total_orders.previous
+                  : null,
             unavailable,
-          }));
+          });
           setLoading(false);
           setDeltaLoading(false);
-          if (typeof onLoaded === "function") {
-            onLoaded(new Date());
-          }
+          onLoaded?.(new Date());
         })
         .catch(() => {
           if (cancelled) return;
@@ -356,75 +1653,31 @@ export default function KPIs({
           setDeltaLoading(false);
         });
     }
+
     return () => {
       cancelled = true;
     };
   }, [
-    start,
-    end,
     brandKey,
-    refreshKey,
-    isProductScoped,
-    scopedProductId,
-    onLoaded,
-    utmSource,
-    utmMedium,
-    utmCampaign,
-    salesChannel,
-    deviceType,
-    discountCode,
     city,
-    compareStart,
     compareEnd,
+    compareStart,
+    discountCode,
+    deviceType,
+    end,
+    isProductScoped,
+    onLoaded,
+    refreshKey,
+    salesChannel,
+    scopedProductId,
+    start,
+    utmCampaign,
+    utmMedium,
+    utmSource,
   ]);
 
-  const totalSessions =
-    data.cvr?.total_sessions || data.funnel?.total_sessions || 0;
-  const totalAtcSessions = data.funnel?.total_atc_sessions || 0;
-  const selectedMetricSet = useMemo(
-    () => new Set(Array.isArray(selectedMetrics) ? selectedMetrics : []),
-    [selectedMetrics],
-  );
-  const cvrDeltaValue = data.cvrDelta
-    ? (data.cvrDelta.diff_pct ?? data.cvrDelta.diff_pp)
-    : undefined;
-
-  const isMetricSelected = (metricKey) => selectedMetricSet.has(metricKey);
-  const isAnyMetricSelected = (metricKeys) =>
-    metricKeys.some((metricKey) => selectedMetricSet.has(metricKey));
-
-  const formatUTM = (key, val, options) => {
-    if (!val || !Array.isArray(val) || val.length === 0) return null;
-    const allOptions = options?.[`utm_${key}`] || [];
-    if (allOptions.length > 0 && val.length === allOptions.length) {
-      return `${key}: all`;
-    }
-    return `${key}: ${val}`;
-  };
-
-  const activeFilters = [
-    formatUTM("source", utmSource, utmOptions) && {
-      label: formatUTM("source", utmSource, utmOptions),
-      key: "source",
-    },
-    formatUTM("medium", utmMedium, utmOptions) && {
-      label: formatUTM("medium", utmMedium, utmOptions),
-      key: "medium",
-    },
-    formatUTM("campaign", utmCampaign, utmOptions) && {
-      label: formatUTM("campaign", utmCampaign, utmOptions),
-      key: "campaign",
-    },
-    discountCode && {
-      label: `discount: ${discountCode}`,
-      key: "discount",
-    },
-  ].filter(Boolean);
-
-  // Emit funnel data to parent for FunnelChart (avoids redundant API call)
   useEffect(() => {
-    if (typeof onFunnelData !== "function") return;
-    if (!data.funnel) return;
+    if (typeof onFunnelData !== "function" || !data.funnel) return;
     onFunnelData({
       stats: data.funnel,
       deltas: {
@@ -435,21 +1688,118 @@ export default function KPIs({
       },
       loading: loading || deltaLoading,
     });
-  }, [
-    data.funnel,
-    data.sessDelta,
-    data.atcDelta,
-    data.ciDelta,
-    data.ordersDelta,
-    data.cvrDelta,
-    loading,
-    deltaLoading,
-    onFunnelData,
-  ]);
+  }, [data, deltaLoading, loading, onFunnelData]);
+
+  const activeFilters = [
+    Array.isArray(utmSource) && utmSource.length > 0
+      ? { key: "source", label: `source: ${utmSource}` }
+      : null,
+    Array.isArray(utmMedium) && utmMedium.length > 0
+      ? { key: "medium", label: `medium: ${utmMedium}` }
+      : null,
+    Array.isArray(utmCampaign) && utmCampaign.length > 0
+      ? { key: "campaign", label: `campaign: ${utmCampaign}` }
+      : null,
+    discountCode ? { key: "discount", label: `discount: ${discountCode}` } : null,
+  ].filter(Boolean);
+
+  const desktopCardsById = useMemo(
+    () =>
+      buildDesktopMetrics({
+        compareMode,
+        data: {
+          ...data,
+          cvrDeltaValue: data.cvrDelta ? data.cvrDelta.diff_pct ?? data.cvrDelta.diff_pp : undefined,
+        },
+        deltaLoading,
+        desktopSelectedCardId,
+        formatConvertedAmount,
+        loading,
+        onDesktopCardSelect: setDesktopSelectedCardId,
+        onSelectMetric,
+        onToggleMetric,
+        revenueMode,
+        onRevenueModeToggle: () => setRevenueMode((prev) => (prev === "G" ? "N" : "G")),
+        atcMode,
+        onAtcModeToggle: () => setAtcMode((prev) => (prev === "R" ? "S" : "R")),
+        checkoutMode,
+        onCheckoutModeToggle: () => setCheckoutMode((prev) => (prev === "R" ? "C" : "R")),
+        cancellationMode,
+        onCancellationModeToggle: () => setCancellationMode((prev) => (prev === "C" ? "R" : "C")),
+        rtoMode,
+        onRtoModeToggle: () => setRtoMode((prev) => (prev === "O" ? "%" : "O")),
+        selectedMetrics,
+        activeMetric,
+        showCiEvents,
+        convertAmount,
+      }),
+    [
+      activeMetric,
+      compareMode,
+      convertAmount,
+      data,
+      deltaLoading,
+      desktopSelectedCardId,
+      formatConvertedAmount,
+      loading,
+      onSelectMetric,
+      onToggleMetric,
+      revenueMode,
+      atcMode,
+      checkoutMode,
+      cancellationMode,
+      rtoMode,
+      selectedMetrics,
+      showCiEvents,
+    ],
+  );
+
+  useEffect(() => {
+    const fallbackByMetric = {
+      orders: "orders",
+      sales: "revenue",
+      aov: "aov",
+      sessions: "sessions",
+      atc_rate: "atc",
+      atc: "atc",
+      checkout_rate: "checkout",
+      ci_events: "checkout",
+      cvr: "cvr",
+    };
+
+    if (!activeMetric) return;
+    const nextCardId = fallbackByMetric[activeMetric];
+    if (!nextCardId) return;
+
+    const isCurrentMatch = (
+      (activeMetric === "sales" && desktopSelectedCardId === "revenue")
+      || ((activeMetric === "atc" || activeMetric === "atc_rate") && desktopSelectedCardId === "atc")
+      || ((activeMetric === "checkout_rate" || activeMetric === "ci_events") && desktopSelectedCardId === "checkout")
+      || desktopSelectedCardId === nextCardId
+    );
+
+    if (!isCurrentMatch) {
+      setDesktopSelectedCardId(nextCardId);
+    }
+  }, [activeMetric, desktopSelectedCardId]);
+
+  if (variant === "desktop_paged") {
+    return (
+      <DesktopKpiPages
+        cardsById={desktopCardsById}
+        kpiLayout={desktopKpiLayout}
+        onKpiLayoutChange={onDesktopKpiLayoutChange}
+        canEdit={canEditDesktopKpis}
+        dashboardLayoutEditing={dashboardLayoutEditing}
+      />
+    );
+  }
+
+  const totalSessions = data.totalSessions || 0;
+  const totalAtcSessions = data.totalAtcSessions || 0;
 
   return (
     <>
-      {/* Desktop-only Active Filters & Scope Label */}
       {(showRow === null || showRow === 1) && (
         <Stack
           direction="row"
@@ -462,28 +1812,25 @@ export default function KPIs({
           </Typography>
 
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            {activeFilters.map((f) => (
+            {activeFilters.map((filter) => (
               <GlassChip
-                key={f.key}
-                label={f.label}
+                key={filter.key}
+                label={filter.label}
                 size="small"
                 isDark={isDark}
-                active={true}
-                sx={{
-                  maxWidth: 200,
-                }}
+                active
+                sx={{ maxWidth: 200 }}
               />
             ))}
-            {isProductScoped && (
+            {isProductScoped ? (
               <Typography variant="caption" color="text.secondary">
                 Using product-level KPIs
               </Typography>
-            )}
+            ) : null}
           </Box>
         </Stack>
       )}
       <Grid container spacing={2} columns={12}>
-        {/* Row 1: Total Orders, Revenue, AOV, CVR (4 items) */}
         {(showRow === null || showRow === 1 || showRow === "mobile_top") && (
           <>
             <Grid
@@ -495,7 +1842,7 @@ export default function KPIs({
                 value={data.orders?.value ?? 0}
                 loading={loading}
                 deltaLoading={deltaLoading}
-                formatter={(v) => nfInt.format(v)}
+                formatter={(value) => nfInt.format(value)}
                 delta={
                   data.ordersDelta
                     ? {
@@ -511,13 +1858,13 @@ export default function KPIs({
                   onToggleMetric ? () => onToggleMetric("orders") : undefined
                 }
                 selected={activeMetric === "orders"}
-                selectionIndicatorSelected={isMetricSelected("orders")}
+                selectionIndicatorSelected={selectedMetrics.includes("orders")}
                 compareValue={
                   compareMode && data.prevOrders != null
                     ? data.prevOrders
                     : undefined
                 }
-                compareFormatter={(v) => nfInt.format(v)}
+                compareFormatter={(value) => nfInt.format(value)}
               />
             </Grid>
             <Grid
@@ -526,69 +1873,13 @@ export default function KPIs({
             >
               <KPIStat
                 label={revenueMode === "G" ? "Gross Revenue" : "Net Revenue"}
-                action={
-                  <Box
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      bgcolor: "background.default",
-                      borderRadius: 12,
-                      p: 0.5,
-                      cursor: "pointer",
-                      zIndex: 2,
-                      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
-                      border: "1px solid",
-                      borderColor: "divider",
-                      transition: "all 0.3s ease",
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setRevenueMode((prev) => (prev === "G" ? "N" : "G"));
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        px: 1,
-                        py: 0.25,
-                        borderRadius: 10,
-                        bgcolor:
-                          revenueMode === "G" ? "primary.main" : "transparent",
-                        color:
-                          revenueMode === "G"
-                            ? "primary.contrastText"
-                            : "text.secondary",
-                        fontSize: "0.65rem",
-                        fontWeight: 600,
-                        transition: "all 0.2s ease",
-                        boxShadow:
-                          revenueMode === "G"
-                            ? "0 1px 2px rgba(0,0,0,0.2)"
-                            : "none",
-                      }}
-                    >
-                      G
-                    </Box>
-                    <Box
-                      sx={{
-                        px: 1,
-                        py: 0.25,
-                        borderRadius: 10,
-                        bgcolor:
-                          revenueMode === "N" ? "#3b82f6" : "transparent",
-                        color: revenueMode === "N" ? "#fff" : "text.secondary",
-                        fontSize: "0.65rem",
-                        fontWeight: 600,
-                        transition: "all 0.2s ease",
-                        boxShadow:
-                          revenueMode === "N"
-                            ? "0 1px 2px rgba(0,0,0,0.2)"
-                            : "none",
-                      }}
-                    >
-                      N
-                    </Box>
-                  </Box>
-                }
+                action={renderToggle({
+                  leftActive: revenueMode === "G",
+                  leftLabel: "G",
+                  rightActive: revenueMode === "N",
+                  rightLabel: "N",
+                  onClick: () => setRevenueMode((prev) => (prev === "G" ? "N" : "G")),
+                })}
                 value={
                   revenueMode === "G"
                     ? convertAmount(data.sales?.value ?? 0)
@@ -596,8 +1887,8 @@ export default function KPIs({
                 }
                 loading={loading}
                 deltaLoading={deltaLoading}
-                formatter={(v) =>
-                  formatConvertedAmount(v, { maximumFractionDigits: 0 })
+                formatter={(value) =>
+                  formatConvertedAmount(value, { maximumFractionDigits: 0 })
                 }
                 delta={
                   data.salesDelta
@@ -607,15 +1898,12 @@ export default function KPIs({
                       }
                     : undefined
                 }
-                onSelect={
-                  onSelectMetric ? () => onSelectMetric("sales") : undefined
-                }
+                onSelect={onSelectMetric ? () => onSelectMetric("sales") : undefined}
                 onSelectionToggle={
                   onToggleMetric ? () => onToggleMetric("sales") : undefined
                 }
                 selected={activeMetric === "sales"}
-                selectionIndicatorSelected={isMetricSelected("sales")}
-                activeColor={revenueMode === "G" ? "#10b981" : "#3b82f6"}
+                selectionIndicatorSelected={selectedMetrics.includes("sales")}
                 compareValue={
                   compareMode && data.prevSales != null
                     ? revenueMode === "G"
@@ -623,9 +1911,10 @@ export default function KPIs({
                       : convertAmount(data.prevSales) / 1.18
                     : undefined
                 }
-                compareFormatter={(v) =>
-                  formatConvertedAmount(v, { maximumFractionDigits: 0 })
+                compareFormatter={(value) =>
+                  formatConvertedAmount(value, { maximumFractionDigits: 0 })
                 }
+                activeColor={revenueMode === "G" ? "#10b981" : "#3b82f6"}
               />
             </Grid>
             <Grid
@@ -637,8 +1926,8 @@ export default function KPIs({
                 value={convertAmount(data.aov?.aov ?? 0)}
                 loading={loading}
                 deltaLoading={deltaLoading}
-                formatter={(v) =>
-                  formatConvertedAmount(v, { maximumFractionDigits: 0 })
+                formatter={(value) =>
+                  formatConvertedAmount(value, { maximumFractionDigits: 0 })
                 }
                 delta={
                   data.aovDelta
@@ -648,21 +1937,19 @@ export default function KPIs({
                       }
                     : undefined
                 }
-                onSelect={
-                  onSelectMetric ? () => onSelectMetric("aov") : undefined
-                }
+                onSelect={onSelectMetric ? () => onSelectMetric("aov") : undefined}
                 onSelectionToggle={
                   onToggleMetric ? () => onToggleMetric("aov") : undefined
                 }
                 selected={activeMetric === "aov"}
-                selectionIndicatorSelected={isMetricSelected("aov")}
+                selectionIndicatorSelected={selectedMetrics.includes("aov")}
                 compareValue={
                   compareMode && data.prevAov != null
                     ? convertAmount(data.prevAov)
                     : undefined
                 }
-                compareFormatter={(v) =>
-                  formatConvertedAmount(v, { maximumFractionDigits: 0 })
+                compareFormatter={(value) =>
+                  formatConvertedAmount(value, { maximumFractionDigits: 0 })
                 }
               />
             </Grid>
@@ -671,94 +1958,35 @@ export default function KPIs({
               sx={{ order: { xs: 7, md: 0 } }}
             >
               <KPIStat
-                label={
-                  cancellationMode === "C" ? "Cancellation Rate" : "Refund Rate"
-                }
-                centerOnMobile={true}
-                action={
-                  <Box
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      bgcolor: "background.default",
-                      borderRadius: 12,
-                      p: 0.5,
-                      cursor: "pointer",
-                      zIndex: 2,
-                      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
-                      border: "1px solid",
-                      borderColor: "divider",
-                      transition: "all 0.3s ease",
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCancellationMode((prev) => (prev === "C" ? "R" : "C"));
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        px: 1,
-                        py: 0.25,
-                        borderRadius: 10,
-                        bgcolor:
-                          cancellationMode === "C"
-                            ? "error.main"
-                            : "transparent",
-                        color:
-                          cancellationMode === "C"
-                            ? "error.contrastText"
-                            : "text.secondary",
-                        fontSize: "0.65rem",
-                        fontWeight: 600,
-                        transition: "all 0.2s ease",
-                        boxShadow:
-                          cancellationMode === "C"
-                            ? "0 1px 2px rgba(0,0,0,0.2)"
-                            : "none",
-                      }}
-                    >
-                      C
-                    </Box>
-                    <Box
-                      sx={{
-                        px: 1,
-                        py: 0.25,
-                        borderRadius: 10,
-                        bgcolor:
-                          cancellationMode === "R"
-                            ? "warning.main"
-                            : "transparent",
-                        color:
-                          cancellationMode === "R" ? "#fff" : "text.secondary",
-                        fontSize: "0.65rem",
-                        fontWeight: 600,
-                        transition: "all 0.2s ease",
-                        boxShadow:
-                          cancellationMode === "R"
-                            ? "0 1px 2px rgba(0,0,0,0.2)"
-                            : "none",
-                      }}
-                    >
-                      R
-                    </Box>
-                  </Box>
-                }
+                label={cancellationMode === "C" ? "Cancellation Rate" : "Refund Rate"}
+                action={renderToggle({
+                  leftActive: cancellationMode === "C",
+                  leftLabel: "C",
+                  rightActive: cancellationMode === "R",
+                  rightLabel: "R",
+                  leftColor: "error.main",
+                  rightColor: "warning.main",
+                  onClick: () =>
+                    setCancellationMode((prev) => (prev === "C" ? "R" : "C")),
+                })}
                 value={
                   cancellationMode === "C"
-                    ? (data.returnsData?.cancelled_rate ?? 0)
-                    : (data.returnsData?.refunded_rate ?? 0)
+                    ? data.returnsData?.cancelled_rate ?? 0
+                    : data.returnsData?.refunded_rate ?? 0
                 }
                 unavailable={data.unavailable?.returns}
                 loading={loading}
                 deltaLoading={deltaLoading}
-                formatter={(v) => nfPct.format(v)}
+                formatter={(value) => nfPct.format(value)}
                 delta={
-                  cancellationMode === "C" && data.cancelledRateDelta
-                    ? {
-                        value: data.cancelledRateDelta.diff_pct,
-                        direction: data.cancelledRateDelta.direction,
-                      }
-                    : cancellationMode === "R" && data.refundedRateDelta
+                  cancellationMode === "C"
+                    ? data.cancelledRateDelta
+                      ? {
+                          value: data.cancelledRateDelta.diff_pct,
+                          direction: data.cancelledRateDelta.direction,
+                        }
+                      : undefined
+                    : data.refundedRateDelta
                       ? {
                           value: data.refundedRateDelta.diff_pct,
                           direction: data.refundedRateDelta.direction,
@@ -768,25 +1996,80 @@ export default function KPIs({
                 selected={false}
                 selectionIndicatorSelected={false}
                 showSelectionIndicator={false}
-                activeColor={cancellationMode === "C" ? "#ef4444" : "#f59e0b"}
-                invertDeltaColor={true}
+                centerOnMobile
                 compareValue={
                   compareMode
-                    ? cancellationMode === "C" && data.prevCancelledRate != null
+                    ? cancellationMode === "C"
                       ? data.prevCancelledRate
-                      : cancellationMode === "R" &&
-                          data.prevRefundedRate != null
-                        ? data.prevRefundedRate
-                        : undefined
+                      : data.prevRefundedRate
                     : undefined
                 }
-                compareFormatter={(v) => nfPct.format(v)}
+                compareFormatter={(value) => nfPct.format(value)}
+                invertDeltaColor
+                activeColor={cancellationMode === "C" ? "#ef4444" : "#f59e0b"}
+              />
+            </Grid>
+            <Grid
+              size={{ xs: 12, sm: 6, md: 3 }}
+              sx={{ order: { xs: 8, md: 0 } }}
+            >
+              <KPIStat
+                label={rtoMode === "O" ? "RTO Orders" : "RTO %"}
+                action={renderToggle({
+                  leftActive: rtoMode === "O",
+                  leftLabel: "O",
+                  rightActive: rtoMode === "%",
+                  rightLabel: "%",
+                  leftColor: "warning.main",
+                  rightColor: "error.main",
+                  onClick: () => setRtoMode((prev) => (prev === "O" ? "%" : "O")),
+                })}
+                value={rtoMode === "O" ? data.rtoData?.orders ?? 0 : data.rtoData?.rate ?? 0}
+                unavailable={data.unavailable?.returns}
+                loading={loading}
+                deltaLoading={deltaLoading}
+                formatter={
+                  rtoMode === "O"
+                    ? (value) => nfInt.format(value)
+                    : (value) => nfPct.format(value)
+                }
+                delta={
+                  rtoMode === "O"
+                    ? data.rtoOrdersDelta
+                      ? {
+                          value: data.rtoOrdersDelta.diff_pct,
+                          direction: data.rtoOrdersDelta.direction,
+                        }
+                      : undefined
+                    : data.rtoRateDelta
+                      ? {
+                          value: data.rtoRateDelta.diff_pct,
+                          direction: data.rtoRateDelta.direction,
+                        }
+                      : undefined
+                }
+                selected={false}
+                selectionIndicatorSelected={false}
+                showSelectionIndicator={false}
+                centerOnMobile
+                compareValue={
+                  compareMode
+                    ? rtoMode === "O"
+                      ? data.prevRtoOrders
+                      : data.prevRtoRate
+                    : undefined
+                }
+                compareFormatter={
+                  rtoMode === "O"
+                    ? (value) => nfInt.format(value)
+                    : (value) => nfPct.format(value)
+                }
+                activeColor="#f59e0b"
               />
             </Grid>
           </>
         )}
 
-        {/* Row 2 split: Sessions, ATC, CI and Conversion */}
         {(showRow === null ||
           showRow === 2 ||
           showRow === "sessions_atc" ||
@@ -802,7 +2085,7 @@ export default function KPIs({
                 unavailable={data.unavailable?.sessions}
                 loading={loading}
                 deltaLoading={deltaLoading}
-                formatter={(v) => nfInt.format(v)}
+                formatter={(value) => nfInt.format(value)}
                 delta={
                   data.sessDelta
                     ? {
@@ -812,23 +2095,19 @@ export default function KPIs({
                     : undefined
                 }
                 onSelect={
-                  onSelectMetric && !data.unavailable?.sessions
-                    ? () => onSelectMetric("sessions")
-                    : undefined
+                  onSelectMetric ? () => onSelectMetric("sessions") : undefined
                 }
                 onSelectionToggle={
-                  onToggleMetric && !data.unavailable?.sessions
-                    ? () => onToggleMetric("sessions")
-                    : undefined
+                  onToggleMetric ? () => onToggleMetric("sessions") : undefined
                 }
                 selected={activeMetric === "sessions"}
-                selectionIndicatorSelected={isMetricSelected("sessions")}
+                selectionIndicatorSelected={selectedMetrics.includes("sessions")}
                 compareValue={
                   compareMode && data.prevSessions != null
                     ? data.prevSessions
                     : undefined
                 }
-                compareFormatter={(v) => nfInt.format(v)}
+                compareFormatter={(value) => nfInt.format(value)}
               />
             </Grid>
             <Grid
@@ -837,78 +2116,14 @@ export default function KPIs({
             >
               <KPIStat
                 label={atcMode === "R" ? "ATC Rate" : "ATC Sessions"}
-                action={
-                  <Box
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      bgcolor: "background.default",
-                      borderRadius: 12,
-                      p: 0.5,
-                      cursor: "pointer",
-                      zIndex: 2,
-                      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
-                      border: "1px solid",
-                      borderColor: "divider",
-                      transition: "all 0.3s ease",
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const nextMode = atcMode === "R" ? "S" : "R";
-                      const previousMetric = atcMode === "R" ? "atc_rate" : "atc";
-                      const nextMetric = nextMode === "R" ? "atc_rate" : "atc";
-                      setAtcMode(nextMode);
-                      if (isAnyMetricSelected(["atc", "atc_rate"])) {
-                        if (typeof onToggleMetric === "function") {
-                          onToggleMetric(nextMetric, {
-                            replaceMetricKey: previousMetric,
-                          });
-                        }
-                      }
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        px: 1,
-                        py: 0.25,
-                        borderRadius: 10,
-                        bgcolor:
-                          atcMode === "R" ? "#f59e0b" : "transparent",
-                        color:
-                          atcMode === "R"
-                            ? "#fff"
-                            : "text.secondary",
-                        fontSize: "0.65rem",
-                        fontWeight: 600,
-                        transition: "all 0.2s ease",
-                        boxShadow:
-                          atcMode === "R"
-                            ? "0 1px 2px rgba(0,0,0,0.2)"
-                            : "none",
-                      }}
-                    >
-                      R
-                    </Box>
-                    <Box
-                      sx={{
-                        px: 1,
-                        py: 0.25,
-                        borderRadius: 10,
-                        bgcolor: atcMode === "S" ? "primary.main" : "transparent",
-                        color: atcMode === "S" ? "primary.contrastText" : "text.secondary",
-                        fontSize: "0.65rem",
-                        fontWeight: 600,
-                        transition: "all 0.2s ease",
-                        boxShadow:
-                          atcMode === "S"
-                            ? "0 1px 2px rgba(0,0,0,0.2)"
-                            : "none",
-                      }}
-                    >
-                      S
-                    </Box>
-                  </Box>
-                }
+                action={renderToggle({
+                  leftActive: atcMode === "R",
+                  leftLabel: "R",
+                  rightActive: atcMode === "S",
+                  rightLabel: "S",
+                  leftColor: "#f59e0b",
+                  onClick: () => setAtcMode((prev) => (prev === "R" ? "S" : "R")),
+                })}
                 value={
                   atcMode === "R"
                     ? totalSessions > 0
@@ -921,16 +2136,18 @@ export default function KPIs({
                 deltaLoading={deltaLoading}
                 formatter={
                   atcMode === "R"
-                    ? (v) => nfPct.format(v)
-                    : (v) => nfInt.format(v)
+                    ? (value) => nfPct.format(value)
+                    : (value) => nfInt.format(value)
                 }
                 delta={
-                  atcMode === "R" && data.atcRateDelta
-                    ? {
-                        value: data.atcRateDelta.diff_pct,
-                        direction: data.atcRateDelta.direction,
-                      }
-                    : atcMode === "S" && data.atcDelta
+                  atcMode === "R"
+                    ? data.atcRateDelta
+                      ? {
+                          value: data.atcRateDelta.diff_pct,
+                          direction: data.atcRateDelta.direction,
+                        }
+                      : undefined
+                    : data.atcDelta
                       ? {
                           value: data.atcDelta.diff_pct,
                           direction: data.atcDelta.direction,
@@ -938,40 +2155,39 @@ export default function KPIs({
                       : undefined
                 }
                 onSelect={
-                  onSelectMetric && !data.unavailable?.atc
+                  onSelectMetric
                     ? () => onSelectMetric(atcMode === "R" ? "atc_rate" : "atc")
                     : undefined
                 }
                 onSelectionToggle={
-                  onToggleMetric && !data.unavailable?.atc
+                  onToggleMetric
                     ? () => onToggleMetric(atcMode === "R" ? "atc_rate" : "atc")
                     : undefined
                 }
-                selected={
-                  activeMetric === "atc" || activeMetric === "atc_rate"
+                selected={activeMetric === "atc_rate" || activeMetric === "atc"}
+                selectionIndicatorSelected={
+                  selectedMetrics.includes("atc_rate") ||
+                  selectedMetrics.includes("atc")
                 }
-                selectionIndicatorSelected={isAnyMetricSelected(["atc", "atc_rate"])}
-                activeColor={atcMode === "S" ? "#f59e0b" : "#10b981"}
                 compareValue={
                   compareMode
-                    ? atcMode === "R" && data.prevAtcRate != null
+                    ? atcMode === "R"
                       ? data.prevAtcRate
-                      : atcMode === "S" && data.prevAtcSessions != null
-                        ? data.prevAtcSessions
-                        : undefined
+                      : data.prevAtcSessions
                     : undefined
                 }
                 compareFormatter={
                   atcMode === "R"
-                    ? (v) => nfPct.format(v)
-                    : (v) => nfInt.format(v)
+                    ? (value) => nfPct.format(value)
+                    : (value) => nfInt.format(value)
                 }
+                activeColor={atcMode === "R" ? "#10b981" : "#f59e0b"}
               />
             </Grid>
             {showCiEvents && (
               <Grid
                 size={{ xs: 12, sm: 6, md: 3 }}
-                sx={{ order: { xs: 7, md: 0 } }}
+                sx={{ order: { xs: 9, md: 0 } }}
               >
                 <KPIStat
                   label={
@@ -979,107 +2195,41 @@ export default function KPIs({
                       ? "Checkout Rate"
                       : "Checkout Initiated Events"
                   }
-                  action={
-                    <Box
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        bgcolor: "background.default",
-                        borderRadius: 12,
-                        p: 0.5,
-                        cursor: "pointer",
-                        zIndex: 2,
-                        boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
-                        border: "1px solid",
-                        borderColor: "divider",
-                        transition: "all 0.3s ease",
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const nextMode = checkoutMode === "R" ? "C" : "R";
-                        const previousMetric =
-                          checkoutMode === "R" ? "checkout_rate" : "ci_events";
-                        const nextMetric =
-                          nextMode === "R" ? "checkout_rate" : "ci_events";
-                        setCheckoutMode(nextMode);
-                        if (isAnyMetricSelected(["ci_events", "checkout_rate"])) {
-                          if (typeof onToggleMetric === "function") {
-                            onToggleMetric(nextMetric, {
-                              replaceMetricKey: previousMetric,
-                            });
-                          }
-                        }
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          px: 1,
-                          py: 0.25,
-                          borderRadius: 10,
-                          bgcolor:
-                            checkoutMode === "C"
-                              ? "primary.main"
-                              : "transparent",
-                          color:
-                            checkoutMode === "C"
-                              ? "primary.contrastText"
-                              : "text.secondary",
-                          fontSize: "0.65rem",
-                          fontWeight: 600,
-                          transition: "all 0.2s ease",
-                          boxShadow:
-                            checkoutMode === "C"
-                              ? "0 1px 2px rgba(0,0,0,0.2)"
-                              : "none",
-                        }}
-                      >
-                        C
-                      </Box>
-                      <Box
-                        sx={{
-                          px: 1,
-                          py: 0.25,
-                          borderRadius: 10,
-                          bgcolor:
-                            checkoutMode === "R" ? "#10b981" : "transparent",
-                          color:
-                            checkoutMode === "R" ? "#fff" : "text.secondary",
-                          fontSize: "0.65rem",
-                          fontWeight: 600,
-                          transition: "all 0.2s ease",
-                          boxShadow:
-                            checkoutMode === "R"
-                              ? "0 1px 2px rgba(0,0,0,0.2)"
-                              : "none",
-                        }}
-                      >
-                        R
-                      </Box>
-                    </Box>
-                  }
+                  action={renderToggle({
+                    leftActive: checkoutMode === "C",
+                    leftLabel: "C",
+                    rightActive: checkoutMode === "R",
+                    rightLabel: "R",
+                    leftColor: "primary.main",
+                    rightColor: "#10b981",
+                    onClick: () =>
+                      setCheckoutMode((prev) => (prev === "R" ? "C" : "R")),
+                  })}
                   value={
                     checkoutMode === "R"
                       ? totalSessions > 0
-                        ? (data.total_ci_events?.value ?? 0) / totalSessions
+                        ? (data.totalCiEvents?.value ?? 0) / totalSessions
                         : 0
-                      : data.total_ci_events?.value ?? 0
+                      : data.totalCiEvents?.value ?? 0
                   }
-                  centerOnMobile={true}
+                  centerOnMobile
                   unavailable={data.unavailable?.ci}
                   loading={loading}
                   deltaLoading={deltaLoading}
                   formatter={
                     checkoutMode === "R"
-                      ? (v) => nfPct.format(v)
-                      : (v) => nfInt.format(v)
+                      ? (value) => nfPct.format(value)
+                      : (value) => nfInt.format(value)
                   }
                   delta={
-                    checkoutMode === "R" && data.checkoutRateDelta
-                      ? {
-                          value: data.checkoutRateDelta.diff_pct,
-                          direction: data.checkoutRateDelta.direction,
-                        }
-                      : checkoutMode === "C" && data.ciDelta
+                    checkoutMode === "R"
+                      ? data.checkoutRateDelta
+                        ? {
+                            value: data.checkoutRateDelta.diff_pct,
+                            direction: data.checkoutRateDelta.direction,
+                          }
+                        : undefined
+                      : data.ciDelta
                         ? {
                             value: data.ciDelta.diff_pct,
                             direction: data.ciDelta.direction,
@@ -1087,56 +2237,47 @@ export default function KPIs({
                         : undefined
                   }
                   onSelect={
-                    onSelectMetric && !data.unavailable?.ci
+                    onSelectMetric
                       ? () =>
                           onSelectMetric(
-                            checkoutMode === "R"
-                              ? "checkout_rate"
-                              : "ci_events",
+                            checkoutMode === "R" ? "checkout_rate" : "ci_events",
                           )
                       : undefined
                   }
                   onSelectionToggle={
-                    onToggleMetric && !data.unavailable?.ci
+                    onToggleMetric
                       ? () =>
                           onToggleMetric(
-                            checkoutMode === "R"
-                              ? "checkout_rate"
-                              : "ci_events",
+                            checkoutMode === "R" ? "checkout_rate" : "ci_events",
                           )
                       : undefined
                   }
                   selected={
-                    activeMetric === "ci_events" ||
-                    activeMetric === "checkout_rate"
+                    activeMetric === "checkout_rate" || activeMetric === "ci_events"
                   }
-                  selectionIndicatorSelected={isAnyMetricSelected(["ci_events", "checkout_rate"])}
-                  activeColor={
-                    checkoutMode === "R"
-                      ? "#10b981"
-                      : theme.palette.primary.main
+                  selectionIndicatorSelected={
+                    selectedMetrics.includes("checkout_rate") ||
+                    selectedMetrics.includes("ci_events")
                   }
                   compareValue={
                     compareMode
-                      ? checkoutMode === "R" && data.prevCheckoutRate != null
+                      ? checkoutMode === "R"
                         ? data.prevCheckoutRate
-                        : checkoutMode === "C" && data.prevCiEvents != null
-                          ? data.prevCiEvents
-                          : undefined
+                        : data.prevCiEvents
                       : undefined
                   }
                   compareFormatter={
                     checkoutMode === "R"
-                      ? (v) => nfPct.format(v)
-                      : (v) => nfInt.format(v)
+                      ? (value) => nfPct.format(value)
+                      : (value) => nfInt.format(value)
                   }
+                  activeColor={checkoutMode === "R" ? "#10b981" : "#5ba3e0"}
                 />
               </Grid>
             )}
           </>
         )}
 
-        {/* Row 2 split: Conversion */}
         {(showRow === null ||
           showRow === 2 ||
           showRow === "web_perf_cvr" ||
@@ -1151,48 +2292,43 @@ export default function KPIs({
               unavailable={data.unavailable?.cvr}
               loading={loading}
               deltaLoading={deltaLoading}
-              formatter={(v) => nfPct.format(v)}
+              formatter={(value) => nfPct.format(value)}
               delta={
-                typeof cvrDeltaValue === "number" && data.cvrDelta
+                data.cvrDelta
                   ? {
-                      value: cvrDeltaValue,
+                      value: data.cvrDelta.diff_pct ?? data.cvrDelta.diff_pp,
                       direction: data.cvrDelta.direction,
                     }
                   : undefined
               }
-              onSelect={
-                onSelectMetric && !data.unavailable?.cvr
-                  ? () => onSelectMetric("cvr")
-                  : undefined
-              }
+              onSelect={onSelectMetric ? () => onSelectMetric("cvr") : undefined}
               onSelectionToggle={
-                onToggleMetric && !data.unavailable?.cvr
-                  ? () => onToggleMetric("cvr")
-                  : undefined
+                onToggleMetric ? () => onToggleMetric("cvr") : undefined
               }
               selected={activeMetric === "cvr"}
-              selectionIndicatorSelected={isMetricSelected("cvr")}
+              selectionIndicatorSelected={selectedMetrics.includes("cvr")}
               compareValue={
                 compareMode && data.prevCvr != null
                   ? data.prevCvr / 100
                   : undefined
               }
-              compareFormatter={(v) => nfPct.format(v)}
+              compareFormatter={(value) => nfPct.format(value)}
             />
           </Grid>
         )}
+
         {(showRow === null || showRow === 2 || showRow === "mobile_top") &&
           showWebVitals && (
             <Grid
               size={{ xs: 12, sm: 6, md: 3 }}
-              sx={{ order: { xs: 8, md: 0 } }}
+              sx={{ order: { xs: 10, md: 0 } }}
             >
               <KPIStat
                 label="Web Performance(Avg)"
                 value={webVitalsData.performanceAvg ?? 0}
                 loading={webVitalsData.loading}
                 deltaLoading={webVitalsData.loading}
-                formatter={(v) => nfFloat.format(v)}
+                formatter={(value) => nfFloat.format(value)}
                 delta={
                   typeof webVitalsData.performanceChange === "number"
                     ? {
@@ -1206,7 +2342,7 @@ export default function KPIs({
                       }
                     : undefined
                 }
-                centerOnMobile={true}
+                centerOnMobile
                 activeColor="#06b6d4"
                 onSelect={
                   onSelectMetric ? () => onSelectMetric("performance") : undefined
@@ -1215,7 +2351,7 @@ export default function KPIs({
                   onToggleMetric ? () => onToggleMetric("performance") : undefined
                 }
                 selected={activeMetric === "performance"}
-                selectionIndicatorSelected={isMetricSelected("performance")}
+                selectionIndicatorSelected={selectedMetrics.includes("performance")}
               />
             </Grid>
           )}

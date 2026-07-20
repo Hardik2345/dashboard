@@ -16,7 +16,9 @@ const sessionSchema = new mongoose.Schema(
         "video_add_to_cart_click",
         "video_more_info",
         "video_close",
-        "carrousel_view"
+        "carrousel_view",
+        "Offer_strip_open",
+        "Offer_strip_checkout"
       ],
       required: true,
     },

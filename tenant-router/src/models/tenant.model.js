@@ -120,6 +120,10 @@ const tenantSchema = new mongoose.Schema(
       required: false,
       default: "",
     },
+    is_active: {
+      type: Boolean,
+      default: false,
+    },
     updated_at: {
       type: Date,
       default: Date.now,
