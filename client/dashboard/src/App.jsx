@@ -3503,6 +3503,7 @@ export default function App() {
                     authorTab !== "access" &&
                     authorTab !== "notifications-log" &&
                     authorTab !== "tenant-setup" &&
+                    authorTab !== "requests" &&
                     (isAuthor || showMultipleBrands) && (
                       <Box sx={{ mb: 1 }}>
                         <AuthorBrandSelector
