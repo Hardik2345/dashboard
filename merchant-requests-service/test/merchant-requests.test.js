@@ -983,6 +983,39 @@ test("merchant create request with deadline_date is rejected", async () => {
   assert.equal(res.body.error, "author_required");
 });
 
+test("comments are author-only", async () => {
+  await seedBrandConfig("TMC");
+  const reqDoc = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "merchant-1" },
+    title: "Author comments only",
+    category: "Issues",
+    todoist_task_id: "comment-task",
+    sync: { todoist_task_status: "synced" },
+  });
+  const calls = [];
+  const app = appWithTodoist({
+    createComment: async (taskId, content) => {
+      calls.push({ taskId, content });
+      return { id: "todoist-comment-1" };
+    },
+  });
+
+  const merchant = await request(app)
+    .post(`/merchant-requests/${reqDoc._id}/comments`)
+    .set(merchantHeaders("TMC"))
+    .send({ content: "Merchant comment" });
+  assert.equal(merchant.status, 403);
+  assert.equal(merchant.body.error, "author_required");
+
+  const author = await request(app)
+    .post(`/merchant-requests/${reqDoc._id}/comments`)
+    .set(authorHeaders("TMC"))
+    .send({ content: "Author comment" });
+  assert.equal(author.status, 201);
+  assert.deepEqual(calls, [{ taskId: "comment-task", content: "Author comment" }]);
+});
+
 test("viewer without requests_panel cannot access request endpoints", async () => {
   const reqDoc = await MerchantRequest.create({
     brand_key: "TMC",
