@@ -48,6 +48,7 @@ const DomainRuleSchema = new mongoose.Schema({
       'compare_mode',
       'multiselectable_kpi_cards',
       "ci_events",
+      "rto_kpi",
       'product_conversion:landing_page_path',
       'product_conversion:sessions',
       'product_conversion:atc',

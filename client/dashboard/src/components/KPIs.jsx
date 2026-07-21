@@ -714,6 +714,7 @@ function buildDesktopMetrics({
   selectedMetrics,
   activeMetric,
   showCiEvents,
+  showRtoKpi,
   convertAmount,
 }) {
   const selectedMetricSet = new Set(Array.isArray(selectedMetrics) ? selectedMetrics : []);
@@ -959,7 +960,7 @@ function buildDesktopMetrics({
     },
     {
       id: "rto",
-      label: rtoMode === "O" ? "RTO Orders" : "RTO %",
+      label: rtoMode === "O" ? "RTO Orders (Approx.)" : "RTO % (Approx.)",
       action: renderToggle({
         leftActive: rtoMode === "O",
         leftLabel: "O",
@@ -989,6 +990,7 @@ function buildDesktopMetrics({
       compareFormatter:
         rtoMode === "O" ? (value) => nfInt.format(value) : (value) => nfPct.format(value),
       activeColor: "#f59e0b",
+      hidden: !showRtoKpi,
       unavailable: data.unavailable?.returns,
       loading,
       deltaLoading,
@@ -1345,6 +1347,7 @@ export default function KPIs({
   compareMode = false,
   showWebVitals = true,
   showCiEvents = true,
+  showRtoKpi = true,
   desktopKpiLayout,
   onDesktopKpiLayoutChange,
   canEditDesktopKpis = false,
@@ -1731,6 +1734,7 @@ export default function KPIs({
         selectedMetrics,
         activeMetric,
         showCiEvents,
+        showRtoKpi,
         convertAmount,
       }),
     [
@@ -1751,6 +1755,7 @@ export default function KPIs({
       rtoMode,
       selectedMetrics,
       showCiEvents,
+      showRtoKpi,
     ],
   );
 
@@ -2009,64 +2014,66 @@ export default function KPIs({
                 activeColor={cancellationMode === "C" ? "#ef4444" : "#f59e0b"}
               />
             </Grid>
-            <Grid
-              size={{ xs: 12, sm: 6, md: 3 }}
-              sx={{ order: { xs: 8, md: 0 } }}
-            >
-              <KPIStat
-                label={rtoMode === "O" ? "RTO Orders" : "RTO %"}
-                action={renderToggle({
-                  leftActive: rtoMode === "O",
-                  leftLabel: "O",
-                  rightActive: rtoMode === "%",
-                  rightLabel: "%",
-                  leftColor: "warning.main",
-                  rightColor: "error.main",
-                  onClick: () => setRtoMode((prev) => (prev === "O" ? "%" : "O")),
-                })}
-                value={rtoMode === "O" ? data.rtoData?.orders ?? 0 : data.rtoData?.rate ?? 0}
-                unavailable={data.unavailable?.returns}
-                loading={loading}
-                deltaLoading={deltaLoading}
-                formatter={
-                  rtoMode === "O"
-                    ? (value) => nfInt.format(value)
-                    : (value) => nfPct.format(value)
-                }
-                delta={
-                  rtoMode === "O"
-                    ? data.rtoOrdersDelta
-                      ? {
-                          value: data.rtoOrdersDelta.diff_pct,
-                          direction: data.rtoOrdersDelta.direction,
-                        }
+            {showRtoKpi && (
+              <Grid
+                size={{ xs: 12, sm: 6, md: 3 }}
+                sx={{ order: { xs: 8, md: 0 } }}
+              >
+                <KPIStat
+                  label={rtoMode === "O" ? "RTO Orders (Approx.)" : "RTO % (Approx.)"}
+                  action={renderToggle({
+                    leftActive: rtoMode === "O",
+                    leftLabel: "O",
+                    rightActive: rtoMode === "%",
+                    rightLabel: "%",
+                    leftColor: "warning.main",
+                    rightColor: "error.main",
+                    onClick: () => setRtoMode((prev) => (prev === "O" ? "%" : "O")),
+                  })}
+                  value={rtoMode === "O" ? data.rtoData?.orders ?? 0 : data.rtoData?.rate ?? 0}
+                  unavailable={data.unavailable?.returns}
+                  loading={loading}
+                  deltaLoading={deltaLoading}
+                  formatter={
+                    rtoMode === "O"
+                      ? (value) => nfInt.format(value)
+                      : (value) => nfPct.format(value)
+                  }
+                  delta={
+                    rtoMode === "O"
+                      ? data.rtoOrdersDelta
+                        ? {
+                            value: data.rtoOrdersDelta.diff_pct,
+                            direction: data.rtoOrdersDelta.direction,
+                          }
+                        : undefined
+                      : data.rtoRateDelta
+                        ? {
+                            value: data.rtoRateDelta.diff_pct,
+                            direction: data.rtoRateDelta.direction,
+                          }
+                        : undefined
+                  }
+                  selected={false}
+                  selectionIndicatorSelected={false}
+                  showSelectionIndicator={false}
+                  centerOnMobile
+                  compareValue={
+                    compareMode
+                      ? rtoMode === "O"
+                        ? data.prevRtoOrders
+                        : data.prevRtoRate
                       : undefined
-                    : data.rtoRateDelta
-                      ? {
-                          value: data.rtoRateDelta.diff_pct,
-                          direction: data.rtoRateDelta.direction,
-                        }
-                      : undefined
-                }
-                selected={false}
-                selectionIndicatorSelected={false}
-                showSelectionIndicator={false}
-                centerOnMobile
-                compareValue={
-                  compareMode
-                    ? rtoMode === "O"
-                      ? data.prevRtoOrders
-                      : data.prevRtoRate
-                    : undefined
-                }
-                compareFormatter={
-                  rtoMode === "O"
-                    ? (value) => nfInt.format(value)
-                    : (value) => nfPct.format(value)
-                }
-                activeColor="#f59e0b"
-              />
-            </Grid>
+                  }
+                  compareFormatter={
+                    rtoMode === "O"
+                      ? (value) => nfInt.format(value)
+                      : (value) => nfPct.format(value)
+                  }
+                  activeColor="#f59e0b"
+                />
+              </Grid>
+            )}
           </>
         )}
 

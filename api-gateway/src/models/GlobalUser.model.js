@@ -36,6 +36,7 @@ const BrandMembershipSchema = new mongoose.Schema({
       "sales_channel_filter",
       "device_type_filter",
       "ci_events",
+      "rto_kpi",
       "sessions_drop_off_funnel",
       "product_conversion",
       "compare_mode",
