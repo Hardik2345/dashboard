@@ -27,6 +27,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -51,6 +52,7 @@ import {
 import {
   addMerchantRequestComment,
   createMerchantRequest,
+  deleteMerchantRequest,
   deleteBrandConfig,
   getMerchantRequest,
   linkBrandProject,
@@ -63,6 +65,7 @@ import {
   updateBrandPriorityCaps,
   updateMerchantRequestAssignee,
   updateMerchantRequestDueDate,
+  updateMerchantRequestDeadline,
   updateMerchantRequestStatus,
 } from "../lib/api.js";
 
@@ -158,6 +161,24 @@ const EVENT_CONFIG = {
     bg: "bg-sky-50 dark:bg-sky-900/30",
     label: "Due date changed",
   },
+  deadline_date_changed: {
+    Icon: CalendarDays,
+    color: "text-rose-500 dark:text-rose-400",
+    bg: "bg-rose-50 dark:bg-rose-900/30",
+    label: "Deadline changed",
+  },
+  due_date_synced: {
+    Icon: CalendarDays,
+    color: "text-sky-500 dark:text-sky-400",
+    bg: "bg-sky-50 dark:bg-sky-900/30",
+    label: "Due date synced",
+  },
+  deadline_synced: {
+    Icon: CalendarDays,
+    color: "text-rose-500 dark:text-rose-400",
+    bg: "bg-rose-50 dark:bg-rose-900/30",
+    label: "Deadline synced",
+  },
 };
 
 const TAB_FILTERS = [
@@ -205,6 +226,7 @@ function syncProblem(req) {
     s.todoist_assignment_status,
     s.todoist_status_status,
     s.todoist_due_date_status,
+    s.todoist_deadline_status,
     s.todoist_comment_status,
   ].includes("failed");
 }
@@ -216,6 +238,7 @@ function syncPending(req) {
     s.todoist_assignment_status,
     s.todoist_status_status,
     s.todoist_due_date_status,
+    s.todoist_deadline_status,
     s.todoist_comment_status,
   ].includes("pending");
 }
@@ -231,7 +254,36 @@ function formatRequestError(data, fallback = "Failed to create request") {
   if (error === "invalid_category") return "Please select a valid category.";
   if (error === "invalid_priority") return "Please select a valid priority.";
   if (error === "title_required") return "Please enter a request title.";
+  if (error === "invalid_due_date") return "Enter the due date as DD-MM-YYYY.";
+  if (error === "invalid_deadline_date") return "Enter the deadline as DD-MM-YYYY.";
   return error || fallback;
+}
+
+function formatDateOnly(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : String(value || "");
+}
+
+function parseDateOnly(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  const displayMatch = normalized.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const parts = displayMatch
+    ? { year: Number(displayMatch[3]), month: Number(displayMatch[2]), day: Number(displayMatch[1]) }
+    : isoMatch
+      ? { year: Number(isoMatch[1]), month: Number(isoMatch[2]), day: Number(isoMatch[3]) }
+      : null;
+  if (!parts) return null;
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  if (
+    date.getUTCFullYear() !== parts.year ||
+    date.getUTCMonth() !== parts.month - 1 ||
+    date.getUTCDate() !== parts.day
+  ) {
+    return null;
+  }
+  return `${String(parts.year).padStart(4, "0")}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
 // ── Atomic sub-components ─────────────────────────────────────────────────────
@@ -338,12 +390,21 @@ function RequestCard({ request, selected, onClick, showAssignee = false }) {
         <span className="text-[11px] text-muted-foreground">
           {dayjs(request.updated_at).fromNow()}
         </span>
+        {request.deadline_date && (
+          <>
+            <span className="text-muted-foreground/30">·</span>
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-600 dark:text-rose-400">
+              <Clock className="h-3 w-3" />
+              Deadline {formatDateOnly(request.deadline_date)}
+            </span>
+          </>
+        )}
         {request.due_date && (
           <>
             <span className="text-muted-foreground/30">·</span>
             <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
               <Clock className="h-3 w-3" />
-              Due {request.due_date}
+              Due {formatDateOnly(request.due_date)}
             </span>
           </>
         )}
@@ -370,9 +431,13 @@ function TimelineEvent({ event, isLast }) {
     (event.source === "todoist" ? "Todoist" : "System");
   const eventText =
     event.message ||
-    (event.type === "due_date_changed"
+    (["deadline_date_changed", "deadline_synced"].includes(event.type)
+      ? event.data?.deadline_date
+        ? `Deadline set to ${formatDateOnly(event.data.deadline_date)}`
+        : "Deadline cleared"
+      : ["due_date_changed", "due_date_synced"].includes(event.type)
       ? event.data?.due_date
-        ? `Due date set to ${event.data.due_date}`
+        ? `Due date set to ${formatDateOnly(event.data.due_date)}`
         : "Due date cleared"
       : event.data?.status
         ? `Status → ${STATUS_CONFIG[event.data.status]?.label || event.data.status}`
@@ -912,6 +977,7 @@ export default function MerchantRequestsPanel({
     category: "Feature Request",
     priority: "normal",
     due_date: "",
+    deadline_date: "",
   });
   const [formError, setFormError] = useState("");
   const [formSubmitting, setFormSubmitting] = useState(false);
@@ -924,6 +990,11 @@ export default function MerchantRequestsPanel({
   const [assigneeUpdating, setAssigneeUpdating] = useState(false);
   const [dueDateUpdating, setDueDateUpdating] = useState(false);
   const [dueDateValue, setDueDateValue] = useState("");
+  const [deadlineUpdating, setDeadlineUpdating] = useState(false);
+  const [deadlineValue, setDeadlineValue] = useState("");
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+  const [removeSubmitting, setRemoveSubmitting] = useState(false);
+  const [removeError, setRemoveError] = useState("");
 
   const [isMobile, setIsMobile] = useState(
     () => typeof window !== "undefined" && window.innerWidth < 1024,
@@ -1031,8 +1102,12 @@ export default function MerchantRequestsPanel({
   }, [fetchDetail, selectedId]);
 
   useEffect(() => {
-    setDueDateValue(selectedRequest?.due_date || "");
+    setDueDateValue(formatDateOnly(selectedRequest?.due_date));
   }, [selectedRequest?.id, selectedRequest?.due_date]);
+
+  useEffect(() => {
+    setDeadlineValue(formatDateOnly(selectedRequest?.deadline_date));
+  }, [selectedRequest?.id, selectedRequest?.deadline_date]);
 
   useEffect(() => {
     if (!isAuthor) return;
@@ -1111,14 +1186,34 @@ export default function MerchantRequestsPanel({
     setFormError("");
     setFormSubmitting(true);
     const payload = { ...form, brand_key: activeBrand };
-    if (!isAuthor) delete payload.due_date;
+    if (isAuthor) {
+      const dueDate = parseDateOnly(form.due_date);
+      const deadlineDate = parseDateOnly(form.deadline_date);
+      if (dueDate === null || deadlineDate === null) {
+        setFormSubmitting(false);
+        setFormError("Enter dates as DD-MM-YYYY.");
+        return;
+      }
+      payload.due_date = dueDate;
+      payload.deadline_date = deadlineDate;
+    } else {
+      delete payload.due_date;
+      delete payload.deadline_date;
+    }
     const res = await createMerchantRequest(payload);
     setFormSubmitting(false);
     if (res.error) {
       setFormError(formatRequestError(res.data));
       return;
     }
-    setForm({ title: "", description: "", category: "Feature Request", priority: "normal", due_date: "" });
+    setForm({
+      title: "",
+      description: "",
+      category: "Feature Request",
+      priority: "normal",
+      due_date: "",
+      deadline_date: "",
+    });
     setNewRequestOpen(false);
     const newId = res.data?.request?.id || "";
     if (newId) {
@@ -1165,15 +1260,59 @@ export default function MerchantRequestsPanel({
 
   async function saveDueDate(nextDueDate = dueDateValue) {
     if (!selectedId || !isAuthor) return;
-    const normalized = String(nextDueDate || "").trim();
+    const normalized = parseDateOnly(nextDueDate);
+    if (normalized === null) {
+      setError("Enter the due date as DD-MM-YYYY.");
+      return;
+    }
     setDueDateUpdating(true);
     const res = await updateMerchantRequestDueDate(selectedId, normalized);
     setDueDateUpdating(false);
     if (!res.error) {
-      setDueDateValue(res.data?.request?.due_date || "");
+      setError("");
+      setDueDateValue(formatDateOnly(res.data?.request?.due_date));
       fetchDetail(selectedId, { silent: true });
       fetchRequests({ silent: true });
+    } else {
+      setError(formatRequestError(res.data, "Failed to update due date"));
     }
+  }
+
+  async function saveDeadline(nextDeadline = deadlineValue) {
+    if (!selectedId || !isAuthor) return;
+    const normalized = parseDateOnly(nextDeadline);
+    if (normalized === null) {
+      setError("Enter the deadline as DD-MM-YYYY.");
+      return;
+    }
+    setDeadlineUpdating(true);
+    const res = await updateMerchantRequestDeadline(selectedId, normalized);
+    setDeadlineUpdating(false);
+    if (!res.error) {
+      setError("");
+      setDeadlineValue(formatDateOnly(res.data?.request?.deadline_date));
+      fetchDetail(selectedId, { silent: true });
+      fetchRequests({ silent: true });
+    } else {
+      setError(formatRequestError(res.data, "Failed to update deadline"));
+    }
+  }
+
+  async function confirmRemoveRequest() {
+    if (!selectedId || !isAuthor) return;
+    setRemoveSubmitting(true);
+    setRemoveError("");
+    const res = await deleteMerchantRequest(selectedId);
+    setRemoveSubmitting(false);
+    if (res.error) {
+      setRemoveError(res.data?.error || "Failed to remove request");
+      return;
+    }
+    setRemoveDialogOpen(false);
+    setSelectedId("");
+    setSelectedDetail(null);
+    setMobileShowDetail(false);
+    fetchRequests({ silent: true });
   }
 
   async function handleReconcile() {
@@ -1397,6 +1536,21 @@ export default function MerchantRequestsPanel({
                       <h3 className="flex-1 min-w-0 text-base font-bold text-foreground leading-snug">
                         {selectedRequest.title}
                       </h3>
+                      {isAuthor && (
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-destructive"
+                          aria-label="Remove request"
+                          onClick={() => {
+                            setRemoveError("");
+                            setRemoveDialogOpen(true);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                       <StatusBadge status={selectedRequest.status} />
                     </div>
 
@@ -1447,7 +1601,16 @@ export default function MerchantRequestsPanel({
                           <span className="text-muted-foreground/30">·</span>
                           <span className="inline-flex items-center gap-1 text-muted-foreground text-[11px]">
                             <Clock className="h-3 w-3" />
-                            Due date: {selectedRequest.due_date}
+                            Due date: {formatDateOnly(selectedRequest.due_date)}
+                          </span>
+                        </>
+                      )}
+                      {selectedRequest.deadline_date && (
+                        <>
+                          <span className="text-muted-foreground/30">·</span>
+                          <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400 text-[11px] font-medium">
+                            <CalendarDays className="h-3 w-3" />
+                            Deadline: {formatDateOnly(selectedRequest.deadline_date)}
                           </span>
                         </>
                       )}
@@ -1547,7 +1710,9 @@ export default function MerchantRequestsPanel({
                           </label>
                           <div className="flex flex-col sm:flex-row gap-2">
                             <Input
-                              type="date"
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="DD-MM-YYYY"
                               value={dueDateValue}
                               onChange={(e) => setDueDateValue(e.target.value)}
                               className="h-8 text-xs sm:max-w-[180px]"
@@ -1561,7 +1726,7 @@ export default function MerchantRequestsPanel({
                                 onClick={() => saveDueDate()}
                                 disabled={
                                   dueDateUpdating ||
-                                  dueDateValue === (selectedRequest.due_date || "")
+                                  dueDateValue === formatDateOnly(selectedRequest.due_date)
                                 }
                                 className="h-8 text-xs"
                               >
@@ -1577,6 +1742,52 @@ export default function MerchantRequestsPanel({
                                   variant="ghost"
                                   onClick={() => saveDueDate("")}
                                   disabled={dueDateUpdating}
+                                  className="h-8 text-xs text-muted-foreground"
+                                >
+                                  Clear
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">
+                            Deadline
+                          </label>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <Input
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="DD-MM-YYYY"
+                              value={deadlineValue}
+                              onChange={(e) => setDeadlineValue(e.target.value)}
+                              className="h-8 text-xs sm:max-w-[180px]"
+                              disabled={deadlineUpdating}
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => saveDeadline()}
+                                disabled={
+                                  deadlineUpdating ||
+                                  deadlineValue === formatDateOnly(selectedRequest.deadline_date)
+                                }
+                                className="h-8 text-xs"
+                              >
+                                {deadlineUpdating && (
+                                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                                )}
+                                Save
+                              </Button>
+                              {selectedRequest.deadline_date && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => saveDeadline("")}
+                                  disabled={deadlineUpdating}
                                   className="h-8 text-xs text-muted-foreground"
                                 >
                                   Clear
@@ -1775,18 +1986,37 @@ export default function MerchantRequestsPanel({
             </div>
 
             {isAuthor && (
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">
-                  Due date
-                </label>
-                <Input
-                  type="date"
-                  value={form.due_date}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, due_date: e.target.value }))
-                  }
-                  className="h-9 text-sm"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">
+                    Due date
+                  </label>
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="DD-MM-YYYY"
+                    value={form.due_date}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, due_date: e.target.value }))
+                    }
+                    className="h-9 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">
+                    Deadline
+                  </label>
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="DD-MM-YYYY"
+                    value={form.deadline_date}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, deadline_date: e.target.value }))
+                    }
+                    className="h-9 text-sm"
+                  />
+                </div>
               </div>
             )}
 
@@ -1819,6 +2049,48 @@ export default function MerchantRequestsPanel({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={removeDialogOpen}
+        onOpenChange={(open) => {
+          if (removeSubmitting) return;
+          setRemoveDialogOpen(open);
+          if (!open) setRemoveError("");
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remove this request?</DialogTitle>
+            <DialogDescription>
+              The request will be hidden from the panel but retained in request history. Its Todoist task will not be deleted.
+            </DialogDescription>
+          </DialogHeader>
+          {removeError && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+              {removeError}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={removeSubmitting}
+              onClick={() => setRemoveDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={removeSubmitting}
+              onClick={confirmRemoveRequest}
+            >
+              {removeSubmitting && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Remove request
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

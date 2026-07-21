@@ -18,6 +18,7 @@ const { emitRequestEvent } = require("./realtime");
 const { enqueueSyncJob, processJob } = require("./syncJobs");
 const { normalizeStatus, normalizeStoredStatus } = require("./statusMapping");
 const { getBrandConfig } = require("./brandProvisioning");
+const { softRemoveRequest } = require("./requestLifecycle");
 
 function serializeRequest(doc, { includeAssignee = true } = {}) {
   const request = typeof doc.toObject === "function" ? doc.toObject() : doc;
@@ -38,16 +39,33 @@ function validateTitle(title) {
   return normalized;
 }
 
-function normalizeDueDate(value) {
+function normalizeDateOnly(value, errorCode) {
   if (value === null || value === undefined) return "";
   const normalized = String(value).trim();
   if (!normalized) return "";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-    const err = new Error("invalid_due_date");
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const date = match
+    ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
+    : null;
+  if (
+    !match ||
+    date.getUTCFullYear() !== Number(match[1]) ||
+    date.getUTCMonth() !== Number(match[2]) - 1 ||
+    date.getUTCDate() !== Number(match[3])
+  ) {
+    const err = new Error(errorCode);
     err.statusCode = 400;
     throw err;
   }
   return normalized;
+}
+
+function normalizeDueDate(value) {
+  return normalizeDateOnly(value, "invalid_due_date");
+}
+
+function normalizeDeadlineDate(value) {
+  return normalizeDateOnly(value, "invalid_deadline_date");
 }
 
 function normalizePriority(value) {
@@ -125,7 +143,11 @@ async function createRequest(input, principal, deps) {
   if (input.due_date && !principal.isAuthor) {
     assertAuthor(principal);
   }
+  if (input.deadline_date && !principal.isAuthor) {
+    assertAuthor(principal);
+  }
   const dueDate = normalizeDueDate(input.due_date);
+  const deadlineDate = normalizeDeadlineDate(input.deadline_date);
   const priority = normalizePriority(input.priority);
   const category = normalizeCategory(input.category);
   await assertPriorityCapAvailable(brandKey, priority);
@@ -142,11 +164,13 @@ async function createRequest(input, principal, deps) {
     category,
     priority,
     due_date: dueDate,
+    deadline_date: deadlineDate,
     status: "submitted",
     todoist_labels: ["Datum", "merchant-request", `brand:${brandKey}`],
     sync: {
       todoist_task_status: "pending",
       todoist_due_date_status: dueDate ? "pending" : "idle",
+      todoist_deadline_status: deadlineDate ? "pending" : "idle",
     },
   });
 
@@ -182,6 +206,8 @@ async function listRequests(query, principal) {
       { "sync.todoist_assignment_status": query.sync_state },
       { "sync.todoist_status_status": query.sync_state },
       { "sync.todoist_comment_status": query.sync_state },
+      { "sync.todoist_due_date_status": query.sync_state },
+      { "sync.todoist_deadline_status": query.sync_state },
     ];
   }
 
@@ -336,6 +362,46 @@ async function updateDueDate(id, body, principal, deps) {
   return findActiveRequestById(request._id);
 }
 
+async function updateDeadline(id, body, principal, deps) {
+  assertAuthor(principal);
+  const deadlineDate = normalizeDeadlineDate(body.deadline_date);
+  const request = await findActiveRequestById(id);
+  if (!request) {
+    const err = new Error("request_not_found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  request.deadline_date = deadlineDate;
+  request.sync.todoist_deadline_status = "pending";
+  request.sync.pending_deadline_date = deadlineDate;
+  await request.save();
+  await appendEvent(request, "deadline_date_changed", "datum", {
+    principal,
+    data: { deadline_date: deadlineDate },
+  });
+  const job = await enqueueSyncJob(request._id, "update_deadline", { deadline_date: deadlineDate });
+  emitRequestEvent("merchant-request:updated", request);
+  await processJob(job, { todoistClient: deps.todoistClient, config: deps.config });
+  return findActiveRequestById(request._id);
+}
+
+async function removeRequest(id, principal) {
+  assertAuthor(principal);
+  const request = await MerchantRequest.findById(id);
+  if (!request) {
+    const err = new Error("request_not_found");
+    err.statusCode = 404;
+    throw err;
+  }
+  await softRemoveRequest(request, {
+    reason: "author_removed",
+    source: "datum",
+    principal,
+  });
+  return request;
+}
+
 module.exports = {
   addComment,
   assertPriorityCapAvailable,
@@ -344,11 +410,14 @@ module.exports = {
   listRequests,
   normalizeCategory,
   normalizeDueDate,
+  normalizeDeadlineDate,
   normalizePriority,
   normalizePriorityCaps,
   priorityCapsForConfig,
+  removeRequest,
   serializeRequest,
   updateAssignee,
   updateDueDate,
+  updateDeadline,
   updateStatus,
 };

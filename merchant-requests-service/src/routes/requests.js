@@ -12,9 +12,11 @@ const {
   listRequests,
   normalizePriorityCaps,
   priorityCapsForConfig,
+  removeRequest,
   serializeRequest,
   updateAssignee,
   updateDueDate,
+  updateDeadline,
   updateStatus,
 } = require("../services/requestService");
 
@@ -151,6 +153,14 @@ function buildRequestsRouter(deps) {
     }),
   );
 
+  router.delete(
+    "/:id",
+    asyncHandler(async (req, res) => {
+      const removed = await removeRequest(req.params.id, req.principal);
+      res.json({ ok: true, request_id: String(removed._id) });
+    }),
+  );
+
   router.post(
     "/:id/comments",
     asyncHandler(async (req, res) => {
@@ -180,6 +190,14 @@ function buildRequestsRouter(deps) {
     "/:id/due-date",
     asyncHandler(async (req, res) => {
       const request = await updateDueDate(req.params.id, req.body || {}, req.principal, deps);
+      res.json({ request: serializeRequest(request) });
+    }),
+  );
+
+  router.patch(
+    "/:id/deadline",
+    asyncHandler(async (req, res) => {
+      const request = await updateDeadline(req.params.id, req.body || {}, req.principal, deps);
       res.json({ request: serializeRequest(request) });
     }),
   );

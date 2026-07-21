@@ -82,35 +82,89 @@ function clearStoredAuth() {
   window.dispatchEvent(new Event("auth:session-expired"));
 }
 
+const REFRESH_MAX_RETRIES = 3;
+
+function refreshBackoff(attempt) {
+  const ms = Math.min(1000 * 2 ** attempt, 4000) + Math.random() * 250;
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Refresh the access token. Only a DEFINITIVE failure (401/403 = refresh token
+// genuinely invalid/expired/revoked) ends the session. Transient failures
+// (rate limit, 5xx, network blip, non-JSON body) are retried with backoff and,
+// if still failing, surface as a failed request WITHOUT logging the user out.
 async function refreshAccessToken() {
-  try {
-    const res = await fetch(`${API_BASE}/auth/refresh`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      credentials: "include",
-      body: JSON.stringify({}),
-    });
-    const json = await res.json();
-    if (!res.ok || !json.access_token) {
-      clearStoredAuth();
-      return false;
+  for (let attempt = 0; attempt < REFRESH_MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+
+      // Definitive: the refresh token itself is no longer valid -> real logout.
+      if (res.status === 401 || res.status === 403) {
+        clearStoredAuth();
+        return false;
+      }
+
+      // Transient server-side failure (429/5xx/etc.) -> back off and retry.
+      if (!res.ok) {
+        await refreshBackoff(attempt);
+        continue;
+      }
+
+      const json = await res.json().catch(() => null);
+      if (!json || !json.access_token) {
+        await refreshBackoff(attempt);
+        continue;
+      }
+
+      window.localStorage.setItem("gateway_access_token", json.access_token);
+      window.localStorage.removeItem("gateway_refresh_token");
+      return true;
+    } catch (err) {
+      // Network error -> transient. Do NOT clear auth here.
+      console.error("Failed to refresh token (transient)", err);
+      await refreshBackoff(attempt);
     }
-    window.localStorage.setItem("gateway_access_token", json.access_token);
-    window.localStorage.removeItem("gateway_refresh_token");
-    return true;
-  } catch (err) {
-    console.error("Failed to refresh token", err);
-    clearStoredAuth();
-    return false;
   }
+  // Exhausted retries on a transient problem: keep the session, fail the request.
+  return false;
 }
 
 let refreshPromise = null;
+
+// Run the refresh under a browser-wide lock so only ONE tab refreshes at a time.
+// A tab that queues on the lock re-checks localStorage after acquiring it: if the
+// winning tab already stored a new access token, we skip our own rotation entirely
+// (avoids presenting the just-rotated cookie again and tripping reuse detection).
+async function runRefreshExclusive() {
+  const tokenBefore = window.localStorage.getItem("gateway_access_token");
+
+  const doRefresh = async () => {
+    const current = window.localStorage.getItem("gateway_access_token");
+    if (current && current !== tokenBefore) {
+      // Another tab refreshed while we waited for the lock.
+      return true;
+    }
+    return refreshAccessToken();
+  };
+
+  if (typeof navigator !== "undefined" && navigator.locks?.request) {
+    return navigator.locks.request("gateway-token-refresh", doRefresh);
+  }
+  // Fallback (e.g. older Safari without Web Locks): per-tab dedup only.
+  // The backend rotation grace cache still protects against cross-tab races.
+  return doRefresh();
+}
+
 async function ensureFreshToken() {
   if (!refreshPromise) {
-    refreshPromise = refreshAccessToken().finally(() => {
+    refreshPromise = runRefreshExclusive().finally(() => {
       refreshPromise = null;
     });
   }
@@ -365,6 +419,14 @@ export async function updateMerchantRequestAssignee(id, todoist_user_id) {
 
 export async function updateMerchantRequestDueDate(id, due_date) {
   return doPatch(`/merchant-requests/${encodeURIComponent(id)}/due-date`, { due_date });
+}
+
+export async function updateMerchantRequestDeadline(id, deadline_date) {
+  return doPatch(`/merchant-requests/${encodeURIComponent(id)}/deadline`, { deadline_date });
+}
+
+export async function deleteMerchantRequest(id) {
+  return doDelete(`/merchant-requests/${encodeURIComponent(id)}`);
 }
 
 export async function listTodoistUsers() {

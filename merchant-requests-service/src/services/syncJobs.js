@@ -56,6 +56,7 @@ function buildTaskPayload(request, brandConfig) {
     priority: request.priority === "urgent" ? 4 : request.priority === "high" ? 3 : 1,
   };
   if (request.due_date) payload.due_date = request.due_date;
+  if (request.deadline_date) payload.deadline_date = request.deadline_date;
   return payload;
 }
 
@@ -66,6 +67,7 @@ async function markRequestSyncError(request, job, err) {
   if (job.type === "update_assignment") request.sync.todoist_assignment_status = "failed";
   if (job.type === "update_status") request.sync.todoist_status_status = "failed";
   if (job.type === "update_due_date") request.sync.todoist_due_date_status = "failed";
+  if (job.type === "update_deadline") request.sync.todoist_deadline_status = "failed";
   if (job.type === "complete_task") request.sync.todoist_status_status = "failed";
   if (job.type === "create_comment") request.sync.todoist_comment_status = "failed";
   await request.save();
@@ -155,6 +157,10 @@ async function processJob(job, { todoistClient, config }) {
         request.sync.todoist_due_date_status = "synced";
         request.sync.pending_due_date = "";
       }
+      if (request.deadline_date) {
+        request.sync.todoist_deadline_status = "synced";
+        request.sync.pending_deadline_date = "";
+      }
       request.sync.last_todoist_error = "";
       request.sync.last_synced_at = new Date();
       await request.save();
@@ -236,6 +242,21 @@ async function processJob(job, { todoistClient, config }) {
       request.sync.last_synced_at = new Date();
       await request.save();
       await appendEvent(request, "due_date_synced", "system", { data: { due_date: request.due_date || "" } });
+      emitRequestEvent("merchant-request:updated", request);
+      await completeJob(job);
+      return;
+    }
+
+    if (job.type === "update_deadline") {
+      await todoistClient.updateTask(request.todoist_task_id, { deadline_date: request.deadline_date || null });
+      request.sync.todoist_deadline_status = "synced";
+      request.sync.pending_deadline_date = "";
+      request.sync.last_todoist_error = "";
+      request.sync.last_synced_at = new Date();
+      await request.save();
+      await appendEvent(request, "deadline_synced", "system", {
+        data: { deadline_date: request.deadline_date || "" },
+      });
       emitRequestEvent("merchant-request:updated", request);
       await completeJob(job);
       return;
