@@ -21,6 +21,7 @@ import { motion } from "framer-motion";
 
 function WidgetFrame({
   isEditing,
+  allowChildInteractions = false,
   dragging = false,
   setNodeRef,
   style,
@@ -84,7 +85,12 @@ function WidgetFrame({
           </Tooltip>
         )}
 
-        <Box sx={{ pointerEvents: isEditing ? "none" : "auto" }}>
+        <Box
+          sx={{
+            pointerEvents:
+              isEditing && !allowChildInteractions ? "none" : "auto",
+          }}
+        >
           <Box
             sx={{
               opacity: isEditing ? 0.6 : 1,
@@ -112,6 +118,7 @@ function SortableWidget({ id, isEditing, children }) {
   return (
     <WidgetFrame
       isEditing={isEditing}
+      allowChildInteractions={id === "kpi_cards"}
       dragging={isDragging}
       setNodeRef={setNodeRef}
       style={{

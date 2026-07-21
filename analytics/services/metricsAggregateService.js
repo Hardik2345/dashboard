@@ -290,9 +290,27 @@ async function queryProductKpiTotals({ conn, start, end, filters = {} }) {
   );
 
   const orders = await queryOrderSalesTotals(conn, start, end, filters);
+  let rtoSql = `
+    SELECT
+      COUNT(DISTINCT rf.order_id) AS rto_orders
+    FROM returns_fact rf
+    JOIN shopify_orders so ON rf.order_id = so.order_id
+    WHERE rf.event_type = 'CANCEL (RTO)'
+      AND rf.order_created_date >= ? AND rf.order_created_date <= ?
+  `;
+  const rtoReplacements = [start, end];
+  rtoSql = appendUtmWhere(rtoSql, rtoReplacements, filters, true);
+  if (filters.product_id) {
+    rtoSql += ` AND so.product_id = ?`;
+    rtoReplacements.push(filters.product_id);
+  }
   const [sessionRow] = await conn.query(sessionsSql, {
     type: QueryTypes.SELECT,
     replacements: sessionReplacements,
+  });
+  const [rtoRow] = await conn.query(rtoSql, {
+    type: QueryTypes.SELECT,
+    replacements: rtoReplacements,
   });
 
   return {
@@ -300,6 +318,7 @@ async function queryProductKpiTotals({ conn, start, end, filters = {} }) {
     total_atc_sessions: Number(sessionRow?.total_atc_sessions || 0),
     total_orders: Number(orders.total_orders || 0),
     total_sales: Number(orders.total_sales || 0),
+    rto_orders: Number(rtoRow?.rto_orders || 0),
   };
 }
 
@@ -358,7 +377,10 @@ async function queryUtmAggregateTotals(
     sql += ` AND metric_hour <= ?`;
     replacements.push(cutoffHour);
   }
-  sql = appendUtmWhere(sql, replacements, source.filters, true);
+  // Aggregate UTM tables already store canonical bucket values like literal
+  // "direct", so they should be filtered by exact value instead of the
+  // raw-table null/blank-aware direct mapping.
+  sql = appendUtmWhere(sql, replacements, source.filters, false);
 
   const rows = await conn.query(sql, {
     type: QueryTypes.SELECT,
@@ -427,7 +449,10 @@ async function queryUtmAggregatePair(
     combinedEnd,
   ];
 
-  sql = appendUtmWhere(sql, replacements, source.filters, true);
+  // Aggregate UTM tables already store canonical bucket values like literal
+  // "direct", so they should be filtered by exact value instead of the
+  // raw-table null/blank-aware direct mapping.
+  sql = appendUtmWhere(sql, replacements, source.filters, false);
 
   const rows = await conn.query(sql, {
     type: QueryTypes.SELECT,
@@ -485,7 +510,10 @@ async function queryUtmAggregateRows(
       sql += ` AND metric_hour <= ?`;
       replacements.push(cutoffHour);
     }
-    sql = appendUtmWhere(sql, replacements, source.filters, true);
+    // Aggregate UTM tables already store canonical bucket values like literal
+    // "direct", so they should be filtered by exact value instead of the
+    // raw-table null/blank-aware direct mapping.
+    sql = appendUtmWhere(sql, replacements, source.filters, false);
     sql += ` GROUP BY metric_date, metric_hour ORDER BY metric_date ASC, metric_hour ASC`;
   } else {
     sql = `
@@ -498,7 +526,10 @@ async function queryUtmAggregateRows(
       FROM ${source.table}
       WHERE metric_date >= ? AND metric_date <= ?
     `;
-    sql = appendUtmWhere(sql, replacements, source.filters, true);
+    // Aggregate UTM tables already store canonical bucket values like literal
+    // "direct", so they should be filtered by exact value instead of the
+    // raw-table null/blank-aware direct mapping.
+    sql = appendUtmWhere(sql, replacements, source.filters, false);
     sql += ` GROUP BY metric_date ORDER BY metric_date ASC`;
   }
 

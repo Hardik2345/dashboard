@@ -1,5 +1,9 @@
 # React + Vite
 
+## Environment
+
+- `VITE_CLARITY_PROJECT_ID`: Microsoft Clarity project ID for the Datum production host (`datum.trytechit.co`). Leave unset in local or non-production environments to disable Clarity.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

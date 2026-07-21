@@ -1,4 +1,9 @@
-export const DASHBOARD_LAYOUT_VERSION = 1;
+import {
+  DEFAULT_DESKTOP_KPI_LAYOUT,
+  normalizeDesktopKpiLayout,
+} from "./kpiLayout.js";
+
+export const DASHBOARD_LAYOUT_VERSION = 2;
 
 export const DASHBOARD_LAYOUT_DEFAULTS = Object.freeze({
   desktop: Object.freeze([
@@ -62,6 +67,9 @@ export function normalizeDashboardLayout(layout) {
     mobile: normalizeViewportLayout(
       source.mobile,
       DASHBOARD_LAYOUT_DEFAULTS.mobile,
+    ),
+    kpiCardsDesktop: normalizeDesktopKpiLayout(
+      source.kpiCardsDesktop || source.kpi_cards_desktop || DEFAULT_DESKTOP_KPI_LAYOUT,
     ),
   };
 }

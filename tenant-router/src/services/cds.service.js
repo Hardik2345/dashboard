@@ -10,7 +10,10 @@ const { RoutingUnavailableError } = require("../utils/errors");
 const resolveFromCDS = async (brandId) => {
   try {
     // Database lookup
-    const tenant = await Tenant.findOne({ brand_id: brandId }).lean();
+    const tenant = await Tenant.findOne({
+      brand_id: brandId,
+      is_active: true,
+    }).lean();
     return tenant;
   } catch (error) {
     console.error(
@@ -48,7 +51,11 @@ const createTenant = async (tenantData) => {
 const findTenantsByCredentials = async (user, brand_id) => {
   try {
     // limit candidates by `user` first
-    const tenants = await Tenant.findOne({ user: user, brand_id: brand_id });
+    const tenants = await Tenant.findOne({
+      user: user,
+      brand_id: brand_id,
+      is_active: true,
+    });
     return tenants;
   } catch (error) {
     console.error(
@@ -84,7 +91,10 @@ const deleteMapping = async (brandId) => {
  */
 const getAllTenants = async () => {
   try {
-    const tenants = await Tenant.find({}, { brand_id: 1, brand_num: 1, _id: 0 }).lean();
+    const tenants = await Tenant.find(
+      { is_active: true },
+      { brand_id: 1, brand_num: 1, _id: 0 },
+    ).lean();
     return tenants;
   } catch (error) {
     console.error("[CDS] Error getting all tenants:", error.stack || error.message);

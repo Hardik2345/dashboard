@@ -515,12 +515,28 @@ export async function getDashboardSummary(args) {
   };
 }
 
+export async function getDataRestrictionConfig() {
+  const res = await doGet("/metrics/data-restriction-config");
+  if (res.error) {
+    return { enabled: true, periodDays: 30, __error: true };
+  }
+  return {
+    enabled:
+      typeof res.data?.enabled === "boolean" ? res.data.enabled : true,
+    periodDays: Number.isFinite(Number(res.data?.periodDays))
+      ? Number(res.data.periodDays)
+      : 30,
+  };
+}
+
 export async function getWebPerformanceSummary(args) {
   const params = appendBrandKey(
     {
       start: args.start || args.date,
       end: args.end || args.date || args.start,
       timezone: args.timezone,
+      compare_start: args.compare_start,
+      compare_end: args.compare_end,
     },
     args,
   );
@@ -1188,6 +1204,23 @@ export async function getDailyTrend(args) {
   };
 }
 
+export async function getDailyFunnel(args = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+    },
+    args,
+  );
+  const json = await getJSON("/metrics/daily-funnel", params);
+  return {
+    rows: Array.isArray(json?.rows) ? json.rows : [],
+    range: json?.range || null,
+    timezone: json?.timezone || "Asia/Kolkata",
+    error: json?.__error,
+  };
+}
+
 export async function getMonthlyTrend(args) {
   const base = { start: args.start, end: args.end };
   if (args.compare_start) base.compare_start = args.compare_start;
@@ -1262,6 +1295,13 @@ export async function getProductKpis(args = {}) {
       : sessions > 0
         ? totalOrders / sessions
         : 0;
+  const rtoOrders = Number(json?.rto_orders || 0);
+  const rtoRate =
+    typeof json?.rto_rate === "number"
+      ? json.rto_rate
+      : totalOrders > 0
+        ? rtoOrders / totalOrders
+        : 0;
 
   return {
     product_id: json?.product_id || args.product_id,
@@ -1272,6 +1312,9 @@ export async function getProductKpis(args = {}) {
     add_to_cart_rate_pct: addToCartRate * 100,
     total_orders: totalOrders,
     total_sales: totalSales,
+    rto_orders: rtoOrders,
+    rto_rate: rtoRate,
+    rto_rate_pct: rtoRate * 100,
     conversion_rate: conversionRate,
     conversion_rate_pct: conversionRate * 100,
     brand_key: json?.brand_key || null,

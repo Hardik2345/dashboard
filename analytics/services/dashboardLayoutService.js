@@ -1,5 +1,9 @@
 const DASHBOARD_PAGE_NAME = "dashboard";
-const DASHBOARD_LAYOUT_VERSION = 1;
+const DASHBOARD_LAYOUT_VERSION = 2;
+const {
+  DEFAULT_DESKTOP_KPI_LAYOUT,
+  normalizeDesktopKpiLayout,
+} = require("./dashboardKpiLayout");
 
 const DEFAULT_DESKTOP_LAYOUT = Object.freeze([
   "kpi_cards",
@@ -51,6 +55,9 @@ function normalizeStoredLayout(layoutJson = {}) {
       DEFAULT_DESKTOP_LAYOUT,
     ),
     mobile: normalizeViewportLayout(source.mobile, DEFAULT_MOBILE_LAYOUT),
+    kpiCardsDesktop: normalizeDesktopKpiLayout(
+      source.kpiCardsDesktop || source.kpi_cards_desktop || DEFAULT_DESKTOP_KPI_LAYOUT,
+    ),
   };
 }
 
@@ -168,6 +175,9 @@ function buildDashboardLayoutService({ model }) {
           existingLayout.mobile,
           payload.mobile,
           editable.mobile,
+        ),
+        kpiCardsDesktop: normalizeDesktopKpiLayout(
+          payload.kpiCardsDesktop || payload.kpi_cards_desktop || existingLayout.kpiCardsDesktop,
         ),
       };
 

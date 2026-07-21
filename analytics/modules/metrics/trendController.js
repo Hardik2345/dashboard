@@ -2,6 +2,10 @@ const { handleControllerError } = require('../../shared/middleware/handleControl
 const {
   normalizeMetricRequest,
 } = require('./requestNormalizer');
+const {
+  isRangeOverDataRestrictionPeriod,
+  buildLongRangeUnavailablePayload,
+} = require('./longRangeGate');
 
 function buildTrendController({ metricsService }) {
   return {
@@ -13,6 +17,13 @@ function buildTrendController({ metricsService }) {
         }
         if (!normalized.spec.conn) {
           return res.status(500).json({ error: 'Brand DB connection unavailable' });
+        }
+        if (isRangeOverDataRestrictionPeriod(normalized.spec.start, normalized.spec.end)) {
+          return res.json(
+            buildLongRangeUnavailablePayload({
+              range: { start: normalized.spec.start, end: normalized.spec.end },
+            }),
+          );
         }
         return res.json(await metricsService.getTrend(normalized.spec, 'hourly'));
       } catch (e) {
@@ -32,6 +43,21 @@ function buildTrendController({ metricsService }) {
         return res.json(await metricsService.getTrend(normalized.spec, 'daily'));
       } catch (e) {
         return handleControllerError(res, e, 'daily-trend failed');
+      }
+    },
+
+    dailyFunnel: async (req, res) => {
+      try {
+        const normalized = normalizeMetricRequest(req, { requireBoth: true });
+        if (!normalized.ok) {
+          return res.status(normalized.status).json(normalized.body);
+        }
+        if (!normalized.spec.conn) {
+          return res.status(500).json({ error: 'Brand DB connection unavailable' });
+        }
+        return res.json(await metricsService.getDailyFunnel(normalized.spec));
+      } catch (e) {
+        return handleControllerError(res, e, 'daily-funnel failed');
       }
     },
 

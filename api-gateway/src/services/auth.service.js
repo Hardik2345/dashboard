@@ -52,8 +52,40 @@ function getRecentRotation(consumedHash) {
 }
 
 class AuthService {
+    static async filterUserToActiveTenants(user) {
+        if (!user) return user;
+
+        const normalizedUser =
+            typeof user.toObject === 'function' ? user.toObject() : { ...user };
+
+        const activeBrandIds = new Set(await fetchAllBrandIds());
+        const memberships = Array.isArray(normalizedUser.brand_memberships)
+            ? normalizedUser.brand_memberships
+            : [];
+
+        const filteredMemberships = memberships.filter(
+            (membership) =>
+                membership &&
+                membership.status === 'active' &&
+                activeBrandIds.has((membership.brand_id || '').toString().trim().toUpperCase()),
+        );
+
+        const nextPrimaryBrandId = activeBrandIds.has(
+            (normalizedUser.primary_brand_id || '').toString().trim().toUpperCase(),
+        )
+            ? normalizedUser.primary_brand_id
+            : filteredMemberships[0]?.brand_id || '';
+
+        return {
+            ...normalizedUser,
+            primary_brand_id: nextPrimaryBrandId,
+            brand_memberships: filteredMemberships,
+        };
+    }
+
     static async issueTokensForUser(user, deviceId = null) {
-        const accessToken = TokenService.generateAccessToken(user);
+        const filteredUser = await this.filterUserToActiveTenants(user);
+        const accessToken = TokenService.generateAccessToken(filteredUser);
         const { tokenId, rawToken, tokenHash } = TokenService.generateRefreshToken();
 
         const expiresAt = new Date();
@@ -240,6 +272,7 @@ class AuthService {
         if (user.status !== 'active') {
             throw new Error('User suspended');
         }
+        user = await this.filterUserToActiveTenants(user);
         const hasActiveBrand = isElevatedRole(user.role) || user.brand_memberships.some(m => m.status === 'active');
         if (!hasActiveBrand) {
             throw new Error('No active brand memberships');
@@ -287,6 +320,7 @@ class AuthService {
         }
 
         if (user.status !== 'active') throw new Error('User suspended');
+        user = await this.filterUserToActiveTenants(user);
         const hasActiveBrand = isElevatedRole(user.role) || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
         if (!hasActiveBrand) throw new Error('No active brand memberships');
 
@@ -326,11 +360,13 @@ class AuthService {
             throw new Error('Token expired');
         }
 
-        // 2. Get User (also needed to re-mint the access token on a grace hit)
-        const user = await GlobalUser.findById(tokenDoc.user_id);
+        // 4. Get User
+        let user = await GlobalUser.findById(tokenDoc.user_id);
         if (!user || user.status !== 'active') {
             throw new Error('User suspended or not found');
         }
+        user = await this.filterUserToActiveTenants(user);
+        // Check membership suspension again
         const hasActiveBrand = isElevatedRole(user.role) || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
         if (!user.brand_memberships || !hasActiveBrand) {
             throw new Error('Membership suspended');

@@ -137,14 +137,14 @@ function buildBundlesService() {
     const sql = `
       SELECT
         p.child_product_sku,
-        p.child_product_title,
+        COALESCE(MAX(p.child_product_title), p.child_product_sku) AS child_product_title,
         COALESCE(SUM(p.allocated_orders), 0) AS orders,
         COALESCE(SUM(p.allocated_sales), 0) AS sales
       FROM bundle_product_daily_rollup p
       WHERE p.date >= ? AND p.date <= ?
         AND p.bundle_product_id IN (${bundlePlaceholders})
-      GROUP BY p.child_product_sku, p.child_product_title
-      ORDER BY orders DESC, sales DESC, p.child_product_title ASC
+      GROUP BY p.child_product_sku
+      ORDER BY orders DESC, sales DESC, child_product_title ASC
     `;
 
     const rows = await conn.query(sql, {

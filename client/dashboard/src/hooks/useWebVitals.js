@@ -20,6 +20,7 @@ export default function useWebVitals(query, metric = 'FCP', options = {}) {
         loading: true,
     });
     const usePerformanceSummary = options?.usePerformanceSummary === true;
+    const disabled = options?.disabled === true;
 
     const { user } = useAppSelector((state) => state.auth);
     const globalBrandKey = useAppSelector((state) => state.brand.brand);
@@ -51,6 +52,20 @@ export default function useWebVitals(query, metric = 'FCP', options = {}) {
 
     useEffect(() => {
         let cancelled = false;
+
+        if (disabled) {
+            setData({
+                performanceAvg: null,
+                performancePrev: null,
+                performanceChange: null,
+                topPages: [],
+                isSingleDateSelection: start_date === end_date,
+                loading: false,
+            });
+            return () => {
+                cancelled = true;
+            };
+        }
 
         const getPreviousDateWindow = (startStr, endStr) => {
             if (!startStr || !endStr) return { prev_start: null, prev_end: null };
@@ -219,7 +234,7 @@ export default function useWebVitals(query, metric = 'FCP', options = {}) {
         getWebVitalsData();
 
         return () => { cancelled = true; };
-    }, [activeBrandKey, brand_name, start_date, end_date, metric, query?.timezone, usePerformanceSummary]);
+    }, [activeBrandKey, brand_name, start_date, end_date, metric, query?.timezone, usePerformanceSummary, disabled]);
 
     return data;
 }

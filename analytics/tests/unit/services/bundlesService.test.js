@@ -93,7 +93,7 @@ describe("bundlesService", () => {
     ]);
   });
 
-  test("getBundleProducts aggregates by bundle_product_id", async () => {
+  test("getBundleProducts aggregates by bundle_product_id and groups product rows by sku", async () => {
     const conn = { query: jest.fn().mockResolvedValue([]) };
     const service = buildBundlesService();
 
@@ -107,11 +107,42 @@ describe("bundlesService", () => {
     const sql = conn.query.mock.calls[0][0];
     const [, options] = conn.query.mock.calls[0];
     expect(sql).toContain("p.bundle_product_id IN (?, ?)");
+    expect(sql).toContain("GROUP BY p.child_product_sku");
     expect(options.replacements).toEqual([
       "2026-05-01",
       "2026-05-03",
       "8417496367300",
       "8395644993732",
+    ]);
+  });
+
+  test("getBundleProducts maps one row per sku", async () => {
+    const conn = {
+      query: jest.fn().mockResolvedValue([
+        {
+          child_product_sku: "TMC-WEB-727",
+          child_product_title: "EDT Black (50ml)",
+          orders: "124",
+          sales: "24777.67",
+        },
+      ]),
+    };
+    const service = buildBundlesService();
+
+    const result = await service.getBundleProducts({
+      conn,
+      start: "2026-05-01",
+      end: "2026-05-03",
+      bundleProductIds: ["8417496367300"],
+    });
+
+    expect(result.rows).toEqual([
+      {
+        child_product_sku: "TMC-WEB-727",
+        child_product_title: "EDT Black (50ml)",
+        orders: 124,
+        sales: 24777.67,
+      },
     ]);
   });
 });
