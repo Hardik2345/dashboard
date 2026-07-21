@@ -2284,6 +2284,7 @@ export default function App() {
           utmOptions={utmOptions}
           showWebVitals={false}
           showCiEvents={hasPermission("ci_events")}
+          showRtoKpi={hasPermission("rto_kpi")}
           compareMode={compareMode}
           desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
           onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
@@ -2471,6 +2472,7 @@ export default function App() {
           showRow="mobile_top"
           showWebVitals={!isLongRangeDashboard && hasPermission("web_vitals")}
           showCiEvents={hasPermission("ci_events")}
+          showRtoKpi={hasPermission("rto_kpi")}
           compareMode={compareMode}
           desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
           onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
@@ -3778,11 +3780,7 @@ export default function App() {
                       authorTab === "daily-funnel" &&
                       (hasBrand ? (
                         <Suspense fallback={<SectionFallback count={2} height={240} />}>
-                          <DailyFunnelPanel
-                            brandKey={activeBrandKey}
-                            initialStartDate={start}
-                            initialEndDate={end}
-                          />
+                          <DailyFunnelPanel brandKey={activeBrandKey} />
                         </Suspense>
                       ) : (
                         <Paper
