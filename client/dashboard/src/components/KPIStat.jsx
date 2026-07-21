@@ -111,6 +111,7 @@ export default function KPIStat({
               : "flex-start",
             width: "100%",
             mb: 0.5,
+            px: action && centerOnMobile ? { xs: "46px", md: 0 } : 0,
           }}
         >
           <Typography
@@ -118,7 +119,7 @@ export default function KPIStat({
             color="text.secondary"
             sx={{
               lineHeight: 1.2,
-              pr: action ? { xs: centerOnMobile ? 0 : "46px", md: "46px" } : 0,
+              pr: action && !centerOnMobile ? { xs: "46px", md: "46px" } : 0,
             }}
           >
             {label}
@@ -128,10 +129,8 @@ export default function KPIStat({
           <Box
             sx={{
               position: "absolute",
-              top: { xs: "auto", md: 12 },
-              bottom: { xs: 10, md: "auto" },
-              left: { xs: 10, md: "auto" },
-              right: { xs: "auto", md: 12 },
+              top: 12,
+              right: 12,
               zIndex: 10,
             }}
           >
