@@ -247,7 +247,7 @@ function sanitizeMerchantEvent(event) {
 }
 
 async function addComment(id, body, principal, deps) {
-  assertPermission(principal, "requests_panel");
+  assertAuthor(principal);
   const request = await findActiveRequestById(id);
   if (!request || !canAccessBrand(principal, request.brand_key)) {
     const err = new Error("request_not_found");

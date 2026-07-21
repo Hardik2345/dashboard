@@ -125,6 +125,7 @@ async function refreshAccessToken() {
 
       window.localStorage.setItem("gateway_access_token", json.access_token);
       window.localStorage.removeItem("gateway_refresh_token");
+      window.dispatchEvent(new Event("auth:token-refreshed"));
       return true;
     } catch (err) {
       // Network error -> transient. Do NOT clear auth here.
