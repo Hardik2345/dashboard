@@ -157,29 +157,74 @@ describe('Auth Flow', () => {
         expect(decodedVal.header.alg).toBe('RS256');
     });
 
-    test('Reuse Detection & Chain Revocation', async () => {
-        const loginRes = await request(app)
-            .post('/auth/login')
-            .send({ email: 'test@example.com', password: 'password123' });
-        const originalCookie = loginRes.headers['set-cookie'];
+    test('Reuse Detection & Chain Revocation (grace disabled)', async () => {
+        // Disable the rotation grace window so re-presenting a rotated token is
+        // treated as genuine reuse (theft), not a benign concurrent refresh.
+        const prevGrace = process.env.REFRESH_ROTATION_GRACE_MS;
+        process.env.REFRESH_ROTATION_GRACE_MS = '0';
+        try {
+            const loginRes = await request(app)
+                .post('/auth/login')
+                .send({ email: 'test@example.com', password: 'password123' });
+            const originalCookie = loginRes.headers['set-cookie'];
 
-        // Refresh once -> rotates
-        await request(app)
-            .post('/auth/refresh')
-            .set('Cookie', originalCookie);
+            // Refresh once -> rotates
+            await request(app)
+                .post('/auth/refresh')
+                .set('Cookie', originalCookie);
 
-        // Reuse original -> should fail
-        const res = await request(app)
-            .post('/auth/refresh')
-            .set('Cookie', originalCookie);
+            // Reuse original -> should fail
+            const res = await request(app)
+                .post('/auth/refresh')
+                .set('Cookie', originalCookie);
 
-        expect(res.status).toBe(401);
-        expect(res.body.error).toMatch(/revoked/i);
+            expect(res.status).toBe(401);
+            expect(res.body.error).toMatch(/revoked/i);
 
-        // Verify all tokens revoked
-        const tokens = await RefreshToken.find({ user_id: user._id });
-        const activeTokens = tokens.filter(t => !t.revoked);
-        expect(activeTokens.length).toBe(0);
+            // Verify all tokens revoked
+            const tokens = await RefreshToken.find({ user_id: user._id });
+            const activeTokens = tokens.filter(t => !t.revoked);
+            expect(activeTokens.length).toBe(0);
+        } finally {
+            if (prevGrace === undefined) delete process.env.REFRESH_ROTATION_GRACE_MS;
+            else process.env.REFRESH_ROTATION_GRACE_MS = prevGrace;
+        }
+    });
+
+    test('Concurrent refresh within grace returns the same child, no revocation', async () => {
+        // Within the grace window, re-presenting a just-rotated token (e.g. a
+        // second tab that still holds the old cookie) must succeed and hand back
+        // the SAME child rather than nuking the session as reuse.
+        const prevGrace = process.env.REFRESH_ROTATION_GRACE_MS;
+        process.env.REFRESH_ROTATION_GRACE_MS = '60000';
+        try {
+            const loginRes = await request(app)
+                .post('/auth/login')
+                .send({ email: 'test@example.com', password: 'password123' });
+            const originalCookie = loginRes.headers['set-cookie'];
+
+            const first = await request(app)
+                .post('/auth/refresh')
+                .set('Cookie', originalCookie);
+            expect(first.status).toBe(200);
+            const firstChildCookie = first.headers['set-cookie'];
+
+            // Re-present the ORIGINAL (now-rotated) cookie within grace.
+            const second = await request(app)
+                .post('/auth/refresh')
+                .set('Cookie', originalCookie);
+            expect(second.status).toBe(200);
+            expect(second.body.access_token).toBeDefined();
+            // Same child token handed back (cookie converges instead of orphaning).
+            expect(second.headers['set-cookie'][0]).toEqual(firstChildCookie[0]);
+
+            // The rotated child is still active - the session survived.
+            const active = await RefreshToken.find({ user_id: user._id, revoked: false });
+            expect(active.length).toBe(1);
+        } finally {
+            if (prevGrace === undefined) delete process.env.REFRESH_ROTATION_GRACE_MS;
+            else process.env.REFRESH_ROTATION_GRACE_MS = prevGrace;
+        }
     });
 
     test('Suspended User Login', async () => {

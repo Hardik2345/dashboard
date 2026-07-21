@@ -1,5 +1,4 @@
 const MerchantRequest = require("../models/MerchantRequest");
-const TodoistSyncJob = require("../models/TodoistSyncJob");
 const TodoistUser = require("../models/TodoistUser");
 const TodoistWebhookDelivery = require("../models/TodoistWebhookDelivery");
 const BrandTodoistConfig = require("../models/BrandTodoistConfig");
@@ -7,6 +6,7 @@ const { CATEGORIES } = require("../config");
 const { appendEvent } = require("./events");
 const { emitRequestEvent } = require("./realtime");
 const { normalizeTodoistTaskUrl } = require("./todoistLinks");
+const { softRemoveRequest } = require("./requestLifecycle");
 const {
   FALLBACK_BRAND_KEY,
   ensureFallbackBrandConfig,
@@ -35,32 +35,12 @@ function isTodoistImportedRequest(request) {
 }
 
 async function softRemoveImportedRequest(request, task) {
-  request.todoist_labels = labelsFromTask(task);
-  request.sync.last_synced_at = new Date();
-
-  if (request.removed_at) {
-    await request.save();
-    return { removed: true, changed: false };
-  }
-
-  request.removed_at = new Date();
-  request.removal_reason = "todoist_tag_removed";
-  await request.save();
-  await TodoistSyncJob.updateMany(
-    { request_id: request._id, status: { $in: ["pending", "running"] } },
-    {
-      $set: {
-        status: "cancelled",
-        locked_at: null,
-        last_error: "request_soft_removed",
-      },
-    },
-  );
-  await appendEvent(request, "request_removed", "todoist", {
-    data: { reason: request.removal_reason },
+  return softRemoveRequest(request, {
+    reason: "todoist_tag_removed",
+    source: "todoist",
+    todoistLabels: labelsFromTask(task),
+    markTodoistSynced: true,
   });
-  emitRequestEvent("merchant-request:removed", request);
-  return { removed: true, changed: true };
 }
 
 function labelValue(labels, prefix) {
@@ -90,6 +70,11 @@ function priorityFromTask(task = {}) {
 function dueDateFromTask(task = {}) {
   if (!Object.prototype.hasOwnProperty.call(task, "due")) return null;
   return String(task.due?.date || "").trim();
+}
+
+function deadlineDateFromTask(task = {}) {
+  if (!Object.prototype.hasOwnProperty.call(task, "deadline")) return null;
+  return String(task.deadline?.date || "").trim();
 }
 
 function isTaskCompleted(task = {}, eventName = "") {
@@ -176,6 +161,7 @@ async function importRequestFromTodoistTask(task, { todoistClient, config, event
     category: categoryFromLabels(importTask),
     priority: priorityFromTask(importTask),
     due_date: dueDateFromTask(importTask) || "",
+    deadline_date: deadlineDateFromTask(importTask) || "",
     status: completed ? "done" : assigneeId ? "assigned" : "submitted",
     assignee: assigneeId ? { todoist_user_id: assigneeId, unmapped: true } : {},
     todoist_task_id: taskId,
@@ -187,6 +173,7 @@ async function importRequestFromTodoistTask(task, { todoistClient, config, event
       todoist_assignment_status: assigneeId ? "synced" : "idle",
       todoist_status_status: completed || assigneeId ? "synced" : "idle",
       todoist_due_date_status: importTask.due ? "synced" : "idle",
+      todoist_deadline_status: importTask.deadline ? "synced" : "idle",
       last_synced_at: new Date(),
     },
     closed_at: completed ? new Date() : null,
@@ -209,7 +196,12 @@ async function applyTaskUpdate(request, task, _brandConfig, eventName = "") {
   }
 
   if (request.removed_at) {
-    if (!isTodoistImportedRequest(request) || !labelSnapshotPresent || !hasRequiredLabels(task)) {
+    if (
+      request.removal_reason !== "todoist_tag_removed" ||
+      !isTodoistImportedRequest(request) ||
+      !labelSnapshotPresent ||
+      !hasRequiredLabels(task)
+    ) {
       return { removed: true, ignored: true };
     }
     request.removed_at = null;
@@ -271,6 +263,26 @@ async function applyTaskUpdate(request, task, _brandConfig, eventName = "") {
       request.sync.todoist_due_date_status = "synced";
       request.sync.last_synced_at = new Date();
       await appendEvent(request, "due_date_changed", "todoist", { data: { due_date: incomingDueDate } });
+    }
+  }
+
+
+  const incomingDeadlineDate = deadlineDateFromTask(task);
+  if (incomingDeadlineDate !== null) {
+    if (request.sync.todoist_deadline_status === "pending") {
+      await appendEvent(request, "todoist_deadline_conflict_ignored", "todoist", {
+        data: {
+          incoming_deadline_date: incomingDeadlineDate,
+          pending_deadline_date: request.sync.pending_deadline_date,
+        },
+      });
+    } else if ((request.deadline_date || "") !== incomingDeadlineDate) {
+      request.deadline_date = incomingDeadlineDate;
+      request.sync.todoist_deadline_status = "synced";
+      request.sync.last_synced_at = new Date();
+      await appendEvent(request, "deadline_date_changed", "todoist", {
+        data: { deadline_date: incomingDeadlineDate },
+      });
     }
   }
 
@@ -376,6 +388,7 @@ module.exports = {
   applyNoteEvent,
   applyTaskUpdate,
   dueDateFromTask,
+  deadlineDateFromTask,
   hasLabelSnapshot,
   hasRequiredLabels,
   isTodoistImportedRequest,

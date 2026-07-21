@@ -47,11 +47,17 @@ const syncSchema = new mongoose.Schema(
       enum: ["idle", "pending", "synced", "failed"],
       default: "idle",
     },
+    todoist_deadline_status: {
+      type: String,
+      enum: ["idle", "pending", "synced", "failed"],
+      default: "idle",
+    },
     last_todoist_error: { type: String, default: "" },
     last_synced_at: { type: Date, default: null },
     pending_assignment_user_id: { type: String, default: "" },
     pending_status: { type: String, default: "" },
     pending_due_date: { type: String, default: "" },
+    pending_deadline_date: { type: String, default: "" },
   },
   { _id: false },
 );
@@ -75,6 +81,7 @@ const merchantRequestSchema = new mongoose.Schema(
       default: "normal",
     },
     due_date: { type: String, default: "" },
+    deadline_date: { type: String, default: "" },
     status: {
       type: String,
       enum: STATUSES,

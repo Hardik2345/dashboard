@@ -15,6 +15,42 @@ const {
 
 const REFRESH_TOKEN_EXPIRY_DAYS = process.env.REFRESH_TOKEN_EXPIRY_DAYS || 7;
 
+// --- Rotation grace cache ---------------------------------------------------
+// Maps a just-consumed refresh token_hash -> the raw child token it rotated to.
+// A concurrent/benign double-refresh (e.g. two tabs presenting the same cookie)
+// is served the SAME child instead of being treated as token reuse. Entries
+// self-expire after ROTATION_GRACE_MS.
+// NOTE: in-memory, so it only dedupes within a single auth-service instance.
+// The atomic claim below is what guarantees correctness across instances; if you
+// run >1 instance, back this cache with Redis so losers on another instance can
+// still resolve the child token instead of getting a reuse error.
+const recentRotations = new Map();
+
+// Grace window length. Read dynamically so it can be tuned per environment
+// (e.g. set REFRESH_ROTATION_GRACE_MS=0 to disable and get strict reuse detection).
+function rotationGraceMs() {
+    const raw = process.env.REFRESH_ROTATION_GRACE_MS;
+    const n = raw !== undefined ? Number(raw) : 60 * 1000;
+    return Number.isFinite(n) && n >= 0 ? n : 60 * 1000;
+}
+
+function rememberRotation(consumedHash, rawChild) {
+    const ttl = rotationGraceMs();
+    recentRotations.set(consumedHash, { rawChild, at: Date.now() });
+    const timer = setTimeout(() => recentRotations.delete(consumedHash), ttl);
+    if (timer.unref) timer.unref();
+}
+
+function getRecentRotation(consumedHash) {
+    const entry = recentRotations.get(consumedHash);
+    if (!entry) return null;
+    if (Date.now() - entry.at >= rotationGraceMs()) {
+        recentRotations.delete(consumedHash);
+        return null;
+    }
+    return entry;
+}
+
 class AuthService {
     static async issueTokensForUser(user, deviceId = null) {
         const accessToken = TokenService.generateAccessToken(user);
@@ -268,61 +304,21 @@ class AuthService {
      * @param {String} rawRefreshToken 
      */
     static async refresh(rawRefreshToken) {
+        const logger = require('../utils/logger');
+
         if (!rawRefreshToken) {
             throw new Error('Token required');
         }
-        const inputHash = require('crypto').createHash('sha256').update(rawRefreshToken).digest('hex');
+        const inputHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
 
         const tokenDoc = await RefreshToken.findOne({ token_hash: inputHash });
 
-        // 2. Edge Case: Token reused (Revoked token used)
-        if (tokenDoc && tokenDoc.revoked) {
-            const logger = require('../utils/logger');
-
-            // --- GRACE PERIOD LOGIC ---
-            const REFRESH_GRACE_PERIOD_MS = 30 * 1000; // 30 seconds
-            const now = new Date();
-            const revokedAt = tokenDoc.revoked_at || new Date(0);
-
-            if (now - revokedAt < REFRESH_GRACE_PERIOD_MS) {
-                logger.info('AuthService', 'Token rotation grace period hit - Returning existing child tokens', {
-                    tokenId: tokenDoc._id,
-                    userId: tokenDoc.user_id
-                });
-
-                // Find the token that was rotated from this one
-                const childTokenDoc = await RefreshToken.findOne({ rotated_from: tokenDoc._id });
-                if (childTokenDoc) {
-                    // We can't easily get the RAW token of the child since it's hashed in DB,
-                    // BUT in a concurrent race, both tabs usually have the SAME old token.
-                    // If we allow the refresh to proceed and issue NEW tokens again, 
-                    // we just need to make sure we don't trigger the "token reuse" alert.
-                    // Instead of failing, we'll allow this specific "old" token to rotate ONE more time
-                    // IF it hasn't been too long.
-                    logger.info('AuthService', 'Allowing grace period rotation', { tokenId: tokenDoc._id });
-                } else {
-                    // If no child found (rare race), let it proceed to rotation below
-                }
-            } else {
-                logger.warn('AuthService', 'Token reuse detected - Triggering chain revocation', {
-                    tokenId: tokenDoc._id,
-                    userId: tokenDoc.user_id,
-                    revokedAt: tokenDoc.revoked_at
-                });
-                require('../observability').recordAuthTokenReuse();
-                await this.revokeChain(tokenDoc._id);
-                throw new Error('Token reused - Security Alert');
-            }
-        }
-
-        // 3. Validation
+        // 1. Validation
         if (!tokenDoc) {
-            const logger = require('../utils/logger');
             logger.warn('AuthService', 'Refresh failed - Token not found in DB', { inputHash });
             throw new Error('Invalid token');
         }
         if (new Date() > tokenDoc.expires_at) {
-            const logger = require('../utils/logger');
             logger.warn('AuthService', 'Refresh failed - Token expired', {
                 tokenId: tokenDoc._id,
                 expiresAt: tokenDoc.expires_at
@@ -330,24 +326,52 @@ class AuthService {
             throw new Error('Token expired');
         }
 
-        // 4. Get User
+        // 2. Get User (also needed to re-mint the access token on a grace hit)
         const user = await GlobalUser.findById(tokenDoc.user_id);
         if (!user || user.status !== 'active') {
             throw new Error('User suspended or not found');
         }
-        // Check membership suspension again
         const hasActiveBrand = isElevatedRole(user.role) || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
         if (!user.brand_memberships || !hasActiveBrand) {
             throw new Error('Membership suspended');
         }
 
-        // 5. Rotate
-        // Revoke old
-        tokenDoc.revoked = true;
-        tokenDoc.revoked_at = new Date(); // SET REVOKED AT
-        await tokenDoc.save();
+        // 3. Atomic claim: flip revoked false->true exactly once. Only the winner
+        // rotates; concurrent callers get `null` here and fall back to the grace
+        // cache below. This eliminates duplicate children from the same parent.
+        const claimed = await RefreshToken.findOneAndUpdate(
+            { _id: tokenDoc._id, revoked: false },
+            { $set: { revoked: true, revoked_at: new Date() } },
+            { new: true }
+        );
 
-        // Issue new
+        if (!claimed) {
+            // We lost the race (token already revoked). Benign concurrent refresh?
+            const grace = getRecentRotation(inputHash);
+            if (grace) {
+                logger.info('AuthService', 'Rotation grace hit - returning existing child token', {
+                    tokenId: tokenDoc._id,
+                    userId: tokenDoc.user_id
+                });
+                return {
+                    accessToken: TokenService.generateAccessToken(user),
+                    refreshToken: grace.rawChild
+                };
+            }
+
+            // Revoked, and NOT a rotation we just performed => genuine replay of an
+            // old token. This is the real security signal.
+            logger.warn('AuthService', 'Token reuse detected - Triggering chain revocation', {
+                tokenId: tokenDoc._id,
+                userId: tokenDoc.user_id,
+                revokedAt: tokenDoc.revoked_at
+            });
+            require('../observability').recordAuthTokenReuse();
+            await this.revokeChain(tokenDoc._id);
+            throw new Error('Token reused - Security Alert');
+        }
+
+        // 4. We own the rotation. Issue exactly one child.
         const { tokenId, rawToken, tokenHash } = TokenService.generateRefreshToken();
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + parseInt(REFRESH_TOKEN_EXPIRY_DAYS));
@@ -363,7 +387,10 @@ class AuthService {
 
         await newRefreshToken.save();
 
-        const logger = require('../utils/logger');
+        // Remember this rotation so concurrent presenters of the same parent get
+        // this exact child (idempotent) instead of a reuse error.
+        rememberRotation(inputHash, rawToken);
+
         logger.info('AuthService', 'Token rotated successfully', {
             oldTokenId: tokenDoc._id,
             newTokenId: tokenId,
@@ -379,15 +406,17 @@ class AuthService {
     }
 
     static async revokeChain(ancestorId) {
-        // Find the token that claims to be rotated from this ancestor
-        const child = await RefreshToken.findOne({ rotated_from: ancestorId });
-        if (child) {
-            const logger = require('../utils/logger');
+        const logger = require('../utils/logger');
+        // Follow ALL branches - a corrupted history may have multiple children
+        // pointing at the same ancestor. findOne would miss the others.
+        const children = await RefreshToken.find({ rotated_from: ancestorId });
+        for (const child of children) {
             logger.warn('AuthService', 'Revoking child token in chain', {
                 tokenId: child._id,
                 userId: child.user_id
             });
             child.revoked = true;
+            if (!child.revoked_at) child.revoked_at = new Date();
             await child.save();
             // Recurse
             await this.revokeChain(child._id);
@@ -395,7 +424,7 @@ class AuthService {
     }
 
     static async logout(rawRefreshToken) {
-        const inputHash = require('crypto').createHash('sha256').update(rawRefreshToken).digest('hex');
+        const inputHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
         const tokenDoc = await RefreshToken.findOne({ token_hash: inputHash });
         if (tokenDoc) {
             const logger = require('../utils/logger');
@@ -404,13 +433,17 @@ class AuthService {
                 userId: tokenDoc.user_id
             });
             tokenDoc.revoked = true;
+            tokenDoc.revoked_at = new Date();
             await tokenDoc.save();
         }
     }
 
     static async revokeAllRefreshTokensForUser(userId) {
         const logger = require('../utils/logger');
-        const result = await RefreshToken.updateMany({ user_id: userId }, { revoked: true });
+        const result = await RefreshToken.updateMany(
+            { user_id: userId, revoked: false },
+            { $set: { revoked: true, revoked_at: new Date() } }
+        );
         logger.warn('AuthService', 'Revoked all tokens for user', {
             userId,
             modifiedCount: result.modifiedCount

@@ -105,7 +105,7 @@ test.beforeEach(async (t) => {
   await mongoose.connect(mongo.getUri(), { dbName: "merchant_requests_test" });
 });
 
-test("buildTaskPayload uses Merchant Raised section and includes due date", async () => {
+test("buildTaskPayload uses Merchant Raised section and includes due date and deadline", async () => {
   const req = new MerchantRequest({
     brand_key: "TMC",
     requester: { user_id: "u1", email: "merchant@example.com" },
@@ -114,6 +114,7 @@ test("buildTaskPayload uses Merchant Raised section and includes due date", asyn
     category: "Data Analysis",
     status: "submitted",
     due_date: "2026-06-25",
+    deadline_date: "2026-06-30",
   });
 
   const payload = buildTaskPayload(req, brandConfig());
@@ -122,6 +123,7 @@ test("buildTaskPayload uses Merchant Raised section and includes due date", asyn
   assert.equal(payload.project_id, "project-1");
   assert.equal(payload.section_id, "sec-raised");
   assert.equal(payload.due_date, "2026-06-25");
+  assert.equal(payload.deadline_date, "2026-06-30");
   assert.ok(payload.labels.includes("category:Data Analysis"));
   assert.match(payload.description, /Datum Request ID:/);
 });
@@ -408,6 +410,7 @@ test("webhook imports unlinked tagged task using brand label", async () => {
         labels: ["merchant-request", "brand:TMC", "category:Design"],
         priority: 4,
         due: { date: "2026-06-30" },
+        deadline: { date: "2026-07-04" },
       },
     },
     "delivery-import-brand",
@@ -420,6 +423,7 @@ test("webhook imports unlinked tagged task using brand label", async () => {
   assert.equal(imported.category, "Design");
   assert.equal(imported.priority, "urgent");
   assert.equal(imported.due_date, "2026-06-30");
+  assert.equal(imported.deadline_date, "2026-07-04");
   const event = await MerchantRequestEvent.findOne({ request_id: imported._id, type: "request_imported" }).lean();
   assert.ok(event);
 });
@@ -868,6 +872,95 @@ test("author can set and clear due date", async () => {
   assert.deepEqual(calls.map((c) => c.payload), [{ due_date: "2026-06-25" }, { due_date: null }]);
 });
 
+test("author can set and clear deadline without changing due date", async () => {
+  await seedBrandConfig("TMC");
+  const reqDoc = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "merchant-1" },
+    title: "Deadline me",
+    category: "Development",
+    due_date: "2026-06-20",
+    todoist_task_id: "task-deadline",
+    sync: { todoist_task_status: "synced" },
+  });
+  const calls = [];
+  const app = appWithTodoist({
+    updateTask: async (taskId, payload) => {
+      calls.push({ taskId, payload });
+      return { id: taskId };
+    },
+  });
+
+  const set = await request(app)
+    .patch(`/merchant-requests/${reqDoc._id}/deadline`)
+    .set(authorHeaders("TMC"))
+    .send({ deadline_date: "2026-06-25" });
+  assert.equal(set.status, 200);
+  assert.equal(set.body.request.deadline_date, "2026-06-25");
+  assert.equal(set.body.request.due_date, "2026-06-20");
+
+  const clear = await request(app)
+    .patch(`/merchant-requests/${reqDoc._id}/deadline`)
+    .set(authorHeaders("TMC"))
+    .send({ deadline_date: "" });
+  assert.equal(clear.status, 200);
+  assert.equal(clear.body.request.deadline_date, "");
+  assert.deepEqual(calls.map((call) => call.payload), [
+    { deadline_date: "2026-06-25" },
+    { deadline_date: null },
+  ]);
+});
+
+test("manual soft removal is author-only and is not restored by Todoist", async () => {
+  const reqDoc = await MerchantRequest.create({
+    brand_key: "TMC",
+    requester: { user_id: "todoist", name: "Todoist" },
+    title: "Remove manually",
+    category: "Issues",
+    todoist_task_id: "manual-remove-task",
+    todoist_labels: ["merchant-request", "brand:TMC"],
+  });
+  const job = await TodoistSyncJob.create({
+    request_id: reqDoc._id,
+    type: "create_comment",
+    status: "pending",
+  });
+  const app = appWithTodoist({});
+
+  const forbidden = await request(app)
+    .delete(`/merchant-requests/${reqDoc._id}`)
+    .set(merchantHeaders("TMC"));
+  assert.equal(forbidden.status, 403);
+
+  const removed = await request(app)
+    .delete(`/merchant-requests/${reqDoc._id}`)
+    .set(authorHeaders("TMC"));
+  assert.equal(removed.status, 200);
+  let stored = await MerchantRequest.findById(reqDoc._id).lean();
+  assert.ok(stored.removed_at);
+  assert.equal(stored.removal_reason, "author_removed");
+  assert.equal((await TodoistSyncJob.findById(job._id).lean()).status, "cancelled");
+
+  await signedTodoistPost(
+    app,
+    {
+      event_name: "item:updated",
+      event_data: {
+        id: "manual-remove-task",
+        labels: ["merchant-request", "brand:TMC"],
+      },
+    },
+    "delivery-manual-remove-no-restore",
+  );
+  stored = await MerchantRequest.findById(reqDoc._id).lean();
+  assert.ok(stored.removed_at);
+  assert.equal(stored.removal_reason, "author_removed");
+  assert.equal(
+    await MerchantRequestEvent.countDocuments({ request_id: reqDoc._id, type: "request_restored" }),
+    0,
+  );
+});
+
 test("merchant create request with due_date is rejected", async () => {
   const app = appWithTodoist({});
 
@@ -876,6 +969,16 @@ test("merchant create request with due_date is rejected", async () => {
     .set(merchantHeaders("TMC"))
     .send({ brand_key: "TMC", title: "Need help", due_date: "2026-06-25" });
 
+  assert.equal(res.status, 403);
+  assert.equal(res.body.error, "author_required");
+});
+
+test("merchant create request with deadline_date is rejected", async () => {
+  const app = appWithTodoist({});
+  const res = await request(app)
+    .post("/merchant-requests")
+    .set(merchantHeaders("TMC"))
+    .send({ brand_key: "TMC", title: "Need help", deadline_date: "2026-06-25" });
   assert.equal(res.status, 403);
   assert.equal(res.body.error, "author_required");
 });
