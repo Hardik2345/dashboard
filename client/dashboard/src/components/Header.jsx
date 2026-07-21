@@ -18,13 +18,9 @@ import bridge from "dayjs/plugin/utc"; // Using a different name to avoid collis
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import { getLastUpdatedPTS } from "../lib/api.js";
 import {
-  Bell,
-  Sun,
-  Moon,
-  LayoutGrid,
   SlidersHorizontal,
   LogOut,
-  PanelLeft, // Added
+  Menu,
 } from "lucide-react";
 import SkyToggle from "./ui/SkyToggle.jsx";
 import LayoutPanelsIcon from "./ui/LayoutPanelsIcon.jsx";
@@ -136,24 +132,130 @@ export default function Header({
           justifyContent: "space-between",
           minHeight: { xs: 56, md: 72 },
           p: 0,
+          position: "relative",
         }}
       >
-        {/* Left: Greeting (Desktop) or Logo (Mobile) */}
-        <Box sx={{ display: "flex", flexDirection: "column" }}>
-          {isMobile ? (
+        {isMobile ? (
+          <>
             <Box
-              component="img"
-              src="/brand-logo-dark.png"
-              alt="Brand"
               sx={{
-                height: 50,
-                width: "auto",
-                filter: darkMode
-                  ? "invert(1) hue-rotate(180deg) brightness(1.2)"
-                  : "none",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-start",
+                gap: 1.5,
+                zIndex: 2,
               }}
-            />
-          ) : (
+            >
+              {showMenuButton ? (
+                <IconButton
+                  onClick={onMenuClick}
+                  size="small"
+                  sx={{
+                    color: darkMode ? "#f0f0f0" : "inherit",
+                    bgcolor: darkMode
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(0,0,0,0.05)",
+                    border: "1px solid",
+                    borderColor: darkMode
+                      ? "rgba(255,255,255,0.1)"
+                      : "rgba(0,0,0,0.1)",
+                    borderRadius: "8px",
+                    p: 0.8,
+                  }}
+                >
+                  <Menu size={18} />
+                </IconButton>
+              ) : null}
+              <Box
+                component="img"
+                src="/brand-logo-dark.png"
+                alt="Brand"
+                sx={{
+                  height: 48,
+                  width: "auto",
+                  filter: darkMode
+                    ? "invert(1) hue-rotate(180deg) brightness(1.2)"
+                    : "none",
+                }}
+              />
+            </Box>
+
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+                ml: "auto",
+                zIndex: 2,
+              }}
+            >
+              {isAdmin && (
+                <NotificationsMenu
+                  darkMode={darkMode}
+                  onTabChange={onTabChange}
+                />
+              )}
+
+              {showFilterButton && (
+                <IconButton
+                  onClick={onFilterClick}
+                  size="small"
+                  sx={{
+                    color: darkMode ? "#f0f0f0" : "inherit",
+                    bgcolor: darkMode
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(0,0,0,0.05)",
+                    border: "1px solid",
+                    borderColor: darkMode
+                      ? "rgba(255,255,255,0.1)"
+                      : "rgba(0,0,0,0.1)",
+                    borderRadius: "8px",
+                    p: 0.8,
+                  }}
+                >
+                  <SlidersHorizontal size={18} />
+                </IconButton>
+              )}
+
+              {showCustomizeButton && (
+                <Tooltip title="Customize Layout">
+                  <ButtonBase
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onCustomizeLayoutClick?.();
+                    }}
+                    sx={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: "8px",
+                      color: darkMode ? "#f0f0f0" : "inherit",
+                      bgcolor: darkMode
+                        ? "rgba(255,255,255,0.05)"
+                        : "rgba(0,0,0,0.05)",
+                      border: "1px solid",
+                      borderColor: darkMode
+                        ? "rgba(255,255,255,0.1)"
+                        : "rgba(0,0,0,0.1)",
+                    }}
+                  >
+                    <LayoutPanelsIcon size={18} />
+                  </ButtonBase>
+                </Tooltip>
+              )}
+
+              <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
+              <IconButton
+                onClick={onLogout}
+                size="small"
+                sx={{ color: "#d32f2f" }}
+              >
+                <LogOut size={20} />
+              </IconButton>
+            </Box>
+          </>
+        ) : (
+          <>
             <Box sx={{ display: "flex", flexDirection: "column" }}>
               <Typography
                 variant="h5"
@@ -252,112 +354,13 @@ export default function Header({
                 Your store at a glance
               </Typography>
             </Box>
-          )}
-        </Box>
-
-        {/* Right: Actions */}
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: { xs: 1, md: 1.5 },
-          }}
-        >
-          {/* Mobile Actions */}
-          {isMobile && (
-            <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-              {showMenuButton && (
-                <IconButton
-                  onClick={onMenuClick}
-                  size="small"
-                  sx={{
-                    color: darkMode ? "#f0f0f0" : "inherit",
-                    bgcolor: darkMode
-                      ? "rgba(255,255,255,0.05)"
-                      : "rgba(0,0,0,0.05)",
-                    border: "1px solid",
-                    borderColor: darkMode
-                      ? "rgba(255,255,255,0.1)"
-                      : "rgba(0,0,0,0.1)",
-                    borderRadius: "8px",
-                    p: 0.8,
-                  }}
-                >
-                  <PanelLeft size={18} />
-                </IconButton>
-              )}
-
-              {/* Notifications - Only for admins */}
-              {isAdmin && (
-                <NotificationsMenu
-                  darkMode={darkMode}
-                  onTabChange={onTabChange}
-                />
-              )}
-
-              {/* Mobile Filter Button */}
-              {showFilterButton && (
-                <IconButton
-                  onClick={onFilterClick}
-                  size="small"
-                  sx={{
-                    color: darkMode ? "#f0f0f0" : "inherit",
-                    bgcolor: darkMode
-                      ? "rgba(255,255,255,0.05)"
-                      : "rgba(0,0,0,0.05)",
-                    border: "1px solid",
-                    borderColor: darkMode
-                      ? "rgba(255,255,255,0.1)"
-                      : "rgba(0,0,0,0.1)",
-                    borderRadius: "8px",
-                    p: 0.8,
-                  }}
-                >
-                  <SlidersHorizontal size={18} />
-                </IconButton>
-              )}
-
-              {showCustomizeButton && (
-                <Tooltip title="Customize Layout">
-                <ButtonBase
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onCustomizeLayoutClick?.();
-                  }}
-                  sx={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: "8px",
-                    color: darkMode ? "#f0f0f0" : "inherit",
-                    bgcolor: darkMode
-                      ? "rgba(255,255,255,0.05)"
-                      : "rgba(0,0,0,0.05)",
-                    border: "1px solid",
-                    borderColor: darkMode
-                      ? "rgba(255,255,255,0.1)"
-                      : "rgba(0,0,0,0.1)",
-                  }}
-                >
-                  <LayoutPanelsIcon size={18} />
-                </ButtonBase>
-                </Tooltip>
-              )}
-
-              <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
-              <IconButton
-                onClick={onLogout}
-                size="small"
-                sx={{ color: "#d32f2f" }}
-              >
-                <LogOut size={20} />
-              </IconButton>
-            </Box>
-          )}
-
-          {/* Desktop Actions */}
-          {!isMobile && (
-            <>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: { xs: 1, md: 1.5 },
+              }}
+            >
               {/* Notifications - Only for admins */}
               {isAdmin && (
                 <NotificationsMenu
@@ -412,9 +415,9 @@ export default function Header({
                   />
                 </Box>
               )}
-            </>
-          )}
-        </Box>
+            </Box>
+          </>
+        )}
       </Toolbar>
     </AppBar>
   );

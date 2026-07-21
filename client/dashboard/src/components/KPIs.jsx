@@ -959,7 +959,7 @@ function buildDesktopMetrics({
     },
     {
       id: "rto",
-      label: rtoMode === "O" ? "RTO Orders" : "RTO %",
+      label: rtoMode === "O" ? "RTO Orders (Approx.)" : "RTO % (Approx.)",
       action: renderToggle({
         leftActive: rtoMode === "O",
         leftLabel: "O",
@@ -2014,7 +2014,7 @@ export default function KPIs({
               sx={{ order: { xs: 8, md: 0 } }}
             >
               <KPIStat
-                label={rtoMode === "O" ? "RTO Orders" : "RTO %"}
+                label={rtoMode === "O" ? "RTO Orders (Approx.)" : "RTO % (Approx.)"}
                 action={renderToggle({
                   leftActive: rtoMode === "O",
                   leftLabel: "O",

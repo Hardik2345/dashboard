@@ -3361,7 +3361,10 @@ export default function App() {
                   showMultipleBrands
                 }
                 showCustomizeButton={
-                  false
+                  isMobile &&
+                  authorTab === "dashboard" &&
+                  hasBrand &&
+                  canCustomizeDashboardLayout
                 }
                 onFilterClick={() => setMobileFilterOpen(true)}
                 onCustomizeLayoutClick={handleOpenLayoutEditor}
@@ -3727,48 +3730,23 @@ export default function App() {
                                 Scope: {dashboardScopeLabel}
                               </Typography>
                             ) : null}
-                            {isMobile ? (
-                              <Stack spacing={{ xs: 1, md: 1 }}>
-                                {activeWidgetIds.flatMap((widgetId) => {
-                                  const nodes = [
-                                    <Box key={widgetId} sx={{ width: "100%" }}>
-                                      {activeWidgetRegistry[widgetId]}
-                                    </Box>,
-                                  ];
-
-                                  if (extraAfterId === widgetId && dashboardExtrasNode) {
-                                    nodes.push(
-                                      <Box
-                                        key={`${widgetId}-extras`}
-                                        sx={{ width: "100%" }}
-                                      >
-                                        {dashboardExtrasNode}
-                                      </Box>,
-                                    );
-                                  }
-
-                                  return nodes;
-                                })}
-                              </Stack>
-                            ) : (
-                              <InlineDashboardLayoutEditor
-                                isEditing={layoutEditMode}
-                                itemIds={activeWidgetIds}
-                                renderWidget={(widgetId) =>
-                                  activeWidgetRegistry[widgetId]
-                                }
-                                extraAfterId={extraAfterId}
-                                extras={dashboardExtrasNode}
-                                onOrderChange={handleInlineDashboardReorder}
-                                onSave={() =>
-                                  handleSaveDashboardLayout(effectiveDashboardLayout)
-                                }
-                                onCancel={handleCloseLayoutEditor}
-                                onReset={handleResetDashboardLayout}
-                                isDirty={isDashboardLayoutDirty}
-                                isSaving={isSavingDashboardLayout}
-                              />
-                            )}
+                            <InlineDashboardLayoutEditor
+                              isEditing={layoutEditMode}
+                              itemIds={activeWidgetIds}
+                              renderWidget={(widgetId) =>
+                                activeWidgetRegistry[widgetId]
+                              }
+                              extraAfterId={extraAfterId}
+                              extras={dashboardExtrasNode}
+                              onOrderChange={handleInlineDashboardReorder}
+                              onSave={() =>
+                                handleSaveDashboardLayout(effectiveDashboardLayout)
+                              }
+                              onCancel={handleCloseLayoutEditor}
+                              onReset={handleResetDashboardLayout}
+                              isDirty={isDashboardLayoutDirty}
+                              isSaving={isSavingDashboardLayout}
+                            />
                           </Stack>
                         </Suspense>
                       ) : (
