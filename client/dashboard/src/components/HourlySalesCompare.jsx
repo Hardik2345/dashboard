@@ -703,7 +703,7 @@ export default memo(function HourlySalesCompare({
     daysInRange > WEEKLY_LABEL_THRESHOLD &&
     !hasPerformanceSelected;
   const canUseHourlyPaymentTrend = daysInRange === 1;
-  const canUseBarChart = daysInRange <= 3;
+  const canUseBarChart = daysInRange <= 8;
   const hasComparisonData = useMemo(
     () =>
       chartData.some(

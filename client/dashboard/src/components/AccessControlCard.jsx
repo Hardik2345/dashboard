@@ -81,6 +81,7 @@ const PERMISSION_OPTIONS = [
   "utm_filter",
   "discount_filter",
   "ci_events",
+  "rto_kpi",
   "web_vitals",
   "payment_split_order",
   "payment_split_sales",
