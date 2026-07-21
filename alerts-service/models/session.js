@@ -16,6 +16,9 @@ const sessionSchema = new mongoose.Schema(
         "video_add_to_cart_click",
         "video_more_info",
         "video_close",
+        "carrousel_view",
+        "Offer_strip_open",
+        "Offer_strip_checkout"
       ],
       required: true,
     },
@@ -30,6 +33,18 @@ const sessionSchema = new mongoose.Schema(
   {
     timestamps: true,
     collection: "sessions",
+  },
+);
+
+sessionSchema.index(
+  { session_id: 1 },
+  {
+    name: "unique_session_id_for_checkout_events",
+    unique: true,
+    partialFilterExpression: {
+      event_type: { $in: ["checkout_initiated", "buy_now"] },
+      session_id: { $exists: true, $type: "string" },
+    },
   },
 );
 

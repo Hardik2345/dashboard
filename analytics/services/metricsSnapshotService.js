@@ -349,6 +349,22 @@ async function queryCityRows(
 
 async function queryCheckoutInitiatedTotals(conn, start, end, cutoffHour = null) {
   const hasCutoff = Number.isInteger(cutoffHour);
+  if (!hasCutoff) {
+    const rows = await conn.query(
+      `
+        SELECT
+          COALESCE(SUM(ci_events), 0) AS total_ci_events
+        FROM overall_summary
+        WHERE date >= ? AND date <= ?
+      `,
+      {
+        type: QueryTypes.SELECT,
+        replacements: [start, end],
+      },
+    );
+    return Number(rows?.[0]?.total_ci_events || 0);
+  }
+
   const sql = `
     SELECT
       COALESCE(SUM(ci_events), 0) AS total_ci_events
@@ -456,21 +472,25 @@ async function getReturnsSnapshot(conn, start, end, filters = {}) {
     return {
       cancelled_orders: null,
       refunded_orders: null,
+      rto_orders: null,
     };
   }
   if (getUtmAggregateSource(filters, "daily")) {
     const totals = await queryUtmAggregateTotals(conn, start, end, filters, {
       granularity: "daily",
     });
+    const returnTotals = await computeReturnCounts({ start, end, conn, filters });
     return {
       cancelled_orders: Number(totals?.cancelled_orders || 0),
       refunded_orders: Number(totals?.refunded_orders || 0),
+      rto_orders: Number(returnTotals?.rto_orders || 0),
     };
   }
   const rows = await computeReturnCounts({ start, end, conn, filters });
   return {
     cancelled_orders: Number(rows.cancelled_orders || 0),
     refunded_orders: Number(rows.refunded_orders || 0),
+    rto_orders: Number(rows.rto_orders || 0),
   };
 }
 
@@ -480,29 +500,47 @@ async function getReturnsSnapshotPair(conn, currentRange, previousRange, filters
       current: {
         cancelled_orders: null,
         refunded_orders: null,
+        rto_orders: null,
       },
       previous: {
         cancelled_orders: null,
         refunded_orders: null,
+        rto_orders: null,
       },
     };
   }
   if (getUtmAggregateSource(filters, "daily")) {
-    const pair = await queryUtmAggregatePair(
-      conn,
-      currentRange,
-      previousRange,
-      filters,
-      { granularity: "daily" },
-    );
+    const [pair, currentRto, previousRto] = await Promise.all([
+      queryUtmAggregatePair(
+        conn,
+        currentRange,
+        previousRange,
+        filters,
+        { granularity: "daily" },
+      ),
+      computeReturnCounts({
+        start: currentRange.start,
+        end: currentRange.end,
+        conn,
+        filters,
+      }),
+      computeReturnCounts({
+        start: previousRange.start,
+        end: previousRange.end,
+        conn,
+        filters,
+      }),
+    ]);
     return {
       current: {
         cancelled_orders: Number(pair?.current?.cancelled_orders || 0),
         refunded_orders: Number(pair?.current?.refunded_orders || 0),
+        rto_orders: Number(currentRto?.rto_orders || 0),
       },
       previous: {
         cancelled_orders: Number(pair?.previous?.cancelled_orders || 0),
         refunded_orders: Number(pair?.previous?.refunded_orders || 0),
+        rto_orders: Number(previousRto?.rto_orders || 0),
       },
     };
   }
@@ -518,12 +556,14 @@ async function getReturnsSnapshotPair(conn, currentRange, previousRange, filters
   const rows = await conn.query(
     `
       SELECT
-        COALESCE(SUM(CASE WHEN event_type = 'CANCEL' AND event_date >= ? AND event_date <= ? THEN 1 ELSE 0 END), 0) AS current_cancelled_orders,
-        COALESCE(SUM(CASE WHEN event_type = 'REFUND' AND event_date >= ? AND event_date <= ? THEN 1 ELSE 0 END), 0) AS current_refunded_orders,
-        COALESCE(SUM(CASE WHEN event_type = 'CANCEL' AND event_date >= ? AND event_date <= ? THEN 1 ELSE 0 END), 0) AS previous_cancelled_orders,
-        COALESCE(SUM(CASE WHEN event_type = 'REFUND' AND event_date >= ? AND event_date <= ? THEN 1 ELSE 0 END), 0) AS previous_refunded_orders
+        COALESCE(SUM(CASE WHEN event_type = 'CANCEL' AND order_created_date >= ? AND order_created_date <= ? THEN 1 ELSE 0 END), 0) AS current_cancelled_orders,
+        COALESCE(SUM(CASE WHEN event_type = 'REFUND' AND order_created_date >= ? AND order_created_date <= ? THEN 1 ELSE 0 END), 0) AS current_refunded_orders,
+        COALESCE(SUM(CASE WHEN event_type = 'CANCEL (RTO)' AND order_created_date >= ? AND order_created_date <= ? THEN 1 ELSE 0 END), 0) AS current_rto_orders,
+        COALESCE(SUM(CASE WHEN event_type = 'CANCEL' AND order_created_date >= ? AND order_created_date <= ? THEN 1 ELSE 0 END), 0) AS previous_cancelled_orders,
+        COALESCE(SUM(CASE WHEN event_type = 'REFUND' AND order_created_date >= ? AND order_created_date <= ? THEN 1 ELSE 0 END), 0) AS previous_refunded_orders,
+        COALESCE(SUM(CASE WHEN event_type = 'CANCEL (RTO)' AND order_created_date >= ? AND order_created_date <= ? THEN 1 ELSE 0 END), 0) AS previous_rto_orders
       FROM returns_fact
-      WHERE event_date >= ? AND event_date <= ?
+      WHERE order_created_date >= ? AND order_created_date <= ?
     `,
     {
       type: QueryTypes.SELECT,
@@ -532,6 +572,10 @@ async function getReturnsSnapshotPair(conn, currentRange, previousRange, filters
         currentRange.end,
         currentRange.start,
         currentRange.end,
+        currentRange.start,
+        currentRange.end,
+        previousRange.start,
+        previousRange.end,
         previousRange.start,
         previousRange.end,
         previousRange.start,
@@ -546,10 +590,12 @@ async function getReturnsSnapshotPair(conn, currentRange, previousRange, filters
     current: {
       cancelled_orders: Number(row.current_cancelled_orders || 0),
       refunded_orders: Number(row.current_refunded_orders || 0),
+      rto_orders: Number(row.current_rto_orders || 0),
     },
     previous: {
       cancelled_orders: Number(row.previous_cancelled_orders || 0),
       refunded_orders: Number(row.previous_refunded_orders || 0),
+      rto_orders: Number(row.previous_rto_orders || 0),
     },
   };
 }
@@ -560,8 +606,10 @@ function buildSnapshotPayload(metrics = {}, returnsObj = {}, source = "db") {
   const total_sessions = Number(metrics.total_sessions || 0);
   const total_atc_sessions = Number(metrics.total_atc_sessions || 0);
   const total_ci_events = Number(metrics.total_ci_events || 0);
+  const rto_orders = Number(returnsObj.rto_orders || 0);
   const average_order_value = total_orders > 0 ? total_sales / total_orders : 0;
   const conversion_rate = total_sessions > 0 ? total_orders / total_sessions : 0;
+  const rto_rate = total_orders > 0 ? rto_orders / total_orders : 0;
 
   return {
     total_orders,
@@ -574,6 +622,9 @@ function buildSnapshotPayload(metrics = {}, returnsObj = {}, source = "db") {
     conversion_rate_percent: conversion_rate * 100,
     cancelled_orders: Number(returnsObj.cancelled_orders || 0),
     refunded_orders: Number(returnsObj.refunded_orders || 0),
+    rto_orders,
+    rto_rate,
+    rto_rate_percent: rto_rate * 100,
     source,
   };
 }
@@ -592,6 +643,9 @@ function buildDiscountSnapshotPayload(metrics = {}, source = "db") {
     conversion_rate_percent: null,
     cancelled_orders: null,
     refunded_orders: null,
+    rto_orders: null,
+    rto_rate: null,
+    rto_rate_percent: null,
     source,
   };
 }
@@ -613,6 +667,15 @@ function buildCachedSnapshot(
     conversion_rate_percent: Number(cachedData.conversion_rate || 0),
     cancelled_orders: Number(returnsObj.cancelled_orders || 0),
     refunded_orders: Number(returnsObj.refunded_orders || 0),
+    rto_orders: Number(returnsObj.rto_orders || 0),
+    rto_rate:
+      Number(cachedData.total_orders || 0) > 0
+        ? Number(returnsObj.rto_orders || 0) / Number(cachedData.total_orders || 0)
+        : 0,
+    rto_rate_percent:
+      Number(cachedData.total_orders || 0) > 0
+        ? (Number(returnsObj.rto_orders || 0) / Number(cachedData.total_orders || 0)) * 100
+        : 0,
     source,
   };
 }
@@ -1863,6 +1926,22 @@ function buildMetricsSnapshotService(deps = {}) {
               deltaCurrent.refunded_orders,
               deltaPrevious.refunded_orders,
             ),
+        rto_orders: discountActive || cityActive
+          ? buildUnavailableSummaryMetric()
+          : buildSummaryMetric(
+              current.rto_orders,
+              previous.rto_orders,
+              deltaCurrent.rto_orders,
+              deltaPrevious.rto_orders,
+            ),
+        rto_rate: discountActive || cityActive
+          ? buildUnavailableSummaryMetric()
+          : buildSummaryMetric(
+              current.rto_rate_percent,
+              previous.rto_rate_percent,
+              deltaCurrent.rto_rate_percent,
+              deltaPrevious.rto_rate_percent,
+            ),
       },
       sources: {
         current: current.source,
@@ -1960,6 +2039,82 @@ function buildMetricsSnapshotService(deps = {}) {
             months: previousRows,
           }
         : null,
+      };
+  }
+
+  async function getDailyFunnel(spec) {
+    const timezone = normalizeTimezone(spec.timezone);
+    const [baseRows, paymentRows, discountRows] = await Promise.all([
+      fetchDailyRows(spec.conn, spec.start, spec.end, {}),
+      spec.conn.query(
+        `
+          SELECT
+            DATE_FORMAT(date, '%Y-%m-%d') AS date,
+            COALESCE(SUM(prepaid_orders), 0) AS prepaid_orders,
+            COALESCE(SUM(cod_orders), 0) AS cod_orders,
+            COALESCE(SUM(partially_paid_orders), 0) AS partially_paid_orders
+          FROM overall_summary
+          WHERE date >= ? AND date <= ?
+          GROUP BY date
+          ORDER BY date ASC
+        `,
+        {
+          type: QueryTypes.SELECT,
+          replacements: [spec.start, spec.end],
+        },
+      ),
+      spec.conn.query(
+        `
+          SELECT
+            DATE_FORMAT(date, '%Y-%m-%d') AS date,
+            COALESCE(SUM(total_discounts_given), 0) AS discount_amount
+          FROM discount_summary
+          WHERE date >= ? AND date <= ?
+          GROUP BY date
+          ORDER BY date ASC
+        `,
+        {
+          type: QueryTypes.SELECT,
+          replacements: [spec.start, spec.end],
+        },
+      ),
+    ]);
+
+    const baseMap = new Map(
+      (Array.isArray(baseRows) ? baseRows : []).map((row) => [String(row.date), row]),
+    );
+    const paymentMap = new Map(
+      (Array.isArray(paymentRows) ? paymentRows : []).map((row) => [String(row.date), row]),
+    );
+    const discountMap = new Map(
+      (Array.isArray(discountRows) ? discountRows : []).map((row) => [String(row.date), row]),
+    );
+
+    const rows = buildSeriesBuckets(spec.start, spec.end)
+      .map((date) => {
+        const base = baseMap.get(date) || {};
+        const payment = paymentMap.get(date) || {};
+        const discount = discountMap.get(date) || {};
+
+        return {
+          date,
+          sales: Number(base.sales || 0),
+          sessions: Number(base.sessions || 0),
+          atc_sessions: Number(base.atc || 0),
+          ci_events: Number(base.ci_events || 0),
+          orders: Number(base.orders || 0),
+          discount_amount: Number(discount.discount_amount || 0),
+          prepaid_orders: Number(payment.prepaid_orders || 0),
+          cod_orders: Number(payment.cod_orders || 0),
+          partially_paid_orders: Number(payment.partially_paid_orders || 0),
+        };
+      })
+      .sort((left, right) => right.date.localeCompare(left.date));
+
+    return {
+      timezone,
+      range: { start: spec.start, end: spec.end },
+      rows,
     };
   }
 
@@ -1968,6 +2123,7 @@ function buildMetricsSnapshotService(deps = {}) {
     getSnapshotPair,
     getDashboardSummary,
     getTrend,
+    getDailyFunnel,
     getSummaryFilterOptions,
   };
 }

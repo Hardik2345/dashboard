@@ -33,7 +33,13 @@ import {
 import { TransitionGroup } from "react-transition-group";
 import { GlassChip } from "./ui/GlassChip";
 import { getSummaryFilterOptions, getProductTypes } from "../lib/api";
-import { isRangeOver30DaysInclusive } from "../lib/dateRange.js";
+import {
+  DEFAULT_DATA_RESTRICTION_CONFIG,
+  getDataRestrictionDescription,
+  getDataRestrictionWarningText,
+  normalizeDataRestrictionConfig,
+  isRangeOverDataRestrictionPeriod,
+} from "../lib/dateRange.js";
 
 export default function MobileFilterDrawer({
   open,
@@ -54,6 +60,7 @@ export default function MobileFilterDrawer({
   onCityChange,
   utmOptions: propUtmOptions,
   dateRange,
+  dataRestrictionConfig = DEFAULT_DATA_RESTRICTION_CONFIG,
   isDark = false,
   showBrandFilter = true,
   showProductFilter = true,
@@ -89,6 +96,18 @@ export default function MobileFilterDrawer({
   const [view, setView] = useState("ROOT"); // ROOT, BRAND, PRODUCT, UTM, UTM_SOURCE, UTM_MEDIUM, UTM_CAMPAIGN, SALES_CHANNEL, CITY
   const [utmOptions, setUtmOptions] = useState(null);
   const [searchText, setSearchText] = useState("");
+  const normalizedRestrictionConfig = useMemo(
+    () => normalizeDataRestrictionConfig(dataRestrictionConfig),
+    [dataRestrictionConfig],
+  );
+  const dataRestrictionDescription = useMemo(
+    () => getDataRestrictionDescription(normalizedRestrictionConfig),
+    [normalizedRestrictionConfig],
+  );
+  const utmRestrictionWarning = useMemo(
+    () => getDataRestrictionWarningText(normalizedRestrictionConfig),
+    [normalizedRestrictionConfig],
+  );
 
   useEffect(() => {
     setSearchText("");
@@ -145,6 +164,16 @@ export default function MobileFilterDrawer({
     }
 
     if (!open || !tempBrand) return;
+    if (
+      isRangeOverDataRestrictionPeriod(
+        dateRange?.[0],
+        dateRange?.[1],
+        normalizedRestrictionConfig,
+      )
+    ) {
+      setUtmOptions({ brand_key: tempBrand });
+      return;
+    }
 
     // If we already have options for THIS brand, and it's not a dependent refresh trigger, skip?
     // Actually, if we depend on lastFetchParams, this effect only runs when they change.
@@ -164,7 +193,7 @@ export default function MobileFilterDrawer({
         }
       })
       .catch((err) => console.error("Failed to load UTM options", err));
-  }, [lastFetchParams, propUtmOptions]);
+  }, [lastFetchParams, propUtmOptions, dateRange, normalizedRestrictionConfig, open, tempBrand]);
 
   const handleBack = () => {
     if (
@@ -179,8 +208,12 @@ export default function MobileFilterDrawer({
   };
 
   const isDateRangeOver30Days = useMemo(() => {
-    return isRangeOver30DaysInclusive(dateRange?.[0], dateRange?.[1]);
-  }, [dateRange]);
+    return isRangeOverDataRestrictionPeriod(
+      dateRange?.[0],
+      dateRange?.[1],
+      normalizedRestrictionConfig,
+    );
+  }, [dateRange, normalizedRestrictionConfig]);
 
   // Clear UTM filters if date range > 30 days
   useEffect(() => {
@@ -739,7 +772,7 @@ export default function MobileFilterDrawer({
                       }}
                     >
                       {isDateRangeOver30Days
-                        ? "Unavailable for > 30 days"
+                        ? dataRestrictionDescription
                         : isUtmBlocked
                           ? "Clear product filter first"
                         : activeUtmCount > 0
@@ -1050,7 +1083,7 @@ export default function MobileFilterDrawer({
                     variant="body2"
                     sx={{ color: "#ed6c02", fontWeight: 600, fontSize: 13 }}
                   >
-                    UTM filters are unavailable for date ranges over 30 days
+                    {utmRestrictionWarning}
                   </Typography>
                 </Box>
               )}

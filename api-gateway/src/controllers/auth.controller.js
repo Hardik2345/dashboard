@@ -191,7 +191,8 @@ exports.me = async (req, res) => {
         if (!token) return res.status(401).json({ error: 'Access token required' });
 
         const payload = TokenService.verifyAccessToken(token);
-        const user = await GlobalUser.findById(payload.sub);
+        const rawUser = await GlobalUser.findById(payload.sub);
+        const user = await AuthService.filterUserToActiveTenants(rawUser);
         if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
         return res.json({

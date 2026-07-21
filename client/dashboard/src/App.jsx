@@ -31,6 +31,7 @@ import Sidebar from "./components/Sidebar.jsx";
 import LayoutPanelsIcon from "./components/ui/LayoutPanelsIcon.jsx";
 import SidebarToggle from "./components/ui/SidebarToggle.jsx";
 import InlineDashboardLayoutEditor from "./components/InlineDashboardLayoutEditor.jsx";
+import DashboardUnavailableCard from "./components/DashboardUnavailableCard.jsx";
 
 import {
   LayoutGrid,
@@ -49,6 +50,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { id: "session-analytics", label: "Dashboard Sessions", icon: Activity },
   { id: "product-conversion", label: "Funnels", icon: Filter },
+  { id: "daily-funnel", label: "Daily Funnel", icon: Table2 },
   { id: "bundles", label: "Bundles", icon: Table2 },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "alerts", label: "Alerts", icon: Bell },
@@ -65,6 +67,7 @@ const TAB_ROUTE_MAP = {
   dashboard: "/dashboard",
   "session-analytics": "/session-analytics",
   "product-conversion": "/funnels",
+  "daily-funnel": "/daily-funnel",
   bundles: "/bundles",
   inventory: "/inventory",
   alerts: "/alerts",
@@ -111,6 +114,7 @@ const LogsPanel = lazy(() => import("./components/LogsPanel.jsx"));
 
 import {
   listAuthorBrands,
+  getDataRestrictionConfig,
   getTopProducts,
   getDashboardSummary,
   getSummaryFilterOptions,
@@ -124,13 +128,21 @@ import {
   saveDashboardLayout,
 } from "./lib/api.js";
 import { initializeSessionTracking } from "./lib/sessionTracker.js";
-import { isRangeOver30DaysInclusive } from "./lib/dateRange.js";
+import {
+  DEFAULT_DATA_RESTRICTION_CONFIG,
+  getDataRestrictionDescription,
+  isRangeOverDataRestrictionPeriod,
+} from "./lib/dateRange.js";
 import { setFrontendUserContext } from "./observability.js";
 import {
   DASHBOARD_LAYOUT_DEFAULTS,
   getVisibleDashboardWidgetIds,
   normalizeDashboardLayout,
 } from "./lib/dashboardLayout.js";
+import {
+  DEFAULT_DESKTOP_KPI_LAYOUT,
+  normalizeDesktopKpiLayout,
+} from "./lib/kpiLayout.js";
 
 import { TextField, Button, Paper, Typography, Chip } from "@mui/material";
 import axios from "axios";
@@ -147,18 +159,25 @@ import {
 import { setBrand } from "./state/slices/brandSlice.js";
 import {
   DEFAULT_PRODUCT_OPTION,
-  DEFAULT_TREND_METRIC,
   setProductSelection,
   setRange,
   setCompareMode,
   setCompareDateRange,
-  setSelectedMetric,
+  setTrendMetricSelection,
   setUtm,
   setSalesChannel,
   setDeviceType,
   setDiscountCode,
   setCity,
 } from "./state/slices/filterSlice.js";
+import {
+  CI_TREND_METRICS,
+  DEFAULT_TREND_METRIC,
+  DISCOUNT_ALLOWED_TREND_METRICS,
+  normalizeTrendMetric,
+  sanitizeTrendMetricSelection,
+  toggleTrendMetricSelection,
+} from "./lib/trendSelection.js";
 import MobileTopBar from "./components/MobileTopBar.jsx";
 const MobileFilterDrawer = lazy(
   () => import("./components/MobileFilterDrawer.jsx"),
@@ -206,6 +225,9 @@ const NotificationsLog = lazy(
 const ProductConversionTable = lazy(
   () => import("./components/ProductConversionTable.jsx"),
 );
+const DailyFunnelPanel = lazy(
+  () => import("./components/DailyFunnelPanel.jsx"),
+);
 const InventoryTable = lazy(() => import("./components/InventoryTable.jsx"));
 const BundlesPanel = lazy(() => import("./components/BundlesPanel.jsx"));
 const AuthorBrandForm = lazy(() => import("./components/AuthorBrandForm.jsx"));
@@ -222,17 +244,6 @@ function formatDate(dt) {
   return dt ? dayjs(dt).format("YYYY-MM-DD") : undefined;
 }
 
-const TREND_METRICS = new Set([
-  "sales",
-  "orders",
-  "sessions",
-  "cvr",
-  "atc",
-  "ci_events",
-  "checkout_rate",
-  "atc_rate",
-  "aov",
-]);
 const WEB_VITAL_METRIC_KEYS = {
   FCP: "fcp",
   LCP: "lcp",
@@ -289,7 +300,8 @@ export default function App() {
     range,
     compareMode,
     compareDateRange,
-    selectedMetric,
+    selectedMetrics,
+    activeMetric,
     productSelection,
     utm,
     discountCode,
@@ -313,6 +325,17 @@ export default function App() {
     [range],
   );
   const normalizedRange = useMemo(() => [start, end], [start, end]);
+  const [dataRestrictionConfig, setDataRestrictionConfig] = useState(
+    DEFAULT_DATA_RESTRICTION_CONFIG,
+  );
+  const isLongRangeDashboard = useMemo(
+    () => isRangeOverDataRestrictionPeriod(start, end, dataRestrictionConfig),
+    [start, end, dataRestrictionConfig],
+  );
+  const dataRestrictionDescription = useMemo(
+    () => getDataRestrictionDescription(dataRestrictionConfig),
+    [dataRestrictionConfig],
+  );
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
 
   const isAuthor = !!user?.isAuthor;
@@ -323,6 +346,29 @@ export default function App() {
   // New state to strictly track if the initial fetch has completed
   const [brandsLoaded, setBrandsLoaded] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    getDataRestrictionConfig()
+      .then((config) => {
+        if (cancelled) return;
+        setDataRestrictionConfig({
+          enabled:
+            typeof config?.enabled === "boolean"
+              ? config.enabled
+              : DEFAULT_DATA_RESTRICTION_CONFIG.enabled,
+          periodDays:
+            Number.isFinite(Number(config?.periodDays)) &&
+            Number(config.periodDays) > 0
+              ? Number(config.periodDays)
+              : DEFAULT_DATA_RESTRICTION_CONFIG.periodDays,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
   const authorBrandKey = useMemo(
     () => (globalBrandKey || "").toString().trim().toUpperCase(),
     [globalBrandKey],
@@ -332,6 +378,7 @@ export default function App() {
     const seen = new Set();
     const list = [];
     for (const m of user.brand_memberships) {
+      if (m?.status !== "active") continue;
       const key = (m.brand_id || "").toString().trim().toUpperCase();
       if (key && !seen.has(key)) {
         seen.add(key);
@@ -605,6 +652,9 @@ export default function App() {
   const canCustomizeDashboardLayout = hasPermission(
     "dashboard_layout_customize",
   );
+  const canMultiSelectableKpiCards = hasPermission(
+    "multiselectable_kpi_cards",
+  );
 
   const canAccessInventoryPanel = useMemo(() => {
     if (isAuthor) return true;
@@ -614,6 +664,11 @@ export default function App() {
   const canAccessBundlesPanel = useMemo(() => {
     if (isAuthor) return true;
     return hasPermission("bundles_panel");
+  }, [hasPermission, isAuthor]);
+
+  const canAccessDailyFunnelPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("daily_funnel_panel");
   }, [hasPermission, isAuthor]);
 
   const canAccessRequestsPanel = useMemo(() => {
@@ -641,12 +696,14 @@ export default function App() {
     const tabs = ["dashboard"];
     if (canAccessOverallSnapshotPanel) tabs.unshift("overall-snapshot");
     if (canAccessSessionAnalyticsPanel) tabs.push("session-analytics");
+    if (canAccessDailyFunnelPanel) tabs.push("daily-funnel");
     if (canAccessRequestsPanel) tabs.push("requests");
     if (canAccessBundlesPanel) tabs.push("bundles");
     if (canAccessInventoryPanel) tabs.push("inventory");
     return tabs;
   }, [
     canAccessOverallSnapshotPanel,
+    canAccessDailyFunnelPanel,
     canAccessBundlesPanel,
     canAccessInventoryPanel,
     canAccessRequestsPanel,
@@ -686,6 +743,16 @@ export default function App() {
       );
       return;
     }
+    if (authorTab === "daily-funnel" && !canAccessDailyFunnelPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
     if (authorTab === "requests" && !canAccessRequestsPanel) {
       navigate(
         {
@@ -709,6 +776,7 @@ export default function App() {
     authorTab,
     defaultLandingTab,
     canAccessOverallSnapshotPanel,
+    canAccessDailyFunnelPanel,
     canAccessBundlesPanel,
     canAccessInventoryPanel,
     canAccessRequestsPanel,
@@ -750,6 +818,10 @@ export default function App() {
     }
     return productSelection.label || "";
   }, [productSelection]);
+  const dashboardScopeLabel = useMemo(() => {
+    if (!selectedProductIds) return "All products";
+    return selectedProductLabel || selectedProductIds;
+  }, [selectedProductIds, selectedProductLabel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1840,28 +1912,75 @@ export default function App() {
 
   const handleSelectMetric = useCallback(
     (metricKey) => {
-      if (!metricKey) return;
-      if (
-        (metricKey === "ci_events" || metricKey === "checkout_rate") &&
-        !hasPermission("ci_events")
-      ) {
-        dispatch(setSelectedMetric("sales"));
-        return;
-      }
-      if (
-        discountCode &&
-        !["orders", "sales", "aov", "ci_events"].includes(metricKey)
-      ) {
-        dispatch(setSelectedMetric("sales"));
-        return;
-      }
+      const normalizedMetric = normalizeTrendMetric(metricKey);
+      if (!normalizedMetric) return;
+
       dispatch(
-        setSelectedMetric(
-          TREND_METRICS.has(metricKey) ? metricKey : DEFAULT_TREND_METRIC,
+        setTrendMetricSelection(
+          sanitizeTrendMetricSelection(
+            [],
+            normalizedMetric,
+          ),
         ),
       );
     },
-    [dispatch, discountCode, hasPermission],
+    [dispatch],
+  );
+
+  const handleToggleMetric = useCallback(
+    (metricKey, options = {}) => {
+      if (!canMultiSelectableKpiCards) return;
+      const normalizedMetric = normalizeTrendMetric(metricKey);
+      if (!normalizedMetric) return;
+
+      const nextSelection = toggleTrendMetricSelection(
+        selectedMetrics,
+        activeMetric,
+        normalizedMetric,
+        options,
+      );
+
+      let allowedMetrics = Array.isArray(nextSelection.selectedMetrics)
+        ? [...nextSelection.selectedMetrics]
+        : [];
+
+      if (!hasPermission("ci_events")) {
+        allowedMetrics = allowedMetrics.filter(
+          (entry) => !CI_TREND_METRICS.has(entry),
+        );
+      }
+      if (discountCode) {
+        allowedMetrics = allowedMetrics.filter((entry) =>
+          DISCOUNT_ALLOWED_TREND_METRICS.has(entry),
+        );
+      }
+
+      const fallbackMetric =
+        nextSelection.activeMetric &&
+        (!discountCode ||
+          DISCOUNT_ALLOWED_TREND_METRICS.has(nextSelection.activeMetric)) &&
+        (hasPermission("ci_events") ||
+          !CI_TREND_METRICS.has(nextSelection.activeMetric))
+          ? nextSelection.activeMetric
+          : DEFAULT_TREND_METRIC;
+
+      dispatch(
+        setTrendMetricSelection(
+          sanitizeTrendMetricSelection(
+            allowedMetrics,
+            nextSelection.activeMetric || fallbackMetric,
+          ),
+        ),
+      );
+    },
+    [
+      activeMetric,
+      canMultiSelectableKpiCards,
+      dispatch,
+      discountCode,
+      hasPermission,
+      selectedMetrics,
+    ],
   );
 
   const handleRangeChange = useCallback(
@@ -2017,6 +2136,35 @@ export default function App() {
   );
 
   const renderDashboardExtras = useCallback(() => {
+    if (isLongRangeDashboard) {
+      return (
+        <Stack spacing={3} sx={{ mt: 2 }}>
+          {!isAuthor && hasPermission("sessions_drop_off_funnel") && (
+            <DashboardUnavailableCard
+              title="Sessions Drop-off Funnel"
+              description={dataRestrictionDescription}
+              minHeight={250}
+            />
+          )}
+          {!isAuthor && hasPermission("product_conversion") && (
+            <Box>
+              <Typography
+                variant="subtitle2"
+                color="text.secondary"
+                sx={{ mb: 1.5, fontWeight: 500, ml: 1 }}
+              >
+                Product Performance
+              </Typography>
+              <DashboardUnavailableCard
+                title="Product Performance"
+                description={dataRestrictionDescription}
+                minHeight={300}
+              />
+            </Box>
+          )}
+        </Stack>
+      );
+    }
     return (
       <>
         {!isAuthor &&
@@ -2110,44 +2258,46 @@ export default function App() {
     );
   }, [
     activeBrandKey,
+    dataRestrictionDescription,
     funnelData,
     hasPermission,
     isAuthor,
+    isLongRangeDashboard,
     viewerPermissions,
   ]);
 
   const desktopWidgetRegistry = useMemo(
     () => ({
       kpi_cards: (
-        <Stack spacing={{ xs: 1, md: 1 }}>
-          <KPIs
-            query={trendMetricsQuery}
-            selectedMetric={selectedMetric}
-            onSelectMetric={handleSelectMetric}
-            onFunnelData={handleFunnelData}
-            productId={selectedProductIds}
-            productLabel={selectedProductLabel}
-            utmOptions={utmOptions}
-            showRow={1}
-            showWebVitals={false}
-            showCiEvents={hasPermission("ci_events")}
-            compareMode={compareMode}
-          />
-          <KPIs
-            query={trendMetricsQuery}
-            selectedMetric={selectedMetric}
-            onSelectMetric={handleSelectMetric}
-            productId={selectedProductIds}
-            productLabel={selectedProductLabel}
-            utmOptions={utmOptions}
-            showRow={2}
-            showWebVitals={false}
-            showCiEvents={hasPermission("ci_events")}
-            compareMode={compareMode}
-          />
-        </Stack>
+        <KPIs
+          variant="desktop_paged"
+          query={trendMetricsQuery}
+          selectedMetrics={selectedMetrics}
+          activeMetric={activeMetric}
+          onSelectMetric={handleSelectMetric}
+          onToggleMetric={
+            canMultiSelectableKpiCards ? handleToggleMetric : undefined
+          }
+          onFunnelData={handleFunnelData}
+          productId={selectedProductIds}
+          productLabel={selectedProductLabel}
+          utmOptions={utmOptions}
+          showWebVitals={false}
+          showCiEvents={hasPermission("ci_events")}
+          compareMode={compareMode}
+          desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
+          onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
+          canEditDesktopKpis={canCustomizeDashboardLayout}
+          dashboardLayoutEditing={layoutEditMode}
+        />
       ),
-      overall_snapshot: (
+      overall_snapshot: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Overall Snapshot"
+          description={dataRestrictionDescription}
+          minHeight={320}
+        />
+      ) : (
         <OverallSnapshotWidget
           query={overallSnapshotQuery}
           brands={snapshotBrands}
@@ -2165,12 +2315,31 @@ export default function App() {
           >
             <HourlySalesCompare
               query={trendMetricsQuery}
-              metric={selectedMetric}
+              selectedMetrics={selectedMetrics}
+              activeMetric={activeMetric}
+              compareMode={compareMode}
+              isLongRange={isLongRangeDashboard}
             />
           </Grid>
           {hasPermission("web_vitals") && (
             <Grid size={{ xs: 12, md: 3 }}>
-              <WebPerformancePanel query={generalMetricsQuery} />
+              {isLongRangeDashboard ? (
+                <DashboardUnavailableCard
+                  title="Web Performance(Avg)"
+                  description={dataRestrictionDescription}
+                  minHeight={310}
+                />
+              ) : (
+                <WebPerformancePanel
+                  query={generalMetricsQuery}
+                  selectedMetrics={selectedMetrics}
+                  activeMetric={activeMetric}
+                  onSelectMetric={handleSelectMetric}
+                  onToggleMetric={
+                    canMultiSelectableKpiCards ? handleToggleMetric : undefined
+                  }
+                />
+              )}
             </Grid>
           )}
         </Grid>
@@ -2178,21 +2347,71 @@ export default function App() {
       payment_split: hasPermission("web_vitals") ? (
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 8 }}>
-            <ModeOfPayment query={generalMetricsQuery} />
+            {isLongRangeDashboard ? (
+              <DashboardUnavailableCard
+                title="Mode of Payment"
+                description={dataRestrictionDescription}
+                minHeight={310}
+              />
+            ) : (
+              <ModeOfPayment
+                query={generalMetricsQuery}
+                selectedMetrics={selectedMetrics}
+                onToggleMetric={
+                  canMultiSelectableKpiCards ? handleToggleMetric : undefined
+                }
+              />
+            )}
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
-            <WebVitals
-              query={generalMetricsQuery}
-              metric={webVitalsMetric}
-              onMetricChange={setWebVitalsMetric}
-            />
+            {isLongRangeDashboard ? (
+              <DashboardUnavailableCard
+                title="Top 5 Pages"
+                description={dataRestrictionDescription}
+                minHeight={380}
+              />
+            ) : (
+              <WebVitals
+                query={generalMetricsQuery}
+                metric={webVitalsMetric}
+                onMetricChange={setWebVitalsMetric}
+              />
+            )}
           </Grid>
         </Grid>
       ) : (
-        <ModeOfPayment query={generalMetricsQuery} />
+        isLongRangeDashboard ? (
+          <DashboardUnavailableCard
+            title="Mode of Payment"
+            description={dataRestrictionDescription}
+            minHeight={310}
+          />
+        ) : (
+          <ModeOfPayment
+            query={generalMetricsQuery}
+            selectedMetrics={selectedMetrics}
+            onToggleMetric={
+              canMultiSelectableKpiCards ? handleToggleMetric : undefined
+            }
+          />
+        )
       ),
-      payment_trend: <PaymentSplitTrend query={generalMetricsQuery} />,
-      traffic_split: (
+      payment_trend: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Payment Trend"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
+        <PaymentSplitTrend query={generalMetricsQuery} />
+      ),
+      traffic_split: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Traffic Split"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
         <TrafficSourceSplit
           query={trendMetricsQuery}
           compareMode={compareMode}
@@ -2204,19 +2423,31 @@ export default function App() {
         compareMode,
         generalMetricsQuery,
         handleOverallSnapshotBrandSelect,
+        handleDesktopKpiLayoutChange,
         handleFunnelData,
         handleSelectMetric,
+        handleToggleMetric,
+        canCustomizeDashboardLayout,
+        canMultiSelectableKpiCards,
+        effectiveDashboardLayout,
         hasPermission,
         isAuthor,
         authorBrandsLoading,
+        layoutEditMode,
         overallSnapshotQuery,
-        selectedMetric,
+        selectedMetrics,
+        activeMetric,
         selectedProductIds,
         selectedProductLabel,
         snapshotBrands,
         trafficSplitRules,
         trendMetricsQuery,
         utmOptions,
+        dataRestrictionDescription,
+        isLongRangeDashboard,
+        effectiveDashboardLayout,
+        handleDesktopKpiLayoutChange,
+        layoutEditMode,
       webVitalsMetric,
     ],
   );
@@ -2225,20 +2456,35 @@ export default function App() {
     () => ({
       kpi_cards: (
         <KPIs
+          key={`mobile-kpis-${layoutEditMode ? "edit" : "view"}-${effectiveDashboardLayout.kpiCardsDesktop.order.join("|")}-${effectiveDashboardLayout.kpiCardsDesktop.pinned.join("|")}`}
           query={trendMetricsQuery}
-          selectedMetric={selectedMetric}
+          selectedMetrics={selectedMetrics}
+          activeMetric={activeMetric}
           onSelectMetric={handleSelectMetric}
+          onToggleMetric={
+            canMultiSelectableKpiCards ? handleToggleMetric : undefined
+          }
           onFunnelData={handleFunnelData}
           productId={selectedProductIds}
           productLabel={selectedProductLabel}
           utmOptions={utmOptions}
           showRow="mobile_top"
-          showWebVitals={hasPermission("web_vitals")}
+          showWebVitals={!isLongRangeDashboard && hasPermission("web_vitals")}
           showCiEvents={hasPermission("ci_events")}
           compareMode={compareMode}
+          desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
+          onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
+          canEditDesktopKpis={canCustomizeDashboardLayout}
+          dashboardLayoutEditing={layoutEditMode}
         />
       ),
-      overall_snapshot: (
+      overall_snapshot: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Overall Snapshot"
+          description={dataRestrictionDescription}
+          minHeight={320}
+        />
+      ) : (
         <OverallSnapshotWidget
           query={overallSnapshotQuery}
           brands={snapshotBrands}
@@ -2249,19 +2495,56 @@ export default function App() {
       kpi_trend: (
         <HourlySalesCompare
           query={trendMetricsQuery}
-          metric={selectedMetric}
+          selectedMetrics={selectedMetrics}
+          activeMetric={activeMetric}
+          compareMode={compareMode}
+          isLongRange={isLongRangeDashboard}
         />
       ),
-      top_pages: (
+      top_pages: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Top 5 Pages"
+          description={dataRestrictionDescription}
+          minHeight={380}
+        />
+      ) : (
         <WebVitals
           query={generalMetricsQuery}
           metric={webVitalsMetric}
           onMetricChange={setWebVitalsMetric}
         />
       ),
-      payment_split: <ModeOfPayment query={generalMetricsQuery} />,
-      payment_trend: <PaymentSplitTrend query={generalMetricsQuery} />,
-      traffic_split: (
+      payment_split: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Mode of Payment"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
+        <ModeOfPayment
+          query={generalMetricsQuery}
+          selectedMetrics={selectedMetrics}
+          onToggleMetric={
+            canMultiSelectableKpiCards ? handleToggleMetric : undefined
+          }
+        />
+      ),
+      payment_trend: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Payment Trend"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
+        <PaymentSplitTrend query={generalMetricsQuery} />
+      ),
+      traffic_split: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Traffic Split"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
         <TrafficSourceSplit
           query={trendMetricsQuery}
           compareMode={compareMode}
@@ -2275,26 +2558,28 @@ export default function App() {
         handleOverallSnapshotBrandSelect,
         handleFunnelData,
         handleSelectMetric,
+        handleToggleMetric,
+        canMultiSelectableKpiCards,
         hasPermission,
         isAuthor,
         authorBrandsLoading,
         overallSnapshotQuery,
-        selectedMetric,
+        selectedMetrics,
+        activeMetric,
         selectedProductIds,
         selectedProductLabel,
         snapshotBrands,
         trafficSplitRules,
         trendMetricsQuery,
         utmOptions,
+        dataRestrictionDescription,
+        isLongRangeDashboard,
       webVitalsMetric,
     ],
   );
 
   const handleSaveDashboardLayout = useCallback(async (draftLayout) => {
-    const payload = {
-      desktop: draftLayout.desktop,
-      mobile: draftLayout.mobile,
-    };
+    const payload = normalizeDashboardLayout(draftLayout);
     setIsSavingDashboardLayout(true);
     try {
       const res = await saveDashboardLayout(payload);
@@ -2306,6 +2591,27 @@ export default function App() {
       setIsSavingDashboardLayout(false);
     }
   }, []);
+
+  function handleDesktopKpiLayoutChange(nextKpiLayout, options = {}) {
+    const normalizedKpiLayout = normalizeDesktopKpiLayout(nextKpiLayout);
+
+    if (options.persist && !layoutEditMode) {
+      const nextLayout = normalizeDashboardLayout({
+        ...dashboardLayout,
+        kpiCardsDesktop: normalizedKpiLayout,
+      });
+      handleSaveDashboardLayout(nextLayout);
+      return;
+    }
+
+    setPreviewDashboardLayout((prev) => {
+      const base = normalizeDashboardLayout(prev || dashboardLayout);
+      return normalizeDashboardLayout({
+        ...base,
+        kpiCardsDesktop: normalizedKpiLayout,
+      });
+    });
+  }
 
   const handleOpenLayoutEditor = useCallback(() => {
     if (layoutEditMode) return;
@@ -2336,6 +2642,10 @@ export default function App() {
       return normalizeDashboardLayout({
         ...base,
         [viewport]: [...DASHBOARD_LAYOUT_DEFAULTS[viewport]],
+        kpiCardsDesktop:
+          viewport === "desktop"
+            ? DEFAULT_DESKTOP_KPI_LAYOUT
+            : base.kpiCardsDesktop,
       });
     });
   }, [dashboardLayout, isMobile]);
@@ -2482,22 +2792,99 @@ export default function App() {
   }, [discountCode]);
 
   useEffect(() => {
+    if (!canMultiSelectableKpiCards && selectedMetrics.length > 0) {
+      dispatch(
+        setTrendMetricSelection({
+          selectedMetrics: [],
+          activeMetric: activeMetric || DEFAULT_TREND_METRIC,
+        }),
+      );
+    }
+  }, [
+    activeMetric,
+    canMultiSelectableKpiCards,
+    dispatch,
+    selectedMetrics,
+  ]);
+
+  useEffect(() => {
     if (
-      (selectedMetric === "ci_events" || selectedMetric === "checkout_rate") &&
+      selectedMetrics.some((metric) => CI_TREND_METRICS.has(metric)) &&
       !hasPermission("ci_events")
     ) {
-      dispatch(setSelectedMetric("sales"));
+      const nextSelection = sanitizeTrendMetricSelection(
+        selectedMetrics.filter((metric) => !CI_TREND_METRICS.has(metric)),
+        activeMetric,
+      );
+      dispatch(
+        setTrendMetricSelection(
+          nextSelection.selectedMetrics.length
+            ? nextSelection
+            : {
+                selectedMetrics: [],
+                activeMetric:
+                  CI_TREND_METRICS.has(activeMetric)
+                    ? DEFAULT_TREND_METRIC
+                    : activeMetric || DEFAULT_TREND_METRIC,
+              },
+        ),
+      );
     }
-  }, [selectedMetric, hasPermission, dispatch]);
+  }, [activeMetric, dispatch, hasPermission, selectedMetrics]);
+
+  useEffect(() => {
+    if (
+      !hasPermission("web_vitals") &&
+      (activeMetric === "performance" ||
+        selectedMetrics.includes("performance"))
+    ) {
+      const nextSelection = sanitizeTrendMetricSelection(
+        selectedMetrics.filter((metric) => metric !== "performance"),
+        activeMetric === "performance" ? DEFAULT_TREND_METRIC : activeMetric,
+      );
+      dispatch(
+        setTrendMetricSelection(
+          nextSelection.selectedMetrics.length
+            ? nextSelection
+            : {
+                selectedMetrics: [],
+                activeMetric:
+                  activeMetric === "performance"
+                    ? DEFAULT_TREND_METRIC
+                    : activeMetric || DEFAULT_TREND_METRIC,
+              },
+        ),
+      );
+    }
+  }, [activeMetric, dispatch, hasPermission, selectedMetrics]);
 
   useEffect(() => {
     if (
       discountCode &&
-      !["orders", "sales", "aov", "ci_events"].includes(selectedMetric)
+      selectedMetrics.some((metric) => !DISCOUNT_ALLOWED_TREND_METRICS.has(metric))
     ) {
-      dispatch(setSelectedMetric("sales"));
+      const nextSelection = sanitizeTrendMetricSelection(
+        selectedMetrics.filter((metric) =>
+          DISCOUNT_ALLOWED_TREND_METRICS.has(metric),
+        ),
+        activeMetric,
+      );
+      dispatch(
+        setTrendMetricSelection(
+          nextSelection.selectedMetrics.length
+            ? nextSelection
+            : {
+                selectedMetrics: [],
+                activeMetric:
+                  activeMetric &&
+                  DISCOUNT_ALLOWED_TREND_METRICS.has(activeMetric)
+                    ? activeMetric
+                    : DEFAULT_TREND_METRIC,
+              },
+        ),
+      );
     }
-  }, [discountCode, selectedMetric, dispatch]);
+  }, [activeMetric, discountCode, dispatch, selectedMetrics]);
 
   useEffect(() => {
     if (!isAuthor && !hasPermission("discount_filter") && discountCode) {
@@ -2508,7 +2895,11 @@ export default function App() {
   // Centralized UTM clearing for > 30 days
   useEffect(() => {
     if (!start || !end) return;
-    const isOver30 = isRangeOver30DaysInclusive(start, end);
+    const isOver30 = isRangeOverDataRestrictionPeriod(
+      start,
+      end,
+      dataRestrictionConfig,
+    );
     const hasUtm = Object.values(utm).some((v) =>
       Array.isArray(v) ? v.length > 0 : !!v,
     );
@@ -2518,7 +2909,7 @@ export default function App() {
         setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }),
       );
     }
-  }, [start, end, utm, dispatch]);
+  }, [start, end, utm, dispatch, dataRestrictionConfig]);
 
   // Fetch UTM Options (Lifted from MobileTopBar)
   // Fetch UTM Options (Lifted from MobileTopBar)
@@ -2536,6 +2927,10 @@ export default function App() {
 
   useEffect(() => {
     if (!activeBrandKey) return;
+    if (isLongRangeDashboard) {
+      setUtmOptions({ brand_key: activeBrandKey });
+      return;
+    }
 
     getSummaryFilterOptions({
       brand_key: activeBrandKey,
@@ -2548,7 +2943,7 @@ export default function App() {
         }
       })
       .catch(() => {});
-  }, [lastFetchParams, activeBrandKey, start, end]);
+  }, [lastFetchParams, activeBrandKey, start, end, isLongRangeDashboard]);
 
   // Sync funnel data with product table's Curr date when on Funnels tab
   useEffect(() => {
@@ -2966,10 +3361,7 @@ export default function App() {
                   showMultipleBrands
                 }
                 showCustomizeButton={
-                  isMobile &&
-                  authorTab === "dashboard" &&
-                  hasBrand &&
-                  canCustomizeDashboardLayout
+                  false
                 }
                 onFilterClick={() => setMobileFilterOpen(true)}
                 onCustomizeLayoutClick={handleOpenLayoutEditor}
@@ -3018,6 +3410,7 @@ export default function App() {
                         onCompareModeChange={handleCompareModeChange}
                         compareDateRange={compareDateRange}
                         onCompareDateRangeChange={handleCompareDateRangeChange}
+                        dataRestrictionConfig={dataRestrictionConfig}
                         hideAllExceptDate
                       />
                     </Box>
@@ -3075,6 +3468,7 @@ export default function App() {
                           discount: hasPermission("discount_filter"),
                         }}
                         utmOptions={utmOptions}
+                        dataRestrictionConfig={dataRestrictionConfig}
                         onDownload={handleDownloadSnapshot}
                         children={
                           canCustomizeDashboardLayout ? (
@@ -3142,6 +3536,7 @@ export default function App() {
                       value={normalizedRange}
                       onChange={handleRangeChange}
                       brandKey={activeBrandKey}
+                      dataRestrictionConfig={dataRestrictionConfig}
                       compareMode={compareMode}
                       onCompareModeChange={handleCompareModeChange}
                       compareDateRange={compareDateRange}
@@ -3206,6 +3601,7 @@ export default function App() {
                   showDiscountFilter={hasPermission("discount_filter")}
                   utmOptions={utmOptions}
                   dateRange={normalizedRange}
+                  dataRestrictionConfig={dataRestrictionConfig}
                   isDark={darkMode === "dark"}
                 />
               </Box>
@@ -3302,6 +3698,7 @@ export default function App() {
                                   onCompareModeChange={handleCompareModeChange}
                                   compareDateRange={compareDateRange}
                                   onCompareDateRangeChange={handleCompareDateRangeChange}
+                                  dataRestrictionConfig={dataRestrictionConfig}
                                   hideAllExceptDate
                                 />
                               </Box>
@@ -3319,23 +3716,59 @@ export default function App() {
                     {authorTab === "dashboard" &&
                       (hasBrand ? (
                         <Suspense fallback={<SectionFallback count={5} />}>
-                          <InlineDashboardLayoutEditor
-                            isEditing={layoutEditMode}
-                            itemIds={activeWidgetIds}
-                            renderWidget={(widgetId) =>
-                              activeWidgetRegistry[widgetId]
-                            }
-                            extraAfterId={extraAfterId}
-                            extras={dashboardExtrasNode}
-                            onOrderChange={handleInlineDashboardReorder}
-                            onSave={() =>
-                              handleSaveDashboardLayout(effectiveDashboardLayout)
-                            }
-                            onCancel={handleCloseLayoutEditor}
-                            onReset={handleResetDashboardLayout}
-                            isDirty={isDashboardLayoutDirty}
-                            isSaving={isSavingDashboardLayout}
-                          />
+                          <Stack spacing={{ xs: 1, md: 1.25 }}>
+                            {!isMobile ? (
+                              <Typography
+                                variant="subtitle2"
+                                color="text.secondary"
+                                sx={{ px: 0.5 }}
+                              >
+                                Scope: {dashboardScopeLabel}
+                              </Typography>
+                            ) : null}
+                            {isMobile ? (
+                              <Stack spacing={{ xs: 1, md: 1 }}>
+                                {activeWidgetIds.flatMap((widgetId) => {
+                                  const nodes = [
+                                    <Box key={widgetId} sx={{ width: "100%" }}>
+                                      {activeWidgetRegistry[widgetId]}
+                                    </Box>,
+                                  ];
+
+                                  if (extraAfterId === widgetId && dashboardExtrasNode) {
+                                    nodes.push(
+                                      <Box
+                                        key={`${widgetId}-extras`}
+                                        sx={{ width: "100%" }}
+                                      >
+                                        {dashboardExtrasNode}
+                                      </Box>,
+                                    );
+                                  }
+
+                                  return nodes;
+                                })}
+                              </Stack>
+                            ) : (
+                              <InlineDashboardLayoutEditor
+                                isEditing={layoutEditMode}
+                                itemIds={activeWidgetIds}
+                                renderWidget={(widgetId) =>
+                                  activeWidgetRegistry[widgetId]
+                                }
+                                extraAfterId={extraAfterId}
+                                extras={dashboardExtrasNode}
+                                onOrderChange={handleInlineDashboardReorder}
+                                onSave={() =>
+                                  handleSaveDashboardLayout(effectiveDashboardLayout)
+                                }
+                                onCancel={handleCloseLayoutEditor}
+                                onReset={handleResetDashboardLayout}
+                                isDirty={isDashboardLayoutDirty}
+                                isSaving={isSavingDashboardLayout}
+                              />
+                            )}
+                          </Stack>
                         </Suspense>
                       ) : (
                         <Paper
@@ -3361,6 +3794,27 @@ export default function App() {
                           />
                         </Suspense>
                       )}
+
+                    {canAccessDailyFunnelPanel &&
+                      authorTab === "daily-funnel" &&
+                      (hasBrand ? (
+                        <Suspense fallback={<SectionFallback count={2} height={240} />}>
+                          <DailyFunnelPanel
+                            brandKey={activeBrandKey}
+                            initialStartDate={start}
+                            initialEndDate={end}
+                          />
+                        </Suspense>
+                      ) : (
+                        <Paper
+                          variant="outlined"
+                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to view daily funnel metrics.
+                          </Typography>
+                        </Paper>
+                      ))}
 
                     {/* Author-only tabs */}
                     {isAuthor &&

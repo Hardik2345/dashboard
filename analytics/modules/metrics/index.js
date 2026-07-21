@@ -1,5 +1,6 @@
 const express = require('express');
 const {
+  requirePermission,
   requireTrustedPrincipal,
   requireTrustedAuthor,
 } = require('../../shared/middleware/identityEdge');
@@ -83,6 +84,7 @@ function buildMetricsRouter(sequelize) {
   router.get('/payment-sales-split', ...protectedBrand, split.paymentSalesSplit);
   router.get('/traffic-source-split', ...protectedBrand, split.trafficSourceSplit);
   router.get('/summary', requireTrustedPrincipal, authorizeBrandContext, summary.dashboardSummary);
+  router.get('/data-restriction-config', requireTrustedPrincipal, summary.dataRestrictionConfig);
   router.get('/summary/brands', requireTrustedPrincipal, summary.dashboardSummaryBrands);
   router.get('/summary-filter-options', requireTrustedPrincipal, authorizeBrandContext, summary.summaryFilterOptions);
   router.get('/web-performance-summary', requireTrustedPrincipal, authorizeBrandContext, summary.webPerformanceSummary);
@@ -91,6 +93,7 @@ function buildMetricsRouter(sequelize) {
   router.get('/product-kpis', authOrApiKey, ensureBrandDb, product.productKpis);
   router.get('/hourly-trend', ...protectedBrand, trend.hourlyTrend);
   router.get('/daily-trend', ...protectedBrand, trend.dailyTrend);
+  router.get('/daily-funnel', requirePermission('daily_funnel_panel'), brandContext, trend.dailyFunnel);
   router.get('/monthly-trend', ...protectedBrand, trend.monthlyTrend);
   router.get('/hourly-product-sessions/export', requireTrustedAuthor, brandContext, product.hourlyProductSessionsExport);
   router.get('/product-types', authOrApiKey, ensureBrandDb, product.productTypes);

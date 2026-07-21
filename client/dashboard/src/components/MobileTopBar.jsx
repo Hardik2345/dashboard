@@ -39,7 +39,12 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import { getLastUpdatedPTS, getDashboardSummary } from "../lib/api.js";
-import { isRangeOver30DaysInclusive } from "../lib/dateRange.js";
+import {
+  DEFAULT_DATA_RESTRICTION_CONFIG,
+  getDataRestrictionWarningText,
+  normalizeDataRestrictionConfig,
+  isRangeOverDataRestrictionPeriod,
+} from "../lib/dateRange.js";
 import SearchableSelect from "./ui/SearchableSelect.jsx";
 
 dayjs.extend(relativeTime);
@@ -119,6 +124,7 @@ export default function MobileTopBar({
   compareDateRange,
   onCompareDateRangeChange,
   brandKey,
+  dataRestrictionConfig = DEFAULT_DATA_RESTRICTION_CONFIG,
   showProductFilter = true,
   productOptions = [],
   productValue = null,
@@ -150,6 +156,14 @@ export default function MobileTopBar({
   const [compYear, setCompYear] = useState(dayjs().year());
   const [last, setLast] = useState({ loading: true, ts: null, tz: null });
   const [showUtmFilters, setShowUtmFilters] = useState(false);
+  const normalizedRestrictionConfig = useMemo(
+    () => normalizeDataRestrictionConfig(dataRestrictionConfig),
+    [dataRestrictionConfig],
+  );
+  const utmRestrictionWarning = useMemo(
+    () => getDataRestrictionWarningText(normalizedRestrictionConfig),
+    [normalizedRestrictionConfig],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -293,8 +307,12 @@ export default function MobileTopBar({
   );
 
   const isDateRangeOver30Days = useMemo(() => {
-    return isRangeOver30DaysInclusive(start, end);
-  }, [start, end]);
+    return isRangeOverDataRestrictionPeriod(
+      start,
+      end,
+      normalizedRestrictionConfig,
+    );
+  }, [start, end, normalizedRestrictionConfig]);
 
   const activeUtmCount = [utm?.source, utm?.medium, utm?.campaign].filter(
     Boolean,
@@ -430,7 +448,7 @@ export default function MobileTopBar({
                             whiteSpace: "nowrap",
                           }}
                         >
-                          UTM filters unavailable for &gt; 30 days
+                          {utmRestrictionWarning}
                         </Typography>
                       </Box>
                     ) : (

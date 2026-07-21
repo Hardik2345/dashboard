@@ -38,7 +38,12 @@ import { DatePicker } from "@shopify/polaris";
 import dayjs from "dayjs";
 import SearchableSelect from "./ui/SearchableSelect.jsx";
 import StaticSearchableList from "./ui/StaticSearchableList.jsx";
-import { isRangeOver30DaysInclusive } from "../lib/dateRange.js";
+import {
+  DEFAULT_DATA_RESTRICTION_CONFIG,
+  getDataRestrictionWarningText,
+  normalizeDataRestrictionConfig,
+  isRangeOverDataRestrictionPeriod,
+} from "../lib/dateRange.js";
 
 // Date Presets (Same as MobileTopBar for consistency)
 const DATE_PRESETS = [
@@ -135,6 +140,7 @@ export default function UnifiedFilterBar({
     discount: true,
   },
   utmOptions = {}, // Add prop
+  dataRestrictionConfig = DEFAULT_DATA_RESTRICTION_CONFIG,
   onDownload, // Callback for download button
   hideAllExceptDate = false,
   children,
@@ -304,11 +310,22 @@ export default function UnifiedFilterBar({
   const handleUtmCampaignClick = (event) =>
     setUtmCampaignAnchor(event.currentTarget);
   const handleUtmCampaignClose = () => setUtmCampaignAnchor(null);
+  const normalizedRestrictionConfig = useMemo(
+    () => normalizeDataRestrictionConfig(dataRestrictionConfig),
+    [dataRestrictionConfig],
+  );
+  const utmRestrictionWarning = useMemo(
+    () => getDataRestrictionWarningText(normalizedRestrictionConfig),
+    [normalizedRestrictionConfig],
+  );
 
-  // Check if date range exceeds 30 days
   const isDateRangeOver30Days = useMemo(() => {
-    return isRangeOver30DaysInclusive(start, end);
-  }, [start, end]);
+    return isRangeOverDataRestrictionPeriod(
+      start,
+      end,
+      normalizedRestrictionConfig,
+    );
+  }, [start, end, normalizedRestrictionConfig]);
 
   // Auto-collapse UTM and clear filters when date range changes to exceed 30 days
   const prevOver30Ref = useRef(isDateRangeOver30Days);
@@ -590,7 +607,7 @@ export default function UnifiedFilterBar({
                     letterSpacing: "0.01em",
                   }}
                 >
-                  UTM filters are unavailable for date ranges over 30 days
+                  {utmRestrictionWarning}
                 </Typography>
                 <Divider
                   orientation="vertical"

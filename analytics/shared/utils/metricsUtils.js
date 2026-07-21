@@ -28,12 +28,13 @@ async function computeReturnCounts({ start, end, conn, filters }) {
     let sql = `
       SELECT
         SUM(CASE WHEN rf.event_type = 'CANCEL' THEN 1 ELSE 0 END) AS cancelled_orders,
-        SUM(CASE WHEN rf.event_type = 'REFUND'  THEN 1 ELSE 0 END) AS refunded_orders
+        SUM(CASE WHEN rf.event_type = 'REFUND'  THEN 1 ELSE 0 END) AS refunded_orders,
+        SUM(CASE WHEN rf.event_type = 'CANCEL (RTO)' THEN 1 ELSE 0 END) AS rto_orders
       FROM returns_fact rf
       JOIN shopify_orders so ON rf.order_id = so.order_id
     `;
-    if (start) { parts.push("rf.event_date >= ?"); params.push(start); }
-    if (end)   { parts.push("rf.event_date <= ?"); params.push(end); }
+    if (start) { parts.push("rf.order_created_date >= ?"); params.push(start); }
+    if (end)   { parts.push("rf.order_created_date <= ?"); params.push(end); }
     if (filters) {
       const built = buildUtmWhereClause(filters, {
         mapDirectToNull: true,
@@ -46,22 +47,25 @@ async function computeReturnCounts({ start, end, conn, filters }) {
     return {
       cancelled_orders: Number(rows[0]?.cancelled_orders || 0),
       refunded_orders: Number(rows[0]?.refunded_orders || 0),
+      rto_orders: Number(rows[0]?.rto_orders || 0),
     };
   }
 
   let sql = `
     SELECT
       SUM(CASE WHEN event_type = 'CANCEL' THEN 1 ELSE 0 END) AS cancelled_orders,
-      SUM(CASE WHEN event_type = 'REFUND'  THEN 1 ELSE 0 END) AS refunded_orders
+      SUM(CASE WHEN event_type = 'REFUND'  THEN 1 ELSE 0 END) AS refunded_orders,
+      SUM(CASE WHEN event_type = 'CANCEL (RTO)' THEN 1 ELSE 0 END) AS rto_orders
     FROM returns_fact
   `;
-  if (start) { parts.push("event_date >= ?"); params.push(start); }
-  if (end)   { parts.push("event_date <= ?"); params.push(end); }
+  if (start) { parts.push("order_created_date >= ?"); params.push(start); }
+  if (end)   { parts.push("order_created_date <= ?"); params.push(end); }
   sql += parts.length ? ` WHERE ${parts.join(" AND ")}` : "";
   const rows = await conn.query(sql, { type: QueryTypes.SELECT, replacements: params });
   return {
     cancelled_orders: Number(rows[0]?.cancelled_orders || 0),
     refunded_orders: Number(rows[0]?.refunded_orders || 0),
+    rto_orders: Number(rows[0]?.rto_orders || 0),
   };
 }
 

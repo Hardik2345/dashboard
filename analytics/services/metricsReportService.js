@@ -571,6 +571,64 @@ function buildMetricsReportService() {
       });
     }
 
+    if (useHourlyCutoff) {
+      const isSingleDay = effectiveStart === effectiveEnd;
+      let whereSql = isSingleDay
+        ? `WHERE created_date = ?`
+        : `WHERE created_date >= ? AND created_date <= ?`;
+      const replacements = isSingleDay
+        ? [effectiveStart]
+        : [effectiveStart, effectiveEnd];
+
+      whereSql += ` AND created_time < ?`;
+      replacements.push(buildCompletedHourOrderCutoffTime(hourLte));
+      whereSql = appendUtmWhere(whereSql, replacements, filters, true);
+      whereSql = appendCityOrderWhere(whereSql, replacements, filters.city);
+
+      const sql = `
+        SELECT payment_type, COUNT(DISTINCT order_name) AS cnt
+        FROM (
+          SELECT
+            ${PAYMENT_TYPE_CASE_SQL} AS payment_type,
+            order_name
+          FROM shopify_orders
+          ${whereSql}
+          GROUP BY payment_gateway_names, order_name
+        ) sub
+        GROUP BY payment_type
+      `;
+
+      const rows = await conn.query(sql, {
+        type: QueryTypes.SELECT,
+        replacements,
+      });
+
+      let codOrders = 0;
+      let prepaidOrders = 0;
+      let partiallyPaidOrders = 0;
+      for (const row of rows) {
+        if (row.payment_type === "COD") {
+          codOrders = Number(row.cnt || 0);
+        } else if (row.payment_type === "Prepaid") {
+          prepaidOrders = Number(row.cnt || 0);
+        } else if (row.payment_type === "Partial") {
+          partiallyPaidOrders = Number(row.cnt || 0);
+        }
+      }
+
+      return computeOrderSplitPayload({
+        start: effectiveStart,
+        end: effectiveEnd,
+        timezone: resolvedTimezone,
+        hourLte,
+        codOrders,
+        prepaidOrders,
+        partiallyPaidOrders,
+        includeSql,
+        sql,
+      });
+    }
+
     const { where, params } = buildWhereClause(start, end);
     const sql = `
       SELECT
