@@ -45,8 +45,8 @@ const DATE_PRESETS = [
   {
     label: "Last 7 days",
     getValue: () => [
-      dayjs().subtract(7, "day").startOf("day"),
-      dayjs().subtract(1, "day").startOf("day"),
+      dayjs().subtract(6, "day").startOf("day"),
+      dayjs().startOf("day"),
     ],
   },
   {
@@ -338,7 +338,7 @@ export default function DailyFunnelPanel({
   initialEndDate,
 }) {
   const initialStart = useMemo(
-    () => formatDateValue(initialStartDate || dayjs().subtract(29, "day")),
+    () => formatDateValue(initialStartDate || dayjs().subtract(6, "day")),
     [initialStartDate],
   );
   const initialEnd = useMemo(
