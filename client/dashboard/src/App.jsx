@@ -49,8 +49,8 @@ const MOBILE_NAV_ITEMS = [
   { id: "overall-snapshot", label: "Overall Snapshot", icon: LayoutGrid },
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { id: "session-analytics", label: "Dashboard Sessions", icon: Activity },
-  { id: "product-conversion", label: "Funnels", icon: Filter },
-  { id: "daily-funnel", label: "Daily Funnel", icon: Table2 },
+  { id: "product-conversion", label: "Product Funnel", icon: Filter },
+  { id: "daily-funnel", label: "Conversion Funnel", icon: Table2 },
   { id: "bundles", label: "Bundles", icon: Table2 },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "alerts", label: "Alerts", icon: Bell },
@@ -3818,7 +3818,7 @@ export default function App() {
                                   fontWeight: 600,
                                 }}
                               >
-                                Funnels
+                                Product Funnel
                               </Typography>
                             </Box>
                             {funnelData?.stats ? (

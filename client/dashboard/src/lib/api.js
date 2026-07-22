@@ -1210,12 +1210,15 @@ export async function getDailyFunnel(args = {}) {
     {
       start: args.start,
       end: args.end,
+      utm_date: args.utmDate,
     },
     args,
   );
   const json = await getJSON("/metrics/daily-funnel", params);
   return {
     rows: Array.isArray(json?.rows) ? json.rows : [],
+    utmRows: Array.isArray(json?.utmRows) ? json.utmRows : [],
+    utmDate: json?.utmDate || null,
     range: json?.range || null,
     timezone: json?.timezone || "Asia/Kolkata",
     error: json?.__error,
