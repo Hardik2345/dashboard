@@ -671,6 +671,11 @@ export default function App() {
     return hasPermission("daily_funnel_panel");
   }, [hasPermission, isAuthor]);
 
+  const canAccessUtmFunnelTable = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("utm_funnel_table");
+  }, [hasPermission, isAuthor]);
+
   const canAccessRequestsPanel = useMemo(() => {
     if (isAuthor) return true;
     return hasPermission("requests_panel");
@@ -3780,7 +3785,10 @@ export default function App() {
                       authorTab === "daily-funnel" &&
                       (hasBrand ? (
                         <Suspense fallback={<SectionFallback count={2} height={240} />}>
-                          <DailyFunnelPanel brandKey={activeBrandKey} />
+                          <DailyFunnelPanel
+                            brandKey={activeBrandKey}
+                            canAccessUtmFunnelTable={canAccessUtmFunnelTable}
+                          />
                         </Suspense>
                       ) : (
                         <Paper

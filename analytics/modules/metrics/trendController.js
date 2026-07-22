@@ -55,10 +55,17 @@ function buildTrendController({ metricsService }) {
         if (!normalized.spec.conn) {
           return res.status(500).json({ error: 'Brand DB connection unavailable' });
         }
+        const permissions = Array.isArray(req.user?.permissions) ? req.user.permissions : [];
+        const canAccessUtmFunnel =
+          !!req.user?.isAuthor ||
+          permissions.includes('all') ||
+          permissions.includes('utm_funnel_table');
+
         return res.json(
           await metricsService.getDailyFunnel({
             ...normalized.spec,
             utmDate: req.query.utm_date ? String(req.query.utm_date) : normalized.spec.end,
+            includeUtm: canAccessUtmFunnel,
           }),
         );
       } catch (e) {
