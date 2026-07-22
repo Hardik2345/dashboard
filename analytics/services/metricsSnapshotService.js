@@ -88,6 +88,18 @@ function appendCityWhere(sql, replacements, city, column = "city") {
   return `${sql} AND ${column} IN (${cities.map(() => "?").join(", ")})`;
 }
 
+function buildNormalizedUtmSourceSql(column = "utm_source") {
+  return `
+    CASE
+      WHEN ${column} IS NULL
+        OR TRIM(${column}) = ''
+        OR LOWER(TRIM(${column})) IN ('(none)', 'none', 'null', 'direct')
+      THEN 'direct'
+      ELSE TRIM(${column})
+    END
+  `;
+}
+
 async function queryCurrentRowTwoSessionTotals(
   conn,
   start,
@@ -447,6 +459,106 @@ async function queryCheckoutInitiatedRows(
     },
   );
   return Array.isArray(rows) ? rows : [];
+}
+
+async function queryDailyFunnelUtmRows(conn, date) {
+  const normalizedSourceSql = buildNormalizedUtmSourceSql();
+  const [baseRows, orderRows] = await Promise.all([
+    conn.query(
+      `
+        SELECT
+          ${normalizedSourceSql} AS utm_source,
+          COALESCE(SUM(sales), 0) AS sales,
+          COALESCE(SUM(sessions), 0) AS sessions,
+          COALESCE(SUM(atc_sessions), 0) AS atc_sessions,
+          COALESCE(SUM(orders), 0) AS orders
+        FROM utm_source_daily
+        WHERE metric_date = ?
+        GROUP BY ${normalizedSourceSql}
+      `,
+      {
+        type: QueryTypes.SELECT,
+        replacements: [date],
+      },
+    ),
+    conn.query(
+      `
+        SELECT
+          utm_source,
+          COALESCE(SUM(discount_amount), 0) AS discount_amount,
+          COALESCE(SUM(CASE WHEN payment_type = 'Prepaid' THEN 1 ELSE 0 END), 0) AS prepaid_orders,
+          COALESCE(SUM(CASE WHEN payment_type = 'COD' THEN 1 ELSE 0 END), 0) AS cod_orders,
+          COALESCE(SUM(CASE WHEN payment_type = 'Partial' THEN 1 ELSE 0 END), 0) AS partially_paid_orders
+        FROM (
+          SELECT
+            ${normalizedSourceSql} AS utm_source,
+            order_name,
+            MAX(COALESCE(discount_amount, 0)) AS discount_amount,
+            CASE
+              WHEN payment_gateway_names LIKE '%Gokwik PPCOD%' THEN 'Partial'
+              WHEN (
+                payment_gateway_names IS NULL
+                OR payment_gateway_names = ''
+                OR payment_gateway_names LIKE '%Cash on Delivery (COD)%'
+                OR payment_gateway_names LIKE '%cash_on_delivery%'
+              ) AND (
+                payment_gateway_names NOT LIKE '%Gokwik PPCOD%'
+                OR payment_gateway_names IS NULL
+              ) THEN 'COD'
+              ELSE 'Prepaid'
+            END AS payment_type
+          FROM shopify_orders
+          WHERE created_date = ?
+          GROUP BY ${normalizedSourceSql}, payment_gateway_names, order_name
+        ) grouped_orders
+        GROUP BY utm_source
+      `,
+      {
+        type: QueryTypes.SELECT,
+        replacements: [date],
+      },
+    ),
+  ]);
+
+  const bySource = new Map();
+
+  for (const row of Array.isArray(baseRows) ? baseRows : []) {
+    bySource.set(String(row.utm_source || "direct"), {
+      utm_source: String(row.utm_source || "direct"),
+      sales: Number(row.sales || 0),
+      sessions: Number(row.sessions || 0),
+      atc_sessions: Number(row.atc_sessions || 0),
+      orders: Number(row.orders || 0),
+      discount_amount: 0,
+      prepaid_orders: 0,
+      cod_orders: 0,
+      partially_paid_orders: 0,
+    });
+  }
+
+  for (const row of Array.isArray(orderRows) ? orderRows : []) {
+    const source = String(row.utm_source || "direct");
+    const existing = bySource.get(source) || {
+      utm_source: source,
+      sales: 0,
+      sessions: 0,
+      atc_sessions: 0,
+      orders: 0,
+      discount_amount: 0,
+      prepaid_orders: 0,
+      cod_orders: 0,
+      partially_paid_orders: 0,
+    };
+    existing.discount_amount = Number(row.discount_amount || 0);
+    existing.prepaid_orders = Number(row.prepaid_orders || 0);
+    existing.cod_orders = Number(row.cod_orders || 0);
+    existing.partially_paid_orders = Number(row.partially_paid_orders || 0);
+    bySource.set(source, existing);
+  }
+
+  return Array.from(bySource.values()).sort((left, right) =>
+    String(left.utm_source || "").localeCompare(String(right.utm_source || "")),
+  );
 }
 
 async function queryHourlyProductSessionTotals(conn, start, end, cutoffHour = 23, filters = {}) {
@@ -2044,7 +2156,7 @@ function buildMetricsSnapshotService(deps = {}) {
 
   async function getDailyFunnel(spec) {
     const timezone = normalizeTimezone(spec.timezone);
-    const [baseRows, paymentRows, discountRows] = await Promise.all([
+    const [baseRows, paymentRows, discountRows, utmRows] = await Promise.all([
       fetchDailyRows(spec.conn, spec.start, spec.end, {}),
       spec.conn.query(
         `
@@ -2078,6 +2190,7 @@ function buildMetricsSnapshotService(deps = {}) {
           replacements: [spec.start, spec.end],
         },
       ),
+      queryDailyFunnelUtmRows(spec.conn, spec.utmDate || spec.end),
     ]);
 
     const baseMap = new Map(
@@ -2115,6 +2228,8 @@ function buildMetricsSnapshotService(deps = {}) {
       timezone,
       range: { start: spec.start, end: spec.end },
       rows,
+      utmDate: spec.utmDate || spec.end,
+      utmRows,
     };
   }
 

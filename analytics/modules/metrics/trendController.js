@@ -55,7 +55,12 @@ function buildTrendController({ metricsService }) {
         if (!normalized.spec.conn) {
           return res.status(500).json({ error: 'Brand DB connection unavailable' });
         }
-        return res.json(await metricsService.getDailyFunnel(normalized.spec));
+        return res.json(
+          await metricsService.getDailyFunnel({
+            ...normalized.spec,
+            utmDate: req.query.utm_date ? String(req.query.utm_date) : normalized.spec.end,
+          }),
+        );
       } catch (e) {
         return handleControllerError(res, e, 'daily-funnel failed');
       }
