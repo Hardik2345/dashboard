@@ -40,6 +40,8 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import DownloadIcon from "@mui/icons-material/Download";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import TrendingDownIcon from "@mui/icons-material/TrendingDown";
+import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import { DatePicker } from "@shopify/polaris";
 import { getDailyFunnel } from "../lib/api.js";
 import { useInrCurrency } from "../lib/currency.js";
@@ -142,11 +144,38 @@ function sortRows(rows, sortBy, sortDir) {
   });
 }
 
+function DeltaBadge({ current, previous }) {
+  const curr = Number(current || 0);
+  const prev = Number(previous || 0);
+  const diff = curr - prev;
+  if (prev === 0 && curr === 0) return null;
+
+  const diffPct = prev === 0 ? 100 : (diff / prev) * 100;
+  const color = diff >= 0 ? "success.main" : "error.main";
+  const Icon = diff >= 0 ? TrendingUpIcon : TrendingDownIcon;
+
+  return (
+    <Box
+      component="span"
+      sx={{
+        display: "inline-flex",
+        alignItems: "center",
+        color,
+        fontSize: "0.72rem",
+        fontWeight: 600,
+        mt: 0.25,
+      }}
+    >
+      {Math.abs(diff) > 0.0001 ? <Icon fontSize="inherit" sx={{ mr: 0.25 }} /> : null}
+      {Math.abs(diffPct).toFixed(1)}%
+    </Box>
+  );
+}
+
 const UTM_FILTER_FIELDS = [
   { id: "sessions", label: "Sessions" },
   { id: "atc_sessions", label: "ATC Sessions" },
   { id: "orders", label: "Orders" },
-  { id: "discount_amount", label: "Discounts" },
   { id: "prepaid_orders", label: "PP Orders" },
   { id: "cod_orders", label: "COD Orders" },
   { id: "partially_paid_orders", label: "PPCOD Orders" },
@@ -178,7 +207,6 @@ const UTM_COLUMNS = [
   { id: "sessions", label: "Sessions", align: "right" },
   { id: "atc_sessions", label: "ATC Sessions", align: "right" },
   { id: "orders", label: "Orders", align: "right" },
-  { id: "discount_amount", label: "Discounts", align: "right" },
   { id: "prepaid_orders", label: "PP Orders", align: "right" },
   { id: "cod_orders", label: "COD Orders", align: "right" },
   { id: "partially_paid_orders", label: "PPCOD Orders", align: "right" },
@@ -570,6 +598,7 @@ export default function DailyFunnelPanel({
   brandKey,
   initialStartDate,
   initialEndDate,
+  canAccessUtmFunnelTable = true,
 }) {
   const initialStart = useMemo(
     () => formatDateValue(initialStartDate || dayjs().subtract(6, "day")),
@@ -662,7 +691,7 @@ export default function DailyFunnelPanel({
   useEffect(() => {
     let cancelled = false;
 
-    if (!brandKey || !utmDate) {
+    if (!canAccessUtmFunnelTable || !brandKey || !utmDate) {
       setUtmRows([]);
       setUtmError("");
       return () => {
@@ -700,7 +729,7 @@ export default function DailyFunnelPanel({
     return () => {
       cancelled = true;
     };
-  }, [brandKey, endDate, startDate, utmDate]);
+  }, [brandKey, canAccessUtmFunnelTable, endDate, startDate, utmDate]);
 
   const normalizedRows = useMemo(
     () =>
@@ -775,10 +804,19 @@ export default function DailyFunnelPanel({
         sessions: toSafeNumber(row?.sessions),
         atc_sessions: toSafeNumber(row?.atc_sessions),
         orders: toSafeNumber(row?.orders),
-        discount_amount: toSafeNumber(row?.discount_amount),
         prepaid_orders: toSafeNumber(row?.prepaid_orders),
         cod_orders: toSafeNumber(row?.cod_orders),
         partially_paid_orders: toSafeNumber(row?.partially_paid_orders),
+        previous: {
+          sales: toSafeNumber(row?.previous?.sales),
+          sessions: toSafeNumber(row?.previous?.sessions),
+          atc_sessions: toSafeNumber(row?.previous?.atc_sessions),
+          orders: toSafeNumber(row?.previous?.orders),
+          prepaid_orders: toSafeNumber(row?.previous?.prepaid_orders),
+          cod_orders: toSafeNumber(row?.previous?.cod_orders),
+          partially_paid_orders: toSafeNumber(row?.previous?.partially_paid_orders),
+        },
+        previous_date: row?.previous_date || null,
       })),
     [utmRows],
   );
@@ -808,13 +846,6 @@ export default function DailyFunnelPanel({
         displayMode === "percent"
           ? formatPercent(row.partially_paid_orders, row.orders)
           : formatCount(row.partially_paid_orders),
-      discountsDisplay:
-        displayMode === "percent"
-          ? formatPercent(row.discount_amount, row.sales)
-          : currency.formatAmount(row.discount_amount, {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            }),
     }));
 
     return sortRows(mappedRows, utmSortBy, utmSortDir);
@@ -941,6 +972,99 @@ export default function DailyFunnelPanel({
     );
   }, []);
 
+  const getUtmMetricDisplayValue = useCallback(
+    (row, columnId, mode) => {
+      if (mode === "percent") {
+        switch (columnId) {
+          case "atc_sessions":
+            return formatPercent(row.atc_sessions, row.sessions);
+          case "orders":
+            return formatPercent(row.orders, row.atc_sessions);
+          case "prepaid_orders":
+            return formatPercent(row.prepaid_orders, row.orders);
+          case "cod_orders":
+            return formatPercent(row.cod_orders, row.orders);
+          case "partially_paid_orders":
+            return formatPercent(row.partially_paid_orders, row.orders);
+          case "cvr":
+            return formatPercent(row.orders, row.sessions);
+          default:
+            return formatCount(row[columnId]);
+        }
+      }
+
+      switch (columnId) {
+        case "atc_sessions":
+          return formatCount(row.atc_sessions);
+        case "orders":
+          return formatCount(row.orders);
+        case "prepaid_orders":
+          return formatCount(row.prepaid_orders);
+        case "cod_orders":
+          return formatCount(row.cod_orders);
+        case "partially_paid_orders":
+          return formatCount(row.partially_paid_orders);
+        case "cvr":
+          return formatPercent(row.orders, row.sessions);
+        default:
+          return formatCount(row[columnId]);
+      }
+    },
+    [currency],
+  );
+
+  const getUtmDeltaMetricValue = useCallback((row, columnId, mode) => {
+    const current = row || {};
+    const previous = row?.previous || {};
+
+    if (columnId === "cvr") {
+      return {
+        current: current.sessions > 0 ? (current.orders / current.sessions) * 100 : 0,
+        previous: previous.sessions > 0 ? (previous.orders / previous.sessions) * 100 : 0,
+      };
+    }
+
+    if (mode === "percent") {
+      switch (columnId) {
+        case "atc_sessions":
+          return {
+            current: current.sessions > 0 ? (current.atc_sessions / current.sessions) * 100 : 0,
+            previous: previous.sessions > 0 ? (previous.atc_sessions / previous.sessions) * 100 : 0,
+          };
+        case "orders":
+          return {
+            current: current.atc_sessions > 0 ? (current.orders / current.atc_sessions) * 100 : 0,
+            previous: previous.atc_sessions > 0 ? (previous.orders / previous.atc_sessions) * 100 : 0,
+          };
+        case "prepaid_orders":
+          return {
+            current: current.orders > 0 ? (current.prepaid_orders / current.orders) * 100 : 0,
+            previous: previous.orders > 0 ? (previous.prepaid_orders / previous.orders) * 100 : 0,
+          };
+        case "cod_orders":
+          return {
+            current: current.orders > 0 ? (current.cod_orders / current.orders) * 100 : 0,
+            previous: previous.orders > 0 ? (previous.cod_orders / previous.orders) * 100 : 0,
+          };
+        case "partially_paid_orders":
+          return {
+            current: current.orders > 0 ? (current.partially_paid_orders / current.orders) * 100 : 0,
+            previous: previous.orders > 0 ? (previous.partially_paid_orders / previous.orders) * 100 : 0,
+          };
+        default:
+          return {
+            current: Number(current[columnId] || 0),
+            previous: Number(previous[columnId] || 0),
+          };
+      }
+    }
+
+    return {
+      current: Number(current[columnId] || 0),
+      previous: Number(previous[columnId] || 0),
+    };
+  }, []);
+
   const handleExportCsv = useCallback(() => {
     if (!sortedDailyRows.length) return;
 
@@ -1002,7 +1126,6 @@ export default function DailyFunnelPanel({
       "Sessions",
       "ATC Sessions",
       "Orders",
-      "Discounts",
       "PP Orders",
       "COD Orders",
       "PPCOD Orders",
@@ -1017,7 +1140,6 @@ export default function DailyFunnelPanel({
           formatCount(row.sessions),
           row.atcDisplay,
           row.ordersDisplay,
-          row.discountsDisplay,
           row.ppDisplay,
           row.codDisplay,
           row.ppcodDisplay,
@@ -1264,7 +1386,9 @@ export default function DailyFunnelPanel({
           )}
         </CardContent>
       </Card>
-
+      
+      {canAccessUtmFunnelTable ? (
+        <>
       <Card variant="outlined">
         <CardContent>
           <Stack
@@ -1605,18 +1729,38 @@ export default function DailyFunnelPanel({
                         >
                           {row.utm_source}
                         </TableCell>
-                        <TableCell align="right">
-                          {formatCount(row.sessions)}
-                        </TableCell>
-                        <TableCell align="right">{row.atcDisplay}</TableCell>
-                        <TableCell align="right">{row.ordersDisplay}</TableCell>
-                        <TableCell align="right">
-                          {row.discountsDisplay}
-                        </TableCell>
-                        <TableCell align="right">{row.ppDisplay}</TableCell>
-                        <TableCell align="right">{row.codDisplay}</TableCell>
-                        <TableCell align="right">{row.ppcodDisplay}</TableCell>
-                        <TableCell align="right">{row.cvrDisplay}</TableCell>
+                        {UTM_COLUMNS.filter((column) => column.id !== "utm_source").map((column) => {
+                          const metric = getUtmDeltaMetricValue(row, column.id, displayMode);
+                          const previousRow = { ...row.previous };
+                          const previousDisplay = getUtmMetricDisplayValue(
+                            { ...row, ...previousRow, previous: {} },
+                            column.id,
+                            displayMode,
+                          );
+
+                          return (
+                            <TableCell key={column.id} align="right">
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  alignItems: "flex-end",
+                                  width: "100%",
+                                }}
+                              >
+                                <span>{getUtmMetricDisplayValue(row, column.id, displayMode)}</span>
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  sx={{ fontSize: "0.7rem", lineHeight: 1.2 }}
+                                >
+                                  {previousDisplay}
+                                </Typography>
+                                <DeltaBadge current={metric.current} previous={metric.previous} />
+                              </Box>
+                            </TableCell>
+                          );
+                        })}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -1657,6 +1801,8 @@ export default function DailyFunnelPanel({
           )}
         </CardContent>
       </Card>
+        </>
+      ) : null}
     </Stack>
   );
 }

@@ -485,7 +485,6 @@ async function queryDailyFunnelUtmRows(conn, date) {
       `
         SELECT
           utm_source,
-          COALESCE(SUM(discount_amount), 0) AS discount_amount,
           COALESCE(SUM(CASE WHEN payment_type = 'Prepaid' THEN 1 ELSE 0 END), 0) AS prepaid_orders,
           COALESCE(SUM(CASE WHEN payment_type = 'COD' THEN 1 ELSE 0 END), 0) AS cod_orders,
           COALESCE(SUM(CASE WHEN payment_type = 'Partial' THEN 1 ELSE 0 END), 0) AS partially_paid_orders
@@ -493,7 +492,6 @@ async function queryDailyFunnelUtmRows(conn, date) {
           SELECT
             ${normalizedSourceSql} AS utm_source,
             order_name,
-            MAX(COALESCE(discount_amount, 0)) AS discount_amount,
             CASE
               WHEN payment_gateway_names LIKE '%Gokwik PPCOD%' THEN 'Partial'
               WHEN (
@@ -529,7 +527,6 @@ async function queryDailyFunnelUtmRows(conn, date) {
       sessions: Number(row.sessions || 0),
       atc_sessions: Number(row.atc_sessions || 0),
       orders: Number(row.orders || 0),
-      discount_amount: 0,
       prepaid_orders: 0,
       cod_orders: 0,
       partially_paid_orders: 0,
@@ -544,12 +541,10 @@ async function queryDailyFunnelUtmRows(conn, date) {
       sessions: 0,
       atc_sessions: 0,
       orders: 0,
-      discount_amount: 0,
       prepaid_orders: 0,
       cod_orders: 0,
       partially_paid_orders: 0,
     };
-    existing.discount_amount = Number(row.discount_amount || 0);
     existing.prepaid_orders = Number(row.prepaid_orders || 0);
     existing.cod_orders = Number(row.cod_orders || 0);
     existing.partially_paid_orders = Number(row.partially_paid_orders || 0);
@@ -559,6 +554,72 @@ async function queryDailyFunnelUtmRows(conn, date) {
   return Array.from(bySource.values()).sort((left, right) =>
     String(left.utm_source || "").localeCompare(String(right.utm_source || "")),
   );
+}
+
+function buildDeltaMetric(current, previous) {
+  const curr = Number(current || 0);
+  const prev = Number(previous || 0);
+  const diff = curr - prev;
+  let diff_pct = 0;
+  if (prev === 0) {
+    diff_pct = curr === 0 ? 0 : 100;
+  } else {
+    diff_pct = (diff / prev) * 100;
+  }
+  return {
+    current: curr,
+    previous: prev,
+    diff_pct,
+    direction: diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat',
+  };
+}
+
+function getPreviousIsoDate(value) {
+  const [year, month, day] = String(value || "").split("-").map((part) => Number(part));
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return value;
+  }
+  const utcDate = new Date(Date.UTC(year, month - 1, day));
+  utcDate.setUTCDate(utcDate.getUTCDate() - 1);
+  return utcDate.toISOString().slice(0, 10);
+}
+
+async function queryDailyFunnelUtmRowsWithDelta(conn, date) {
+  const previousDate = getPreviousIsoDate(date);
+  const [currentRows, previousRows] = await Promise.all([
+    queryDailyFunnelUtmRows(conn, date),
+    queryDailyFunnelUtmRows(conn, previousDate),
+  ]);
+
+  const previousMap = new Map(
+    (Array.isArray(previousRows) ? previousRows : []).map((row) => [String(row.utm_source || 'direct'), row]),
+  );
+
+  return (Array.isArray(currentRows) ? currentRows : []).map((row) => {
+    const previous = previousMap.get(String(row.utm_source || 'direct')) || {};
+    return {
+      ...row,
+      previous_date: previousDate,
+      previous: {
+        sales: Number(previous.sales || 0),
+        sessions: Number(previous.sessions || 0),
+        atc_sessions: Number(previous.atc_sessions || 0),
+        orders: Number(previous.orders || 0),
+        prepaid_orders: Number(previous.prepaid_orders || 0),
+        cod_orders: Number(previous.cod_orders || 0),
+        partially_paid_orders: Number(previous.partially_paid_orders || 0),
+      },
+      deltas: {
+        sales: buildDeltaMetric(row.sales, previous.sales),
+        sessions: buildDeltaMetric(row.sessions, previous.sessions),
+        atc_sessions: buildDeltaMetric(row.atc_sessions, previous.atc_sessions),
+        orders: buildDeltaMetric(row.orders, previous.orders),
+        prepaid_orders: buildDeltaMetric(row.prepaid_orders, previous.prepaid_orders),
+        cod_orders: buildDeltaMetric(row.cod_orders, previous.cod_orders),
+        partially_paid_orders: buildDeltaMetric(row.partially_paid_orders, previous.partially_paid_orders),
+      },
+    };
+  });
 }
 
 async function queryHourlyProductSessionTotals(conn, start, end, cutoffHour = 23, filters = {}) {
@@ -2190,7 +2251,7 @@ function buildMetricsSnapshotService(deps = {}) {
           replacements: [spec.start, spec.end],
         },
       ),
-      queryDailyFunnelUtmRows(spec.conn, spec.utmDate || spec.end),
+      spec.includeUtm ? queryDailyFunnelUtmRowsWithDelta(spec.conn, spec.utmDate || spec.end) : Promise.resolve([]),
     ]);
 
     const baseMap = new Map(
@@ -2228,8 +2289,8 @@ function buildMetricsSnapshotService(deps = {}) {
       timezone,
       range: { start: spec.start, end: spec.end },
       rows,
-      utmDate: spec.utmDate || spec.end,
-      utmRows,
+      utmDate: spec.includeUtm ? (spec.utmDate || spec.end) : null,
+      utmRows: spec.includeUtm ? utmRows : [],
     };
   }
 
