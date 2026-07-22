@@ -1086,7 +1086,13 @@ export default function MerchantRequestsPanel({
     if (!silent) setDetailLoading(true);
     try {
       const res = await getMerchantRequest(id);
-      if (!res.error) setSelectedDetail(res.data);
+      if (!res.error) {
+        setSelectedDetail(res.data);
+      } else if (res.status === 404 && selectedIdRef.current === id) {
+        setSelectedId("");
+        setSelectedDetail(null);
+        setMobileShowDetail(false);
+      }
     } finally {
       if (!silent) setDetailLoading(false);
     }
@@ -1128,6 +1134,12 @@ export default function MerchantRequestsPanel({
       transports: ["polling", "websocket"],
     });
 
+    const refreshCurrent = () => {
+      fetchRequests({ silent: true });
+      const currentId = selectedIdRef.current;
+      if (currentId) fetchDetail(currentId, { silent: true });
+    };
+
     const refresh = (payload) => {
       if (payload?.request_id && payload.request_id === selectedIdRef.current) {
         fetchDetail(payload.request_id, { silent: true });
@@ -1144,19 +1156,61 @@ export default function MerchantRequestsPanel({
       fetchRequests({ silent: true });
     };
 
+    const updateReconnectAuth = () => {
+      socket.auth = {
+        token: window.localStorage.getItem("gateway_access_token") || "",
+      };
+    };
+
+    const reconnectWithLatestAuth = () => {
+      updateReconnectAuth();
+      if (!socket.connected) socket.connect();
+    };
+
+    const handleTokenStorageChange = (event) => {
+      if (event.key === "gateway_access_token" && event.newValue) {
+        reconnectWithLatestAuth();
+      }
+    };
+
+    const handleConnectError = (err) => {
+      console.warn("[merchant-requests] realtime connection failed", err?.message || err);
+    };
+
+    const handleDisconnect = (reason) => {
+      console.warn("[merchant-requests] realtime disconnected", reason);
+    };
+
+    socket.on("connect", refreshCurrent);
+    socket.on("connect_error", handleConnectError);
+    socket.on("disconnect", handleDisconnect);
     socket.on("merchant-request:created", refresh);
     socket.on("merchant-request:updated", refresh);
     socket.on("merchant-request:commented", refresh);
     socket.on("merchant-request:sync_failed", refresh);
     socket.on("merchant-request:removed", removeRequest);
+    socket.io.on("reconnect_attempt", updateReconnectAuth);
+    window.addEventListener("auth:token-refreshed", reconnectWithLatestAuth);
+    window.addEventListener("storage", handleTokenStorageChange);
 
     const poll = setInterval(() => {
       if (document.visibilityState === "visible") {
-        fetchRequests({ silent: true });
+        refreshCurrent();
       }
     }, 45000);
     return () => {
       clearInterval(poll);
+      socket.io.off("reconnect_attempt", updateReconnectAuth);
+      window.removeEventListener("auth:token-refreshed", reconnectWithLatestAuth);
+      window.removeEventListener("storage", handleTokenStorageChange);
+      socket.off("connect", refreshCurrent);
+      socket.off("connect_error", handleConnectError);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("merchant-request:created", refresh);
+      socket.off("merchant-request:updated", refresh);
+      socket.off("merchant-request:commented", refresh);
+      socket.off("merchant-request:sync_failed", refresh);
+      socket.off("merchant-request:removed", removeRequest);
       socket.disconnect();
     };
   }, [fetchDetail, fetchRequests]);
@@ -1829,39 +1883,43 @@ export default function MerchantRequestsPanel({
                     </>
                   )}
 
-                  {/* Comment form */}
-                  <Separator />
-                  <div className="px-5 py-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                      Add Comment
-                    </p>
-                    <form onSubmit={submitComment} className="flex flex-col gap-2">
-                      <textarea
-                        ref={commentRef}
-                        value={comment}
-                        onChange={(e) => setComment(e.target.value)}
-                        placeholder="Write a comment…"
-                        rows={3}
-                        className={cn(
-                          "flex w-full rounded-md border border-input bg-muted/50 px-3 py-2 text-sm shadow-sm transition-colors",
-                          "placeholder:text-muted-foreground",
-                          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                          "disabled:cursor-not-allowed disabled:opacity-50 resize-none",
-                        )}
-                      />
-                      <Button
-                        type="submit"
-                        size="sm"
-                        disabled={!comment.trim() || commentSubmitting}
-                        className="self-end"
-                      >
-                        {commentSubmitting && (
-                          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                        )}
-                        Post Comment
-                      </Button>
-                    </form>
-                  </div>
+                  {isAuthor && (
+                    <>
+                      {/* Comment form */}
+                      <Separator />
+                      <div className="px-5 py-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                          Add Comment
+                        </p>
+                        <form onSubmit={submitComment} className="flex flex-col gap-2">
+                          <textarea
+                            ref={commentRef}
+                            value={comment}
+                            onChange={(e) => setComment(e.target.value)}
+                            placeholder="Write a comment…"
+                            rows={3}
+                            className={cn(
+                              "flex w-full rounded-md border border-input bg-muted/50 px-3 py-2 text-sm shadow-sm transition-colors",
+                              "placeholder:text-muted-foreground",
+                              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                              "disabled:cursor-not-allowed disabled:opacity-50 resize-none",
+                            )}
+                          />
+                          <Button
+                            type="submit"
+                            size="sm"
+                            disabled={!comment.trim() || commentSubmitting}
+                            className="self-end"
+                          >
+                            {commentSubmitting && (
+                              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                            )}
+                            Post Comment
+                          </Button>
+                        </form>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </CardContent>

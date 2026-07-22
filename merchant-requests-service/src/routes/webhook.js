@@ -2,6 +2,16 @@ const express = require("express");
 const { verifyTodoistHmac } = require("../services/todoistHmac");
 const { processTodoistWebhook } = require("../services/webhookService");
 
+function webhookOutcome(payload = {}, deliveryId = "", result = {}) {
+  const data = payload.event_data || {};
+  return {
+    delivery_id: String(deliveryId || ""),
+    event_name: String(payload.event_name || ""),
+    task_id: String(data.task_id || data.item_id || data.id || ""),
+    outcome: result.duplicate ? "duplicate" : result.ignored ? "ignored" : "processed",
+  };
+}
+
 function buildWebhookRouter(config, deps = {}) {
   const router = express.Router();
 
@@ -26,6 +36,10 @@ function buildWebhookRouter(config, deps = {}) {
         config,
         deps,
       );
+      console.info(
+        "[merchant-requests] Todoist webhook",
+        JSON.stringify(webhookOutcome(payload, req.headers["x-todoist-delivery-id"], result)),
+      );
       return res.json({ ok: true, ...result });
     } catch (err) {
       return next(err);
@@ -35,4 +49,4 @@ function buildWebhookRouter(config, deps = {}) {
   return router;
 }
 
-module.exports = { buildWebhookRouter };
+module.exports = { buildWebhookRouter, webhookOutcome };

@@ -6,7 +6,7 @@ function setIO(nextIO) {
 
 function emitRequestEvent(eventName, request, payload = {}) {
   if (!io || !request?.brand_key) return;
-  io.to(`brand:${request.brand_key}`).emit(eventName, {
+  io.to(`brand:${request.brand_key}`).to("role:author").emit(eventName, {
     request_id: String(request._id),
     brand_key: request.brand_key,
     request: payload.request || request,
