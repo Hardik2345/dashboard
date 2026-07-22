@@ -353,8 +353,8 @@ async function queryCheckoutInitiatedTotals(conn, start, end, cutoffHour = null)
     const rows = await conn.query(
       `
         SELECT
-          COALESCE(SUM(ci_events), 0) AS total_ci_events
-        FROM overall_summary
+          COALESCE(SUM(COALESCE(ci_events, 0) + COALESCE(buy_now_events, 0)), 0) AS total_ci_events
+        FROM hourly_sessions_summary_shopify
         WHERE date >= ? AND date <= ?
       `,
       {
@@ -367,7 +367,7 @@ async function queryCheckoutInitiatedTotals(conn, start, end, cutoffHour = null)
 
   const sql = `
     SELECT
-      COALESCE(SUM(ci_events), 0) AS total_ci_events
+      COALESCE(SUM(COALESCE(ci_events, 0) + COALESCE(buy_now_events, 0)), 0) AS total_ci_events
     FROM hourly_sessions_summary_shopify
     WHERE date >= ? AND date <= ?${hasCutoff ? " AND hour <= ?" : ""}
   `;
@@ -416,7 +416,7 @@ async function queryCheckoutInitiatedRows(
       `
         SELECT
           DATE_FORMAT(date, '%Y-%m-%d') AS date,
-          COALESCE(SUM(ci_events), 0) AS ci_events
+          COALESCE(SUM(COALESCE(ci_events, 0) + COALESCE(buy_now_events, 0)), 0) AS ci_events
         FROM hourly_sessions_summary_shopify
         WHERE date >= ? AND date <= ?
         GROUP BY date
@@ -436,7 +436,7 @@ async function queryCheckoutInitiatedRows(
       SELECT
         DATE_FORMAT(date, '%Y-%m-%d') AS date,
         hour,
-        COALESCE(ci_events, 0) AS ci_events
+        COALESCE(ci_events, 0) + COALESCE(buy_now_events, 0) AS ci_events
       FROM hourly_sessions_summary_shopify
       WHERE date >= ? AND date <= ?${hasCutoff ? " AND hour <= ?" : ""}
       ORDER BY date ASC, hour ASC
