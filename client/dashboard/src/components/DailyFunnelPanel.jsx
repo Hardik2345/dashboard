@@ -849,7 +849,7 @@ export default function DailyFunnelPanel({
     }));
 
     return sortRows(mappedRows, utmSortBy, utmSortDir);
-  }, [currency, displayMode, normalizedUtmRows, utmSortBy, utmSortDir]);
+  }, [displayMode, normalizedUtmRows, utmSortBy, utmSortDir]);
 
   const utmFilterValidation = useMemo(() => {
     if (!utmFilterField || utmFilterValue === "") {
