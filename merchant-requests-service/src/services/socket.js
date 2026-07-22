@@ -9,6 +9,15 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://www.datum.trytechit.co",
 ];
 
+function roomsForPrincipal(principal) {
+  const rooms = [];
+  if (principal?.isAuthor) rooms.push("role:author");
+  for (const brand of getAllowedBrands(principal)) {
+    rooms.push(`brand:${brand}`);
+  }
+  return rooms;
+}
+
 function initSocket(httpServer, config) {
   const allowedOrigins = config.corsOrigins.length
     ? Array.from(new Set([...DEFAULT_ALLOWED_ORIGINS, ...config.corsOrigins]))
@@ -40,9 +49,8 @@ function initSocket(httpServer, config) {
 
   io.on("connection", (socket) => {
     const principal = socket.data.principal;
-    if (principal?.isAuthor) socket.join("role:author");
-    for (const brand of getAllowedBrands(principal)) {
-      socket.join(`brand:${brand}`);
+    for (const room of roomsForPrincipal(principal)) {
+      socket.join(room);
     }
 
     socket.on("join", () => {
@@ -54,4 +62,4 @@ function initSocket(httpServer, config) {
   return io;
 }
 
-module.exports = { initSocket };
+module.exports = { initSocket, roomsForPrincipal };
