@@ -1748,7 +1748,18 @@ export default function DailyFunnelPanel({
                                   width: "100%",
                                 }}
                               >
-                                <span>{getUtmMetricDisplayValue(row, column.id, displayMode)}</span>
+                                <Box
+                                  sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "flex-end",
+                                    gap: 0.75,
+                                    width: "100%",
+                                  }}
+                                >
+                                  <DeltaBadge current={metric.current} previous={metric.previous} />
+                                  <span>{getUtmMetricDisplayValue(row, column.id, displayMode)}</span>
+                                </Box>
                                 <Typography
                                   variant="caption"
                                   color="text.secondary"
@@ -1756,7 +1767,6 @@ export default function DailyFunnelPanel({
                                 >
                                   {previousDisplay}
                                 </Typography>
-                                <DeltaBadge current={metric.current} previous={metric.previous} />
                               </Box>
                             </TableCell>
                           );
