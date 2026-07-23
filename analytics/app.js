@@ -78,6 +78,7 @@ const apiKeysRouter = buildApiKeysRouter(sequelize);
 const shopifyRouter = buildShopifyRouter(sequelize);
 const notificationsRouter = buildNotificationsRouter();
 
+
 app.use("/metrics", metricsRouter);
 app.use("/metrics", productConversionRouter);
 app.use("/metrics", bundlesRouter);
