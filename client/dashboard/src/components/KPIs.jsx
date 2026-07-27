@@ -1408,14 +1408,26 @@ export default function KPIs({
         ? { start, end, brand_key: brandKey, product_id: scopedProductId }
         : { start, end, product_id: scopedProductId };
 
-      getProductKpis(base)
-        .then((resp) => {
+      const summaryBase = {
+        ...base,
+        align: "hour",
+      };
+
+      if (compareStart && compareEnd) {
+        summaryBase.compare_start = compareStart;
+        summaryBase.compare_end = compareEnd;
+      }
+
+      Promise.all([getProductKpis(base), getDashboardSummary(summaryBase)])
+        .then(([resp, summaryResp]) => {
           if (cancelled) return;
           if (resp.error) {
             setData({});
             setLoading(false);
             return;
           }
+
+          const m = summaryResp?.metrics || {};
 
           const orders = { value: resp.total_orders ?? 0 };
           const sales = { value: resp.total_sales ?? 0 };
@@ -1459,6 +1471,72 @@ export default function KPIs({
             totalSessions: funnel.total_sessions,
             totalAtcSessions: funnel.total_atc_sessions,
             totalCiEvents: { value: 0 },
+            ordersDelta: {
+              diff_pct: m.total_orders?.diff_pct ?? 0,
+              direction: m.total_orders?.direction ?? "flat",
+            },
+            salesDelta: {
+              diff_pct: m.total_sales?.diff_pct ?? 0,
+              direction: m.total_sales?.direction ?? "flat",
+            },
+            aovDelta: {
+              diff_pct: m.average_order_value?.diff_pct ?? 0,
+              direction: m.average_order_value?.direction ?? "flat",
+            },
+            cvrDelta: {
+              diff_pct: m.conversion_rate?.diff_pct ?? 0,
+              diff_pp: m.conversion_rate?.diff_pp,
+              direction: m.conversion_rate?.direction ?? "flat",
+            },
+            sessDelta: {
+              diff_pct: m.total_sessions?.diff_pct ?? 0,
+              direction: m.total_sessions?.direction ?? "flat",
+            },
+            atcDelta: {
+              diff_pct: m.total_atc_sessions?.diff_pct ?? 0,
+              direction: m.total_atc_sessions?.direction ?? "flat",
+            },
+            ciDelta: {
+              diff_pct: m.total_ci_events?.diff_pct ?? 0,
+              direction: m.total_ci_events?.direction ?? "flat",
+            },
+            checkoutRateDelta: {
+              diff_pct: m.checkout_rate?.diff_pct ?? 0,
+              direction: m.checkout_rate?.direction ?? "flat",
+            },
+            atcRateDelta: {
+              diff_pct: m.atc_rate?.diff_pct ?? 0,
+              direction: m.atc_rate?.direction ?? "flat",
+            },
+            cancelledRateDelta: {
+              diff_pct: m.cancelled_orders?.diff_pct ?? 0,
+              direction: m.cancelled_orders?.direction ?? "flat",
+            },
+            refundedRateDelta: {
+              diff_pct: m.refunded_orders?.diff_pct ?? 0,
+              direction: m.refunded_orders?.direction ?? "flat",
+            },
+            rtoOrdersDelta: {
+              diff_pct: m.rto_orders?.diff_pct ?? 0,
+              direction: m.rto_orders?.direction ?? "flat",
+            },
+            rtoRateDelta: {
+              diff_pct: m.rto_rate?.diff_pct ?? 0,
+              direction: m.rto_rate?.direction ?? "flat",
+            },
+            prevOrders: m.total_orders?.previous ?? null,
+            prevSales: m.total_sales?.previous ?? null,
+            prevAov: m.average_order_value?.previous ?? null,
+            prevCvr: m.conversion_rate?.previous ?? null,
+            prevSessions: m.total_sessions?.previous ?? null,
+            prevAtcSessions: m.total_atc_sessions?.previous ?? null,
+            prevCiEvents: m.total_ci_events?.previous ?? null,
+            prevCheckoutRate: m.checkout_rate?.previous ?? null,
+            prevAtcRate: m.atc_rate?.previous ?? null,
+            prevCancelledOrders: m.cancelled_orders?.previous ?? null,
+            prevRefundedOrders: m.refunded_orders?.previous ?? null,
+            prevRtoOrders: m.rto_orders?.previous ?? null,
+            prevRtoRate: m.rto_rate?.previous ?? null,
             unavailable: {
               sessions: false,
               atc: false,
