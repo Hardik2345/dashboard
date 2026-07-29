@@ -885,6 +885,12 @@ export default function App() {
       Array.isArray(value) ? value.length > 0 : !!value,
     );
   }, [utm]);
+  const hasActiveNonSourceUtmFilter = useMemo(() => {
+    const values = [utm?.medium, utm?.campaign, utm?.term, utm?.content];
+    return values.some((value) =>
+      Array.isArray(value) ? value.length > 0 : !!value,
+    );
+  }, [utm]);
 
   useEffect(() => {
     if (!isAuthor && viewerBrands.length) {
@@ -1854,13 +1860,24 @@ export default function App() {
       limit: 50,
       brand_key: activeBrandKey,
     };
+    if (utm?.source && utm.source.length > 0) {
+      params.utm_source = utm.source;
+    }
 
     getTopProducts(params)
       .then(({ products, error }) => {
         if (cancelled) return;
+        const existingSelection = Array.isArray(productSelection)
+          ? productSelection.filter((p) => p?.id)
+          : productSelection?.id
+            ? [productSelection]
+            : [];
+
         if (error) {
           setProductOptions([DEFAULT_PRODUCT_OPTION]);
-          setProductSelection(DEFAULT_PRODUCT_OPTION);
+          if (existingSelection.length === 0) {
+            setProductSelection(DEFAULT_PRODUCT_OPTION);
+          }
           return;
         }
 
@@ -1877,23 +1894,42 @@ export default function App() {
             })
           : [];
 
-        const nextOptions = [DEFAULT_PRODUCT_OPTION, ...mapped];
+        const existingById = new Map(
+          existingSelection.map((item) => [String(item.id), item]),
+        );
+        const mergedMapped = [...mapped];
+        for (const item of existingSelection) {
+          const itemId = String(item.id);
+          if (!mergedMapped.some((opt) => String(opt.id) === itemId)) {
+            mergedMapped.unshift(item);
+          }
+        }
+
+        const nextOptions = [DEFAULT_PRODUCT_OPTION, ...mergedMapped];
         setProductOptions(nextOptions);
 
         // map current selection IDs to new options
         const currentIds = new Set(
-          Array.isArray(productSelection)
-            ? productSelection.map((p) => p.id)
-            : [],
+          existingSelection.map((p) => String(p.id)),
         );
         const validSelection = nextOptions.filter(
-          (opt) => currentIds.has(opt.id) && opt.id !== "",
+          (opt) => opt.id !== "" && currentIds.has(String(opt.id)),
         );
 
         if (validSelection.length > 0) {
-          setProductSelection(validSelection);
+          setProductSelection(
+            Array.isArray(productSelection)
+              ? validSelection
+              : validSelection[0],
+          );
         } else {
-          setProductSelection([DEFAULT_PRODUCT_OPTION]);
+          setProductSelection(
+            existingSelection.length > 0
+              ? Array.isArray(productSelection)
+                ? existingSelection
+                : existingSelection[0]
+              : DEFAULT_PRODUCT_OPTION,
+          );
         }
       })
       .finally(() => {
@@ -1909,6 +1945,7 @@ export default function App() {
     activeBrandKey,
     authorRefreshKey,
     productSelection,
+    utm?.source,
     initialized,
     user,
     isAuthor,
@@ -2943,6 +2980,7 @@ export default function App() {
       brand_key: activeBrandKey,
       start: formatDate(start),
       end: formatDate(end),
+      product_id: selectedProductIds,
     })
       .then((res) => {
         if (res.filter_options) {
@@ -2950,7 +2988,7 @@ export default function App() {
         }
       })
       .catch(() => {});
-  }, [lastFetchParams, activeBrandKey, start, end, isLongRangeDashboard]);
+  }, [lastFetchParams, activeBrandKey, start, end, isLongRangeDashboard, selectedProductIds]);
 
   // Sync funnel data with product table's Curr date when on Funnels tab
   useEffect(() => {
@@ -3456,11 +3494,12 @@ export default function App() {
                         productOptions={productOptions}
                         productValue={productSelection}
                         onProductChange={handleProductChange}
-                        productDisabled={hasActiveUtmFilter || !!discountCode}
+                        productDisabled={hasActiveNonSourceUtmFilter || !!discountCode}
                         productLoading={productOptionsLoading}
                         utm={utm}
                         onUtmChange={handleUtmChange}
-                        utmDisabled={hasActiveProductFilter || !!discountCode}
+                        utmDisabled={!!discountCode}
+                        disableUtmMediumCampaign={hasActiveProductFilter}
                         salesChannel={salesChannel}
                         onSalesChannelChange={handleSalesChannelChange}
                         deviceType={deviceType}
@@ -3556,11 +3595,12 @@ export default function App() {
                       productOptions={productOptions}
                       productValue={productSelection}
                       onProductChange={handleProductChange}
-                      productDisabled={hasActiveUtmFilter || !!discountCode}
+                      productDisabled={hasActiveNonSourceUtmFilter || !!discountCode}
                       productLoading={productOptionsLoading}
                       utm={utm}
                       onUtmChange={handleUtmChange}
-                      utmDisabled={hasActiveProductFilter || !!discountCode}
+                      utmDisabled={!!discountCode}
+                      disableUtmMediumCampaign={hasActiveProductFilter}
                       salesChannel={salesChannel}
                       onSalesChannelChange={handleSalesChannelChange}
                       deviceType={deviceType}
@@ -3597,10 +3637,11 @@ export default function App() {
                   productOptions={productOptions}
                   productValue={productSelection}
                   onProductChange={handleProductChange}
-                  productDisabled={hasActiveUtmFilter || !!discountCode}
+                  productDisabled={hasActiveNonSourceUtmFilter || !!discountCode}
                   utm={utm}
                   onUtmChange={handleUtmChange}
-                  utmDisabled={hasActiveProductFilter || !!discountCode}
+                  utmDisabled={!!discountCode}
+                  disableUtmMediumCampaign={hasActiveProductFilter}
                   salesChannel={salesChannel}
                   onSalesChannelChange={handleSalesChannelChange}
                   deviceType={deviceType}

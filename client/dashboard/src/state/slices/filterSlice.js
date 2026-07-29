@@ -70,6 +70,14 @@ function hasActiveUtm(utm = {}) {
   });
 }
 
+function hasActiveNonSourceUtm(utm = {}) {
+  return ['medium', 'campaign', 'term', 'content'].some((key) => {
+    const value = utm?.[key];
+    if (Array.isArray(value)) return value.length > 0;
+    return !!value;
+  });
+}
+
 const filterSlice = createSlice({
   name: 'filters',
   initialState: {
@@ -140,13 +148,19 @@ const filterSlice = createSlice({
         state.productSelection = [DEFAULT_PRODUCT_OPTION];
       }
       if (hasSelectedProduct(state.productSelection)) {
-        state.utm = { source: [], medium: [], campaign: [], term: [], content: [] };
+        state.utm = {
+          ...state.utm,
+          medium: [],
+          campaign: [],
+          term: [],
+          content: [],
+        };
       }
     },
     setUtm(state, action) {
       const nextUtm = { ...state.utm, ...action.payload };
       state.utm = nextUtm;
-      if (hasActiveUtm(nextUtm)) {
+      if (hasSelectedProduct(state.productSelection) && hasActiveNonSourceUtm(nextUtm)) {
         state.productSelection = [DEFAULT_PRODUCT_OPTION];
       }
     },

@@ -62,6 +62,7 @@ function buildProductController({ pageService }) {
             start: rangeStart,
             end: rangeEnd,
             limit,
+            filters: extractFilters(req),
             timezone: req.tenantRoute?.timezone,
           }),
         );

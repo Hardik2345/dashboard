@@ -106,6 +106,9 @@ describe("metricsPageService", () => {
       add_to_cart_rate_pct: 20,
       total_orders: 5,
       total_sales: 250,
+      rto_orders: 0,
+      rto_rate: 0,
+      rto_rate_pct: 0,
       conversion_rate: 0.05,
       conversion_rate_pct: 5,
     });

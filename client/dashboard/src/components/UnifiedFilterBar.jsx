@@ -123,6 +123,7 @@ export default function UnifiedFilterBar({
   utm = {},
   onUtmChange,
   utmDisabled = false,
+  disableUtmMediumCampaign = false,
   salesChannel,
   onSalesChannelChange,
   deviceType,
@@ -466,6 +467,11 @@ export default function UnifiedFilterBar({
   const disabledUtmTooltip = discountCode
     ? "Clear discount filter to use UTM filters"
     : "Clear product filter to use UTM filters";
+  const disabledUtmNestedTooltip = discountCode
+    ? disabledUtmTooltip
+    : disableUtmMediumCampaign
+      ? "Clear product filter to use Medium/Campaign"
+      : "";
   const disabledProductTooltip = discountCode
     ? "Clear discount filter to use product filter"
     : "Clear UTM filters to use product filter";
@@ -665,11 +671,17 @@ export default function UnifiedFilterBar({
                 />
 
                 {/* ... Medium Button ... */}
-                <Tooltip title={utmDisabled ? disabledUtmTooltip : ""}>
+                <Tooltip
+                  title={
+                    utmDisabled || disableUtmMediumCampaign
+                      ? disabledUtmNestedTooltip || disabledUtmTooltip
+                      : ""
+                  }
+                >
                   <span>
                     <Button
                       onClick={handleUtmMediumClick}
-                      disabled={utmDisabled}
+                      disabled={utmDisabled || disableUtmMediumCampaign}
                       endIcon={<ChevronDown size={14} />}
                       sx={{
                         ...utmButtonSx,
@@ -699,11 +711,17 @@ export default function UnifiedFilterBar({
                 />
 
                 {/* ... Campaign Button ... */}
-                <Tooltip title={utmDisabled ? disabledUtmTooltip : ""}>
+                <Tooltip
+                  title={
+                    utmDisabled || disableUtmMediumCampaign
+                      ? disabledUtmNestedTooltip || disabledUtmTooltip
+                      : ""
+                  }
+                >
                   <span>
                     <Button
                       onClick={handleUtmCampaignClick}
-                      disabled={utmDisabled}
+                      disabled={utmDisabled || disableUtmMediumCampaign}
                       endIcon={<ChevronDown size={14} />}
                       sx={{
                         ...utmButtonSx,
