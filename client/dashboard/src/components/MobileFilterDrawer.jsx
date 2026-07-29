@@ -32,7 +32,7 @@ import {
 } from "@mui/material";
 import { TransitionGroup } from "react-transition-group";
 import { GlassChip } from "./ui/GlassChip";
-import { getSummaryFilterOptions, getProductTypes } from "../lib/api";
+import { getSummaryFilterOptions, getTopProducts, getProductTypes } from "../lib/api";
 import {
   DEFAULT_DATA_RESTRICTION_CONFIG,
   getDataRestrictionDescription,
@@ -54,6 +54,7 @@ export default function MobileFilterDrawer({
   utm = {},
   onUtmChange,
   utmDisabled = false,
+  disableUtmMediumCampaign = false,
   salesChannel = "",
   onSalesChannelChange,
   city = [],
@@ -87,6 +88,7 @@ export default function MobileFilterDrawer({
   const [tempCity, setTempCity] = useState(city);
   const [tempDeviceType, setTempDeviceType] = useState(deviceType);
   const [tempDiscountCode, setTempDiscountCode] = useState(discountCode);
+  const [drawerProductOptions, setDrawerProductOptions] = useState(productOptions);
 
   // Product Type State
   const [tempProductTypes, setTempProductTypes] = useState(productTypes || []);
@@ -129,6 +131,10 @@ export default function MobileFilterDrawer({
     }
   }, [open, brandKey, productValue, utm, salesChannel, city, deviceType, discountCode]); // Removed productTypes to prevent reset loop
 
+  useEffect(() => {
+    setDrawerProductOptions(productOptions);
+  }, [productOptions]);
+
   // Fetch Product Types
   useEffect(() => {
     if (open && showProductTypeFilter && tempBrand) {
@@ -154,10 +160,18 @@ export default function MobileFilterDrawer({
   }, [open, tempBrand, dateRange]);
 
   useEffect(() => {
+    const selectedProductIds = Array.isArray(tempProduct)
+      ? tempProduct.map((product) => product?.id).filter(Boolean).join(",")
+      : tempProduct?.id || "";
+    const committedProductIds = Array.isArray(productValue)
+      ? productValue.map((product) => product?.id).filter(Boolean).join(",")
+      : productValue?.id || "";
+
     if (
       propUtmOptions &&
       propUtmOptions.brand_key === tempBrand &&
-      propUtmOptions.utm_source
+      propUtmOptions.utm_tree &&
+      selectedProductIds === committedProductIds
     ) {
       setUtmOptions(propUtmOptions);
       return;
@@ -186,6 +200,7 @@ export default function MobileFilterDrawer({
       brand_key: tempBrand,
       start: lastFetchParams.start,
       end: lastFetchParams.end,
+      product_id: selectedProductIds,
     })
       .then((res) => {
         if (res.filter_options) {
@@ -193,7 +208,45 @@ export default function MobileFilterDrawer({
         }
       })
       .catch((err) => console.error("Failed to load UTM options", err));
-  }, [lastFetchParams, propUtmOptions, dateRange, normalizedRestrictionConfig, open, tempBrand]);
+  }, [lastFetchParams, propUtmOptions, dateRange, normalizedRestrictionConfig, open, tempBrand, tempProduct, productValue]);
+
+  useEffect(() => {
+    if (!open || !tempBrand || !dateRange?.[0] || !dateRange?.[1]) return;
+
+    const params = {
+      brand_key: tempBrand,
+      start: dateRange[0].format("YYYY-MM-DD"),
+      end: dateRange[1].format("YYYY-MM-DD"),
+      limit: 50,
+    };
+
+    if (tempUtm?.source && tempUtm.source.length > 0) {
+      params.utm_source = tempUtm.source;
+    }
+
+    getTopProducts(params)
+      .then(({ products, error }) => {
+        if (error) return;
+        const mapped = Array.isArray(products)
+          ? products.map((p) => {
+              const rawPath = (p.landing_page_path || "").toString();
+              const slug = rawPath.includes("/products/")
+                ? rawPath.split("/products/")[1] || rawPath
+                : rawPath || p.product_id;
+              const label = slug || p.product_id || "Unknown product";
+              const sessions = Number(p.sessions || 0);
+              const detail = `${sessions.toLocaleString()} sessions`;
+              return { id: p.product_id, label, detail };
+            })
+          : [];
+
+        setDrawerProductOptions([
+          { id: "", label: "All products", detail: "Whole store" },
+          ...mapped,
+        ]);
+      })
+      .catch(() => {});
+  }, [open, tempBrand, tempUtm?.source, dateRange]);
 
   const handleBack = () => {
     if (
@@ -336,8 +389,10 @@ export default function MobileFilterDrawer({
   const hasTempProductFilter = Array.isArray(tempProduct)
     ? tempProduct.some((p) => p?.id)
     : !!tempProduct?.id;
-  const isProductBlocked = productDisabled || activeUtmCount > 0;
-  const isUtmBlocked = utmDisabled || hasTempProductFilter;
+  const isProductBlocked = productDisabled;
+  const isUtmBlocked = utmDisabled;
+  const areUtmMediumCampaignBlocked =
+    utmDisabled || disableUtmMediumCampaign || hasTempProductFilter;
 
   const handleClearAll = () => {
     if (onUtmChange) onUtmChange({ source: "", medium: "", campaign: "" });
@@ -696,7 +751,7 @@ export default function MobileFilterDrawer({
                     </Typography>
                     <Typography variant="body1" fontSize={14} fontWeight={500}>
                       {isProductBlocked
-                        ? "Clear UTM filters first"
+                        ? "Clear discount filter first"
                         : Array.isArray(tempProduct)
                         ? tempProduct.length > 1
                           ? `${tempProduct.length} Products`
@@ -774,8 +829,8 @@ export default function MobileFilterDrawer({
                       {isDateRangeOver30Days
                         ? dataRestrictionDescription
                         : isUtmBlocked
-                          ? "Clear product filter first"
-                        : activeUtmCount > 0
+                          ? "Clear discount filter first"
+                          : activeUtmCount > 0
                           ? `${activeUtmCount} Active`
                           : "All"}
                     </Typography>
@@ -948,7 +1003,7 @@ export default function MobileFilterDrawer({
                 />
               </Box>
               <List disablePadding>
-                {productOptions
+                {drawerProductOptions
                   .filter(
                     (opt) =>
                       !searchText ||
@@ -965,15 +1020,6 @@ export default function MobileFilterDrawer({
                         key={opt.id || "all"}
                         onClick={() => {
                           setTempProduct(opt);
-                          if (opt?.id) {
-                            setTempUtm({
-                              source: [],
-                              medium: [],
-                              campaign: [],
-                              term: [],
-                              content: [],
-                            });
-                          }
                           handleBack();
                         }}
                         selected={isSelected}
@@ -1097,7 +1143,19 @@ export default function MobileFilterDrawer({
                 {["source", "medium", "campaign"].map((field, index) => (
                   <ListItemButton
                     key={field}
-                    onClick={() => setView(`UTM_${field.toUpperCase()}`)}
+                    onClick={() => {
+                      if (
+                        (field === "medium" || field === "campaign") &&
+                        areUtmMediumCampaignBlocked
+                      ) {
+                        return;
+                      }
+                      setView(`UTM_${field.toUpperCase()}`);
+                    }}
+                    disabled={
+                      (field === "medium" || field === "campaign") &&
+                      areUtmMediumCampaignBlocked
+                    }
                     divider={index < 2}
                     sx={{ py: 2, justifyContent: "space-between" }}
                   >
@@ -1136,6 +1194,13 @@ export default function MobileFilterDrawer({
             <Box
               sx={{ height: "100%", display: "flex", flexDirection: "column" }}
             >
+              {["UTM_MEDIUM", "UTM_CAMPAIGN"].includes(view) && areUtmMediumCampaignBlocked ? (
+                <Box sx={{ px: 2, py: 2 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Clear product filter to use {view === "UTM_MEDIUM" ? "Medium" : "Campaign"}.
+                  </Typography>
+                </Box>
+              ) : null}
               <Box
                 sx={{
                   px: 2,
@@ -1158,6 +1223,10 @@ export default function MobileFilterDrawer({
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   autoFocus
+                  disabled={
+                    ["UTM_MEDIUM", "UTM_CAMPAIGN"].includes(view) &&
+                    areUtmMediumCampaignBlocked
+                  }
                 />
               </Box>
               <List disablePadding>
@@ -1210,6 +1279,10 @@ export default function MobileFilterDrawer({
                       return (
                         <ListItemButton
                           key={opt}
+                          disabled={
+                            ["UTM_MEDIUM", "UTM_CAMPAIGN"].includes(view) &&
+                            areUtmMediumCampaignBlocked
+                          }
                           onClick={() => {
                             let newVal;
                             if (Array.isArray(current)) {
@@ -1226,13 +1299,6 @@ export default function MobileFilterDrawer({
                             // If current was string and not equal to opt, we make it array [current, opt]
 
                             setTempUtm({ ...tempUtm, [field]: newVal });
-                            if (Array.isArray(newVal) ? newVal.length > 0 : !!newVal) {
-                              setTempProduct({
-                                id: "",
-                                label: "All products",
-                                detail: "Whole store",
-                              });
-                            }
                             // handleBack(); // Keep open for multi-select
                           }}
                           selected={isSelected}

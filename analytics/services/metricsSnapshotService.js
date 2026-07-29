@@ -41,6 +41,7 @@ const {
   resolveUtmAggregateSource,
   resolveDiscountAggregateSource,
   hasDiscountFilter,
+  isCombinedProductUtmSourceFilter,
 } = require("./metricsAggregateService");
 
 const buildCutoffContext = buildLiveCutoffContext;
@@ -1954,6 +1955,7 @@ function buildMetricsSnapshotService(deps = {}) {
 
     const discountActive = hasDiscountFilter(spec.filters);
     const cityActive = hasCityFilter(spec.filters);
+    const combinedProductUtmSourceActive = isCombinedProductUtmSourceFilter(spec.filters);
     const rowTwoComparison = discountActive
       ? null
       : await getRowTwoComparisonSnapshots({
@@ -2047,7 +2049,7 @@ function buildMetricsSnapshotService(deps = {}) {
               deltaCurrentRowTwo.total_atc_sessions,
               deltaPreviousRowTwo.total_atc_sessions,
             ),
-        total_ci_events: discountActive || cityActive
+        total_ci_events: discountActive || cityActive || combinedProductUtmSourceActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
               checkoutInitiatedPair.current,
@@ -2055,7 +2057,7 @@ function buildMetricsSnapshotService(deps = {}) {
               checkoutInitiatedDeltaPair.current,
               checkoutInitiatedDeltaPair.previous,
             ),
-        checkout_rate: discountActive || cityActive
+        checkout_rate: discountActive || cityActive || combinedProductUtmSourceActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
               computeRatePercent(checkoutInitiatedPair.current, current.total_atc_sessions),
@@ -2099,7 +2101,7 @@ function buildMetricsSnapshotService(deps = {}) {
               deltaCurrent.refunded_orders,
               deltaPrevious.refunded_orders,
             ),
-        rto_orders: discountActive || cityActive
+        rto_orders: discountActive || cityActive || combinedProductUtmSourceActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
               current.rto_orders,
@@ -2107,7 +2109,7 @@ function buildMetricsSnapshotService(deps = {}) {
               deltaCurrent.rto_orders,
               deltaPrevious.rto_orders,
             ),
-        rto_rate: discountActive || cityActive
+        rto_rate: discountActive || cityActive || combinedProductUtmSourceActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
               current.rto_rate_percent,
@@ -2124,8 +2126,8 @@ function buildMetricsSnapshotService(deps = {}) {
     };
   }
 
-  async function getSummaryFilterOptions({ conn, start, end }) {
-    return queryUtmSummaryFilterOptions(conn, start, end);
+  async function getSummaryFilterOptions({ conn, start, end, filters = {} }) {
+    return queryUtmSummaryFilterOptions(conn, start, end, filters);
   }
 
   async function getTrend(spec, granularity) {

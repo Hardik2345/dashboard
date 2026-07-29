@@ -24,6 +24,22 @@ function normalizeDiscountCode(filters = {}) {
   return (filters.discount_code || "").toString().trim();
 }
 
+function isCombinedProductUtmSourceFilter(filters = {}) {
+  const hasProduct = hasValue(filters.product_id);
+  const hasSource = hasValue(filters.utm_source);
+  const hasUnsupportedUtm =
+    hasValue(filters.utm_medium) ||
+    hasValue(filters.utm_campaign) ||
+    hasValue(filters.utm_term) ||
+    hasValue(filters.utm_content);
+  const hasUnsupportedContext =
+    hasValue(filters.sales_channel) ||
+    hasValue(filters.device_type) ||
+    hasValue(filters.city);
+
+  return hasProduct && hasSource && !hasUnsupportedUtm && !hasUnsupportedContext;
+}
+
 function resolveDiscountAggregateSource(filters = {}, granularity = "daily") {
   if (filters.city && (!Array.isArray(filters.city) || filters.city.length > 0)) {
     return null;
@@ -47,6 +63,18 @@ function appendDiscountWhere(sql, replacements, filters = {}) {
 }
 
 function resolveUtmAggregateSource(filters = {}, granularity = "daily") {
+  if (isCombinedProductUtmSourceFilter(filters)) {
+    return {
+      table: granularity === "hourly" ? "product_utm_hourly" : "product_utm_daily",
+      dateColumn: "date",
+      hourColumn: "hour",
+      filters: {
+        product_id: filters.product_id,
+        utm_source: filters.utm_source,
+      },
+    };
+  }
+
   if (
     filters.utm_term ||
     filters.utm_content ||
@@ -71,41 +99,55 @@ function resolveUtmAggregateSource(filters = {}, granularity = "daily") {
   if (hasSource && hasMedium && hasCampaign) {
     return {
       table: `utm_source_medium_campaign_${suffix}`,
+      dateColumn: "metric_date",
+      hourColumn: "metric_hour",
       filters: supported,
     };
   }
   if (hasSource && hasMedium) {
     return {
       table: `utm_source_medium_${suffix}`,
+      dateColumn: "metric_date",
+      hourColumn: "metric_hour",
       filters: supported,
     };
   }
   if (hasSource && hasCampaign) {
     return {
       table: `utm_source_campaign_${suffix}`,
+      dateColumn: "metric_date",
+      hourColumn: "metric_hour",
       filters: supported,
     };
   }
   if (hasMedium && hasCampaign) {
     return {
       table: `utm_medium_campaign_${suffix}`,
+      dateColumn: "metric_date",
+      hourColumn: "metric_hour",
       filters: supported,
     };
   }
   if (hasSource) {
     return {
       table: `utm_source_${suffix}`,
+      dateColumn: "metric_date",
+      hourColumn: "metric_hour",
       filters: supported,
     };
   }
   if (hasMedium) {
     return {
       table: `utm_medium_${suffix}`,
+      dateColumn: "metric_date",
+      hourColumn: "metric_hour",
       filters: supported,
     };
   }
   return {
     table: `utm_campaign_${suffix}`,
+    dateColumn: "metric_date",
+    hourColumn: "metric_hour",
     filters: supported,
   };
 }
@@ -304,14 +346,16 @@ async function queryProductKpiTotals({ conn, start, end, filters = {} }) {
     rtoSql += ` AND so.product_id = ?`;
     rtoReplacements.push(filters.product_id);
   }
-  const [sessionRow] = await conn.query(sessionsSql, {
+  const sessionRows = await conn.query(sessionsSql, {
     type: QueryTypes.SELECT,
     replacements: sessionReplacements,
   });
-  const [rtoRow] = await conn.query(rtoSql, {
+  const rtoRows = await conn.query(rtoSql, {
     type: QueryTypes.SELECT,
     replacements: rtoReplacements,
   });
+  const sessionRow = Array.isArray(sessionRows) ? sessionRows[0] : sessionRows;
+  const rtoRow = Array.isArray(rtoRows) ? rtoRows[0] : rtoRows;
 
   return {
     total_sessions: Number(sessionRow?.total_sessions || 0),
@@ -322,9 +366,14 @@ async function queryProductKpiTotals({ conn, start, end, filters = {} }) {
   };
 }
 
-function buildUtmAggregateSelect(prefix, includeHour = false) {
-  const dateClause = `metric_date >= ? AND metric_date <= ?`;
-  const hourClause = includeHour ? ` AND metric_hour <= ?` : "";
+function buildUtmAggregateSelect(
+  prefix,
+  includeHour = false,
+  dateColumn = "metric_date",
+  hourColumn = "metric_hour",
+) {
+  const dateClause = `${dateColumn} >= ? AND ${dateColumn} <= ?`;
+  const hourClause = includeHour ? ` AND ${hourColumn} <= ?` : "";
   const sql = `
     COALESCE(SUM(CASE WHEN ${dateClause}${hourClause} THEN orders ELSE 0 END), 0) AS ${prefix}_total_orders,
     COALESCE(SUM(CASE WHEN ${dateClause}${hourClause} THEN sales ELSE 0 END), 0) AS ${prefix}_total_sales,
@@ -360,6 +409,8 @@ async function queryUtmAggregateTotals(
   if (!source) {
     return null;
   }
+  const dateColumn = source.dateColumn || "metric_date";
+  const hourColumn = source.hourColumn || "metric_hour";
 
   let sql = `
     SELECT
@@ -370,17 +421,18 @@ async function queryUtmAggregateTotals(
       COALESCE(SUM(cancelled_orders), 0) AS cancelled_orders,
       COALESCE(SUM(refunded_orders), 0) AS refunded_orders
     FROM ${source.table}
-    WHERE metric_date >= ? AND metric_date <= ?
+    WHERE ${dateColumn} >= ? AND ${dateColumn} <= ?
   `;
   const replacements = [start, end];
   if (granularity === "hourly" && cutoffHour !== null && cutoffHour !== undefined) {
-    sql += ` AND metric_hour <= ?`;
+    sql += ` AND ${hourColumn} <= ?`;
     replacements.push(cutoffHour);
   }
   // Aggregate UTM tables already store canonical bucket values like literal
   // "direct", so they should be filtered by exact value instead of the
   // raw-table null/blank-aware direct mapping.
   sql = appendUtmWhere(sql, replacements, source.filters, false);
+  sql = appendProductFilter(sql, replacements, source.filters.product_id);
 
   const rows = await conn.query(sql, {
     type: QueryTypes.SELECT,
@@ -413,6 +465,8 @@ async function queryUtmAggregatePair(
   if (!source) {
     return null;
   }
+  const dateColumn = source.dateColumn || "metric_date";
+  const hourColumn = source.hourColumn || "metric_hour";
 
   const combinedStart =
     currentRange.start <= previousRange.start
@@ -424,15 +478,25 @@ async function queryUtmAggregatePair(
       : previousRange.end;
 
   const includeHour = granularity === "hourly";
-  const selectBuilder = buildUtmAggregateSelect("current", includeHour);
-  const previousSelectBuilder = buildUtmAggregateSelect("previous", includeHour);
+  const selectBuilder = buildUtmAggregateSelect(
+    "current",
+    includeHour,
+    dateColumn,
+    hourColumn,
+  );
+  const previousSelectBuilder = buildUtmAggregateSelect(
+    "previous",
+    includeHour,
+    dateColumn,
+    hourColumn,
+  );
 
   let sql = `
     SELECT
       ${selectBuilder.sql},
       ${previousSelectBuilder.sql}
     FROM ${source.table}
-    WHERE metric_date >= ? AND metric_date <= ?
+    WHERE ${dateColumn} >= ? AND ${dateColumn} <= ?
   `;
   const replacements = [
     ...selectBuilder.replacementsForRange(
@@ -453,6 +517,7 @@ async function queryUtmAggregatePair(
   // "direct", so they should be filtered by exact value instead of the
   // raw-table null/blank-aware direct mapping.
   sql = appendUtmWhere(sql, replacements, source.filters, false);
+  sql = appendProductFilter(sql, replacements, source.filters.product_id);
 
   const rows = await conn.query(sql, {
     type: QueryTypes.SELECT,
@@ -491,46 +556,50 @@ async function queryUtmAggregateRows(
   if (!source) {
     return null;
   }
+  const dateColumn = source.dateColumn || "metric_date";
+  const hourColumn = source.hourColumn || "metric_hour";
 
   let sql;
   const replacements = [start, end];
   if (granularity === "hourly") {
     sql = `
       SELECT
-        DATE_FORMAT(metric_date, '%Y-%m-%d') AS date,
-        metric_hour AS hour,
+        DATE_FORMAT(${dateColumn}, '%Y-%m-%d') AS date,
+        ${hourColumn} AS hour,
         COALESCE(SUM(sales), 0) AS sales,
         COALESCE(SUM(orders), 0) AS orders,
         COALESCE(SUM(sessions), 0) AS sessions,
         COALESCE(SUM(atc_sessions), 0) AS atc
       FROM ${source.table}
-      WHERE metric_date >= ? AND metric_date <= ?
+      WHERE ${dateColumn} >= ? AND ${dateColumn} <= ?
     `;
     if (cutoffHour !== null && cutoffHour !== undefined) {
-      sql += ` AND metric_hour <= ?`;
+      sql += ` AND ${hourColumn} <= ?`;
       replacements.push(cutoffHour);
     }
     // Aggregate UTM tables already store canonical bucket values like literal
     // "direct", so they should be filtered by exact value instead of the
     // raw-table null/blank-aware direct mapping.
     sql = appendUtmWhere(sql, replacements, source.filters, false);
-    sql += ` GROUP BY metric_date, metric_hour ORDER BY metric_date ASC, metric_hour ASC`;
+    sql = appendProductFilter(sql, replacements, source.filters.product_id);
+    sql += ` GROUP BY ${dateColumn}, ${hourColumn} ORDER BY ${dateColumn} ASC, ${hourColumn} ASC`;
   } else {
     sql = `
       SELECT
-        DATE_FORMAT(metric_date, '%Y-%m-%d') AS date,
+        DATE_FORMAT(${dateColumn}, '%Y-%m-%d') AS date,
         COALESCE(SUM(sales), 0) AS sales,
         COALESCE(SUM(orders), 0) AS orders,
         COALESCE(SUM(sessions), 0) AS sessions,
         COALESCE(SUM(atc_sessions), 0) AS atc
       FROM ${source.table}
-      WHERE metric_date >= ? AND metric_date <= ?
+      WHERE ${dateColumn} >= ? AND ${dateColumn} <= ?
     `;
     // Aggregate UTM tables already store canonical bucket values like literal
     // "direct", so they should be filtered by exact value instead of the
     // raw-table null/blank-aware direct mapping.
     sql = appendUtmWhere(sql, replacements, source.filters, false);
-    sql += ` GROUP BY metric_date ORDER BY metric_date ASC`;
+    sql = appendProductFilter(sql, replacements, source.filters.product_id);
+    sql += ` GROUP BY ${dateColumn} ORDER BY ${dateColumn} ASC`;
   }
 
   return conn.query(sql, {
@@ -725,23 +794,38 @@ async function queryDiscountAggregateRows(
   });
 }
 
-async function queryUtmSummaryFilterOptions(conn, start, end) {
+async function queryUtmSummaryFilterOptions(conn, start, end, filters = {}) {
   const [rows, discountRows, cityRows] = await Promise.all([
-    conn.query(
-    `
-      SELECT DISTINCT
-        utm_source,
-        utm_medium,
-        utm_campaign
-      FROM utm_source_medium_campaign_daily
-      WHERE metric_date >= ? AND metric_date <= ?
-      ORDER BY utm_source, utm_medium, utm_campaign
-    `,
-    {
-      type: QueryTypes.SELECT,
-      replacements: [start, end],
-    },
-  ),
+    hasValue(filters.product_id)
+      ? (() => {
+          const replacements = [start, end];
+          let sql = `
+            SELECT DISTINCT utm_source
+            FROM product_utm_daily
+            WHERE date >= ? AND date <= ?
+          `;
+          sql = appendProductFilter(sql, replacements, filters.product_id);
+          sql += ` ORDER BY utm_source`;
+          return conn.query(sql, {
+            type: QueryTypes.SELECT,
+            replacements,
+          });
+        })()
+      : conn.query(
+          `
+            SELECT DISTINCT
+              utm_source,
+              utm_medium,
+              utm_campaign
+            FROM utm_source_medium_campaign_daily
+            WHERE metric_date >= ? AND metric_date <= ?
+            ORDER BY utm_source, utm_medium, utm_campaign
+          `,
+          {
+            type: QueryTypes.SELECT,
+            replacements: [start, end],
+          },
+        ),
     conn.query(
       `
         SELECT DISTINCT discount_code
@@ -837,6 +921,7 @@ function buildSummaryFilterOptions(rows = []) {
 }
 
 module.exports = {
+  isCombinedProductUtmSourceFilter,
   appendProductFilter,
   appendDiscountWhere,
   hasDiscountFilter,

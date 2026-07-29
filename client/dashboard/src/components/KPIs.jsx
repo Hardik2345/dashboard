@@ -991,7 +991,7 @@ function buildDesktopMetrics({
         rtoMode === "O" ? (value) => nfInt.format(value) : (value) => nfPct.format(value),
       activeColor: "#f59e0b",
       hidden: !showRtoKpi,
-      unavailable: data.unavailable?.returns,
+      unavailable: data.unavailable?.rto ?? data.unavailable?.returns,
       loading,
       deltaLoading,
       selected: false,
@@ -1380,6 +1380,9 @@ export default function KPIs({
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
   const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
+  const hasScopedUtmSource = Array.isArray(utmSource)
+    ? utmSource.length > 0
+    : !!utmSource;
   const webVitalsData = useWebVitals(query, "PERFORMANCE", {
     usePerformanceSummary: true,
     disabled: !showWebVitals,
@@ -1405,8 +1408,14 @@ export default function KPIs({
 
     if (isProductScoped) {
       const base = brandKey
-        ? { start, end, brand_key: brandKey, product_id: scopedProductId }
-        : { start, end, product_id: scopedProductId };
+        ? {
+            start,
+            end,
+            brand_key: brandKey,
+            product_id: scopedProductId,
+            utm_source: utmSource,
+          }
+        : { start, end, product_id: scopedProductId, utm_source: utmSource };
 
       const summaryBase = {
         ...base,
@@ -1429,35 +1438,68 @@ export default function KPIs({
 
           const m = summaryResp?.metrics || {};
 
-          const orders = { value: resp.total_orders ?? 0 };
-          const sales = { value: resp.total_sales ?? 0 };
-          const aovValue = orders.value > 0 ? resp.total_sales / orders.value : 0;
+          const orders = {
+            value: hasScopedUtmSource ? (m.total_orders?.value ?? 0) : (resp.total_orders ?? 0),
+          };
+          const sales = {
+            value: hasScopedUtmSource ? (m.total_sales?.value ?? 0) : (resp.total_sales ?? 0),
+          };
+          const aovValue = hasScopedUtmSource
+            ? (m.average_order_value?.value ?? 0)
+            : orders.value > 0
+              ? resp.total_sales / orders.value
+              : 0;
           const funnel = {
-            total_sessions: resp.sessions ?? 0,
-            total_atc_sessions: resp.sessions_with_cart_additions ?? 0,
+            total_sessions: hasScopedUtmSource
+              ? (m.total_sessions?.value ?? 0)
+              : (resp.sessions ?? 0),
+            total_atc_sessions: hasScopedUtmSource
+              ? (m.total_atc_sessions?.value ?? 0)
+              : (resp.sessions_with_cart_additions ?? 0),
             total_orders: orders.value,
           };
           const cvr = {
-            cvr: resp.conversion_rate ?? 0,
-            cvr_percent: resp.conversion_rate_pct ?? 0,
+            cvr: hasScopedUtmSource
+              ? (m.conversion_rate?.value ?? 0) / 100
+              : (resp.conversion_rate ?? 0),
+            cvr_percent: hasScopedUtmSource
+              ? (m.conversion_rate?.value ?? 0)
+              : (resp.conversion_rate_pct ?? 0),
           };
           const aov = {
             aov: aovValue,
           };
           const returnsData = {
             cancelled_rate:
-              orders.value > 0 ? (resp.cancelled_orders ?? 0) / orders.value : 0,
+              orders.value > 0
+                ? hasScopedUtmSource
+                  ? (m.cancelled_orders?.value ?? 0) / orders.value
+                  : (resp.cancelled_orders ?? 0) / orders.value
+                : 0,
             refunded_rate:
-              orders.value > 0 ? (resp.refunded_orders ?? 0) / orders.value : 0,
+              orders.value > 0
+                ? hasScopedUtmSource
+                  ? (m.refunded_orders?.value ?? 0) / orders.value
+                  : (resp.refunded_orders ?? 0) / orders.value
+                : 0,
           };
           const rtoData = {
-            orders: resp.rto_orders ?? 0,
+            orders:
+              hasScopedUtmSource && m.rto_orders?.unavailable
+                ? 0
+                : hasScopedUtmSource
+                  ? (m.rto_orders?.value ?? 0)
+                  : (resp.rto_orders ?? 0),
             rate:
-              typeof resp.rto_rate === "number"
-                ? resp.rto_rate
-                : orders.value > 0
-                  ? (resp.rto_orders ?? 0) / orders.value
-                  : 0,
+              hasScopedUtmSource && m.rto_rate?.unavailable
+                ? 0
+                : hasScopedUtmSource
+                  ? ((m.rto_rate?.value ?? 0) / 100)
+                  : typeof resp.rto_rate === "number"
+                    ? resp.rto_rate
+                    : orders.value > 0
+                      ? (resp.rto_orders ?? 0) / orders.value
+                      : 0,
           };
 
           setData({
@@ -1538,11 +1580,14 @@ export default function KPIs({
             prevRtoOrders: m.rto_orders?.previous ?? null,
             prevRtoRate: m.rto_rate?.previous ?? null,
             unavailable: {
-              sessions: false,
-              atc: false,
+              sessions: !!m.total_sessions?.unavailable,
+              atc:
+                !!m.total_atc_sessions?.unavailable || !!m.atc_rate?.unavailable,
               ci: true,
-              cvr: false,
-              returns: false,
+              cvr: !!m.conversion_rate?.unavailable,
+              returns:
+                !!m.cancelled_orders?.unavailable || !!m.refunded_orders?.unavailable,
+              rto: !!m.rto_orders?.unavailable || !!m.rto_rate?.unavailable,
             },
           });
           setLoading(false);
@@ -1607,6 +1652,7 @@ export default function KPIs({
             ci: !!m.total_ci_events?.unavailable || !!m.checkout_rate?.unavailable,
             cvr: !!m.conversion_rate?.unavailable,
             returns: !!m.cancelled_orders?.unavailable || !!m.refunded_orders?.unavailable,
+            rto: !!m.rto_orders?.unavailable || !!m.rto_rate?.unavailable,
           };
           const returnsData = {
             cancelled_rate:
@@ -2109,7 +2155,7 @@ export default function KPIs({
                     onClick: () => setRtoMode((prev) => (prev === "O" ? "%" : "O")),
                   })}
                   value={rtoMode === "O" ? data.rtoData?.orders ?? 0 : data.rtoData?.rate ?? 0}
-                  unavailable={data.unavailable?.returns}
+                  unavailable={data.unavailable?.rto ?? data.unavailable?.returns}
                   loading={loading}
                   deltaLoading={deltaLoading}
                   formatter={

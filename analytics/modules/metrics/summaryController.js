@@ -96,6 +96,7 @@ function buildSummaryController({ metricsService }) {
             conn: normalized.spec.conn,
             start: normalized.spec.start,
             end: normalized.spec.end,
+            filters: normalized.spec.filters,
             timezone: normalized.spec.timezone,
           }),
         });

@@ -582,6 +582,7 @@ export async function getSummaryFilterOptions(args) {
     {
       start: args.start || args.date,
       end: args.end || args.date || args.start,
+      product_id: args.product_id,
     },
     args,
   );
@@ -1255,7 +1256,12 @@ export async function getMonthlyTrend(args) {
 
 export async function getTopProducts(args = {}) {
   const params = appendBrandKey(
-    { start: args.start, end: args.end, limit: args.limit },
+    {
+      start: args.start,
+      end: args.end,
+      limit: args.limit,
+      utm_source: args.utm_source,
+    },
     args,
   );
   const json = await getJSON("/metrics/top-products", params);

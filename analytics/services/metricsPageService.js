@@ -10,6 +10,9 @@ const {
 const {
   queryProductKpiTotals,
 } = require("./metricsAggregateService");
+const {
+  appendUtmWhere,
+} = require("../shared/utils/filters");
 
 function buildMetricsPageService({ cacheService } = {}) {
   async function getTopProductPages({
@@ -81,31 +84,117 @@ function buildMetricsPageService({ cacheService } = {}) {
     start,
     end,
     limit = 50,
+    filters = {},
     timezone = DEFAULT_TIMEZONE,
   }) {
-    const rows = await conn.query(
-      `
-        SELECT product_id,
-               MIN(landing_page_path) AS landing_page_path,
-               SUM(sessions) AS total_sessions,
-               SUM(sessions_with_cart_additions) AS total_atc_sessions
-        FROM mv_product_sessions_by_path_daily
-        WHERE product_id IS NOT NULL
-          AND product_id <> ''
-          AND date >= ? AND date <= ?
-        GROUP BY product_id
-        ORDER BY total_sessions DESC
-        LIMIT ${limit}
-      `,
-      {
-        type: QueryTypes.SELECT,
-        replacements: [start, end],
-      },
-    );
+    const resolvedTimezone = normalizeTimezone(timezone);
+    const today = getTodayInTimezone(resolvedTimezone, new Date());
+    const rangeIncludesToday = Boolean(start && end && start <= today && end >= today);
+    const hasUtmSource =
+      Array.isArray(filters.utm_source) ? filters.utm_source.length > 0 : !!filters.utm_source;
+
+    let rows = hasUtmSource
+      ? await (() => {
+          const replacements = [start, end, start, end];
+          let sql = `
+            SELECT
+              p.product_id,
+              lp.landing_page_path,
+              SUM(p.sessions) AS total_sessions,
+              SUM(p.atc_sessions) AS total_atc_sessions
+            FROM product_utm_daily p
+            LEFT JOIN (
+              SELECT product_id, MIN(landing_page_path) AS landing_page_path
+              FROM mv_product_sessions_by_path_daily
+              WHERE date >= ? AND date <= ?
+              GROUP BY product_id
+            ) lp ON lp.product_id = p.product_id
+            WHERE p.product_id IS NOT NULL
+              AND p.product_id <> ''
+              AND p.date >= ? AND p.date <= ?
+          `;
+          sql = appendUtmWhere(sql, replacements, { utm_source: filters.utm_source }, false);
+          sql += `
+            GROUP BY p.product_id, lp.landing_page_path
+            ORDER BY total_sessions DESC
+            LIMIT ${limit}
+          `;
+          return conn.query(sql, {
+            type: QueryTypes.SELECT,
+            replacements,
+          });
+        })()
+      : await conn.query(
+          `
+            SELECT product_id,
+                   MIN(landing_page_path) AS landing_page_path,
+                   SUM(sessions) AS total_sessions,
+                   SUM(sessions_with_cart_additions) AS total_atc_sessions
+            FROM mv_product_sessions_by_path_daily
+            WHERE product_id IS NOT NULL
+              AND product_id <> ''
+              AND date >= ? AND date <= ?
+            GROUP BY product_id
+            ORDER BY total_sessions DESC
+            LIMIT ${limit}
+          `,
+          {
+            type: QueryTypes.SELECT,
+            replacements: [start, end],
+          },
+        );
+
+    if ((!Array.isArray(rows) || rows.length === 0) && rangeIncludesToday) {
+      rows = hasUtmSource
+        ? await (() => {
+            const replacements = [start, end];
+            let sql = `
+              SELECT
+                product_id,
+                NULL AS landing_page_path,
+                SUM(sessions) AS total_sessions,
+                SUM(atc_sessions) AS total_atc_sessions
+              FROM product_utm_hourly
+              WHERE product_id IS NOT NULL
+                AND product_id <> ''
+                AND date >= ? AND date <= ?
+            `;
+            sql = appendUtmWhere(sql, replacements, { utm_source: filters.utm_source }, false);
+            sql += `
+              GROUP BY product_id
+              ORDER BY total_sessions DESC
+              LIMIT ${limit}
+            `;
+            return conn.query(sql, {
+              type: QueryTypes.SELECT,
+              replacements,
+            });
+          })()
+        : await conn.query(
+            `
+              SELECT
+                product_id,
+                MIN(landing_page_path) AS landing_page_path,
+                SUM(sessions) AS total_sessions,
+                SUM(sessions_with_cart_additions) AS total_atc_sessions
+              FROM hourly_product_sessions
+              WHERE product_id IS NOT NULL
+                AND product_id <> ''
+                AND date >= ? AND date <= ?
+              GROUP BY product_id
+              ORDER BY total_sessions DESC
+              LIMIT ${limit}
+            `,
+            {
+              type: QueryTypes.SELECT,
+              replacements: [start, end],
+            },
+          );
+    }
 
     return {
       brand_key: brandKey || null,
-      timezone,
+      timezone: resolvedTimezone,
       range: { start, end },
       products: rows.map((row, index) => {
         const totalSessions = Number(row.total_sessions || 0);
