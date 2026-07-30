@@ -80,6 +80,7 @@ const PERMISSION_OPTIONS = [
   "utm_funnel_table",
   "product_filter",
   "utm_filter",
+  "product_utm_filter_sync",
   "discount_filter",
   "ci_events",
   "rto_kpi",

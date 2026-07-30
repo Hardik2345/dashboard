@@ -124,6 +124,7 @@ export default function UnifiedFilterBar({
   onUtmChange,
   utmDisabled = false,
   disableUtmMediumCampaign = false,
+  allowProductUtmSync = false,
   salesChannel,
   onSalesChannelChange,
   deviceType,
@@ -474,7 +475,9 @@ export default function UnifiedFilterBar({
       : "";
   const disabledProductTooltip = discountCode
     ? "Clear discount filter to use product filter"
-    : "Clear UTM filters to use product filter";
+    : allowProductUtmSync
+      ? "Clear UTM medium/campaign filters to use product filter"
+      : "Clear UTM filters to use product filter";
 
 
   return (

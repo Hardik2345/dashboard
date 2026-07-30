@@ -6,6 +6,14 @@ const {
 } = require('./requestNormalizer');
 const { resolveShopSubdomain } = require('../../shared/utils/shop');
 
+function canSyncProductUtmFilters(req) {
+  if (req?.user?.isAuthor) return true;
+  const permissions = Array.isArray(req?.user?.permissions) ? req.user.permissions : [];
+  return (
+    permissions.includes("all") ||
+    permissions.includes("product_utm_filter_sync")
+  );
+}
 
 function buildProductController({ pageService }) {
   return {
@@ -62,7 +70,12 @@ function buildProductController({ pageService }) {
             start: rangeStart,
             end: rangeEnd,
             limit,
-            filters: extractFilters(req),
+            filters: canSyncProductUtmFilters(req)
+              ? extractFilters(req)
+              : {
+                  ...extractFilters(req),
+                  utm_source: null,
+                },
             timezone: req.tenantRoute?.timezone,
           }),
         );
