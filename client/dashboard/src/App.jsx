@@ -32,6 +32,7 @@ import LayoutPanelsIcon from "./components/ui/LayoutPanelsIcon.jsx";
 import SidebarToggle from "./components/ui/SidebarToggle.jsx";
 import InlineDashboardLayoutEditor from "./components/InlineDashboardLayoutEditor.jsx";
 import DashboardUnavailableCard from "./components/DashboardUnavailableCard.jsx";
+import MaintenanceScreen from "./components/MaintenanceScreen.jsx";
 
 import {
   LayoutGrid,
@@ -293,7 +294,7 @@ export default function App() {
   const dispatch = useAppDispatch();
   const authState = useAppSelector((state) => state.auth);
   const globalBrandKey = useAppSelector((state) => state.brand.brand);
-  const { user, initialized, loginStatus, loginError } = useAppSelector(
+  const { user, initialized, loginStatus, loginError, maintenanceMode } = useAppSelector(
     (state) => state.auth,
   );
   const {
@@ -3196,6 +3197,10 @@ export default function App() {
   }
 
   if (!initialized) return null;
+
+  if (maintenanceMode) {
+    return <MaintenanceScreen />;
+  }
 
   if (!user) {
     const params = new URLSearchParams(window.location.search);
