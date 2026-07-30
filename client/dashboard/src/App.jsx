@@ -891,6 +891,11 @@ export default function App() {
       Array.isArray(value) ? value.length > 0 : !!value,
     );
   }, [utm]);
+  const hasActiveSourceUtmFilter = useMemo(() => {
+    const value = utm?.source;
+    return Array.isArray(value) ? value.length > 0 : !!value;
+  }, [utm]);
+  const canSyncProductUtmFilters = hasPermission("product_utm_filter_sync");
 
   useEffect(() => {
     if (!isAuthor && viewerBrands.length) {
@@ -908,7 +913,9 @@ export default function App() {
     const base = { start: formatDate(start), end: formatDate(end) };
     const key = (activeBrandKey || "").toString().trim().toUpperCase();
     if (key) base.brand_key = key;
-    if (utm?.source) base.utm_source = utm.source;
+    if (utm?.source && (!hasActiveProductFilter || canSyncProductUtmFilters)) {
+      base.utm_source = utm.source;
+    }
     if (utm?.medium) base.utm_medium = utm.medium;
     if (utm?.campaign) base.utm_campaign = utm.campaign;
     if (utm?.term) base.utm_term = utm.term;
@@ -954,6 +961,8 @@ export default function App() {
     salesChannel,
     deviceType,
     city,
+    hasActiveProductFilter,
+    canSyncProductUtmFilters,
   ]);
 
   // General Query (Legacy / Single Value Fallback)
@@ -1860,7 +1869,7 @@ export default function App() {
       limit: 50,
       brand_key: activeBrandKey,
     };
-    if (utm?.source && utm.source.length > 0) {
+    if (canSyncProductUtmFilters && utm?.source && utm.source.length > 0) {
       params.utm_source = utm.source;
     }
 
@@ -1946,6 +1955,7 @@ export default function App() {
     authorRefreshKey,
     productSelection,
     utm?.source,
+    canSyncProductUtmFilters,
     initialized,
     user,
     isAuthor,
@@ -2035,19 +2045,32 @@ export default function App() {
 
   const handleProductChange = useCallback(
     (value) => {
+      if (!canSyncProductUtmFilters && hasActiveUtmFilter) {
+        dispatch(
+          setUtm({
+            source: [],
+            medium: [],
+            campaign: [],
+            term: [],
+            content: [],
+          }),
+        );
+      }
       dispatch(setProductSelection(value || DEFAULT_PRODUCT_OPTION));
       dispatch(setDiscountCode(""));
     },
-    [dispatch],
+    [canSyncProductUtmFilters, dispatch, hasActiveUtmFilter],
   );
 
   const handleUtmChange = useCallback(
     (val) => {
-      // Simply dispatch the new UTM object; multiselect logic is handled in the components
+      if (!canSyncProductUtmFilters && hasActiveProductFilter) {
+        dispatch(setProductSelection(DEFAULT_PRODUCT_OPTION));
+      }
       dispatch(setUtm(val));
       dispatch(setDiscountCode(""));
     },
-    [dispatch],
+    [canSyncProductUtmFilters, dispatch, hasActiveProductFilter],
   );
 
   const handleSalesChannelChange = useCallback(
@@ -2955,6 +2978,19 @@ export default function App() {
     }
   }, [start, end, utm, dispatch, dataRestrictionConfig]);
 
+  useEffect(() => {
+    if (canSyncProductUtmFilters) return;
+    if (!hasActiveProductFilter || !hasActiveSourceUtmFilter) return;
+    dispatch(
+      setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }),
+    );
+  }, [
+    canSyncProductUtmFilters,
+    dispatch,
+    hasActiveProductFilter,
+    hasActiveSourceUtmFilter,
+  ]);
+
   // Fetch UTM Options (Lifted from MobileTopBar)
   // Fetch UTM Options (Lifted from MobileTopBar)
   const lastFetchParams = useMemo(() => {
@@ -2980,7 +3016,7 @@ export default function App() {
       brand_key: activeBrandKey,
       start: formatDate(start),
       end: formatDate(end),
-      product_id: selectedProductIds,
+      product_id: canSyncProductUtmFilters ? selectedProductIds : undefined,
     })
       .then((res) => {
         if (res.filter_options) {
@@ -2988,7 +3024,15 @@ export default function App() {
         }
       })
       .catch(() => {});
-  }, [lastFetchParams, activeBrandKey, start, end, isLongRangeDashboard, selectedProductIds]);
+  }, [
+    lastFetchParams,
+    activeBrandKey,
+    start,
+    end,
+    isLongRangeDashboard,
+    selectedProductIds,
+    canSyncProductUtmFilters,
+  ]);
 
   // Sync funnel data with product table's Curr date when on Funnels tab
   useEffect(() => {
@@ -3494,12 +3538,20 @@ export default function App() {
                         productOptions={productOptions}
                         productValue={productSelection}
                         onProductChange={handleProductChange}
-                        productDisabled={hasActiveNonSourceUtmFilter || !!discountCode}
+                        productDisabled={
+                          (canSyncProductUtmFilters
+                            ? hasActiveNonSourceUtmFilter
+                            : hasActiveUtmFilter) || !!discountCode
+                        }
                         productLoading={productOptionsLoading}
                         utm={utm}
                         onUtmChange={handleUtmChange}
-                        utmDisabled={!!discountCode}
+                        utmDisabled={
+                          !!discountCode ||
+                          (!canSyncProductUtmFilters && hasActiveProductFilter)
+                        }
                         disableUtmMediumCampaign={hasActiveProductFilter}
+                        allowProductUtmSync={canSyncProductUtmFilters}
                         salesChannel={salesChannel}
                         onSalesChannelChange={handleSalesChannelChange}
                         deviceType={deviceType}
@@ -3595,12 +3647,20 @@ export default function App() {
                       productOptions={productOptions}
                       productValue={productSelection}
                       onProductChange={handleProductChange}
-                      productDisabled={hasActiveNonSourceUtmFilter || !!discountCode}
+                      productDisabled={
+                        (canSyncProductUtmFilters
+                          ? hasActiveNonSourceUtmFilter
+                          : hasActiveUtmFilter) || !!discountCode
+                      }
                       productLoading={productOptionsLoading}
                       utm={utm}
                       onUtmChange={handleUtmChange}
-                      utmDisabled={!!discountCode}
+                      utmDisabled={
+                        !!discountCode ||
+                        (!canSyncProductUtmFilters && hasActiveProductFilter)
+                      }
                       disableUtmMediumCampaign={hasActiveProductFilter}
+                      allowProductUtmSync={canSyncProductUtmFilters}
                       salesChannel={salesChannel}
                       onSalesChannelChange={handleSalesChannelChange}
                       deviceType={deviceType}
@@ -3637,11 +3697,19 @@ export default function App() {
                   productOptions={productOptions}
                   productValue={productSelection}
                   onProductChange={handleProductChange}
-                  productDisabled={hasActiveNonSourceUtmFilter || !!discountCode}
+                  productDisabled={
+                    (canSyncProductUtmFilters
+                      ? hasActiveNonSourceUtmFilter
+                      : hasActiveUtmFilter) || !!discountCode
+                  }
                   utm={utm}
                   onUtmChange={handleUtmChange}
-                  utmDisabled={!!discountCode}
+                  utmDisabled={
+                    !!discountCode ||
+                    (!canSyncProductUtmFilters && hasActiveProductFilter)
+                  }
                   disableUtmMediumCampaign={hasActiveProductFilter}
+                  allowProductUtmSync={canSyncProductUtmFilters}
                   salesChannel={salesChannel}
                   onSalesChannelChange={handleSalesChannelChange}
                   deviceType={deviceType}

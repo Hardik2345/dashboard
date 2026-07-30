@@ -37,6 +37,15 @@ function extractSingleParam(val) {
   return values.length > 0 ? values[0] : null;
 }
 
+function canSyncProductUtmFilters(req) {
+  if (req?.user?.isAuthor) return true;
+  const permissions = Array.isArray(req?.user?.permissions) ? req.user.permissions : [];
+  return (
+    permissions.includes("all") ||
+    permissions.includes("product_utm_filter_sync")
+  );
+}
+
 // ── Clause builders ────────────────────────────────────────────────────────────
 
 function buildDeviceTypeUserAgentClause(deviceType, column = "user_agent") {
@@ -169,16 +178,23 @@ function extractFilters(req) {
 
   // Suppress UTM filters for date ranges exceeding 30 days to prevent heavy queries.
   const ignoreUtms = start && end && daysInclusive(start, end) > 30;
+  const allowProductUtmSync = canSyncProductUtmFilters(req);
+  const rawProductId = extractUtmParam(product_id);
+  const rawUtmSource = ignoreUtms ? null : extractUtmParam(utm_source);
+  const hasProduct = Array.isArray(rawProductId) ? rawProductId.length > 0 : !!rawProductId;
+  const hasSource = Array.isArray(rawUtmSource) ? rawUtmSource.length > 0 : !!rawUtmSource;
+  const sanitizedUtmSource =
+    !allowProductUtmSync && hasProduct && hasSource ? null : rawUtmSource;
 
   return {
-    utm_source: ignoreUtms ? null : extractUtmParam(utm_source),
+    utm_source: sanitizedUtmSource,
     utm_medium: ignoreUtms ? null : extractUtmParam(utm_medium),
     utm_campaign: ignoreUtms ? null : extractUtmParam(utm_campaign),
     utm_term: ignoreUtms ? null : extractUtmParam(utm_term),
     utm_content: ignoreUtms ? null : extractUtmParam(utm_content),
     sales_channel: extractUtmParam(sales_channel),
     device_type: extractUtmParam(device_type),
-    product_id: extractUtmParam(product_id),
+    product_id: rawProductId,
     discount_code: extractSingleParam(discount_code),
     city: extractUtmParam(city),
   };

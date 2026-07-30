@@ -49,6 +49,15 @@ function calculatePeriodAverage(rows) {
   return rows.reduce((sum, row) => sum + Number(row.avg_performance || 0), 0) / rows.length;
 }
 
+function canSyncProductUtmFilters(req) {
+  if (req?.user?.isAuthor) return true;
+  const permissions = Array.isArray(req?.user?.permissions) ? req.user.permissions : [];
+  return (
+    permissions.includes("all") ||
+    permissions.includes("product_utm_filter_sync")
+  );
+}
+
 function buildSummaryController({ metricsService }) {
   return {
     dashboardSummary: async (req, res) => {
@@ -96,7 +105,12 @@ function buildSummaryController({ metricsService }) {
             conn: normalized.spec.conn,
             start: normalized.spec.start,
             end: normalized.spec.end,
-            filters: normalized.spec.filters,
+            filters: canSyncProductUtmFilters(req)
+              ? normalized.spec.filters
+              : {
+                  ...normalized.spec.filters,
+                  product_id: null,
+                },
             timezone: normalized.spec.timezone,
           }),
         });

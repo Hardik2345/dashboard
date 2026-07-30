@@ -55,6 +55,7 @@ export default function MobileFilterDrawer({
   onUtmChange,
   utmDisabled = false,
   disableUtmMediumCampaign = false,
+  allowProductUtmSync = false,
   salesChannel = "",
   onSalesChannelChange,
   city = [],
@@ -200,7 +201,7 @@ export default function MobileFilterDrawer({
       brand_key: tempBrand,
       start: lastFetchParams.start,
       end: lastFetchParams.end,
-      product_id: selectedProductIds,
+      product_id: allowProductUtmSync ? selectedProductIds : undefined,
     })
       .then((res) => {
         if (res.filter_options) {
@@ -208,7 +209,17 @@ export default function MobileFilterDrawer({
         }
       })
       .catch((err) => console.error("Failed to load UTM options", err));
-  }, [lastFetchParams, propUtmOptions, dateRange, normalizedRestrictionConfig, open, tempBrand, tempProduct, productValue]);
+  }, [
+    lastFetchParams,
+    propUtmOptions,
+    dateRange,
+    normalizedRestrictionConfig,
+    open,
+    tempBrand,
+    tempProduct,
+    productValue,
+    allowProductUtmSync,
+  ]);
 
   useEffect(() => {
     if (!open || !tempBrand || !dateRange?.[0] || !dateRange?.[1]) return;
@@ -220,7 +231,7 @@ export default function MobileFilterDrawer({
       limit: 50,
     };
 
-    if (tempUtm?.source && tempUtm.source.length > 0) {
+    if (allowProductUtmSync && tempUtm?.source && tempUtm.source.length > 0) {
       params.utm_source = tempUtm.source;
     }
 
@@ -246,7 +257,7 @@ export default function MobileFilterDrawer({
         ]);
       })
       .catch(() => {});
-  }, [open, tempBrand, tempUtm?.source, dateRange]);
+  }, [open, tempBrand, tempUtm?.source, dateRange, allowProductUtmSync]);
 
   const handleBack = () => {
     if (
@@ -829,7 +840,9 @@ export default function MobileFilterDrawer({
                       {isDateRangeOver30Days
                         ? dataRestrictionDescription
                         : isUtmBlocked
-                          ? "Clear discount filter first"
+                          ? discountCode
+                            ? "Clear discount filter first"
+                            : "Clear product filter first"
                           : activeUtmCount > 0
                           ? `${activeUtmCount} Active`
                           : "All"}
