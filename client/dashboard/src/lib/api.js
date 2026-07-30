@@ -8,6 +8,10 @@ function resolveApiBase() {
 
 const API_BASE = resolveApiBase();
 
+function isMaintenanceStatus(status) {
+  return status === 502 || status === 503 || status === 504;
+}
+
 function qs(params) {
   const parts = [];
   Object.entries(params).forEach(([k, v]) => {
@@ -316,6 +320,9 @@ export async function login(email, password) {
       body: JSON.stringify({ email, password }),
     });
     const json = await res.json().catch(() => ({}));
+    if (isMaintenanceStatus(res.status) || json?.error === "service_temporarily_unavailable") {
+      return { error: true, unavailable: true, status: res.status, data: json };
+    }
     if (!res.ok || !json.access_token)
       return { error: true, status: res.status, data: json };
     window.localStorage.setItem("gateway_access_token", json.access_token);
@@ -342,12 +349,18 @@ export async function logout() {
 export async function me() {
   try {
     const res = await fetchWithAuth(`${API_BASE}/auth/me`);
+    const json = await res.json().catch(() => ({}));
+    if (
+      isMaintenanceStatus(res.status) ||
+      json?.error === "service_temporarily_unavailable"
+    ) {
+      return { authenticated: false, unavailable: true, status: res.status };
+    }
     if (res.status === 401) return { authenticated: false, status: res.status };
     if (!res.ok) return { authenticated: false, status: res.status };
-    const json = await res.json();
     return { authenticated: true, user: json.user, expiresAt: json.expiresAt };
   } catch {
-    return { authenticated: false };
+    return { authenticated: false, unavailable: true };
   }
 }
 
