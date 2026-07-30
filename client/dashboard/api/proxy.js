@@ -102,8 +102,10 @@ function sendMaintenanceResponse(req, res, status = 502) {
       }
       .brand img {
         display: block;
-        width: 148px;
-        height: auto;
+        width: 164px;
+        height: 70px;
+        object-fit: cover;
+        object-position: top center;
       }
       h1 {
         margin: 0 0 16px;
