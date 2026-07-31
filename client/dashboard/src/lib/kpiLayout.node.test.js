@@ -44,6 +44,13 @@ test("paginateKpiIds chunks cards into fixed pages", () => {
   assert.deepEqual(pages, [["a", "b"], ["c", "d"], ["e"]]);
 });
 
+test("default KPI order paginates into two desktop pages", () => {
+  const pages = paginateKpiIds(DEFAULT_DESKTOP_KPI_ORDER);
+  assert.equal(pages.length, 2);
+  assert.deepEqual(pages[0], DEFAULT_DESKTOP_KPI_ORDER.slice(0, 8));
+  assert.deepEqual(pages[1], DEFAULT_DESKTOP_KPI_ORDER.slice(8));
+});
+
 test("reorderDesktopKpiLayout reorders only within the same pinned partition", () => {
   const base = {
     order: ["orders", "revenue", "sessions", "aov"],

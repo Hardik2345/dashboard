@@ -11,6 +11,9 @@ const DEFAULT_DESKTOP_KPI_ORDER = Object.freeze([
   "checkout",
   "cvr",
   "rto",
+  "high_intent",
+  "medium_intent",
+  "low_intent",
 ]);
 
 const DEFAULT_DESKTOP_KPI_LAYOUT = Object.freeze({

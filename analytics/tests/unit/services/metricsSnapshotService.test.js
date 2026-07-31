@@ -4,6 +4,23 @@ const {
   buildMetricsSnapshotService,
 } = require("../../../services/metricsSnapshotService");
 
+const DEFAULT_INTENT_PAIR_ROW = {
+  current_high_sessions: 0,
+  current_medium_sessions: 0,
+  current_low_sessions: 0,
+  current_high_pct_weighted: 0,
+  current_medium_pct_weighted: 0,
+  current_low_pct_weighted: 0,
+  current_total_sessions: 0,
+  previous_high_sessions: 0,
+  previous_medium_sessions: 0,
+  previous_low_sessions: 0,
+  previous_high_pct_weighted: 0,
+  previous_medium_pct_weighted: 0,
+  previous_low_pct_weighted: 0,
+  previous_total_sessions: 0,
+};
+
 describe("metricsSnapshotService", () => {
   afterEach(() => {
     jest.restoreAllMocks();
@@ -54,7 +71,7 @@ describe("metricsSnapshotService", () => {
       "2026-03-30",
       "2026-03-29",
     ]);
-    expect(conn.query).toHaveBeenCalledTimes(4);
+    expect(conn.query).toHaveBeenCalledTimes(5);
     expect(response.metrics.total_sales).toEqual({
       value: 500,
       previous: 200,
@@ -66,6 +83,93 @@ describe("metricsSnapshotService", () => {
       current: "cache+db_returns",
       previous: "cache+db_returns",
       hourly_cutoff: null,
+    });
+  });
+
+  test("returns intent summary metrics for current and previous ranges", async () => {
+    const conn = {
+      query: jest
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            current_total_orders: 100,
+            current_total_sales: 1000,
+            current_total_sessions: 400,
+            current_total_atc_sessions: 80,
+            previous_total_orders: 80,
+            previous_total_sales: 720,
+            previous_total_sessions: 320,
+            previous_total_atc_sessions: 48,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            current_cancelled_orders: 4,
+            current_refunded_orders: 1,
+            previous_cancelled_orders: 3,
+            previous_refunded_orders: 1,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            current_high_sessions: 40,
+            current_medium_sessions: 210,
+            current_low_sessions: 150,
+            current_high_pct_weighted: 4000,
+            current_medium_pct_weighted: 21000,
+            current_low_pct_weighted: 15000,
+            current_total_sessions: 400,
+            previous_high_sessions: 16,
+            previous_medium_sessions: 160,
+            previous_low_sessions: 144,
+            previous_high_pct_weighted: 1600,
+            previous_medium_pct_weighted: 16000,
+            previous_low_pct_weighted: 14400,
+            previous_total_sessions: 320,
+          },
+        ]),
+    };
+
+    const service = buildMetricsSnapshotService({
+      now: () => new Date("2026-03-20T06:30:00Z"),
+    });
+    const response = await service.getDashboardSummary({
+      conn,
+      brandKey: "PTS",
+      start: "2026-03-10",
+      end: "2026-03-15",
+      compareStart: "2026-03-04",
+      compareEnd: "2026-03-09",
+      filters: {},
+    });
+
+    expect(response.metrics.high_intent_sessions).toEqual({
+      value: 40,
+      previous: 16,
+      diff: 24,
+      diff_pct: 150,
+      direction: "up",
+    });
+    expect(response.metrics.medium_intent_sessions).toEqual({
+      value: 210,
+      previous: 160,
+      diff: 50,
+      diff_pct: 31.25,
+      direction: "up",
+    });
+    expect(response.metrics.low_intent_percent).toEqual({
+      value: 37.5,
+      previous: 45,
+      diff: -7.5,
+      diff_pct: -16.666666666666664,
+      direction: "down",
+    });
+    expect(response.metrics.high_intent_percent).toEqual({
+      value: 10,
+      previous: 5,
+      diff: 5,
+      diff_pct: 100,
+      direction: "up",
     });
   });
 
@@ -199,6 +303,10 @@ describe("metricsSnapshotService", () => {
           ]);
         }
 
+        if (sql.includes("FROM daily_user_intent_summary")) {
+          return Promise.resolve([DEFAULT_INTENT_PAIR_ROW]);
+        }
+
         throw new Error(`Unexpected SQL: ${sql}`);
       }),
     };
@@ -318,6 +426,9 @@ describe("metricsSnapshotService", () => {
           }
           return Promise.resolve([{ total_sessions: 300, total_atc_sessions: 45 }]);
         }
+        if (sql.includes("FROM daily_user_intent_summary")) {
+          return Promise.resolve([DEFAULT_INTENT_PAIR_ROW]);
+        }
         throw new Error(`Unexpected SQL: ${sql}`);
       }),
     };
@@ -390,7 +501,7 @@ describe("metricsSnapshotService", () => {
       filters: {},
     });
 
-    expect(conn.query).toHaveBeenCalledTimes(2);
+    expect(conn.query).toHaveBeenCalledTimes(3);
     expect(response.metrics.total_orders).toEqual({
       value: 100,
       previous: 60,
@@ -447,7 +558,7 @@ describe("metricsSnapshotService", () => {
       filters: { utm_source: "google", utm_medium: "cpc" },
     });
 
-    expect(conn.query).toHaveBeenCalledTimes(3);
+    expect(conn.query).toHaveBeenCalledTimes(4);
     expect(conn.query.mock.calls[0][0]).toContain("FROM utm_source_medium_daily");
     expect(response.metrics.total_orders).toEqual({
       value: 12,
@@ -561,6 +672,10 @@ describe("metricsSnapshotService", () => {
           return Promise.resolve([
             { total_ci_events: cutoffHour === 11 ? 16 : 17 },
           ]);
+        }
+
+        if (sql.includes("FROM daily_user_intent_summary")) {
+          return Promise.resolve([DEFAULT_INTENT_PAIR_ROW]);
         }
 
         throw new Error(`Unexpected SQL: ${sql}`);
@@ -707,7 +822,7 @@ describe("metricsSnapshotService", () => {
       filters: { discount_code: "SAVE10" },
     });
 
-    expect(conn.query).toHaveBeenCalledTimes(3);
+    expect(conn.query).toHaveBeenCalledTimes(4);
     expect(conn.query.mock.calls[0][0]).toContain("FROM dashboard_discount_daily");
     expect(response.metrics.total_orders.value).toBe(12);
     expect(response.metrics.total_sales.value).toBe(1200);
@@ -748,6 +863,9 @@ describe("metricsSnapshotService", () => {
         }
         if (sql.includes("SUM(ci_events)")) {
           return Promise.resolve([{ total_ci_events: 0 }]);
+        }
+        if (sql.includes("FROM daily_user_intent_summary")) {
+          return Promise.resolve([DEFAULT_INTENT_PAIR_ROW]);
         }
         throw new Error(`Unexpected SQL: ${sql}`);
       }),
@@ -824,6 +942,9 @@ describe("metricsSnapshotService", () => {
         }
         if (sql.includes("SUM(ci_events)")) {
           return Promise.resolve([{ total_ci_events: 0 }]);
+        }
+        if (sql.includes("FROM daily_user_intent_summary")) {
+          return Promise.resolve([DEFAULT_INTENT_PAIR_ROW]);
         }
         throw new Error(`Unexpected SQL: ${sql}`);
       }),

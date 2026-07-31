@@ -854,6 +854,103 @@ function buildCachedSnapshot(
   };
 }
 
+function emptyIntentAggregate() {
+  return {
+    high_intent_sessions: 0,
+    medium_intent_sessions: 0,
+    low_intent_sessions: 0,
+    high_intent_percent: 0,
+    medium_intent_percent: 0,
+    low_intent_percent: 0,
+  };
+}
+
+async function queryIntentSummaryPair(conn, currentRange, previousRange) {
+  const rows = await conn.query(
+    `
+      SELECT
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN high_sessions ELSE 0 END), 0) AS current_high_sessions,
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN medium_sessions ELSE 0 END), 0) AS current_medium_sessions,
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN low_sessions ELSE 0 END), 0) AS current_low_sessions,
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN (high_intent_pct * total_sessions) ELSE 0 END), 0) AS current_high_pct_weighted,
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN (medium_intent_pct * total_sessions) ELSE 0 END), 0) AS current_medium_pct_weighted,
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN (low_intent_pct * total_sessions) ELSE 0 END), 0) AS current_low_pct_weighted,
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_sessions ELSE 0 END), 0) AS current_total_sessions,
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN high_sessions ELSE 0 END), 0) AS previous_high_sessions,
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN medium_sessions ELSE 0 END), 0) AS previous_medium_sessions,
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN low_sessions ELSE 0 END), 0) AS previous_low_sessions,
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN (high_intent_pct * total_sessions) ELSE 0 END), 0) AS previous_high_pct_weighted,
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN (medium_intent_pct * total_sessions) ELSE 0 END), 0) AS previous_medium_pct_weighted,
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN (low_intent_pct * total_sessions) ELSE 0 END), 0) AS previous_low_pct_weighted,
+        COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_sessions ELSE 0 END), 0) AS previous_total_sessions
+      FROM daily_user_intent_summary
+      WHERE (date >= ? AND date <= ?) OR (date >= ? AND date <= ?)
+    `,
+    {
+      type: QueryTypes.SELECT,
+      replacements: [
+        currentRange.start, currentRange.end,
+        currentRange.start, currentRange.end,
+        currentRange.start, currentRange.end,
+        currentRange.start, currentRange.end,
+        currentRange.start, currentRange.end,
+        currentRange.start, currentRange.end,
+        currentRange.start, currentRange.end,
+        previousRange.start, previousRange.end,
+        previousRange.start, previousRange.end,
+        previousRange.start, previousRange.end,
+        previousRange.start, previousRange.end,
+        previousRange.start, previousRange.end,
+        previousRange.start, previousRange.end,
+        previousRange.start, previousRange.end,
+        currentRange.start, currentRange.end,
+        previousRange.start, previousRange.end,
+      ],
+    },
+  );
+
+  const row = rows?.[0] || {};
+  const currentTotalSessions = Number(row.current_total_sessions || 0);
+  const previousTotalSessions = Number(row.previous_total_sessions || 0);
+
+  return {
+    current: {
+      high_intent_sessions: Number(row.current_high_sessions || 0),
+      medium_intent_sessions: Number(row.current_medium_sessions || 0),
+      low_intent_sessions: Number(row.current_low_sessions || 0),
+      high_intent_percent:
+        currentTotalSessions > 0
+          ? Number(row.current_high_pct_weighted || 0) / currentTotalSessions
+          : 0,
+      medium_intent_percent:
+        currentTotalSessions > 0
+          ? Number(row.current_medium_pct_weighted || 0) / currentTotalSessions
+          : 0,
+      low_intent_percent:
+        currentTotalSessions > 0
+          ? Number(row.current_low_pct_weighted || 0) / currentTotalSessions
+          : 0,
+    },
+    previous: {
+      high_intent_sessions: Number(row.previous_high_sessions || 0),
+      medium_intent_sessions: Number(row.previous_medium_sessions || 0),
+      low_intent_sessions: Number(row.previous_low_sessions || 0),
+      high_intent_percent:
+        previousTotalSessions > 0
+          ? Number(row.previous_high_pct_weighted || 0) / previousTotalSessions
+          : 0,
+      medium_intent_percent:
+        previousTotalSessions > 0
+          ? Number(row.previous_medium_pct_weighted || 0) / previousTotalSessions
+          : 0,
+      low_intent_percent:
+        previousTotalSessions > 0
+          ? Number(row.previous_low_pct_weighted || 0) / previousTotalSessions
+          : 0,
+    },
+  };
+}
+
 function buildSummaryMetric(currentValue, previousValue, deltaCurrent = currentValue, deltaPrevious = previousValue) {
   const diff = Number(deltaCurrent || 0) - Number(deltaPrevious || 0);
   const pct = computePercentDelta(Number(deltaCurrent || 0), Number(deltaPrevious || 0));
@@ -1982,6 +2079,13 @@ function buildMetricsSnapshotService(deps = {}) {
     const deltaCurrentRowTwo = deltaRowTwoComparison?.current || deltaCurrent;
     const deltaPreviousRowTwo =
       deltaRowTwoComparison?.previous || deltaPrevious;
+    const intentPair = await queryIntentSummaryPair(
+      spec.conn,
+      { start: spec.start, end: spec.end },
+      compareRange,
+    );
+    const currentIntent = intentPair.current || emptyIntentAggregate();
+    const previousIntent = intentPair.previous || emptyIntentAggregate();
     const checkoutInitiatedPair = cityActive
       ? { current: null, previous: null }
       : await queryCheckoutInitiatedPair(
@@ -2117,6 +2221,30 @@ function buildMetricsSnapshotService(deps = {}) {
               deltaCurrent.rto_rate_percent,
               deltaPrevious.rto_rate_percent,
             ),
+        high_intent_sessions: buildSummaryMetric(
+          currentIntent.high_intent_sessions,
+          previousIntent.high_intent_sessions,
+        ),
+        medium_intent_sessions: buildSummaryMetric(
+          currentIntent.medium_intent_sessions,
+          previousIntent.medium_intent_sessions,
+        ),
+        low_intent_sessions: buildSummaryMetric(
+          currentIntent.low_intent_sessions,
+          previousIntent.low_intent_sessions,
+        ),
+        high_intent_percent: buildSummaryMetric(
+          currentIntent.high_intent_percent,
+          previousIntent.high_intent_percent,
+        ),
+        medium_intent_percent: buildSummaryMetric(
+          currentIntent.medium_intent_percent,
+          previousIntent.medium_intent_percent,
+        ),
+        low_intent_percent: buildSummaryMetric(
+          currentIntent.low_intent_percent,
+          previousIntent.low_intent_percent,
+        ),
       },
       sources: {
         current: current.source,
