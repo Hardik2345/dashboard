@@ -2523,6 +2523,7 @@ export default function App() {
     () => ({
       kpi_cards: (
         <KPIs
+          variant="desktop_paged"
           key={`mobile-kpis-${layoutEditMode ? "edit" : "view"}-${effectiveDashboardLayout.kpiCardsDesktop.order.join("|")}-${effectiveDashboardLayout.kpiCardsDesktop.pinned.join("|")}`}
           query={trendMetricsQuery}
           selectedMetrics={selectedMetrics}

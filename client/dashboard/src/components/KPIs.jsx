@@ -711,6 +711,12 @@ function buildDesktopMetrics({
   onCancellationModeToggle,
   rtoMode,
   onRtoModeToggle,
+  highIntentMode,
+  onHighIntentModeToggle,
+  mediumIntentMode,
+  onMediumIntentModeToggle,
+  lowIntentMode,
+  onLowIntentModeToggle,
   selectedMetrics,
   activeMetric,
   showCiEvents,
@@ -751,6 +757,49 @@ function buildDesktopMetrics({
       showSelectionIndicator: undefined,
     };
   };
+
+  const createIntentCard = ({
+    id,
+    label,
+    mode,
+    onModeToggle,
+    sessions,
+    percent,
+    sessionsDelta,
+    percentDelta,
+    prevSessions,
+    prevPercent,
+    activeColor,
+  }) => ({
+    id,
+    label,
+    action: renderToggle({
+      leftActive: mode === "S",
+      leftLabel: "S",
+      rightActive: mode === "%",
+      rightLabel: "%",
+      leftColor: activeColor,
+      rightColor: activeColor,
+      onClick: onModeToggle,
+    }),
+    value: mode === "S" ? sessions : percent,
+    formatter: mode === "S" ? (value) => nfInt.format(value) : (value) => nfPct.format(value),
+    delta:
+      mode === "S"
+        ? sessionsDelta
+          ? { value: sessionsDelta.diff_pct, direction: sessionsDelta.direction }
+          : undefined
+        : percentDelta
+          ? { value: percentDelta.diff_pct, direction: percentDelta.direction }
+          : undefined,
+    compareValue: compareMode ? (mode === "S" ? prevSessions : prevPercent) : undefined,
+    compareFormatter:
+      mode === "S" ? (value) => nfInt.format(value) : (value) => nfPct.format(value),
+    activeColor,
+    selected: false,
+    selectionIndicatorSelected: false,
+    showSelectionIndicator: false,
+  });
 
   const cards = [
     {
@@ -998,6 +1047,45 @@ function buildDesktopMetrics({
       selectionIndicatorSelected: false,
       showSelectionIndicator: false,
     },
+    createIntentCard({
+      id: "high_intent",
+      label: "High Intent",
+      mode: highIntentMode,
+      onModeToggle: onHighIntentModeToggle,
+      sessions: data.intentMetrics?.high?.sessions ?? 0,
+      percent: data.intentMetrics?.high?.percent ?? 0,
+      sessionsDelta: data.intentMetrics?.high?.sessionsDelta,
+      percentDelta: data.intentMetrics?.high?.percentDelta,
+      prevSessions: data.intentMetrics?.high?.prevSessions,
+      prevPercent: data.intentMetrics?.high?.prevPercent,
+      activeColor: "#22c55e",
+    }),
+    createIntentCard({
+      id: "medium_intent",
+      label: "Medium Intent",
+      mode: mediumIntentMode,
+      onModeToggle: onMediumIntentModeToggle,
+      sessions: data.intentMetrics?.medium?.sessions ?? 0,
+      percent: data.intentMetrics?.medium?.percent ?? 0,
+      sessionsDelta: data.intentMetrics?.medium?.sessionsDelta,
+      percentDelta: data.intentMetrics?.medium?.percentDelta,
+      prevSessions: data.intentMetrics?.medium?.prevSessions,
+      prevPercent: data.intentMetrics?.medium?.prevPercent,
+      activeColor: "#f59e0b",
+    }),
+    createIntentCard({
+      id: "low_intent",
+      label: "Low Intent",
+      mode: lowIntentMode,
+      onModeToggle: onLowIntentModeToggle,
+      sessions: data.intentMetrics?.low?.sessions ?? 0,
+      percent: data.intentMetrics?.low?.percent ?? 0,
+      sessionsDelta: data.intentMetrics?.low?.sessionsDelta,
+      percentDelta: data.intentMetrics?.low?.percentDelta,
+      prevSessions: data.intentMetrics?.low?.prevSessions,
+      prevPercent: data.intentMetrics?.low?.prevPercent,
+      activeColor: "#ef4444",
+    }),
   ];
 
   return new Map(
@@ -1331,6 +1419,35 @@ function renderToggle({
   );
 }
 
+function buildIntentMetricState(metrics = {}) {
+  const buildIntentEntry = (prefix) => ({
+    sessions: Number(metrics?.[`${prefix}_intent_sessions`]?.value ?? 0),
+    percent: Number(metrics?.[`${prefix}_intent_percent`]?.value ?? 0) / 100,
+    sessionsDelta: {
+      diff_pct: Number(metrics?.[`${prefix}_intent_sessions`]?.diff_pct ?? 0),
+      direction: metrics?.[`${prefix}_intent_sessions`]?.direction ?? "flat",
+    },
+    percentDelta: {
+      diff_pct: Number(metrics?.[`${prefix}_intent_percent`]?.diff_pct ?? 0),
+      direction: metrics?.[`${prefix}_intent_percent`]?.direction ?? "flat",
+    },
+    prevSessions:
+      metrics?.[`${prefix}_intent_sessions`]?.previous != null
+        ? Number(metrics[`${prefix}_intent_sessions`].previous)
+        : null,
+    prevPercent:
+      metrics?.[`${prefix}_intent_percent`]?.previous != null
+        ? Number(metrics[`${prefix}_intent_percent`].previous) / 100
+        : null,
+  });
+
+  return {
+    high: buildIntentEntry("high"),
+    medium: buildIntentEntry("medium"),
+    low: buildIntentEntry("low"),
+  };
+}
+
 export default function KPIs({
   variant = "legacy",
   query,
@@ -1363,6 +1480,9 @@ export default function KPIs({
   const [checkoutMode, setCheckoutMode] = useState("C");
   const [cancellationMode, setCancellationMode] = useState("C");
   const [rtoMode, setRtoMode] = useState("O");
+  const [highIntentMode, setHighIntentMode] = useState("S");
+  const [mediumIntentMode, setMediumIntentMode] = useState("S");
+  const [lowIntentMode, setLowIntentMode] = useState("S");
   const [desktopSelectedCardId, setDesktopSelectedCardId] = useState("orders");
   const start = query?.start;
   const end = query?.end;
@@ -1501,6 +1621,7 @@ export default function KPIs({
                       ? (resp.rto_orders ?? 0) / orders.value
                       : 0,
           };
+          const intentMetrics = buildIntentMetricState(m);
 
           setData({
             orders,
@@ -1510,6 +1631,7 @@ export default function KPIs({
             funnel,
             returnsData,
             rtoData,
+            intentMetrics,
             totalSessions: funnel.total_sessions,
             totalAtcSessions: funnel.total_atc_sessions,
             totalCiEvents: { value: 0 },
@@ -1675,6 +1797,7 @@ export default function KPIs({
             total_ci_events: m.total_ci_events?.value ?? 0,
             total_orders: orders.value,
           };
+          const intentMetrics = buildIntentMetricState(m);
 
           setData({
             orders,
@@ -1685,6 +1808,7 @@ export default function KPIs({
             funnel,
             returnsData,
             rtoData,
+            intentMetrics,
             totalSessions: sessions,
             totalAtcSessions: atcSessions,
             ordersDelta: {
@@ -1855,6 +1979,15 @@ export default function KPIs({
         onCancellationModeToggle: () => setCancellationMode((prev) => (prev === "C" ? "R" : "C")),
         rtoMode,
         onRtoModeToggle: () => setRtoMode((prev) => (prev === "O" ? "%" : "O")),
+        highIntentMode,
+        onHighIntentModeToggle: () =>
+          setHighIntentMode((prev) => (prev === "S" ? "%" : "S")),
+        mediumIntentMode,
+        onMediumIntentModeToggle: () =>
+          setMediumIntentMode((prev) => (prev === "S" ? "%" : "S")),
+        lowIntentMode,
+        onLowIntentModeToggle: () =>
+          setLowIntentMode((prev) => (prev === "S" ? "%" : "S")),
         selectedMetrics,
         activeMetric,
         showCiEvents,
@@ -1877,6 +2010,9 @@ export default function KPIs({
       checkoutMode,
       cancellationMode,
       rtoMode,
+      highIntentMode,
+      mediumIntentMode,
+      lowIntentMode,
       selectedMetrics,
       showCiEvents,
       showRtoKpi,
@@ -1912,15 +2048,164 @@ export default function KPIs({
     }
   }, [activeMetric, desktopSelectedCardId]);
 
+  const pagedCards = useMemo(
+    () =>
+      Array.from(desktopCardsById.values()).map((metric) => ({
+        id: metric.id,
+        size: { xs: 6, sm: 6, md: 3 },
+        node: (
+          <KPIStat
+            label={metric.label}
+            value={metric.value}
+            unavailable={metric.unavailable}
+            loading={metric.loading}
+            deltaLoading={metric.deltaLoading}
+            formatter={metric.formatter}
+            delta={metric.delta}
+            onSelect={metric.onSelect}
+            onSelectionToggle={metric.onSelectionToggle}
+            selected={metric.selected}
+            selectionIndicatorSelected={metric.selectionIndicatorSelected}
+            compareValue={metric.compareValue}
+            compareFormatter={metric.compareFormatter}
+            activeColor={metric.activeColor}
+            invertDeltaColor={metric.invertDeltaColor}
+            showSelectionIndicator={metric.showSelectionIndicator}
+            action={metric.action}
+          />
+        ),
+      })),
+    [desktopCardsById],
+  );
+  const mobileTopPageCardIds = useMemo(
+    () => [
+      "orders",
+      "revenue",
+      "aov",
+      "sessions",
+      "atc",
+      "cvr",
+      "high_intent",
+      "medium_intent",
+      "low_intent",
+    ],
+    [],
+  );
+  const mobilePagedCards = useMemo(
+    () =>
+      mobileTopPageCardIds
+        .map((id) => pagedCards.find((card) => card.id === id))
+        .filter(Boolean),
+    [mobileTopPageCardIds, pagedCards],
+  );
+  const mobileFooterCards = useMemo(() => {
+    const footer = [];
+    const pushMetricCard = (metricId) => {
+      const metric = desktopCardsById.get(metricId);
+      if (!metric) return;
+      footer.push({
+        id: metric.id,
+        size: { xs: 12, sm: 12, md: 3 },
+        node: (
+          <KPIStat
+            label={metric.label}
+            value={metric.value}
+            unavailable={metric.unavailable}
+            loading={metric.loading}
+            deltaLoading={metric.deltaLoading}
+            formatter={metric.formatter}
+            delta={metric.delta}
+            onSelect={metric.onSelect}
+            onSelectionToggle={metric.onSelectionToggle}
+            selected={metric.selected}
+            selectionIndicatorSelected={metric.selectionIndicatorSelected}
+            compareValue={metric.compareValue}
+            compareFormatter={metric.compareFormatter}
+            activeColor={metric.activeColor}
+            invertDeltaColor={metric.invertDeltaColor}
+            showSelectionIndicator={metric.showSelectionIndicator}
+            action={metric.action}
+            centerOnMobile
+          />
+        ),
+      });
+    };
+
+    pushMetricCard("returns");
+    pushMetricCard("rto");
+    pushMetricCard("checkout");
+
+    if (showWebVitals) {
+      footer.push({
+        id: "performance",
+        size: { xs: 12, sm: 12, md: 3 },
+        node: (
+          <KPIStat
+            label="Web Performance(Avg)"
+            value={webVitalsData.performanceAvg ?? 0}
+            loading={webVitalsData.loading}
+            deltaLoading={webVitalsData.loading}
+            formatter={(value) => nfFloat.format(value)}
+            delta={
+              typeof webVitalsData.performanceChange === "number"
+                ? {
+                    value: webVitalsData.performanceChange,
+                    direction:
+                      webVitalsData.performanceChange > 0
+                        ? "up"
+                        : webVitalsData.performanceChange < 0
+                          ? "down"
+                          : "flat",
+                  }
+                : undefined
+            }
+            centerOnMobile
+            activeColor="#06b6d4"
+            onSelect={onSelectMetric ? () => onSelectMetric("performance") : undefined}
+            onSelectionToggle={
+              onToggleMetric ? () => onToggleMetric("performance") : undefined
+            }
+            selected={activeMetric === "performance"}
+            selectionIndicatorSelected={selectedMetrics.includes("performance")}
+          />
+        ),
+      });
+    }
+
+    return footer;
+  }, [
+    activeMetric,
+    desktopCardsById,
+    onSelectMetric,
+    onToggleMetric,
+    selectedMetrics,
+    showWebVitals,
+    webVitalsData.loading,
+    webVitalsData.performanceAvg,
+    webVitalsData.performanceChange,
+  ]);
+
   if (variant === "desktop_paged") {
     return (
-      <DesktopKpiPages
-        cardsById={desktopCardsById}
-        kpiLayout={desktopKpiLayout}
-        onKpiLayoutChange={onDesktopKpiLayoutChange}
-        canEdit={canEditDesktopKpis}
-        dashboardLayoutEditing={dashboardLayoutEditing}
-      />
+      <>
+        <Box sx={{ display: { xs: "none", md: "block" } }}>
+          <DesktopKpiPages
+            cardsById={desktopCardsById}
+            kpiLayout={desktopKpiLayout}
+            onKpiLayoutChange={onDesktopKpiLayoutChange}
+            canEdit={canEditDesktopKpis}
+            dashboardLayoutEditing={dashboardLayoutEditing}
+          />
+        </Box>
+        <MobileKpiPages
+          cards={mobilePagedCards}
+          footerCards={mobileFooterCards}
+          kpiLayout={desktopKpiLayout}
+          onKpiLayoutChange={onDesktopKpiLayoutChange}
+          canEdit={canEditDesktopKpis}
+          dashboardLayoutEditing={dashboardLayoutEditing}
+        />
+      </>
     );
   }
 
