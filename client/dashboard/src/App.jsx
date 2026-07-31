@@ -2351,6 +2351,7 @@ export default function App() {
           showWebVitals={false}
           showCiEvents={hasPermission("ci_events")}
           showRtoKpi={hasPermission("rto_kpi")}
+          showIntentMetrics={hasPermission("intent_metrics")}
           compareMode={compareMode}
           desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
           onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
@@ -2540,6 +2541,7 @@ export default function App() {
           showWebVitals={!isLongRangeDashboard && hasPermission("web_vitals")}
           showCiEvents={hasPermission("ci_events")}
           showRtoKpi={hasPermission("rto_kpi")}
+          showIntentMetrics={hasPermission("intent_metrics")}
           compareMode={compareMode}
           desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
           onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
