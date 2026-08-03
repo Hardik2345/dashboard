@@ -30,9 +30,9 @@ import { CSS } from "@dnd-kit/utilities";
 import { AnimatePresence, motion } from "framer-motion";
 import { GlassChip } from "./ui/GlassChip.jsx";
 import KPIStat from "./KPIStat.jsx";
-import { getDashboardSummary, getProductKpis } from "../lib/api.js";
 import { useInrCurrency } from "../lib/currency.js";
 import useWebVitals from "../hooks/useWebVitals.js";
+import { useDashboardDataApi } from "../features/dashboard/DashboardDataProvider.jsx";
 import {
   DEFAULT_DESKTOP_KPI_LAYOUT,
   deriveRenderedDesktopKpiOrder,
@@ -230,7 +230,7 @@ function MobileKpiPages({
 }) {
   const [pageIndex, setPageIndex] = useState(0);
   const [pageDirection, setPageDirection] = useState(1);
-  const [activeId, setActiveId] = useState(null);
+  const [, setActiveId] = useState(null);
   const [pinMessage, setPinMessage] = useState("");
   const touchStartXRef = useRef(null);
   const isEditing = canEdit && dashboardLayoutEditing;
@@ -1118,7 +1118,7 @@ function DesktopKpiPages({
   canEdit = false,
   dashboardLayoutEditing = false,
 }) {
-  const [activeId, setActiveId] = useState(null);
+  const [, setActiveId] = useState(null);
   const [pageIndex, setPageIndex] = useState(0);
   const [pageDirection, setPageDirection] = useState(1);
   const [pinMessage, setPinMessage] = useState("");
@@ -1465,7 +1465,6 @@ export default function KPIs({
   onFunnelData,
   productId,
   productLabel,
-  utmOptions,
   showRow = null,
   compareMode = false,
   showWebVitals = true,
@@ -1477,6 +1476,7 @@ export default function KPIs({
   canEditDesktopKpis = false,
   dashboardLayoutEditing = false,
 }) {
+  const { getDashboardSummary, getProductKpis } = useDashboardDataApi();
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const [loading, setLoading] = useState(true);
@@ -1923,6 +1923,9 @@ export default function KPIs({
     discountCode,
     deviceType,
     end,
+    getDashboardSummary,
+    getProductKpis,
+    hasScopedUtmSource,
     isProductScoped,
     onLoaded,
     refreshKey,

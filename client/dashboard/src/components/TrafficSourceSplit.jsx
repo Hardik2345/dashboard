@@ -7,13 +7,19 @@ import {
     ArcElement,
     Tooltip as ChartTooltip,
 } from 'chart.js';
-import { getTrafficSourceSplit } from '../lib/api.js';
 import dayjs from 'dayjs';
+import { useDashboardDataApi } from "../features/dashboard/DashboardDataProvider.jsx";
 
 ChartJS.register(ArcElement, ChartTooltip);
 
 const nfPct1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 const nfCompact = new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 });
+const TRAFFIC_COLORS = {
+    meta: '#2979FF',
+    google: '#FF1744',
+    direct: '#00E676',
+    others: '#D500F9',
+};
 
 function useCountUp(end, duration = 800) {
     const [count, setCount] = useState(0);
@@ -58,11 +64,12 @@ function useCountUp(end, duration = 800) {
 export default memo(function TrafficSourceSplit({ query, compareMode = false, mappingRules = [] }) {
     const theme = useTheme();
     const isDark = theme.palette.mode === 'dark';
+    const { getTrafficSourceSplit } = useDashboardDataApi();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
     const [metric, setMetric] = useState('sessions'); // 'sessions' or 'atc_sessions'
 
-    const rulesSignature = useMemo(() => JSON.stringify(mappingRules || []), [mappingRules]);
+    const effectiveMappingRules = useMemo(() => mappingRules || [], [mappingRules]);
 
     useEffect(() => {
         let cancelled = false;
@@ -73,13 +80,13 @@ export default memo(function TrafficSourceSplit({ query, compareMode = false, ma
         }
         setLoading(true);
 
-        getTrafficSourceSplit({ ...query, mappingRules })
+        getTrafficSourceSplit({ ...query, mappingRules: effectiveMappingRules })
             .then(res => {
                 if (!cancelled) { setData(res); setLoading(false); }
             })
             .catch(() => setLoading(false));
         return () => { cancelled = true; };
-    }, [query, rulesSignature]);
+    }, [effectiveMappingRules, getTrafficSourceSplit, query]);
 
     const getMetricValue = (sourceObj) => sourceObj ? Number(sourceObj[metric] || 0) : 0;
 
@@ -131,21 +138,13 @@ export default memo(function TrafficSourceSplit({ query, compareMode = false, ma
     const total = metaVal + googleVal + directVal + othersVal;
     const empty = total === 0;
 
-    // Vibrant Colors (No Grey)
-    const colors = {
-        meta: '#2979FF',      // Bright Blue
-        google: '#FF1744',    // Bright Red
-        direct: '#00E676',    // Bright Green/Teal (Replacing Grey)
-        others: '#D500F9',    // Bright Purple
-    };
-
     const chartData = useMemo(() => ({
         labels: ['Meta', 'Google', 'Direct', 'Others'],
         datasets: [
             {
                 label: 'Traffic Sources',
                 data: [metaVal, googleVal, directVal, othersVal],
-                backgroundColor: [colors.meta, colors.google, colors.direct, colors.others],
+                backgroundColor: [TRAFFIC_COLORS.meta, TRAFFIC_COLORS.google, TRAFFIC_COLORS.direct, TRAFFIC_COLORS.others],
                 borderWidth: 0,
                 hoverOffset: 6,
             },
@@ -298,7 +297,7 @@ export default memo(function TrafficSourceSplit({ query, compareMode = false, ma
                 }
             }
         }
-    }), [theme, data]);
+    }), [data, isDark, isToday, metric]);
 
     const getPercent = (val) => total > 0 ? (val / total) * 100 : 0;
 
@@ -314,9 +313,6 @@ export default memo(function TrafficSourceSplit({ query, compareMode = false, ma
         const animatedValue = useCountUp(value);
 
         const deltaColor = delta > 0 ? '#00C853' : delta < 0 ? '#FF1744' : 'text.secondary';
-        const deltaIcon = delta > 0 ? '+' : '';
-        const formattedDelta = delta !== undefined && delta !== null ? `${deltaIcon}${Math.round(delta)}%` : '-';
-
         return (
             <Box
                 sx={{
@@ -485,16 +481,16 @@ export default memo(function TrafficSourceSplit({ query, compareMode = false, ma
                         <Grid item xs={12} md={7}>
                             <Grid container spacing={1.5}> {/* Reduced inner spacing */}
                                 <Grid item xs={6}>
-                                    <DetailItem label="Meta" value={metaVal} color={colors.meta} delta={getDelta(data.meta)} prevValue={getPrevValue(data.meta)} />
+                                    <DetailItem label="Meta" value={metaVal} color={TRAFFIC_COLORS.meta} delta={getDelta(data.meta)} prevValue={getPrevValue(data.meta)} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Google" value={googleVal} color={colors.google} delta={getDelta(data.google)} prevValue={getPrevValue(data.google)} />
+                                    <DetailItem label="Google" value={googleVal} color={TRAFFIC_COLORS.google} delta={getDelta(data.google)} prevValue={getPrevValue(data.google)} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Direct" value={directVal} color={colors.direct} delta={getDelta(data.direct)} prevValue={getPrevValue(data.direct)} />
+                                    <DetailItem label="Direct" value={directVal} color={TRAFFIC_COLORS.direct} delta={getDelta(data.direct)} prevValue={getPrevValue(data.direct)} />
                                 </Grid>
                                 <Grid item xs={6}>
-                                    <DetailItem label="Others" value={othersVal} color={colors.others} delta={getDelta(data.others)} prevValue={getPrevValue(data.others)} />
+                                    <DetailItem label="Others" value={othersVal} color={TRAFFIC_COLORS.others} delta={getDelta(data.others)} prevValue={getPrevValue(data.others)} />
                                 </Grid>
                             </Grid>
                         </Grid>

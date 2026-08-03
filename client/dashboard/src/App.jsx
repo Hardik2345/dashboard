@@ -3,6 +3,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   Suspense,
   lazy,
 } from "react";
@@ -15,24 +16,27 @@ import {
   ThemeProvider,
   createTheme,
   CssBaseline,
-  Container,
   Box,
   Stack,
-  Divider,
-  Alert,
-  Skeleton,
   IconButton,
   Tooltip,
   useMediaQuery,
 } from "@mui/material";
-import Grid from "@mui/material/Grid2";
 import Header from "./components/Header.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import LayoutPanelsIcon from "./components/ui/LayoutPanelsIcon.jsx";
 import SidebarToggle from "./components/ui/SidebarToggle.jsx";
-import InlineDashboardLayoutEditor from "./components/InlineDashboardLayoutEditor.jsx";
-import DashboardUnavailableCard from "./components/DashboardUnavailableCard.jsx";
 import MaintenanceScreen from "./components/MaintenanceScreen.jsx";
+import AuthRouteContainer from "./routes/AuthRouteContainer.jsx";
+import DashboardRouteContainer from "./routes/DashboardRouteContainer.jsx";
+import OverallSnapshotRouteContainer from "./routes/OverallSnapshotRouteContainer.jsx";
+import SessionAnalyticsRouteContainer from "./routes/SessionAnalyticsRouteContainer.jsx";
+import DailyFunnelRouteContainer from "./routes/DailyFunnelRouteContainer.jsx";
+import ProductConversionRouteContainer from "./routes/ProductConversionRouteContainer.jsx";
+import InventoryRouteContainer from "./routes/InventoryRouteContainer.jsx";
+import BundlesRouteContainer from "./routes/BundlesRouteContainer.jsx";
+import AdminRouteContainer from "./routes/AdminRouteContainer.jsx";
+import MerchantRequestsRouteContainer from "./routes/MerchantRequestsRouteContainer.jsx";
 
 import {
   LayoutGrid,
@@ -110,8 +114,7 @@ function isPublicPath(pathname) {
   return normalized === "/login" || normalized === "/unauthorized";
 }
 
-const TenantSetupForm = lazy(() => import("./components/TenantSetupForm.jsx"));
-const LogsPanel = lazy(() => import("./components/LogsPanel.jsx"));
+const MotionDiv = motion.div;
 
 import {
   listAuthorBrands,
@@ -119,14 +122,7 @@ import {
   getTopProducts,
   getDashboardSummary,
   getSummaryFilterOptions,
-  getHourlyTrend,
-  getOrderSplit,
-  getPaymentSalesSplit,
-  getTrafficSourceSplit,
-  getDashboardLayout,
   doPost,
-  doDelete,
-  saveDashboardLayout,
 } from "./lib/api.js";
 import { initializeSessionTracking } from "./lib/sessionTracker.js";
 import {
@@ -135,20 +131,8 @@ import {
   isRangeOverDataRestrictionPeriod,
 } from "./lib/dateRange.js";
 import { setFrontendUserContext } from "./observability.js";
-import {
-  DASHBOARD_LAYOUT_DEFAULTS,
-  getVisibleDashboardWidgetIds,
-  normalizeDashboardLayout,
-} from "./lib/dashboardLayout.js";
-import {
-  DEFAULT_DESKTOP_KPI_LAYOUT,
-  normalizeDesktopKpiLayout,
-} from "./lib/kpiLayout.js";
-
-import { TextField, Button, Paper, Typography, Chip } from "@mui/material";
 import axios from "axios";
 import { requestForToken, onMessageListener } from "./firebase";
-import Unauthorized from "./components/Unauthorized.jsx";
 import useSessionHeartbeat from "./hooks/useSessionHeartbeat.js";
 import { useAppDispatch, useAppSelector } from "./state/hooks.js";
 import {
@@ -191,67 +175,10 @@ const AuthorBrandSelector = lazy(
 );
 const Footer = lazy(() => import("./components/Footer.jsx"));
 
-const KPIs = lazy(() => import("./components/KPIs.jsx"));
-const OverallSnapshotWidget = lazy(
-  () => import("./components/OverallSnapshotWidget.jsx"),
-);
-const FunnelChart = lazy(() => import("./components/charts/FunnelChart.jsx"));
-const ModeOfPayment = lazy(() => import("./components/ModeOfPayment.jsx"));
-const PaymentSplitTrend = lazy(
-  () => import("./components/PaymentSplitTrend.jsx"),
-);
-const OrderSplit = lazy(() => import("./components/OrderSplit.jsx"));
-const PaymentSalesSplit = lazy(
-  () => import("./components/PaymentSalesSplit.jsx"),
-);
-const TrafficSourceSplit = lazy(
-  () => import("./components/TrafficSourceSplit.jsx"),
-);
-const TrafficSplitConfigPanel = lazy(
-  () => import("./components/TrafficSplitConfigPanel.jsx"),
-);
-const HourlySalesCompare = lazy(
-  () => import("./components/HourlySalesCompare.jsx"),
-);
-const WebVitals = lazy(() => import("./components/WebVitals.jsx"));
-const WebPerformancePanel = lazy(
-  () => import("./components/WebPerformancePanel.jsx"),
-);
-const AccessControlCard = lazy(
-  () => import("./components/AccessControlCard.jsx"),
-);
-const NotificationsLog = lazy(
-  () => import("./components/NotificationsLog.jsx"),
-);
-const ProductConversionTable = lazy(
-  () => import("./components/ProductConversionTable.jsx"),
-);
-const DailyFunnelPanel = lazy(
-  () => import("./components/DailyFunnelPanel.jsx"),
-);
-const InventoryTable = lazy(() => import("./components/InventoryTable.jsx"));
-const BundlesPanel = lazy(() => import("./components/BundlesPanel.jsx"));
-const AuthorBrandForm = lazy(() => import("./components/AuthorBrandForm.jsx"));
-const AuthorBrandList = lazy(() => import("./components/AuthorBrandList.jsx"));
-const AlertsAdmin = lazy(() => import("./components/AlertsAdmin.jsx"));
-const MerchantRequestsPanel = lazy(
-  () => import("./components/MerchantRequestsPanel.jsx"),
-);
-const SessionAnalyticsPage = lazy(
-  () => import("./pages/SessionAnalytics/SessionAnalyticsPage.jsx"),
-);
-
 function formatDate(dt) {
   return dt ? dayjs(dt).format("YYYY-MM-DD") : undefined;
 }
 
-const WEB_VITAL_METRIC_KEYS = {
-  FCP: "fcp",
-  LCP: "lcp",
-  TTFB: "ttfb",
-  SESSIONS: "sessions",
-  PERFORMANCE: "performance",
-};
 const SESSION_TRACKING_ENABLED =
   String(import.meta.env.VITE_SESSION_TRACKING || "false").toLowerCase() ===
   "true";
@@ -259,24 +186,6 @@ const AUTHOR_BRAND_STORAGE_KEY = "author_active_brand_v1";
 const THEME_MODE_KEY = "dashboard_theme_mode";
 const TRAFFIC_SPLIT_RULES_STORAGE_PREFIX = "traffic_split_rules_v1";
 const DRAWER_WIDTH = 260;
-
-function SectionFallback({ count = 1, height = 180 }) {
-  return (
-    <Stack spacing={{ xs: 1, md: 1.5 }}>
-      {Array.from({ length: count }).map((_, idx) => (
-        <Paper
-          key={idx}
-          variant="outlined"
-          sx={{ p: { xs: 1.5, md: 2 }, borderStyle: "dashed" }}
-        >
-          <Skeleton variant="text" width="40%" />
-          <Skeleton variant="rectangular" height={height} sx={{ my: 1 }} />
-          <Skeleton variant="text" width="60%" />
-        </Paper>
-      ))}
-    </Stack>
-  );
-}
 
 function loadInitialThemeMode() {
   try {
@@ -292,7 +201,6 @@ export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const authState = useAppSelector((state) => state.auth);
   const globalBrandKey = useAppSelector((state) => state.brand.brand);
   const { user, initialized, loginStatus, loginError, maintenanceMode } = useAppSelector(
     (state) => state.auth,
@@ -427,17 +335,11 @@ export default function App() {
     loading: true,
   });
   const [utmOptions, setUtmOptions] = useState(null);
-  const [webVitalsMetric, setWebVitalsMetric] = useState("FCP");
   const [trafficSplitRules, setTrafficSplitRules] = useState([]);
-  const [layoutEditMode, setLayoutEditMode] = useState(false);
-  const [dashboardLayout, setDashboardLayout] = useState(() =>
-    normalizeDashboardLayout(),
-  );
-  const [previewDashboardLayout, setPreviewDashboardLayout] = useState(null);
-  const [isSavingDashboardLayout, setIsSavingDashboardLayout] = useState(false);
 
   // Track navigation direction for transitions
   const [direction, setDirection] = useState(0);
+  const dashboardRouteActionsRef = useRef({});
   const currentRouteTab = useMemo(
     () => getTabFromPathname(location.pathname),
     [location.pathname],
@@ -795,13 +697,6 @@ export default function App() {
 
   const showSidebar = isAuthor || (accessibleTabs && accessibleTabs.length > 1);
 
-  const mobileNavItems = useMemo(() => {
-    const base = isAuthor
-      ? MOBILE_NAV_ITEMS
-      : MOBILE_NAV_ITEMS.filter((item) => accessibleTabs?.includes(item.id));
-    return base.filter((item) => item.id !== "tenant-setup");
-  }, [isAuthor, accessibleTabs]);
-
   // Derived arrays/labels for product multi-select used directly by child components
   const selectedProductIds = useMemo(() => {
     if (!productSelection) return "";
@@ -828,44 +723,6 @@ export default function App() {
     if (!selectedProductIds) return "All products";
     return selectedProductLabel || selectedProductIds;
   }, [selectedProductIds, selectedProductLabel]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!initialized || !user || !canCustomizeDashboardLayout) {
-      setDashboardLayout(normalizeDashboardLayout());
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    getDashboardLayout().then((res) => {
-      if (cancelled) return;
-      if (res.error) {
-        setDashboardLayout(normalizeDashboardLayout());
-        return;
-      }
-      setDashboardLayout(normalizeDashboardLayout(res.data));
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [initialized, user, canCustomizeDashboardLayout]);
-
-  const effectiveDashboardLayout = useMemo(
-    () => normalizeDashboardLayout(previewDashboardLayout || dashboardLayout),
-    [dashboardLayout, previewDashboardLayout],
-  );
-
-  const isDashboardLayoutDirty = useMemo(() => {
-    const preview = normalizeDashboardLayout(previewDashboardLayout || dashboardLayout);
-    const saved = normalizeDashboardLayout(dashboardLayout);
-    return (
-      preview.desktop.join("|") !== saved.desktop.join("|")
-      || preview.mobile.join("|") !== saved.mobile.join("|")
-    );
-  }, [dashboardLayout, previewDashboardLayout]);
 
   const hasActiveProductFilter = useMemo(() => {
     if (!productSelection) return false;
@@ -957,6 +814,7 @@ export default function App() {
     isAuthor,
     authorRefreshKey,
     productSelection,
+    hasPermission,
     utm,
     discountCode,
     salesChannel,
@@ -990,591 +848,6 @@ export default function App() {
     delete base.refreshKey;
     return base;
   }, [generalMetricsQuery]);
-
-  const escapeCsvCell = useCallback((value) => {
-    const str = value == null ? "" : String(value);
-    if (str.includes('"') || str.includes(",") || str.includes("\n")) {
-      return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
-  }, []);
-
-  const exportStartDate =
-    generalMetricsQuery?.start || generalMetricsQuery?.end || "";
-  const exportEndDate =
-    generalMetricsQuery?.end || generalMetricsQuery?.start || exportStartDate;
-
-  const asExcelTextDate = useCallback((value) => {
-    return value ? `'${value}` : "";
-  }, []);
-
-  const buildBaseRow = useCallback((overrides = {}) => ({
-    section: "",
-    subsection: "",
-    item_type: "",
-    item_key: "",
-    item_name: "",
-    hour: "",
-    rank: "",
-    category: "",
-    source_name: "",
-    page_name: "",
-    payment_mode: "",
-    metric: "",
-    value: "",
-    previous_value: "",
-    change_percent: "",
-    unit: "",
-    start_date: asExcelTextDate(exportStartDate),
-    end_date: asExcelTextDate(exportEndDate),
-    brand_key: activeBrandKey || "",
-    selected_web_vitals_metric: "",
-    generated_at: "",
-    ...overrides,
-  }), [activeBrandKey, asExcelTextDate, exportEndDate, exportStartDate]);
-
-  const toBrandNameForPagespeed = useCallback((brandKey) => {
-    switch ((brandKey || "").toUpperCase()) {
-      case "TMC":
-        return "TMC";
-      case "BBB":
-        return "BlaBliBluLife";
-      case "PTS":
-        return "SkincarePersonalTouch";
-      default:
-        return (brandKey || "").toUpperCase();
-    }
-  }, []);
-
-  const getPreviousDateWindow = useCallback((startDate, endDate) => {
-    if (!startDate || !endDate) return { prevStart: null, prevEnd: null };
-    const s = dayjs(startDate);
-    const e = dayjs(endDate);
-    const dayCount = e.diff(s, "day") + 1;
-    const prevEnd = s.subtract(1, "day");
-    const prevStart = prevEnd.subtract(dayCount - 1, "day");
-    return {
-      prevStart: prevStart.format("YYYY-MM-DD"),
-      prevEnd: prevEnd.format("YYYY-MM-DD"),
-    };
-  }, []);
-
-  const fetchPagespeedResults = useCallback(async (brandName, startDate, endDate) => {
-    if (!brandName || !startDate || !endDate) return [];
-    const params = new URLSearchParams({
-      brand_key: brandName,
-      start_date: startDate,
-      end_date: endDate,
-    });
-    const response = await fetch(`/api/external-pagespeed/pagespeed?${params.toString()}`);
-    if (!response.ok) {
-      throw new Error(`pagespeed request failed: ${response.status}`);
-    }
-    const json = await response.json();
-    return Array.isArray(json?.results) ? json.results : [];
-  }, []);
-
-  const buildWebVitalsSnapshot = useCallback(
-    async (query, selectedMetric) => {
-      const metricKey = WEB_VITAL_METRIC_KEYS[selectedMetric] || "fcp";
-      const brandName = toBrandNameForPagespeed(query?.brand_key || activeBrandKey);
-      const currentStart = query?.start;
-      const currentEnd = query?.end;
-      if (!brandName || !currentStart || !currentEnd) {
-        return {
-          selected_metric: selectedMetric,
-          performance: {
-            current_avg: null,
-            previous_avg: null,
-            change_percent: null,
-          },
-          top_pages: [],
-        };
-      }
-
-      const { prevStart, prevEnd } = getPreviousDateWindow(currentStart, currentEnd);
-      const [currentResults, previousResults] = await Promise.all([
-        fetchPagespeedResults(brandName, currentStart, currentEnd),
-        prevStart && prevEnd
-          ? fetchPagespeedResults(brandName, prevStart, prevEnd)
-          : Promise.resolve([]),
-      ]);
-
-      const performanceCurrent =
-        currentResults.reduce((sum, row) => sum + Number(row?.performance || 0), 0) /
-        (currentResults.length || 1);
-      const performancePrevious =
-        previousResults.reduce((sum, row) => sum + Number(row?.performance || 0), 0) /
-        (previousResults.length || 1);
-      const performanceChange =
-        performancePrevious > 0
-          ? ((performanceCurrent - performancePrevious) / performancePrevious) * 100
-          : null;
-
-      const reduceByUrl = (results) => {
-        const grouped = {};
-        for (const row of results) {
-          const url = String(row?.url || "");
-          if (!url) continue;
-          if (!grouped[url]) grouped[url] = [];
-          grouped[url].push(Number(row?.[metricKey] || 0));
-        }
-        return Object.entries(grouped).map(([url, values]) => {
-          const sum = values.reduce((a, b) => a + b, 0);
-          const isSumMetric = metricKey === "sessions";
-          return {
-            url,
-            value: isSumMetric ? sum : sum / values.length,
-          };
-        });
-      };
-
-      const currentPages = reduceByUrl(currentResults);
-      const previousPages = reduceByUrl(previousResults);
-      const topPages = currentPages
-        .map((page) => {
-          const previous = previousPages.find((p) => p.url === page.url);
-          const previousValue = previous?.value ?? null;
-          const changePercent =
-            previousValue && previousValue > 0
-              ? ((page.value - previousValue) / previousValue) * 100
-              : null;
-          return {
-            page_name: page.url,
-            value: Number(page.value || 0),
-            previous_value: previousValue,
-            change_percent: changePercent,
-          };
-        })
-        .sort((a, b) => {
-          const descending = selectedMetric === "SESSIONS" || selectedMetric === "PERFORMANCE";
-          return descending ? b.value - a.value : a.value - b.value;
-        })
-        .slice(0, 5);
-
-      return {
-        selected_metric: selectedMetric,
-        performance: {
-          current_avg: Number.isFinite(performanceCurrent) ? performanceCurrent : null,
-          previous_avg: Number.isFinite(performancePrevious) ? performancePrevious : null,
-          change_percent: Number.isFinite(performanceChange)
-            ? performanceChange
-            : null,
-        },
-        top_pages: topPages,
-      };
-    },
-    [activeBrandKey, fetchPagespeedResults, getPreviousDateWindow, toBrandNameForPagespeed],
-  );
-
-  const handleDownloadSnapshot = useCallback(async () => {
-    try {
-      const summaryBase = {
-        ...trendMetricsQuery,
-        align: "hour",
-      };
-
-      
-      const [summary, hourlyTrend, orderSplit, salesSplit, trafficSplit, webVitals] =
-        await Promise.all([
-          getDashboardSummary(summaryBase),
-          getHourlyTrend({ ...trendMetricsQuery, aggregate: "avg-by-hour" }),
-          getOrderSplit(generalMetricsQuery),
-          getPaymentSalesSplit(generalMetricsQuery),
-          getTrafficSourceSplit({
-            ...trendMetricsQuery,
-            mappingRules: trafficSplitRules,
-          }),
-          buildWebVitalsSnapshot(generalMetricsQuery, webVitalsMetric),
-        ]);
-
-      const metrics = summary?.metrics || {};
-      const totalOrders = Number(metrics?.total_orders?.value || 0);
-      const cancelledOrders = Number(metrics?.cancelled_orders?.value || 0);
-      const refundedOrders = Number(metrics?.refunded_orders?.value || 0);
-
-      const kpis = [
-        { name: "Total Orders", key: "orders", value: totalOrders },
-        { name: "Gross Revenue", key: "sales", value: Number(metrics?.total_sales?.value || 0) },
-        {
-          name: "Average Order Value",
-          key: "aov",
-          value: Number(metrics?.average_order_value?.value || 0),
-        },
-        {
-          name: "Conversion Rate",
-          key: "cvr",
-          value: Number(metrics?.conversion_rate?.value || 0),
-        },
-        {
-          name: "Total Sessions",
-          key: "sessions",
-          value: Number(metrics?.total_sessions?.value || 0),
-        },
-        {
-          name: "ATC Sessions",
-          key: "atc",
-          value: Number(metrics?.total_atc_sessions?.value || 0),
-        },
-        {
-          name: "Cancellation Rate",
-          key: "cancellation_rate",
-          value: totalOrders > 0 ? (cancelledOrders / totalOrders) * 100 : 0,
-        },
-        {
-          name: "Refund Rate",
-          key: "refund_rate",
-          value: totalOrders > 0 ? (refundedOrders / totalOrders) * 100 : 0,
-        },
-        {
-          name: "Checkout Initiated Events",
-          key: "checkout_initiated_events",
-          value: Number(metrics?.total_ci_events?.value || 0),
-        },
-      ];
-
-      const hourlyPoints = Array.isArray(hourlyTrend?.points) ? hourlyTrend.points : [];
-      const mapHourlySeries = (key, name, getter) => ({
-        key,
-        name,
-        points: hourlyPoints.map((point) => ({
-          hour: point?.hour,
-          value: getter(point?.metrics || {}),
-        })),
-      });
-
-      const hourlyTrends = [
-        mapHourlySeries("orders", "Total Orders", (m) => Number(m?.orders || 0)),
-        mapHourlySeries("sales", "Gross Revenue", (m) => Number(m?.sales || 0)),
-        mapHourlySeries("aov", "Average Order Value", (m) => {
-          const sales = Number(m?.sales || 0);
-          const orders = Number(m?.orders || 0);
-          return orders > 0 ? sales / orders : 0;
-        }),
-        mapHourlySeries("cvr", "Conversion Rate", (m) => Number(m?.cvr_ratio || 0) * 100),
-        mapHourlySeries("sessions", "Total Sessions", (m) => Number(m?.sessions || 0)),
-        mapHourlySeries("atc", "ATC Sessions", (m) => Number(m?.atc || 0)),
-      ];
-
-      const trafficCategories = [
-        {
-          category: "meta",
-          label: "Meta",
-          sessions: Number(trafficSplit?.meta?.sessions || 0),
-          atc_sessions: Number(trafficSplit?.meta?.atc_sessions || 0),
-          delta_percent: trafficSplit?.meta?.delta ?? null,
-          atc_delta_percent: trafficSplit?.meta?.atc_delta ?? null,
-          sources: Array.isArray(trafficSplit?.meta_breakdown)
-            ? trafficSplit.meta_breakdown.map((src) => ({
-                source_name: src?.name || "",
-                sessions: Number(src?.sessions || 0),
-                atc_sessions: Number(src?.atc_sessions || 0),
-              }))
-            : [],
-        },
-        {
-          category: "google",
-          label: "Google",
-          sessions: Number(trafficSplit?.google?.sessions || 0),
-          atc_sessions: Number(trafficSplit?.google?.atc_sessions || 0),
-          delta_percent: trafficSplit?.google?.delta ?? null,
-          atc_delta_percent: trafficSplit?.google?.atc_delta ?? null,
-          sources: [],
-        },
-        {
-          category: "direct",
-          label: "Direct",
-          sessions: Number(trafficSplit?.direct?.sessions || 0),
-          atc_sessions: Number(trafficSplit?.direct?.atc_sessions || 0),
-          delta_percent: trafficSplit?.direct?.delta ?? null,
-          atc_delta_percent: trafficSplit?.direct?.atc_delta ?? null,
-          sources: [],
-        },
-        {
-          category: "others",
-          label: "Others",
-          sessions: Number(trafficSplit?.others?.sessions || 0),
-          atc_sessions: Number(trafficSplit?.others?.atc_sessions || 0),
-          delta_percent: trafficSplit?.others?.delta ?? null,
-          atc_delta_percent: trafficSplit?.others?.atc_delta ?? null,
-          sources: Array.isArray(trafficSplit?.others_breakdown)
-            ? trafficSplit.others_breakdown.map((src) => ({
-                source_name: src?.name || "",
-                sessions: Number(src?.sessions || 0),
-                atc_sessions: Number(src?.atc_sessions || 0),
-              }))
-            : [],
-        },
-      ];
-
-      const generatedAt = new Date().toISOString();
-      const rows = [];
-
-      rows.push(
-        buildBaseRow({
-          section: "meta",
-          subsection: "snapshot",
-          item_type: "generated",
-          item_name: "generated_at",
-          metric: "generated_at",
-          value: generatedAt,
-          generated_at: generatedAt,
-        }),
-      );
-
-      rows.push(
-        buildBaseRow({
-          section: "filters",
-          subsection: "applied",
-          item_type: "flag",
-          item_name: "compare_mode",
-          metric: "compare_mode",
-          value: compareMode ? "true" : "false",
-          generated_at: generatedAt,
-        }),
-      );
-
-      const filterRows = [
-        ["compare_start", generalMetricsQuery?.compare_start || ""],
-        ["compare_end", generalMetricsQuery?.compare_end || ""],
-        ["product_id", Array.isArray(generalMetricsQuery?.product_id)
-          ? generalMetricsQuery.product_id.join("|")
-          : (generalMetricsQuery?.product_id || "")],
-        ["utm_source", Array.isArray(generalMetricsQuery?.utm_source)
-          ? generalMetricsQuery.utm_source.join("|")
-          : (generalMetricsQuery?.utm_source || "")],
-        ["utm_medium", Array.isArray(generalMetricsQuery?.utm_medium)
-          ? generalMetricsQuery.utm_medium.join("|")
-          : (generalMetricsQuery?.utm_medium || "")],
-        ["utm_campaign", Array.isArray(generalMetricsQuery?.utm_campaign)
-          ? generalMetricsQuery.utm_campaign.join("|")
-          : (generalMetricsQuery?.utm_campaign || "")],
-        ["sales_channel", Array.isArray(generalMetricsQuery?.sales_channel)
-          ? generalMetricsQuery.sales_channel.join("|")
-          : (generalMetricsQuery?.sales_channel || "")],
-        ["device_type", Array.isArray(generalMetricsQuery?.device_type)
-          ? generalMetricsQuery.device_type.join("|")
-          : (generalMetricsQuery?.device_type || "")],
-      ];
-
-      for (const [name, value] of filterRows) {
-        rows.push(
-          buildBaseRow({
-            section: "filters",
-            subsection: "applied",
-            item_type: "filter",
-            item_name: name,
-            metric: name,
-            value,
-            generated_at: generatedAt,
-          }),
-        );
-      }
-
-      for (const kpi of kpis) {
-        rows.push(
-          buildBaseRow({
-            section: "kpis",
-            subsection: "summary",
-            item_type: "kpi",
-            item_key: kpi.key,
-            item_name: kpi.name,
-            metric: kpi.key,
-            value: kpi.value,
-            unit: kpi.key.includes("rate") || kpi.key === "cvr" ? "percent" : "value",
-            generated_at: generatedAt,
-          }),
-        );
-      }
-
-      for (const trend of hourlyTrends) {
-        for (const point of trend.points) {
-          rows.push(
-            buildBaseRow({
-              section: "hourly_trends",
-              subsection: trend.key,
-              item_type: "hourly_point",
-              item_key: trend.key,
-              item_name: trend.name,
-              hour: point.hour,
-              metric: trend.key,
-              value: point.value,
-              unit: trend.key.includes("rate") || trend.key === "cvr" ? "percent" : "value",
-              generated_at: generatedAt,
-            }),
-          );
-        }
-      }
-
-      rows.push(
-        buildBaseRow({
-          section: "web_vitals",
-          subsection: "performance",
-          item_type: "summary",
-          item_key: "web_performance_avg",
-          item_name: "Web Performance(Avg)",
-          metric: "performance_avg",
-          value: webVitals?.performance?.current_avg ?? "",
-          previous_value: webVitals?.performance?.previous_avg ?? "",
-          change_percent: webVitals?.performance?.change_percent ?? "",
-          generated_at: generatedAt,
-        }),
-      );
-
-      (webVitals?.top_pages || []).forEach((page, index) => {
-        rows.push(
-          buildBaseRow({
-            section: "web_vitals",
-            subsection: "top_pages",
-            item_type: "top_page",
-            item_name: `Top Page ${index + 1}`,
-            rank: index + 1,
-            page_name: page.page_name || "",
-            metric: webVitals?.selected_metric || webVitalsMetric,
-            value: page.value ?? "",
-            previous_value: page.previous_value ?? "",
-            change_percent: page.change_percent ?? "",
-            selected_web_vitals_metric:
-              webVitals?.selected_metric || webVitalsMetric || "",
-            generated_at: generatedAt,
-          }),
-        );
-      });
-
-      [
-        { subsection: "by_order_count", items: [
-          { payment_mode: "Prepaid", value: Number(orderSplit?.prepaid_orders || 0) },
-          { payment_mode: "COD", value: Number(orderSplit?.cod_orders || 0) },
-          { payment_mode: "Partially paid", value: Number(orderSplit?.partially_paid_orders || 0) },
-        ] },
-        { subsection: "by_sales", items: [
-          { payment_mode: "Prepaid", value: Number(salesSplit?.prepaid_sales || 0) },
-          { payment_mode: "COD", value: Number(salesSplit?.cod_sales || 0) },
-          { payment_mode: "Partial", value: Number(salesSplit?.partial_sales || 0) },
-        ] },
-      ].forEach((split) => {
-        split.items.forEach((item) => {
-          rows.push(
-            buildBaseRow({
-              section: "payment_splits",
-              subsection: split.subsection,
-              item_type: "payment_mode",
-              payment_mode: item.payment_mode,
-              metric: split.subsection,
-              value: item.value,
-              generated_at: generatedAt,
-            }),
-          );
-        });
-      });
-
-      for (const category of trafficCategories) {
-        rows.push(
-          buildBaseRow({
-            section: "traffic_split",
-            subsection: "category_summary",
-            item_type: "traffic_category",
-            category: category.label,
-            metric: "sessions",
-            value: category.sessions,
-            change_percent: category.delta_percent ?? "",
-            generated_at: generatedAt,
-          }),
-        );
-        rows.push(
-          buildBaseRow({
-            section: "traffic_split",
-            subsection: "category_summary",
-            item_type: "traffic_category",
-            category: category.label,
-            metric: "atc_sessions",
-            value: category.atc_sessions,
-            change_percent: category.atc_delta_percent ?? "",
-            generated_at: generatedAt,
-          }),
-        );
-
-        for (const src of category.sources || []) {
-          rows.push(
-            buildBaseRow({
-              section: "traffic_split",
-              subsection: "source_breakdown",
-              item_type: "traffic_source",
-              category: category.label,
-              source_name: src.source_name,
-              metric: "sessions",
-              value: src.sessions,
-              generated_at: generatedAt,
-            }),
-          );
-          rows.push(
-            buildBaseRow({
-              section: "traffic_split",
-              subsection: "source_breakdown",
-              item_type: "traffic_source",
-              category: category.label,
-              source_name: src.source_name,
-              metric: "atc_sessions",
-              value: src.atc_sessions,
-              generated_at: generatedAt,
-            }),
-          );
-        }
-      }
-
-      const csvHeader = [
-        "section",
-        "subsection",
-        "item_type",
-        "item_key",
-        "item_name",
-        "hour",
-        "rank",
-        "category",
-        "source_name",
-        "page_name",
-        "payment_mode",
-        "metric",
-        "value",
-        "previous_value",
-        "change_percent",
-        "unit",
-        "start_date",
-        "end_date",
-        "brand_key",
-        "selected_web_vitals_metric",
-        "generated_at",
-      ];
-      const csvLines = [
-        csvHeader.join(","),
-        ...rows.map((row) => csvHeader.map((col) => escapeCsvCell(row[col])).join(",")),
-      ];
-      const csvText = `${csvLines.join("\n")}\n`;
-
-      const filename = `datum_snapshot_${generalMetricsQuery?.start || "start"}_${generalMetricsQuery?.end || "end"}.csv`;
-      const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Failed to build dashboard snapshot:", error);
-      window.alert("Failed to download dashboard snapshot. Please try again.");
-    }
-  }, [
-    buildWebVitalsSnapshot,
-    buildBaseRow,
-    compareMode,
-    escapeCsvCell,
-    generalMetricsQuery,
-    trafficSplitRules,
-    trendMetricsQuery,
-    webVitalsMetric,
-  ]);
 
   const handleAuthorBrandChange = useCallback(
     (nextKeyRaw) => {
@@ -1904,9 +1177,6 @@ export default function App() {
             })
           : [];
 
-        const existingById = new Map(
-          existingSelection.map((item) => [String(item.id), item]),
-        );
         const mergedMapped = [...mapped];
         for (const item of existingSelection) {
           const itemId = String(item.id);
@@ -2181,552 +1451,17 @@ export default function App() {
     });
   }, []);
 
-  const visibleDesktopWidgetIds = useMemo(
-    () =>
-      getVisibleDashboardWidgetIds({
-        viewport: "desktop",
-        layout: effectiveDashboardLayout,
-        hasPermission,
-      }),
-    [effectiveDashboardLayout, hasPermission],
-  );
-
-  const visibleMobileWidgetIds = useMemo(
-    () =>
-      getVisibleDashboardWidgetIds({
-        viewport: "mobile",
-        layout: effectiveDashboardLayout,
-        hasPermission,
-      }),
-    [effectiveDashboardLayout, hasPermission],
-  );
-
-  const renderDashboardExtras = useCallback(() => {
-    if (isLongRangeDashboard) {
-      return (
-        <Stack spacing={3} sx={{ mt: 2 }}>
-          {!isAuthor && hasPermission("sessions_drop_off_funnel") && (
-            <DashboardUnavailableCard
-              title="Sessions Drop-off Funnel"
-              description={dataRestrictionDescription}
-              minHeight={250}
-            />
-          )}
-          {!isAuthor && hasPermission("product_conversion") && (
-            <Box>
-              <Typography
-                variant="subtitle2"
-                color="text.secondary"
-                sx={{ mb: 1.5, fontWeight: 500, ml: 1 }}
-              >
-                Product Performance
-              </Typography>
-              <DashboardUnavailableCard
-                title="Product Performance"
-                description={dataRestrictionDescription}
-                minHeight={300}
-              />
-            </Box>
-          )}
-        </Stack>
-      );
-    }
-    return (
-      <>
-        {!isAuthor &&
-          hasPermission("sessions_drop_off_funnel") &&
-          (funnelData?.stats ? (
-            <Suspense
-              fallback={
-                <Skeleton variant="rounded" width="100%" height={250} />
-              }
-            >
-              <Box sx={{ mt: 2 }}>
-                <Typography
-                  variant="subtitle2"
-                  color="text.secondary"
-                  sx={{ mb: 1.5, fontWeight: 500, ml: 1 }}
-                >
-                  Sessions Drop-off Funnel
-                </Typography>
-                <FunnelChart
-                  data={[
-                    {
-                      label: "Sessions",
-                      value: funnelData.stats.total_sessions || 0,
-                      change: funnelData.deltas?.sessions?.diff_pct
-                        ? Number(funnelData.deltas.sessions.diff_pct).toFixed(1)
-                        : undefined,
-                    },
-                    {
-                      label: "Add to Cart",
-                      value: funnelData.stats.total_atc_sessions || 0,
-                      change: funnelData.deltas?.atc?.diff_pct
-                        ? Number(funnelData.deltas.atc.diff_pct).toFixed(1)
-                        : undefined,
-                    },
-                    ...(hasPermission("ci_events")
-                      ? [
-                          {
-                            label: "Checkout Initiated",
-                            value: funnelData.stats.total_ci_events || 0,
-                            change: funnelData.deltas?.ci?.diff_pct
-                              ? Number(funnelData.deltas.ci.diff_pct).toFixed(1)
-                              : undefined,
-                          },
-                        ]
-                      : []),
-                    {
-                      label: "Orders",
-                      value: funnelData.stats.total_orders || 0,
-                      change:
-                        funnelData.deltas?.orders?.diff_pct ||
-                        funnelData.deltas?.orders?.diff_pp
-                          ? Number(
-                              funnelData.deltas?.orders?.diff_pct ||
-                                funnelData.deltas?.orders?.diff_pp,
-                            ).toFixed(1)
-                          : undefined,
-                    },
-                  ]}
-                  height={250}
-                />
-              </Box>
-            </Suspense>
-          ) : (
-            <Skeleton variant="rounded" width="100%" height={290} />
-          ))}
-
-        {!isAuthor && hasPermission("product_conversion") && (
-          <Box sx={{ mt: 3 }}>
-            <Typography
-              variant="subtitle2"
-              color="text.secondary"
-              sx={{ mb: 1.5, fontWeight: 500, ml: 1 }}
-            >
-              Product Performance
-            </Typography>
-            <Suspense
-              fallback={
-                <Skeleton variant="rounded" width="100%" height={300} />
-              }
-            >
-              <ProductConversionTable
-                brandKey={activeBrandKey}
-                showCompareMode={hasPermission("compare_mode")}
-                isAuthor={isAuthor}
-                permissions={viewerPermissions}
-              />
-            </Suspense>
-          </Box>
-        )}
-      </>
-    );
-  }, [
-    activeBrandKey,
-    dataRestrictionDescription,
-    funnelData,
-    hasPermission,
-    isAuthor,
-    isLongRangeDashboard,
-    viewerPermissions,
-  ]);
-
-  const desktopWidgetRegistry = useMemo(
-    () => ({
-      kpi_cards: (
-        <KPIs
-          variant="desktop_paged"
-          query={trendMetricsQuery}
-          selectedMetrics={selectedMetrics}
-          activeMetric={activeMetric}
-          onSelectMetric={handleSelectMetric}
-          onToggleMetric={
-            canMultiSelectableKpiCards ? handleToggleMetric : undefined
-          }
-          onFunnelData={handleFunnelData}
-          productId={selectedProductIds}
-          productLabel={selectedProductLabel}
-          utmOptions={utmOptions}
-          showWebVitals={false}
-          showCiEvents={hasPermission("ci_events")}
-          showRtoKpi={hasPermission("rto_kpi")}
-          showIntentMetrics={hasPermission("intent_metrics")}
-          compareMode={compareMode}
-          desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
-          onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
-          canEditDesktopKpis={canCustomizeDashboardLayout}
-          dashboardLayoutEditing={layoutEditMode}
-        />
-      ),
-      overall_snapshot: isLongRangeDashboard ? (
-        <DashboardUnavailableCard
-          title="Overall Snapshot"
-          description={dataRestrictionDescription}
-          minHeight={320}
-        />
-      ) : (
-        <OverallSnapshotWidget
-          query={overallSnapshotQuery}
-          brands={snapshotBrands}
-          brandsLoading={isAuthor && authorBrandsLoading}
-          onBrandSelect={handleOverallSnapshotBrandSelect}
-        />
-      ),
-      kpi_trend: (
-        <Grid container spacing={2}>
-          <Grid
-            size={{
-              xs: 12,
-              md: hasPermission("web_vitals") ? 9 : 12,
-            }}
-          >
-            <HourlySalesCompare
-              query={trendMetricsQuery}
-              selectedMetrics={selectedMetrics}
-              activeMetric={activeMetric}
-              compareMode={compareMode}
-              isLongRange={isLongRangeDashboard}
-            />
-          </Grid>
-          {hasPermission("web_vitals") && (
-            <Grid size={{ xs: 12, md: 3 }}>
-              {isLongRangeDashboard ? (
-                <DashboardUnavailableCard
-                  title="Web Performance(Avg)"
-                  description={dataRestrictionDescription}
-                  minHeight={310}
-                />
-              ) : (
-                <WebPerformancePanel
-                  query={generalMetricsQuery}
-                  selectedMetrics={selectedMetrics}
-                  activeMetric={activeMetric}
-                  onSelectMetric={handleSelectMetric}
-                  onToggleMetric={
-                    canMultiSelectableKpiCards ? handleToggleMetric : undefined
-                  }
-                />
-              )}
-            </Grid>
-          )}
-        </Grid>
-      ),
-      payment_split: hasPermission("web_vitals") ? (
-        <Grid container spacing={2}>
-          <Grid size={{ xs: 12, md: 8 }}>
-            {isLongRangeDashboard ? (
-              <DashboardUnavailableCard
-                title="Mode of Payment"
-                description={dataRestrictionDescription}
-                minHeight={310}
-              />
-            ) : (
-              <ModeOfPayment
-                query={generalMetricsQuery}
-                selectedMetrics={selectedMetrics}
-                onToggleMetric={
-                  canMultiSelectableKpiCards ? handleToggleMetric : undefined
-                }
-              />
-            )}
-          </Grid>
-          <Grid size={{ xs: 12, md: 4 }}>
-            {isLongRangeDashboard ? (
-              <DashboardUnavailableCard
-                title="Top 5 Pages"
-                description={dataRestrictionDescription}
-                minHeight={380}
-              />
-            ) : (
-              <WebVitals
-                query={generalMetricsQuery}
-                metric={webVitalsMetric}
-                onMetricChange={setWebVitalsMetric}
-              />
-            )}
-          </Grid>
-        </Grid>
-      ) : (
-        isLongRangeDashboard ? (
-          <DashboardUnavailableCard
-            title="Mode of Payment"
-            description={dataRestrictionDescription}
-            minHeight={310}
-          />
-        ) : (
-          <ModeOfPayment
-            query={generalMetricsQuery}
-            selectedMetrics={selectedMetrics}
-            onToggleMetric={
-              canMultiSelectableKpiCards ? handleToggleMetric : undefined
-            }
-          />
-        )
-      ),
-      payment_trend: isLongRangeDashboard ? (
-        <DashboardUnavailableCard
-          title="Payment Trend"
-          description={dataRestrictionDescription}
-          minHeight={310}
-        />
-      ) : (
-        <PaymentSplitTrend query={generalMetricsQuery} />
-      ),
-      traffic_split: isLongRangeDashboard ? (
-        <DashboardUnavailableCard
-          title="Traffic Split"
-          description={dataRestrictionDescription}
-          minHeight={310}
-        />
-      ) : (
-        <TrafficSourceSplit
-          query={trendMetricsQuery}
-          compareMode={compareMode}
-          mappingRules={trafficSplitRules}
-        />
-      ),
-    }),
-    [
-        compareMode,
-        generalMetricsQuery,
-        handleOverallSnapshotBrandSelect,
-        handleDesktopKpiLayoutChange,
-        handleFunnelData,
-        handleSelectMetric,
-        handleToggleMetric,
-        canCustomizeDashboardLayout,
-        canMultiSelectableKpiCards,
-        effectiveDashboardLayout,
-        hasPermission,
-        isAuthor,
-        authorBrandsLoading,
-        layoutEditMode,
-        overallSnapshotQuery,
-        selectedMetrics,
-        activeMetric,
-        selectedProductIds,
-        selectedProductLabel,
-        snapshotBrands,
-        trafficSplitRules,
-        trendMetricsQuery,
-        utmOptions,
-        dataRestrictionDescription,
-        isLongRangeDashboard,
-        effectiveDashboardLayout,
-        handleDesktopKpiLayoutChange,
-        layoutEditMode,
-      webVitalsMetric,
-    ],
-  );
-
-  const mobileWidgetRegistry = useMemo(
-    () => ({
-      kpi_cards: (
-        <KPIs
-          variant="desktop_paged"
-          key={`mobile-kpis-${layoutEditMode ? "edit" : "view"}-${effectiveDashboardLayout.kpiCardsDesktop.order.join("|")}-${effectiveDashboardLayout.kpiCardsDesktop.pinned.join("|")}`}
-          query={trendMetricsQuery}
-          selectedMetrics={selectedMetrics}
-          activeMetric={activeMetric}
-          onSelectMetric={handleSelectMetric}
-          onToggleMetric={
-            canMultiSelectableKpiCards ? handleToggleMetric : undefined
-          }
-          onFunnelData={handleFunnelData}
-          productId={selectedProductIds}
-          productLabel={selectedProductLabel}
-          utmOptions={utmOptions}
-          showRow="mobile_top"
-          showWebVitals={!isLongRangeDashboard && hasPermission("web_vitals")}
-          showCiEvents={hasPermission("ci_events")}
-          showRtoKpi={hasPermission("rto_kpi")}
-          showIntentMetrics={hasPermission("intent_metrics")}
-          compareMode={compareMode}
-          desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
-          onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
-          canEditDesktopKpis={canCustomizeDashboardLayout}
-          dashboardLayoutEditing={layoutEditMode}
-        />
-      ),
-      overall_snapshot: isLongRangeDashboard ? (
-        <DashboardUnavailableCard
-          title="Overall Snapshot"
-          description={dataRestrictionDescription}
-          minHeight={320}
-        />
-      ) : (
-        <OverallSnapshotWidget
-          query={overallSnapshotQuery}
-          brands={snapshotBrands}
-          brandsLoading={isAuthor && authorBrandsLoading}
-          onBrandSelect={handleOverallSnapshotBrandSelect}
-        />
-      ),
-      kpi_trend: (
-        <HourlySalesCompare
-          query={trendMetricsQuery}
-          selectedMetrics={selectedMetrics}
-          activeMetric={activeMetric}
-          compareMode={compareMode}
-          isLongRange={isLongRangeDashboard}
-        />
-      ),
-      top_pages: isLongRangeDashboard ? (
-        <DashboardUnavailableCard
-          title="Top 5 Pages"
-          description={dataRestrictionDescription}
-          minHeight={380}
-        />
-      ) : (
-        <WebVitals
-          query={generalMetricsQuery}
-          metric={webVitalsMetric}
-          onMetricChange={setWebVitalsMetric}
-        />
-      ),
-      payment_split: isLongRangeDashboard ? (
-        <DashboardUnavailableCard
-          title="Mode of Payment"
-          description={dataRestrictionDescription}
-          minHeight={310}
-        />
-      ) : (
-        <ModeOfPayment
-          query={generalMetricsQuery}
-          selectedMetrics={selectedMetrics}
-          onToggleMetric={
-            canMultiSelectableKpiCards ? handleToggleMetric : undefined
-          }
-        />
-      ),
-      payment_trend: isLongRangeDashboard ? (
-        <DashboardUnavailableCard
-          title="Payment Trend"
-          description={dataRestrictionDescription}
-          minHeight={310}
-        />
-      ) : (
-        <PaymentSplitTrend query={generalMetricsQuery} />
-      ),
-      traffic_split: isLongRangeDashboard ? (
-        <DashboardUnavailableCard
-          title="Traffic Split"
-          description={dataRestrictionDescription}
-          minHeight={310}
-        />
-      ) : (
-        <TrafficSourceSplit
-          query={trendMetricsQuery}
-          compareMode={compareMode}
-          mappingRules={trafficSplitRules}
-        />
-      ),
-    }),
-    [
-        compareMode,
-        generalMetricsQuery,
-        handleOverallSnapshotBrandSelect,
-        handleFunnelData,
-        handleSelectMetric,
-        handleToggleMetric,
-        canMultiSelectableKpiCards,
-        hasPermission,
-        isAuthor,
-        authorBrandsLoading,
-        overallSnapshotQuery,
-        selectedMetrics,
-        activeMetric,
-        selectedProductIds,
-        selectedProductLabel,
-        snapshotBrands,
-        trafficSplitRules,
-        trendMetricsQuery,
-        utmOptions,
-        dataRestrictionDescription,
-        isLongRangeDashboard,
-      webVitalsMetric,
-    ],
-  );
-
-  const handleSaveDashboardLayout = useCallback(async (draftLayout) => {
-    const payload = normalizeDashboardLayout(draftLayout);
-    setIsSavingDashboardLayout(true);
-    try {
-      const res = await saveDashboardLayout(payload);
-      if (res.error) return;
-      setDashboardLayout(normalizeDashboardLayout(res.data));
-      setPreviewDashboardLayout(null);
-      setLayoutEditMode(false);
-    } finally {
-      setIsSavingDashboardLayout(false);
-    }
+  const handleRegisterDashboardActions = useCallback((actions) => {
+    dashboardRouteActionsRef.current = actions || {};
   }, []);
 
-  function handleDesktopKpiLayoutChange(nextKpiLayout, options = {}) {
-    const normalizedKpiLayout = normalizeDesktopKpiLayout(nextKpiLayout);
-
-    if (options.persist && !layoutEditMode) {
-      const nextLayout = normalizeDashboardLayout({
-        ...dashboardLayout,
-        kpiCardsDesktop: normalizedKpiLayout,
-      });
-      handleSaveDashboardLayout(nextLayout);
-      return;
-    }
-
-    setPreviewDashboardLayout((prev) => {
-      const base = normalizeDashboardLayout(prev || dashboardLayout);
-      return normalizeDashboardLayout({
-        ...base,
-        kpiCardsDesktop: normalizedKpiLayout,
-      });
-    });
-  }
-
-  const handleOpenLayoutEditor = useCallback(() => {
-    if (layoutEditMode) return;
-    setPreviewDashboardLayout(normalizeDashboardLayout(dashboardLayout));
-    setLayoutEditMode(true);
-  }, [dashboardLayout, layoutEditMode]);
-
-  const handleCloseLayoutEditor = useCallback(() => {
-    setPreviewDashboardLayout(null);
-    setLayoutEditMode(false);
+  const handleOpenDashboardLayoutEditor = useCallback(() => {
+    dashboardRouteActionsRef.current?.openLayoutEditor?.();
   }, []);
 
-  const handleInlineDashboardReorder = useCallback((nextVisibleIds) => {
-    const viewport = isMobile ? "mobile" : "desktop";
-    setPreviewDashboardLayout((prev) => {
-      const base = normalizeDashboardLayout(prev || dashboardLayout);
-      return normalizeDashboardLayout({
-        ...base,
-        [viewport]: nextVisibleIds,
-      });
-    });
-  }, [dashboardLayout, isMobile]);
-
-  const handleResetDashboardLayout = useCallback(() => {
-    const viewport = isMobile ? "mobile" : "desktop";
-    setPreviewDashboardLayout((prev) => {
-      const base = normalizeDashboardLayout(prev || dashboardLayout);
-      return normalizeDashboardLayout({
-        ...base,
-        [viewport]: [...DASHBOARD_LAYOUT_DEFAULTS[viewport]],
-        kpiCardsDesktop:
-          viewport === "desktop"
-            ? DEFAULT_DESKTOP_KPI_LAYOUT
-            : base.kpiCardsDesktop,
-      });
-    });
-  }, [dashboardLayout, isMobile]);
-
-  const activeWidgetIds = isMobile ? visibleMobileWidgetIds : visibleDesktopWidgetIds;
-  const activeWidgetRegistry = isMobile ? mobileWidgetRegistry : desktopWidgetRegistry;
-  const extraAfterId = isMobile
-    ? (visibleMobileWidgetIds.includes("top_pages") ? "top_pages" : "kpi_trend")
-    : "kpi_trend";
-  const dashboardExtrasNode = renderDashboardExtras();
+  const handleDashboardDownloadSnapshot = useCallback(() => {
+    dashboardRouteActionsRef.current?.downloadSnapshot?.();
+  }, []);
 
   const glassStyles = useMemo(
     () => ({
@@ -2811,7 +1546,7 @@ export default function App() {
           },
         },
       }),
-    [darkMode],
+    [darkMode, depthShadows, glassStyles],
   );
 
   // Light-only theme for sign-in page
@@ -3206,136 +1941,15 @@ export default function App() {
   }
 
   if (!user) {
-    const params = new URLSearchParams(window.location.search);
-    const path = window.location.pathname || "/";
-    const error = params.get("error") || "";
-    const reason = params.get("reason") || "";
-    const isUnauthorized =
-      (path.startsWith("/login") || path.startsWith("/unauthorized")) &&
-      (error === "google_oauth_failed" ||
-        error === "not_authorized" ||
-        reason === "not_authorized_domain");
-
-    if (isUnauthorized) {
-      return (
-        <ThemeProvider theme={lightTheme}>
-          <CssBaseline />
-          <Unauthorized />
-        </ThemeProvider>
-      );
-    }
-
     return (
-      <ThemeProvider theme={lightTheme}>
-        <CssBaseline />
-        <Box
-          sx={{
-            minHeight: "100svh",
-            bgcolor: "background.default",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            p: 2,
-          }}
-        >
-          <Container maxWidth="xs">
-            <Paper
-              elevation={3}
-              sx={{ p: 3, borderRadius: 3 }}
-              component="form"
-              onSubmit={handleLogin}
-            >
-              <Stack spacing={2}>
-                <Box sx={{ display: "flex", justifyContent: "center" }}>
-                  <Box
-                    component="img"
-                    src="/brand-logo-final.png"
-                    alt="Datum"
-                    sx={{ height: 80, width: 220, objectFit: "contain" }}
-                  />
-                </Box>
-                <TextField
-                  size="small"
-                  label="Email"
-                  type="email"
-                  required
-                  value={loginForm.email}
-                  onChange={(e) =>
-                    setLoginForm((f) => ({ ...f, email: e.target.value }))
-                  }
-                />
-                <TextField
-                  size="small"
-                  label="Password"
-                  type="password"
-                  required
-                  value={loginForm.password}
-                  onChange={(e) =>
-                    setLoginForm((f) => ({ ...f, password: e.target.value }))
-                  }
-                />
-                {loginError && <Alert severity="error">{loginError}</Alert>}
-                <Button variant="contained" type="submit" disabled={loggingIn}>
-                  {loggingIn ? "Logging in..." : "Login"}
-                </Button>
-                <Divider>or</Divider>
-                <button
-                  type="button"
-                  className="gsi-material-button"
-                  onClick={() => {
-                    const base = import.meta.env.VITE_API_BASE || "/api";
-                    const target = base.startsWith("http")
-                      ? base
-                      : `${window.location.origin}${base}`;
-
-                    const redirect =
-                      import.meta.env.VITE_OAUTH_REDIRECT ||
-                      window.location.origin;
-
-                    window.location.href = `${target.replace(/\/$/, "")}/auth/google/start?redirect=${encodeURIComponent(redirect)}`;
-                    console.log(window.location.href);
-                  }}
-                >
-                  <div className="gsi-material-button-state"></div>
-                  <div className="gsi-material-button-content-wrapper">
-                    <div className="gsi-material-button-icon" aria-hidden>
-                      <svg
-                        version="1.1"
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 48 48"
-                        xmlnsXlink="http://www.w3.org/1999/xlink"
-                        style={{ display: "block" }}
-                      >
-                        <path
-                          fill="#EA4335"
-                          d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
-                        ></path>
-                        <path
-                          fill="#4285F4"
-                          d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
-                        ></path>
-                        <path
-                          fill="#FBBC05"
-                          d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
-                        ></path>
-                        <path
-                          fill="#34A853"
-                          d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
-                        ></path>
-                        <path fill="none" d="M0 0h48v48H0z"></path>
-                      </svg>
-                    </div>
-                    <span className="gsi-material-button-contents">
-                      Sign in with Google
-                    </span>
-                    <span style={{ display: "none" }}>Sign in with Google</span>
-                  </div>
-                </button>
-              </Stack>
-            </Paper>
-          </Container>
-        </Box>
-      </ThemeProvider>
+      <AuthRouteContainer
+        lightTheme={lightTheme}
+        loginForm={loginForm}
+        setLoginForm={setLoginForm}
+        loginError={loginError}
+        loggingIn={loggingIn}
+        handleLogin={handleLogin}
+      />
     );
   }
 
@@ -3345,6 +1959,175 @@ export default function App() {
   const showMultipleBrands = isAuthor
     ? authorBrands.length > 0
     : viewerBrands.length > 1;
+  const activeRouteContent = (() => {
+    if (authorTab === "tenant-setup") {
+      return (
+        <AdminRouteContainer
+          tab="tenant-setup"
+          direction={direction}
+          pageVariants={pageVariants}
+          isMobile={isMobile}
+          hasBrand={hasBrand}
+          authorBrands={authorBrands}
+          authorBrandKey={authorBrandKey}
+          darkMode={darkMode}
+          trafficSplitRules={trafficSplitRules}
+          setTrafficSplitRules={setTrafficSplitRules}
+        />
+      );
+    }
+
+    if (authorTab === "overall-snapshot") {
+      return (
+        <OverallSnapshotRouteContainer
+          direction={direction}
+          pageVariants={pageVariants}
+          isMobile={isMobile}
+          normalizedRange={normalizedRange}
+          handleRangeChange={handleRangeChange}
+          compareMode={compareMode}
+          handleCompareModeChange={handleCompareModeChange}
+          compareDateRange={compareDateRange}
+          handleCompareDateRangeChange={handleCompareDateRangeChange}
+          dataRestrictionConfig={dataRestrictionConfig}
+          overallSnapshotQuery={overallSnapshotQuery}
+          snapshotBrands={snapshotBrands}
+          isAuthor={isAuthor}
+          authorBrandsLoading={authorBrandsLoading}
+          handleOverallSnapshotBrandSelect={handleOverallSnapshotBrandSelect}
+        />
+      );
+    }
+
+    if (authorTab === "dashboard") {
+      return (
+        <DashboardRouteContainer
+          initialized={initialized}
+          user={user}
+          hasBrand={hasBrand}
+          isMobile={isMobile}
+          isAuthor={isAuthor}
+          hasPermission={hasPermission}
+          canCustomizeDashboardLayout={canCustomizeDashboardLayout}
+          canMultiSelectableKpiCards={canMultiSelectableKpiCards}
+          dashboardScopeLabel={dashboardScopeLabel}
+          trendMetricsQuery={trendMetricsQuery}
+          generalMetricsQuery={generalMetricsQuery}
+          overallSnapshotQuery={overallSnapshotQuery}
+          selectedMetrics={selectedMetrics}
+          activeMetric={activeMetric}
+          onSelectMetric={handleSelectMetric}
+          onToggleMetric={handleToggleMetric}
+          onFunnelData={handleFunnelData}
+          selectedProductIds={selectedProductIds}
+          selectedProductLabel={selectedProductLabel}
+          utmOptions={utmOptions}
+          compareMode={compareMode}
+          snapshotBrands={snapshotBrands}
+          authorBrandsLoading={authorBrandsLoading}
+          onOverallSnapshotBrandSelect={handleOverallSnapshotBrandSelect}
+          dataRestrictionDescription={dataRestrictionDescription}
+          isLongRangeDashboard={isLongRangeDashboard}
+          activeBrandKey={activeBrandKey}
+          viewerPermissions={viewerPermissions}
+          funnelData={funnelData}
+          trafficSplitRules={trafficSplitRules}
+          onRegisterActions={handleRegisterDashboardActions}
+        />
+      );
+    }
+
+    if (canAccessSessionAnalyticsPanel && authorTab === "session-analytics") {
+      return (
+        <SessionAnalyticsRouteContainer
+          activeBrandKey={activeBrandKey}
+          isAuthor={isAuthor}
+          authorBrands={authorBrands}
+          viewerBrands={viewerBrands}
+        />
+      );
+    }
+
+    if (canAccessDailyFunnelPanel && authorTab === "daily-funnel") {
+      return (
+        <DailyFunnelRouteContainer
+          hasBrand={hasBrand}
+          activeBrandKey={activeBrandKey}
+          canAccessUtmFunnelTable={canAccessUtmFunnelTable}
+        />
+      );
+    }
+
+    if (isAuthor && authorTab === "product-conversion") {
+      return (
+        <ProductConversionRouteContainer
+          hasBrand={hasBrand}
+          darkMode={darkMode}
+          funnelData={funnelData}
+          hasPermission={hasPermission}
+          activeBrandKey={activeBrandKey}
+          isAuthor={isAuthor}
+          viewerPermissions={viewerPermissions}
+        />
+      );
+    }
+
+    if (canAccessInventoryPanel && authorTab === "inventory") {
+      return (
+        <InventoryRouteContainer
+          hasBrand={hasBrand}
+          activeBrandKey={activeBrandKey}
+          productTableStart={productTableStart}
+          productTableEnd={productTableEnd}
+        />
+      );
+    }
+
+    if (canAccessBundlesPanel && authorTab === "bundles") {
+      return (
+        <BundlesRouteContainer
+          hasBrand={hasBrand}
+          activeBrandKey={activeBrandKey}
+          start={start}
+          end={end}
+        />
+      );
+    }
+
+    if (
+      (isAuthor && authorTab === "access") ||
+      (isAuthor && authorTab === "traffic-split-config") ||
+      authorTab === "alerts" ||
+      authorTab === "notifications-log"
+    ) {
+      return (
+        <AdminRouteContainer
+          tab={authorTab}
+          direction={direction}
+          pageVariants={pageVariants}
+          isMobile={isMobile}
+          hasBrand={hasBrand}
+          authorBrands={authorBrands}
+          authorBrandKey={authorBrandKey}
+          darkMode={darkMode}
+          trafficSplitRules={trafficSplitRules}
+          setTrafficSplitRules={setTrafficSplitRules}
+        />
+      );
+    }
+
+    if (authorTab === "requests") {
+      return (
+        <MerchantRequestsRouteContainer
+          activeBrandKey={activeBrandKey}
+          isAuthor={isAuthor}
+          authorBrands={authorBrands}
+        />
+      );
+    }
+
+    return null;
+  })();
 
   return (
     <ThemeProvider theme={theme}>
@@ -3464,7 +2247,7 @@ export default function App() {
                   canCustomizeDashboardLayout
                 }
                 onFilterClick={() => setMobileFilterOpen(true)}
-                onCustomizeLayoutClick={handleOpenLayoutEditor}
+                onCustomizeLayoutClick={handleOpenDashboardLayoutEditor}
               />
             </Box>
 
@@ -3578,7 +2361,7 @@ export default function App() {
                         }}
                         utmOptions={utmOptions}
                         dataRestrictionConfig={dataRestrictionConfig}
-                        onDownload={handleDownloadSnapshot}
+                        onDownload={handleDashboardDownloadSnapshot}
                         children={
                           canCustomizeDashboardLayout ? (
                             <Tooltip title="Customize Layout">
@@ -3587,7 +2370,7 @@ export default function App() {
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  handleOpenLayoutEditor();
+                                  handleOpenDashboardLayoutEditor();
                                 }}
                                 sx={{
                                   width: 32,
@@ -3751,7 +2534,7 @@ export default function App() {
               >
               <Stack spacing={{ xs: 1, md: 2 }} sx={{ position: "relative" }}>
                 <AnimatePresence mode="wait" custom={direction} initial={false}>
-                  <motion.div
+                  <MotionDiv
                     key={authorTab}
                     custom={direction}
                     variants={pageVariants}
@@ -3760,413 +2543,8 @@ export default function App() {
                     exit="exit"
                     style={{ width: "100%" }}
                   >
-                    {authorTab === "notifications-log" && (
-                      <motion.div
-                        key="notifications-log"
-                        custom={direction}
-                        variants={pageVariants}
-                        initial="initial"
-                        animate="animate"
-                        exit="exit"
-                        style={{ width: "100%", height: "100%" }}
-                      >
-                        <NotificationsLog darkMode={darkMode === "dark"} />
-                      </motion.div>
-                    )}
-                    {authorTab === "tenant-setup" && !isMobile && (
-                      <motion.div
-                        key="tenant-setup"
-                        custom={direction}
-                        variants={pageVariants}
-                        initial="initial"
-                        animate="animate"
-                        exit="exit"
-                        style={{ width: "100%" }}
-                      >
-                        <Suspense fallback={<SectionFallback count={1} />}>
-                          <Stack spacing={2}>
-                            <TenantSetupForm onOnboard={(data) => console.log("Onboard:", data)} />
-                            <LogsPanel />
-                          </Stack>
-                        </Suspense>
-                      </motion.div>
-                    )}
-                    {authorTab === "overall-snapshot" && (
-                      <motion.div
-                        key="overall-snapshot"
-                        custom={direction}
-                        variants={pageVariants}
-                        initial="initial"
-                        animate="animate"
-                        exit="exit"
-                        style={{ width: "100%" }}
-                      >
-                        <Suspense fallback={<SectionFallback count={2} />}>
-                          <Stack spacing={{ xs: 1.25, md: 0 }}>
-                            {isMobile && (
-                              <Box
-                                sx={{
-                                  display: "flex",
-                                  justifyContent: "flex-end",
-                                  overflowX: "auto",
-                                  pb: 0.25,
-                                  "&::-webkit-scrollbar": { display: "none" },
-                                  msOverflowStyle: "none",
-                                  scrollbarWidth: "none",
-                                }}
-                              >
-                                <UnifiedFilterBar
-                                  range={normalizedRange}
-                                  onRangeChange={handleRangeChange}
-                                  brandKey=""
-                                  brands={[]}
-                                  onBrandChange={() => {}}
-                                  isAuthor={false}
-                                  compareMode={compareMode}
-                                  onCompareModeChange={handleCompareModeChange}
-                                  compareDateRange={compareDateRange}
-                                  onCompareDateRangeChange={handleCompareDateRangeChange}
-                                  dataRestrictionConfig={dataRestrictionConfig}
-                                  hideAllExceptDate
-                                />
-                              </Box>
-                            )}
-                            <OverallSnapshotWidget
-                              query={overallSnapshotQuery}
-                              brands={snapshotBrands}
-                              brandsLoading={isAuthor && authorBrandsLoading}
-                              onBrandSelect={handleOverallSnapshotBrandSelect}
-                            />
-                          </Stack>
-                        </Suspense>
-                      </motion.div>
-                    )}
-                    {authorTab === "dashboard" &&
-                      (hasBrand ? (
-                        <Suspense fallback={<SectionFallback count={5} />}>
-                          <Stack spacing={{ xs: 1, md: 1.25 }}>
-                            {!isMobile ? (
-                              <Typography
-                                variant="subtitle2"
-                                color="text.secondary"
-                                sx={{ px: 0.5 }}
-                              >
-                                Scope: {dashboardScopeLabel}
-                              </Typography>
-                            ) : null}
-                            <InlineDashboardLayoutEditor
-                              isEditing={layoutEditMode}
-                              itemIds={activeWidgetIds}
-                              renderWidget={(widgetId) =>
-                                activeWidgetRegistry[widgetId]
-                              }
-                              extraAfterId={extraAfterId}
-                              extras={dashboardExtrasNode}
-                              onOrderChange={handleInlineDashboardReorder}
-                              onSave={() =>
-                                handleSaveDashboardLayout(effectiveDashboardLayout)
-                              }
-                              onCancel={handleCloseLayoutEditor}
-                              onReset={handleResetDashboardLayout}
-                              isDirty={isDashboardLayoutDirty}
-                              isSaving={isSavingDashboardLayout}
-                            />
-                          </Stack>
-                        </Suspense>
-                      ) : (
-                        <Paper
-                          variant="outlined"
-                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
-                        >
-                          <Typography variant="body2" color="text.secondary">
-                            Select a brand to load dashboard metrics.
-                          </Typography>
-                        </Paper>
-                      ))}
-
-                    {canAccessSessionAnalyticsPanel &&
-                      authorTab === "session-analytics" && (
-                        <Suspense fallback={<SectionFallback count={4} height={240} />}>
-                          <SessionAnalyticsPage
-                            brandKey={activeBrandKey}
-                            availableBrands={
-                              isAuthor
-                                ? authorBrands
-                                : viewerBrands.map((brand) => ({ key: brand }))
-                            }
-                          />
-                        </Suspense>
-                      )}
-
-                    {canAccessDailyFunnelPanel &&
-                      authorTab === "daily-funnel" &&
-                      (hasBrand ? (
-                        <Suspense fallback={<SectionFallback count={2} height={240} />}>
-                          <DailyFunnelPanel
-                            brandKey={activeBrandKey}
-                            canAccessUtmFunnelTable={canAccessUtmFunnelTable}
-                          />
-                        </Suspense>
-                      ) : (
-                        <Paper
-                          variant="outlined"
-                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
-                        >
-                          <Typography variant="body2" color="text.secondary">
-                            Select a brand to view daily funnel metrics.
-                          </Typography>
-                        </Paper>
-                      ))}
-
-                    {/* Author-only tabs */}
-                    {isAuthor &&
-                      authorTab === "product-conversion" &&
-                      (hasBrand ? (
-                        <Suspense fallback={<SectionFallback />}>
-                          <Stack spacing={{ xs: 2, md: 3 }}>
-                            <Box
-                              sx={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                mb: 2,
-                                mt: 1,
-                              }}
-                            >
-                              <Typography
-                                variant="h6"
-                                sx={{
-                                  color:
-                                    darkMode === "dark"
-                                      ? "text.primary"
-                                      : "text.secondary",
-                                  fontWeight: 600,
-                                }}
-                              >
-                                Product Funnel
-                              </Typography>
-                            </Box>
-                            {funnelData?.stats ? (
-                              <Suspense
-                                fallback={
-                                  <Skeleton
-                                    variant="rounded"
-                                    width="100%"
-                                    height={250}
-                                  />
-                                }
-                              >
-                                <FunnelChart
-                                  data={[
-                                    {
-                                      label: "Sessions",
-                                      value:
-                                        funnelData.stats.total_sessions || 0,
-                                      change: funnelData.deltas?.sessions
-                                        ?.diff_pct
-                                        ? Number(
-                                            funnelData.deltas.sessions.diff_pct,
-                                          ).toFixed(1)
-                                        : undefined,
-                                    },
-                                    {
-                                      label: "Add to Cart",
-                                      value:
-                                        funnelData.stats.total_atc_sessions ||
-                                        0,
-                                      change: funnelData.deltas?.atc?.diff_pct
-                                        ? Number(
-                                            funnelData.deltas.atc.diff_pct,
-                                          ).toFixed(1)
-                                        : undefined,
-                                    },
-                                    ...(hasPermission("ci_events")
-                                      ? [
-                                          {
-                                            label: "Checkout Initiated",
-                                            value:
-                                              funnelData.stats.total_ci_events ||
-                                              0,
-                                            change: funnelData.deltas?.ci
-                                              ?.diff_pct
-                                              ? Number(
-                                                  funnelData.deltas.ci.diff_pct,
-                                                ).toFixed(1)
-                                              : undefined,
-                                          },
-                                        ]
-                                      : []),
-                                    {
-                                      label: "Orders",
-                                      value: funnelData.stats.total_orders || 0,
-                                      change:
-                                        funnelData.deltas?.orders?.diff_pct ||
-                                        funnelData.deltas?.orders?.diff_pp
-                                          ? Number(
-                                              funnelData.deltas?.orders
-                                                ?.diff_pct ||
-                                                funnelData.deltas?.orders
-                                                  ?.diff_pp,
-                                            ).toFixed(1)
-                                          : undefined,
-                                    },
-                                  ]}
-                                  height={250}
-                                />
-                              </Suspense>
-                            ) : (
-                              <Skeleton
-                                variant="rounded"
-                                width="100%"
-                                height={250}
-                              />
-                            )}
-
-                            <ProductConversionTable
-                              brandKey={activeBrandKey}
-                              showCompareMode={true}
-                              isAuthor={isAuthor}
-                              permissions={viewerPermissions}
-                            />
-                          </Stack>
-                        </Suspense>
-                      ) : (
-                        <Paper
-                          variant="outlined"
-                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
-                        >
-                          <Typography variant="body2" color="text.secondary">
-                            Select a brand to view conversion metrics.
-                          </Typography>
-                        </Paper>
-                      ))}
-
-                    {canAccessInventoryPanel &&
-                      authorTab === "inventory" &&
-                      (hasBrand ? (
-                        <Suspense fallback={<SectionFallback count={1} height={280} />}>
-                          <InventoryTable
-                            brandKey={activeBrandKey}
-                            startDate={productTableStart}
-                            endDate={productTableEnd}
-                          />
-                        </Suspense>
-                      ) : (
-                        <Paper
-                          variant="outlined"
-                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
-                        >
-                          <Typography variant="body2" color="text.secondary">
-                            Select a brand to view inventory metrics.
-                          </Typography>
-                        </Paper>
-                      ))}
-
-                    {canAccessBundlesPanel &&
-                      authorTab === "bundles" &&
-                      (hasBrand ? (
-                        <Suspense fallback={<SectionFallback count={2} height={280} />}>
-                          <BundlesPanel
-                            brandKey={activeBrandKey}
-                            initialStartDate={start}
-                            initialEndDate={end}
-                          />
-                        </Suspense>
-                      ) : (
-                        <Paper
-                          variant="outlined"
-                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
-                        >
-                          <Typography variant="body2" color="text.secondary">
-                            Select a brand to view bundle metrics.
-                          </Typography>
-                        </Paper>
-                      ))}
-
-                    {isAuthor && authorTab === "access" && (
-                      <Suspense fallback={<SectionFallback count={2} />}>
-                        <Stack spacing={{ xs: 2, md: 3 }}>
-                          <AccessControlCard />
-                        </Stack>
-                      </Suspense>
-                    )}
-
-                    {isAuthor && authorTab === "traffic-split-config" && (
-                      hasBrand ? (
-                        <Suspense fallback={<SectionFallback count={1} height={220} />}>
-                          <Stack spacing={{ xs: 2, md: 3 }}>
-                            <TrafficSplitConfigPanel
-                              rules={trafficSplitRules}
-                              onAddRule={(rule) =>
-                                setTrafficSplitRules((prev) => [...prev, rule])
-                              }
-                              onRemoveRule={(id) =>
-                                setTrafficSplitRules((prev) =>
-                                  prev.filter((r) => r.id !== id),
-                                )
-                              }
-                              onClearRules={() => setTrafficSplitRules([])}
-                            />
-                          </Stack>
-                        </Suspense>
-                      ) : (
-                        <Paper
-                          variant="outlined"
-                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
-                        >
-                          <Typography variant="body2" color="text.secondary">
-                            Select a brand to configure traffic split mapping.
-                          </Typography>
-                        </Paper>
-                      )
-                    )}
-
-                    {/*
-                    {isAuthor && authorTab === 'brands' && (
-                      <Suspense fallback={<SectionFallback count={2} />}>
-                        <Stack spacing={{ xs: 2, md: 3 }}>
-                          <AuthorBrandForm />
-                          <AuthorBrandList />
-                        </Stack>
-                      </Suspense>
-                    )}
-                    */}
-
-                    {authorTab === "alerts" &&
-                      (authorBrands.length ? (
-                        <Suspense fallback={<SectionFallback />}>
-                          <AlertsAdmin
-                            brands={authorBrands}
-                            defaultBrandKey={authorBrandKey}
-                          />
-                        </Suspense>
-                      ) : (
-                        <Paper
-                          variant="outlined"
-                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
-                        >
-                          <Typography variant="body2" color="text.secondary">
-                            Add at least one brand to start configuring alerts.
-                          </Typography>
-                        </Paper>
-                      ))}
-
-                    {authorTab === "requests" && (
-                      <Suspense fallback={<SectionFallback count={2} />}>
-                        <MerchantRequestsPanel
-                          brandKey={activeBrandKey}
-                          isAuthor={isAuthor}
-                          availableBrands={authorBrands}
-                        />
-                      </Suspense>
-                    )}
-
-                    {authorTab === "notifications-log" && (
-                      <Suspense fallback={<SectionFallback />}>
-                        <NotificationsLog darkMode={darkMode === "dark"} />
-                      </Suspense>
-                    )}
-                  </motion.div>
+                    {activeRouteContent}
+                  </MotionDiv>
                 </AnimatePresence>
               </Stack>
               </Box>

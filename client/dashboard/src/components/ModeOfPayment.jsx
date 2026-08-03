@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, Typography, Skeleton, useTheme, Box } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
-import { getOrderSplit, getPaymentSalesSplit } from '../lib/api';
 import dayjs from 'dayjs';
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react';
 import { useInrCurrency } from '../lib/currency.js';
+import { useDashboardDataApi } from "../features/dashboard/DashboardDataProvider.jsx";
 
 const COLORS = {
     Prepaid: '#2cc995',
@@ -102,6 +102,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({
 }) {
     const theme = useTheme();
     const isDark = theme.palette.mode === 'dark';
+    const { getOrderSplit, getPaymentSalesSplit } = useDashboardDataApi();
     const [loading, setLoading] = useState(true);
     const [prevRange, setPrevRange] = useState(null);
     const start = query?.start;
@@ -253,7 +254,7 @@ const ModeOfPayment = React.memo(function ModeOfPayment({
         fetchData();
 
         return () => { cancelled = true; };
-    }, [start, end, brandKey, productId, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, discountCode, city, timezone, convertAmount, formatConvertedAmount]);
+    }, [start, end, brandKey, productId, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, discountCode, city, timezone, convertAmount, formatConvertedAmount, getOrderSplit, getPaymentSalesSplit]);
 
     const renderChart = (title, chartData, totalLabel, rawTotal, trendMetricKey) => (
         <div className="flex flex-col items-center flex-1 min-w-0">

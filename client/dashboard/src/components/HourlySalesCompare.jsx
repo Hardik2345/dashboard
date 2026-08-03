@@ -23,15 +23,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  getHourlyTrend,
-  getDailyTrend,
-  getMonthlyTrend,
-  getWebPerformanceSummary,
-  getOrderSplit,
-  getPaymentSalesSplit,
-} from "../lib/api.js";
 import { useInrCurrency } from "../lib/currency.js";
+import { useDashboardDataApi } from "../features/dashboard/DashboardDataProvider.jsx";
 
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const nfPercent1 = new Intl.NumberFormat(undefined, {
@@ -633,6 +626,14 @@ export default memo(function HourlySalesCompare({
   activeMetric = null,
   isLongRange = false,
 }) {
+  const {
+    getHourlyTrend,
+    getDailyTrend,
+    getMonthlyTrend,
+    getWebPerformanceSummary,
+    getOrderSplit,
+    getPaymentSalesSplit,
+  } = useDashboardDataApi();
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState([]);
   const [viewMode, setViewMode] = useState("hourly");
@@ -1218,6 +1219,12 @@ export default memo(function HourlySalesCompare({
     deviceType,
     discountCode,
     end,
+    getDailyTrend,
+    getHourlyTrend,
+    getMonthlyTrend,
+    getOrderSplit,
+    getPaymentSalesSplit,
+    getWebPerformanceSummary,
     productId,
     query?.city,
     refreshKey,

@@ -25,8 +25,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { getOrderSplit, getPaymentSalesSplit } from "../lib/api.js";
 import { useInrCurrency } from "../lib/currency.js";
+import { useDashboardDataApi } from "../features/dashboard/DashboardDataProvider.jsx";
 
 const MAIN_COLOR = "#10b981";
 const COLORS = {
@@ -398,6 +398,7 @@ const TrendTooltip = ({ active, payload, label, formatter, chartMode }) => {
 export default memo(function PaymentSplitTrend({ query }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const { getOrderSplit, getPaymentSalesSplit } = useDashboardDataApi();
   const [metric, setMetric] = useState("orders");
   const [viewMode, setViewMode] = useState("daily");
   const [chartMode, setChartMode] = useState("line");
@@ -843,6 +844,8 @@ export default memo(function PaymentSplitTrend({ query }) {
     canUseHourly,
     brandKey,
     refreshKey,
+    getOrderSplit,
+    getPaymentSalesSplit,
     utmSource,
     utmMedium,
     utmCampaign,
