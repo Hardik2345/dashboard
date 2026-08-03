@@ -8,6 +8,14 @@ const {
 } = require('./longRangeGate');
 
 function buildTrendController({ metricsService }) {
+  const parseBooleanQuery = (value, defaultValue) => {
+    if (value === undefined || value === null || value === "") return defaultValue;
+    const normalized = String(value).trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+    return defaultValue;
+  };
+
   return {
     hourlyTrend: async (req, res) => {
       try {
@@ -60,12 +68,17 @@ function buildTrendController({ metricsService }) {
           !!req.user?.isAuthor ||
           permissions.includes('all') ||
           permissions.includes('utm_funnel_table');
+        const includeDaily = parseBooleanQuery(req.query.include_daily, true);
+        const includeUtm = canAccessUtmFunnel
+          ? parseBooleanQuery(req.query.include_utm, true)
+          : false;
 
         return res.json(
           await metricsService.getDailyFunnel({
             ...normalized.spec,
             utmDate: req.query.utm_date ? String(req.query.utm_date) : normalized.spec.end,
-            includeUtm: canAccessUtmFunnel,
+            includeDaily,
+            includeUtm,
           }),
         );
       } catch (e) {

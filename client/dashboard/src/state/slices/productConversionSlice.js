@@ -50,6 +50,9 @@ export const fetchProductConversion = createAsyncThunk(
     }
 
     const resp = await getProductConversion(apiParams, { signal });
+    if (resp.aborted) {
+      return rejectWithValue({ aborted: true });
+    }
     if (resp.error) {
       return rejectWithValue("Failed to fetch product conversion");
     }
@@ -129,6 +132,7 @@ const initialState = {
   pageTypes: Array.isArray(saved.pageTypes) ? saved.pageTypes : [],
   inventoryPeriod: saved.inventoryPeriod || "7d",
   search: "",
+  currentRequestId: null,
 };
 
 const productConversionSlice = createSlice({
@@ -215,13 +219,16 @@ const productConversionSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchProductConversion.pending, (state) => {
+      .addCase(fetchProductConversion.pending, (state, action) => {
         state.status = "loading";
         state.error = null;
+        state.currentRequestId = action.meta.requestId;
       })
       .addCase(fetchProductConversion.fulfilled, (state, action) => {
+        if (state.currentRequestId !== action.meta.requestId) return;
         state.status = "succeeded";
         state.error = null;
+        state.currentRequestId = null;
         state.rows = action.payload.rows || [];
         state.totalCount = action.payload.total_count || 0;
         state.page = action.payload.page || 1;
@@ -242,7 +249,15 @@ const productConversionSlice = createSlice({
         state.inventoryPeriod = action.payload.inventoryPeriod || "7d";
       })
       .addCase(fetchProductConversion.rejected, (state, action) => {
+        if (state.currentRequestId !== action.meta.requestId) return;
+        if (action.meta.aborted || action.payload?.aborted) {
+          state.currentRequestId = null;
+          state.error = null;
+          state.status = state.rows.length > 0 ? "succeeded" : "idle";
+          return;
+        }
         state.status = "failed";
+        state.currentRequestId = null;
         state.error = action.payload || "Failed to fetch product conversion";
       });
   },

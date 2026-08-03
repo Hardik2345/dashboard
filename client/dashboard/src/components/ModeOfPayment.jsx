@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Card, CardContent, Typography, Skeleton, useTheme, Box } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import dayjs from 'dayjs';
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react';
 import { useInrCurrency } from '../lib/currency.js';
-import { useDashboardDataApi } from "../features/dashboard/DashboardDataProvider.jsx";
+import { useDashboardModeOfPaymentData } from "../features/dashboard/widgetDataHooks.js";
 
 const COLORS = {
     Prepaid: '#2cc995',
@@ -102,9 +102,6 @@ const ModeOfPayment = React.memo(function ModeOfPayment({
 }) {
     const theme = useTheme();
     const isDark = theme.palette.mode === 'dark';
-    const { getOrderSplit, getPaymentSalesSplit } = useDashboardDataApi();
-    const [loading, setLoading] = useState(true);
-    const [prevRange, setPrevRange] = useState(null);
     const start = query?.start;
     const end = query?.end;
     const brandKey = query?.brand_key;
@@ -118,143 +115,11 @@ const ModeOfPayment = React.memo(function ModeOfPayment({
     const city = query?.city;
     const timezone = query?.timezone;
     const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
-    const [data, setData] = useState({
-        quantity: [],
-        value: [],
-        totalQuantity: 0,
-        totalValue: 0
+    const { loading, prevRange, data } = useDashboardModeOfPaymentData({
+        query,
+        convertAmount,
+        formatConvertedAmount,
     });
-
-    useEffect(() => {
-        let cancelled = false;
-        if (!start || !end) {
-            setLoading(false);
-            return;
-        }
-
-        setLoading(true);
-
-        const fetchData = async () => {
-            try {
-                const prevRangeData = getPreviousRange(start, end);
-                setPrevRange(prevRangeData);
-                const baseParams = {
-                    brand_key: brandKey,
-                    product_id: productId,
-                    utm_source: utmSource,
-                    utm_medium: utmMedium,
-                    utm_campaign: utmCampaign,
-                    sales_channel: salesChannel,
-                    device_type: deviceType,
-                    discount_code: discountCode,
-                    city,
-                };
-
-                const [
-                    currOrders,
-                    currSales,
-                    prevFullOrders,
-                    prevFullSales
-                ] = await Promise.all([
-                    getOrderSplit({ ...baseParams, start, end }),
-                    getPaymentSalesSplit({ ...baseParams, start, end }),
-                    prevRangeData.start ? getOrderSplit({ ...baseParams, start: prevRangeData.start, end: prevRangeData.end }) : Promise.resolve({}),
-                    prevRangeData.start ? getPaymentSalesSplit({ ...baseParams, start: prevRangeData.start, end: prevRangeData.end }) : Promise.resolve({})
-                ]);
-
-                const splitTimezone = currOrders?.timezone || currSales?.timezone || timezone || 'Asia/Kolkata';
-                const hourLte = getHourlyCutoffForTodayRange(start, end, splitTimezone);
-                const compareArgs = Number.isInteger(hourLte)
-                    ? { ...baseParams, hour_lte: hourLte }
-                    : baseParams;
-
-                const [
-                    currCompareOrders,
-                    currCompareSales,
-                    prevCompareOrders,
-                    prevCompareSales
-                ] = Number.isInteger(hourLte)
-                    ? await Promise.all([
-                        getOrderSplit({ start, end, ...compareArgs }),
-                        getPaymentSalesSplit({ start, end, ...compareArgs }),
-                        prevRangeData.start ? getOrderSplit({ start: prevRangeData.start, end: prevRangeData.end, ...compareArgs }) : Promise.resolve({}),
-                        prevRangeData.start ? getPaymentSalesSplit({ start: prevRangeData.start, end: prevRangeData.end, ...compareArgs }) : Promise.resolve({})
-                    ])
-                    : [null, null, prevFullOrders, prevFullSales];
-
-                if (cancelled) return;
-
-                const processMetric = (curr, compareCurr, comparePrev, type) => {
-                    const isValue = type === METRIC_TYPES.VALUE;
-                    const total = Number(curr?.total || 0);
-                    const comparisonCurrent = compareCurr || curr;
-                    const comparisonPrevious = comparePrev || {};
-                    const compareTotal = Number(comparisonCurrent?.total || 0);
-                    const prevTotal = Number(comparisonPrevious?.total || 0);
-
-                    const segments = ['Prepaid', 'COD', 'Partial'].map((key) => {
-                        const valKey = isValue
-                            ? (key === 'Partial' ? 'partial_sales' : `${key.toLowerCase()}_sales`)
-                            : (key === 'Partial' ? 'partially_paid_orders' : `${key.toLowerCase()}_orders`);
-
-                        const currVal = Number(curr?.[valKey] || 0);
-                        const compareCurrVal = Number(comparisonCurrent?.[valKey] || 0);
-                        const prevVal = Number(comparisonPrevious?.[valKey] || 0);
-                        const currPct = total > 0 ? (currVal / total) * 100 : 0;
-                        const compareCurrPct = compareTotal > 0 ? (compareCurrVal / compareTotal) * 100 : 0;
-                        const prevPct = prevTotal > 0 ? (prevVal / prevTotal) * 100 : 0;
-                        const delta = prevPct > 0
-                            ? ((compareCurrPct - prevPct) / prevPct) * 100
-                            : compareCurrPct > 0
-                                ? 100
-                                : 0;
-
-                        const displayValue = isValue ? convertAmount(currVal) : currVal;
-
-                        return {
-                            name: LABELS[key],
-                            value: displayValue,
-                            percent: currPct.toFixed(1),
-                            delta: Math.round(delta),
-                            color: COLORS[key],
-                            formattedValue: isValue
-                                ? formatConvertedAmount(displayValue, { notation: 'compact', maximumFractionDigits: 1 })
-                                : currVal.toLocaleString()
-                        };
-                    });
-
-                    const displayTotal = isValue ? convertAmount(total) : total;
-                    return {
-                        segments,
-                        total: displayTotal,
-                        formattedTotal: isValue
-                            ? formatConvertedAmount(displayTotal, { notation: 'compact', maximumFractionDigits: 1 })
-                            : total.toLocaleString()
-                    };
-                };
-
-                const qtyData = processMetric(currOrders, currCompareOrders, prevCompareOrders, METRIC_TYPES.QUANTITY);
-                const valData = processMetric(currSales, currCompareSales, prevCompareSales, METRIC_TYPES.VALUE);
-
-                setData({
-                    quantity: qtyData.segments,
-                    value: valData.segments,
-                    totalQuantity: qtyData.formattedTotal,
-                    totalValue: valData.formattedTotal,
-                    rawTotalQuantity: qtyData.total,
-                    rawTotalValue: valData.total
-                });
-            } catch (err) {
-                console.error('Failed to load payment split', err);
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
-        };
-
-        fetchData();
-
-        return () => { cancelled = true; };
-    }, [start, end, brandKey, productId, utmSource, utmMedium, utmCampaign, salesChannel, deviceType, discountCode, city, timezone, convertAmount, formatConvertedAmount, getOrderSplit, getPaymentSalesSplit]);
 
     const renderChart = (title, chartData, totalLabel, rawTotal, trendMetricKey) => (
         <div className="flex flex-col items-center flex-1 min-w-0">

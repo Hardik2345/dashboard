@@ -269,8 +269,9 @@ export default function MobileTopBar({
       setMonth(presetEnd.month());
       setYear(presetEnd.year());
       onChange([presetStart, presetEnd], preset.compareMode || null);
+      handleClose();
     },
-    [onChange, start, end],
+    [handleClose, onChange],
   );
 
   const activePreset = useMemo(() => {
@@ -295,15 +296,18 @@ export default function MobileTopBar({
       }
       if (s && e && s.isAfter(e)) {
         onChange([e, s], compareMode);
+        handleClose();
         return;
       }
       if (s && !e) {
         onChange([s, s], compareMode);
+        handleClose();
         return;
       }
       onChange([s, e ?? s ?? null], compareMode);
+      handleClose();
     },
-    [onChange, compareMode],
+    [compareMode, handleClose, onChange],
   );
 
   const isDateRangeOver30Days = useMemo(() => {
@@ -785,6 +789,7 @@ export default function MobileTopBar({
                             s.toISOString(),
                             e.toISOString(),
                           ]);
+                          setCompDateAnchorEl(null);
                         }
                       }}
                       onMonthChange={(m, y) => {

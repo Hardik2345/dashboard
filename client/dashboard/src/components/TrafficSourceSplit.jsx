@@ -8,7 +8,7 @@ import {
     Tooltip as ChartTooltip,
 } from 'chart.js';
 import dayjs from 'dayjs';
-import { useDashboardDataApi } from "../features/dashboard/DashboardDataProvider.jsx";
+import { useDashboardTrafficSourceSplitData } from "../features/dashboard/widgetDataHooks.js";
 
 ChartJS.register(ArcElement, ChartTooltip);
 
@@ -64,29 +64,13 @@ function useCountUp(end, duration = 800) {
 export default memo(function TrafficSourceSplit({ query, compareMode = false, mappingRules = [] }) {
     const theme = useTheme();
     const isDark = theme.palette.mode === 'dark';
-    const { getTrafficSourceSplit } = useDashboardDataApi();
-    const [loading, setLoading] = useState(true);
-    const [data, setData] = useState(null);
     const [metric, setMetric] = useState('sessions'); // 'sessions' or 'atc_sessions'
 
     const effectiveMappingRules = useMemo(() => mappingRules || [], [mappingRules]);
-
-    useEffect(() => {
-        let cancelled = false;
-        if (!query?.start || !query?.end) {
-            setData(null);
-            setLoading(false);
-            return () => { cancelled = true; };
-        }
-        setLoading(true);
-
-        getTrafficSourceSplit({ ...query, mappingRules: effectiveMappingRules })
-            .then(res => {
-                if (!cancelled) { setData(res); setLoading(false); }
-            })
-            .catch(() => setLoading(false));
-        return () => { cancelled = true; };
-    }, [effectiveMappingRules, getTrafficSourceSplit, query]);
+    const { loading, data } = useDashboardTrafficSourceSplitData({
+        query,
+        mappingRules: effectiveMappingRules,
+    });
 
     const getMetricValue = (sourceObj) => sourceObj ? Number(sourceObj[metric] || 0) : 0;
 

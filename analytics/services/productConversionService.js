@@ -618,6 +618,14 @@ function applySearch(rows, search) {
   );
 }
 
+function hasInventoryDerivedFilter(filters) {
+  if (!Array.isArray(filters) || filters.length === 0) return false;
+  return filters.some((filter) => {
+    const field = (filter.field || "").toString().toLowerCase();
+    return field === "drr" || field === "doh";
+  });
+}
+
 function buildProductConversionService() {
   async function getInventoryOnlyRowsFromRedis(spec, resolveShopSubdomain) {
     const redisClient = getDefaultRedisClient();
@@ -810,6 +818,46 @@ function buildProductConversionService() {
       Array.isArray(spec.productTypes) && spec.productTypes.length > 0;
     const baseAlias = useMappingBase ? "m" : "s";
     const built = buildProductConditions(spec, baseAlias);
+    const needsInventoryPostProcessing =
+      spec.sortBy === "drr" ||
+      spec.sortBy === "doh" ||
+      hasInventoryDerivedFilter(spec.filters);
+
+    if (!needsInventoryPostProcessing) {
+      const countBuilt = buildCountSql(spec, useMappingBase, built.whereClause);
+      const countRows = await spec.conn.query(countBuilt.sql, {
+        type: QueryTypes.SELECT,
+        replacements: [...countBuilt.replacements, ...built.replacements],
+      });
+      const totalCount = Number(countRows?.[0]?.total_count || 0);
+
+      const selectBuilt = buildSelectSql(
+        spec,
+        useMappingBase,
+        built.whereClause,
+        spec.sortCol,
+        spec.sortDir,
+        { page: spec.page, pageSize: spec.pageSize },
+      );
+      const rowsRaw = await spec.conn.query(selectBuilt.sql, {
+        type: QueryTypes.SELECT,
+        replacements: [...selectBuilt.replacements, ...built.replacements],
+      });
+
+      const rows = normalizeRows(rowsRaw, hasCompareRange(spec));
+      const enriched = await enrichWithRedis(rows, spec, spec.resolveShopSubdomain);
+
+      return {
+        range: { start: spec.start, end: spec.end },
+        timezone: spec.timezone,
+        page: spec.page,
+        page_size: spec.pageSize,
+        total_count: totalCount,
+        rows: enriched,
+        sort: { by: spec.sortBy, dir: spec.sortDir.toLowerCase() },
+      };
+    }
+
     const selectBuilt = buildSelectSql(
       spec,
       useMappingBase,
