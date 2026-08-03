@@ -222,7 +222,10 @@ export async function doGet(path, params, options = {}) {
       return { error: true, status: res.status, data: json };
     }
     return { error: false, data: json };
-  } catch {
+  } catch (error) {
+    if (error?.name === "AbortError" || options.signal?.aborted) {
+      return { error: true, aborted: true };
+    }
     captureFailure(path, { method: "GET", brandKey: params?.brand_key });
     return { error: true };
   }
@@ -673,6 +676,7 @@ export async function getProductConversion(args, options = {}) {
   const res = await doGet("/metrics/product-conversion", params, {
     signal: options.signal,
   });
+  if (res.aborted) return { error: true, aborted: true };
   if (res.error) return { error: true };
   const json = res.data || {};
   return {
@@ -1225,6 +1229,12 @@ export async function getDailyFunnel(args = {}) {
       start: args.start,
       end: args.end,
       utm_date: args.utmDate,
+      include_utm:
+        typeof args.includeUtm === "boolean" ? String(args.includeUtm) : undefined,
+      include_daily:
+        typeof args.includeDaily === "boolean"
+          ? String(args.includeDaily)
+          : undefined,
     },
     args,
   );

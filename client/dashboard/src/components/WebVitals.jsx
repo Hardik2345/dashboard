@@ -10,7 +10,7 @@ import {
   useTheme,
   Skeleton,
 } from "@mui/material";
-import useWebVitals from "../hooks/useWebVitals.js";
+import { useDashboardWebVitalsData } from "../features/dashboard/widgetDataHooks.js";
 
 const StatBox = ({ children, sx = {} }) => {
   const theme = useTheme();
@@ -69,7 +69,10 @@ const WebVitals = ({
     }
     setLocalMetric(nextMetric);
   };
-  const { topPages, loading, isSingleDateSelection } = useWebVitals(query, metric);
+  const { topPages, loading, isSingleDateSelection } = useDashboardWebVitalsData(
+    query,
+    metric,
+  );
 
   return (
     <StatBox

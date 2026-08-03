@@ -2359,41 +2359,51 @@ function buildMetricsSnapshotService(deps = {}) {
 
   async function getDailyFunnel(spec) {
     const timezone = normalizeTimezone(spec.timezone);
+    const includeDaily = spec.includeDaily !== false;
+    const includeUtm = spec.includeUtm === true;
     const [baseRows, paymentRows, discountRows, utmRows] = await Promise.all([
-      fetchDailyRows(spec.conn, spec.start, spec.end, {}),
-      spec.conn.query(
-        `
-          SELECT
-            DATE_FORMAT(date, '%Y-%m-%d') AS date,
-            COALESCE(SUM(prepaid_orders), 0) AS prepaid_orders,
-            COALESCE(SUM(cod_orders), 0) AS cod_orders,
-            COALESCE(SUM(partially_paid_orders), 0) AS partially_paid_orders
-          FROM overall_summary
-          WHERE date >= ? AND date <= ?
-          GROUP BY date
-          ORDER BY date ASC
-        `,
-        {
-          type: QueryTypes.SELECT,
-          replacements: [spec.start, spec.end],
-        },
-      ),
-      spec.conn.query(
-        `
-          SELECT
-            DATE_FORMAT(date, '%Y-%m-%d') AS date,
-            COALESCE(SUM(total_discounts_given), 0) AS discount_amount
-          FROM discount_summary
-          WHERE date >= ? AND date <= ?
-          GROUP BY date
-          ORDER BY date ASC
-        `,
-        {
-          type: QueryTypes.SELECT,
-          replacements: [spec.start, spec.end],
-        },
-      ),
-      spec.includeUtm ? queryDailyFunnelUtmRowsWithDelta(spec.conn, spec.utmDate || spec.end) : Promise.resolve([]),
+      includeDaily
+        ? fetchDailyRows(spec.conn, spec.start, spec.end, {})
+        : Promise.resolve([]),
+      includeDaily
+        ? spec.conn.query(
+            `
+              SELECT
+                DATE_FORMAT(date, '%Y-%m-%d') AS date,
+                COALESCE(SUM(prepaid_orders), 0) AS prepaid_orders,
+                COALESCE(SUM(cod_orders), 0) AS cod_orders,
+                COALESCE(SUM(partially_paid_orders), 0) AS partially_paid_orders
+              FROM overall_summary
+              WHERE date >= ? AND date <= ?
+              GROUP BY date
+              ORDER BY date ASC
+            `,
+            {
+              type: QueryTypes.SELECT,
+              replacements: [spec.start, spec.end],
+            },
+          )
+        : Promise.resolve([]),
+      includeDaily
+        ? spec.conn.query(
+            `
+              SELECT
+                DATE_FORMAT(date, '%Y-%m-%d') AS date,
+                COALESCE(SUM(total_discounts_given), 0) AS discount_amount
+              FROM discount_summary
+              WHERE date >= ? AND date <= ?
+              GROUP BY date
+              ORDER BY date ASC
+            `,
+            {
+              type: QueryTypes.SELECT,
+              replacements: [spec.start, spec.end],
+            },
+          )
+        : Promise.resolve([]),
+      includeUtm
+        ? queryDailyFunnelUtmRowsWithDelta(spec.conn, spec.utmDate || spec.end)
+        : Promise.resolve([]),
     ]);
 
     const baseMap = new Map(
@@ -2406,33 +2416,35 @@ function buildMetricsSnapshotService(deps = {}) {
       (Array.isArray(discountRows) ? discountRows : []).map((row) => [String(row.date), row]),
     );
 
-    const rows = buildSeriesBuckets(spec.start, spec.end)
-      .map((date) => {
-        const base = baseMap.get(date) || {};
-        const payment = paymentMap.get(date) || {};
-        const discount = discountMap.get(date) || {};
+    const rows = includeDaily
+      ? buildSeriesBuckets(spec.start, spec.end)
+          .map((date) => {
+            const base = baseMap.get(date) || {};
+            const payment = paymentMap.get(date) || {};
+            const discount = discountMap.get(date) || {};
 
-        return {
-          date,
-          sales: Number(base.sales || 0),
-          sessions: Number(base.sessions || 0),
-          atc_sessions: Number(base.atc || 0),
-          ci_events: Number(base.ci_events || 0),
-          orders: Number(base.orders || 0),
-          discount_amount: Number(discount.discount_amount || 0),
-          prepaid_orders: Number(payment.prepaid_orders || 0),
-          cod_orders: Number(payment.cod_orders || 0),
-          partially_paid_orders: Number(payment.partially_paid_orders || 0),
-        };
-      })
-      .sort((left, right) => right.date.localeCompare(left.date));
+            return {
+              date,
+              sales: Number(base.sales || 0),
+              sessions: Number(base.sessions || 0),
+              atc_sessions: Number(base.atc || 0),
+              ci_events: Number(base.ci_events || 0),
+              orders: Number(base.orders || 0),
+              discount_amount: Number(discount.discount_amount || 0),
+              prepaid_orders: Number(payment.prepaid_orders || 0),
+              cod_orders: Number(payment.cod_orders || 0),
+              partially_paid_orders: Number(payment.partially_paid_orders || 0),
+            };
+          })
+          .sort((left, right) => right.date.localeCompare(left.date))
+      : [];
 
     return {
       timezone,
       range: { start: spec.start, end: spec.end },
       rows,
-      utmDate: spec.includeUtm ? (spec.utmDate || spec.end) : null,
-      utmRows: spec.includeUtm ? utmRows : [],
+      utmDate: includeUtm ? (spec.utmDate || spec.end) : null,
+      utmRows: includeUtm ? utmRows : [],
     };
   }
 

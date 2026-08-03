@@ -1,6 +1,6 @@
 import { Box, Card, CardContent, Skeleton, Typography } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
-import useWebVitals from "../hooks/useWebVitals.js";
+import { useDashboardWebVitalsData } from "../features/dashboard/widgetDataHooks.js";
 
 const nfFloat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 
@@ -13,7 +13,7 @@ export default function WebPerformancePanel({
 }) {
   const theme = useTheme();
   const { performanceAvg, performancePrev, performanceChange, loading } =
-    useWebVitals(query, "PERFORMANCE", {
+    useDashboardWebVitalsData(query, "PERFORMANCE", {
       usePerformanceSummary: true,
     });
 

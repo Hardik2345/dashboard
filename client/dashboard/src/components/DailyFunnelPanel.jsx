@@ -664,6 +664,7 @@ export default function DailyFunnelPanel({
       brand_key: brandKey,
       start: startDate,
       end: endDate,
+      includeUtm: false,
     })
       .then((result) => {
         if (cancelled) return;
@@ -704,9 +705,11 @@ export default function DailyFunnelPanel({
 
     getDailyFunnel({
       brand_key: brandKey,
-      start: startDate,
-      end: endDate,
+      start: utmDate,
+      end: utmDate,
       utmDate,
+      includeDaily: false,
+      includeUtm: true,
     })
       .then((result) => {
         if (cancelled) return;
@@ -729,7 +732,7 @@ export default function DailyFunnelPanel({
     return () => {
       cancelled = true;
     };
-  }, [brandKey, canAccessUtmFunnelTable, endDate, startDate, utmDate]);
+  }, [brandKey, canAccessUtmFunnelTable, utmDate]);
 
   const normalizedRows = useMemo(
     () =>
