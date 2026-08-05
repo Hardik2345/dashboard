@@ -1,51 +1,274 @@
-import { useMemo, useState, useEffect, useCallback, Suspense, lazy } from 'react';
-import dayjs from 'dayjs';
-import { AppProvider } from '@shopify/polaris';
-import enTranslations from '@shopify/polaris/locales/en.json';
-import { ThemeProvider, createTheme, CssBaseline, Container, Box, Stack, Divider, Alert, Skeleton } from '@mui/material';
-import Header from './components/Header.jsx';
-import Sidebar from './components/Sidebar.jsx';
-import { listAuthorBrands, getTopProducts, getDashboardSummary } from './lib/api.js';
-import { TextField, Button, Paper, Typography } from '@mui/material';
-import Unauthorized from './components/Unauthorized.jsx';
-import useSessionHeartbeat from './hooks/useSessionHeartbeat.js';
-import { useAppDispatch, useAppSelector } from './state/hooks.js';
-import { fetchCurrentUser, loginUser, logoutUser } from './state/slices/authSlice.js';
-import { setBrand } from './state/slices/brandSlice.js';
-import { DEFAULT_PRODUCT_OPTION, DEFAULT_TREND_METRIC, setProductSelection, setRange, setCompareMode, setSelectedMetric, setUtm, setSalesChannel } from './state/slices/filterSlice.js';
-import MobileTopBar from './components/MobileTopBar.jsx';
-import MobileFilterDrawer from './components/MobileFilterDrawer.jsx'; // New Import
-import AuthorBrandSelector from './components/AuthorBrandSelector.jsx';
-import Footer from './components/Footer.jsx';
+import {
+  useMemo,
+  useState,
+  useEffect,
+  useCallback,
+  Suspense,
+  lazy,
+} from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useLocation, useNavigate } from "react-router-dom";
+import dayjs from "dayjs";
+import { AppProvider } from "@shopify/polaris";
+import enTranslations from "@shopify/polaris/locales/en.json";
+import {
+  ThemeProvider,
+  createTheme,
+  CssBaseline,
+  Container,
+  Box,
+  Stack,
+  Divider,
+  Alert,
+  Skeleton,
+  IconButton,
+  Tooltip,
+  useMediaQuery,
+} from "@mui/material";
+import Grid from "@mui/material/Grid2";
+import Header from "./components/Header.jsx";
+import Sidebar from "./components/Sidebar.jsx";
+import LayoutPanelsIcon from "./components/ui/LayoutPanelsIcon.jsx";
+import SidebarToggle from "./components/ui/SidebarToggle.jsx";
+import InlineDashboardLayoutEditor from "./components/InlineDashboardLayoutEditor.jsx";
+import DashboardUnavailableCard from "./components/DashboardUnavailableCard.jsx";
+import MaintenanceScreen from "./components/MaintenanceScreen.jsx";
 
-const KPIs = lazy(() => import('./components/KPIs.jsx'));
-const FunnelChart = lazy(() => import('./components/FunnelChart.jsx'));
-const OrderSplit = lazy(() => import('./components/OrderSplit.jsx'));
-const PaymentSalesSplit = lazy(() => import('./components/PaymentSalesSplit.jsx'));
-const TrafficSourceSplit = lazy(() => import('./components/TrafficSourceSplit.jsx'));
-const HourlySalesCompare = lazy(() => import('./components/HourlySalesCompare.jsx'));
-const WebVitals = lazy(() => import('./components/WebVitals.jsx'));
-const AccessControlCard = lazy(() => import('./components/AccessControlCard.jsx'));
-const ProductConversionTable = lazy(() => import('./components/ProductConversionTable.jsx'));
-const AuthorBrandForm = lazy(() => import('./components/AuthorBrandForm.jsx'));
-const AuthorBrandList = lazy(() => import('./components/AuthorBrandList.jsx'));
-const AlertsAdmin = lazy(() => import('./components/AlertsAdmin.jsx'));
+import {
+  LayoutGrid,
+  Activity,
+  Table2,
+  Bell,
+  ShieldCheck,
+  Store,
+  Filter,
+  Package,
+  ClipboardList,
+} from "lucide-react";
 
-function formatDate(dt) {
-  return dt ? dayjs(dt).format('YYYY-MM-DD') : undefined;
+const MOBILE_NAV_ITEMS = [
+  { id: "overall-snapshot", label: "Overall Snapshot", icon: LayoutGrid },
+  { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
+  { id: "session-analytics", label: "Dashboard Sessions", icon: Activity },
+  { id: "product-conversion", label: "Product Funnel", icon: Filter },
+  { id: "daily-funnel", label: "Conversion Funnel", icon: Table2 },
+  { id: "bundles", label: "Bundles", icon: Table2 },
+  { id: "inventory", label: "Inventory", icon: Package },
+  { id: "alerts", label: "Alerts", icon: Bell },
+  { id: "requests", label: "Requests", icon: ClipboardList },
+  { id: "tenant-setup", label: "Tenant Setup", icon: Store },
+  //  { id: "notifications-log", label: "Logs", icon: Bell },
+  { id: "access", label: "Access", icon: ShieldCheck },
+  { id: "traffic-split-config", label: "Traffic Config", icon: Table2 },
+  //  { id: 'brands', label: 'Setup', icon: Store },
+];
+
+const TAB_ROUTE_MAP = {
+  "overall-snapshot": "/overall-snapshot",
+  dashboard: "/dashboard",
+  "session-analytics": "/session-analytics",
+  "product-conversion": "/funnels",
+  "daily-funnel": "/daily-funnel",
+  bundles: "/bundles",
+  inventory: "/inventory",
+  alerts: "/alerts",
+  requests: "/requests",
+  access: "/access-control",
+  "traffic-split-config": "/configurations",
+  "tenant-setup": "/tenant-setup",
+};
+
+const ROUTE_TAB_MAP = Object.fromEntries(
+  Object.entries(TAB_ROUTE_MAP).map(([tabId, path]) => [path, tabId]),
+);
+
+function normalizeRoutePath(pathname) {
+  if (!pathname) return "/";
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    return pathname.slice(0, -1).toLowerCase();
+  }
+  return pathname.toLowerCase();
 }
 
-const TREND_METRICS = new Set(['sales', 'orders', 'sessions', 'cvr', 'atc', 'aov']);
-const SESSION_TRACKING_ENABLED = String(import.meta.env.VITE_SESSION_TRACKING || 'false').toLowerCase() === 'true';
-const AUTHOR_BRAND_STORAGE_KEY = 'author_active_brand_v1';
-const THEME_MODE_KEY = 'dashboard_theme_mode';
+function getTabFromPathname(pathname) {
+  return ROUTE_TAB_MAP[normalizeRoutePath(pathname)] || null;
+}
+
+function getPathForTab(tabId) {
+  return TAB_ROUTE_MAP[tabId] || TAB_ROUTE_MAP["overall-snapshot"];
+}
+
+function getSanitizedSearch(search) {
+  const params = new URLSearchParams(search || "");
+  params.delete("access_token");
+  const next = params.toString();
+  return next ? `?${next}` : "";
+}
+
+function isPublicPath(pathname) {
+  const normalized = normalizeRoutePath(pathname);
+  return normalized === "/login" || normalized === "/unauthorized";
+}
+
+const TenantSetupForm = lazy(() => import("./components/TenantSetupForm.jsx"));
+const LogsPanel = lazy(() => import("./components/LogsPanel.jsx"));
+
+import {
+  listAuthorBrands,
+  getDataRestrictionConfig,
+  getTopProducts,
+  getDashboardSummary,
+  getSummaryFilterOptions,
+  getHourlyTrend,
+  getOrderSplit,
+  getPaymentSalesSplit,
+  getTrafficSourceSplit,
+  getDashboardLayout,
+  doPost,
+  doDelete,
+  saveDashboardLayout,
+} from "./lib/api.js";
+import { initializeSessionTracking } from "./lib/sessionTracker.js";
+import {
+  DEFAULT_DATA_RESTRICTION_CONFIG,
+  getDataRestrictionDescription,
+  isRangeOverDataRestrictionPeriod,
+} from "./lib/dateRange.js";
+import { setFrontendUserContext } from "./observability.js";
+import {
+  DASHBOARD_LAYOUT_DEFAULTS,
+  getVisibleDashboardWidgetIds,
+  normalizeDashboardLayout,
+} from "./lib/dashboardLayout.js";
+import {
+  DEFAULT_DESKTOP_KPI_LAYOUT,
+  normalizeDesktopKpiLayout,
+} from "./lib/kpiLayout.js";
+
+import { TextField, Button, Paper, Typography, Chip } from "@mui/material";
+import axios from "axios";
+import { requestForToken, onMessageListener } from "./firebase";
+import Unauthorized from "./components/Unauthorized.jsx";
+import useSessionHeartbeat from "./hooks/useSessionHeartbeat.js";
+import { useAppDispatch, useAppSelector } from "./state/hooks.js";
+import {
+  fetchCurrentUser,
+  loginUser,
+  logoutUser,
+  clearAuthState,
+} from "./state/slices/authSlice.js";
+import { setBrand } from "./state/slices/brandSlice.js";
+import {
+  DEFAULT_PRODUCT_OPTION,
+  setProductSelection,
+  setRange,
+  setCompareMode,
+  setCompareDateRange,
+  setTrendMetricSelection,
+  setUtm,
+  setSalesChannel,
+  setDeviceType,
+  setDiscountCode,
+  setCity,
+} from "./state/slices/filterSlice.js";
+import {
+  CI_TREND_METRICS,
+  DEFAULT_TREND_METRIC,
+  DISCOUNT_ALLOWED_TREND_METRICS,
+  normalizeTrendMetric,
+  sanitizeTrendMetricSelection,
+  toggleTrendMetricSelection,
+} from "./lib/trendSelection.js";
+import MobileTopBar from "./components/MobileTopBar.jsx";
+const MobileFilterDrawer = lazy(
+  () => import("./components/MobileFilterDrawer.jsx"),
+);
+const UnifiedFilterBar = lazy(
+  () => import("./components/UnifiedFilterBar.jsx"),
+);
+const AuthorBrandSelector = lazy(
+  () => import("./components/AuthorBrandSelector.jsx"),
+);
+const Footer = lazy(() => import("./components/Footer.jsx"));
+
+const KPIs = lazy(() => import("./components/KPIs.jsx"));
+const OverallSnapshotWidget = lazy(
+  () => import("./components/OverallSnapshotWidget.jsx"),
+);
+const FunnelChart = lazy(() => import("./components/charts/FunnelChart.jsx"));
+const ModeOfPayment = lazy(() => import("./components/ModeOfPayment.jsx"));
+const PaymentSplitTrend = lazy(
+  () => import("./components/PaymentSplitTrend.jsx"),
+);
+const OrderSplit = lazy(() => import("./components/OrderSplit.jsx"));
+const PaymentSalesSplit = lazy(
+  () => import("./components/PaymentSalesSplit.jsx"),
+);
+const TrafficSourceSplit = lazy(
+  () => import("./components/TrafficSourceSplit.jsx"),
+);
+const TrafficSplitConfigPanel = lazy(
+  () => import("./components/TrafficSplitConfigPanel.jsx"),
+);
+const HourlySalesCompare = lazy(
+  () => import("./components/HourlySalesCompare.jsx"),
+);
+const WebVitals = lazy(() => import("./components/WebVitals.jsx"));
+const WebPerformancePanel = lazy(
+  () => import("./components/WebPerformancePanel.jsx"),
+);
+const AccessControlCard = lazy(
+  () => import("./components/AccessControlCard.jsx"),
+);
+const NotificationsLog = lazy(
+  () => import("./components/NotificationsLog.jsx"),
+);
+const ProductConversionTable = lazy(
+  () => import("./components/ProductConversionTable.jsx"),
+);
+const DailyFunnelPanel = lazy(
+  () => import("./components/DailyFunnelPanel.jsx"),
+);
+const InventoryTable = lazy(() => import("./components/InventoryTable.jsx"));
+const BundlesPanel = lazy(() => import("./components/BundlesPanel.jsx"));
+const AuthorBrandForm = lazy(() => import("./components/AuthorBrandForm.jsx"));
+const AuthorBrandList = lazy(() => import("./components/AuthorBrandList.jsx"));
+const AlertsAdmin = lazy(() => import("./components/AlertsAdmin.jsx"));
+const MerchantRequestsPanel = lazy(
+  () => import("./components/MerchantRequestsPanel.jsx"),
+);
+const SessionAnalyticsPage = lazy(
+  () => import("./pages/SessionAnalytics/SessionAnalyticsPage.jsx"),
+);
+
+function formatDate(dt) {
+  return dt ? dayjs(dt).format("YYYY-MM-DD") : undefined;
+}
+
+const WEB_VITAL_METRIC_KEYS = {
+  FCP: "fcp",
+  LCP: "lcp",
+  TTFB: "ttfb",
+  SESSIONS: "sessions",
+  PERFORMANCE: "performance",
+};
+const SESSION_TRACKING_ENABLED =
+  String(import.meta.env.VITE_SESSION_TRACKING || "false").toLowerCase() ===
+  "true";
+const AUTHOR_BRAND_STORAGE_KEY = "author_active_brand_v1";
+const THEME_MODE_KEY = "dashboard_theme_mode";
+const TRAFFIC_SPLIT_RULES_STORAGE_PREFIX = "traffic_split_rules_v1";
 const DRAWER_WIDTH = 260;
 
 function SectionFallback({ count = 1, height = 180 }) {
   return (
     <Stack spacing={{ xs: 1, md: 1.5 }}>
       {Array.from({ length: count }).map((_, idx) => (
-        <Paper key={idx} variant="outlined" sx={{ p: { xs: 1.5, md: 2 }, borderStyle: 'dashed' }}>
+        <Paper
+          key={idx}
+          variant="outlined"
+          sx={{ p: { xs: 1.5, md: 2 }, borderStyle: "dashed" }}
+        >
           <Skeleton variant="text" width="40%" />
           <Skeleton variant="rectangular" height={height} sx={{ my: 1 }} />
           <Skeleton variant="text" width="60%" />
@@ -58,30 +281,63 @@ function SectionFallback({ count = 1, height = 180 }) {
 function loadInitialThemeMode() {
   try {
     const saved = localStorage.getItem(THEME_MODE_KEY);
-    if (saved === 'dark' || saved === 'light') return saved;
+    if (saved === "dark" || saved === "light") return saved;
   } catch {
     // Ignore storage access errors
   }
-  return 'light';
+  return "light";
 }
 
 export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const authState = useAppSelector((state) => state.auth);
   const globalBrandKey = useAppSelector((state) => state.brand.brand);
-  const { user, initialized, loginStatus, loginError } = useAppSelector((state) => state.auth);
-  const { range, compareMode, selectedMetric, productSelection, utm, salesChannel } = useAppSelector((state) => state.filters);
-  const loggingIn = loginStatus === 'loading';
+  const { user, initialized, loginStatus, loginError, maintenanceMode } = useAppSelector(
+    (state) => state.auth,
+  );
+  const {
+    range,
+    compareMode,
+    compareDateRange,
+    selectedMetrics,
+    activeMetric,
+    productSelection,
+    utm,
+    discountCode,
+    salesChannel,
+    deviceType,
+    city,
+  } = useAppSelector((state) => state.filters);
+  const productTableStart = useAppSelector(
+    (state) => state.productConversion?.start,
+  );
+  const productTableEnd = useAppSelector(
+    (state) => state.productConversion?.end,
+  );
+  const loggingIn = loginStatus === "loading";
   // range holds ISO strings; normalize to dayjs for components that expect it
   const [start, end] = useMemo(
     () => [
       range?.[0] && dayjs(range[0]).isValid() ? dayjs(range[0]) : null,
       range?.[1] && dayjs(range[1]).isValid() ? dayjs(range[1]) : null,
     ],
-    [range]
+    [range],
   );
   const normalizedRange = useMemo(() => [start, end], [start, end]);
-  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [dataRestrictionConfig, setDataRestrictionConfig] = useState(
+    DEFAULT_DATA_RESTRICTION_CONFIG,
+  );
+  const isLongRangeDashboard = useMemo(
+    () => isRangeOverDataRestrictionPeriod(start, end, dataRestrictionConfig),
+    [start, end, dataRestrictionConfig],
+  );
+  const dataRestrictionDescription = useMemo(
+    () => getDataRestrictionDescription(dataRestrictionConfig),
+    [dataRestrictionConfig],
+  );
+  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
 
   const isAuthor = !!user?.isAuthor;
   const isBrandUser = !!user && !user.isAuthor;
@@ -91,16 +347,40 @@ export default function App() {
   // New state to strictly track if the initial fetch has completed
   const [brandsLoaded, setBrandsLoaded] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    getDataRestrictionConfig()
+      .then((config) => {
+        if (cancelled) return;
+        setDataRestrictionConfig({
+          enabled:
+            typeof config?.enabled === "boolean"
+              ? config.enabled
+              : DEFAULT_DATA_RESTRICTION_CONFIG.enabled,
+          periodDays:
+            Number.isFinite(Number(config?.periodDays)) &&
+            Number(config.periodDays) > 0
+              ? Number(config.periodDays)
+              : DEFAULT_DATA_RESTRICTION_CONFIG.periodDays,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
   const authorBrandKey = useMemo(
-    () => (globalBrandKey || '').toString().trim().toUpperCase(),
-    [globalBrandKey]
+    () => (globalBrandKey || "").toString().trim().toUpperCase(),
+    [globalBrandKey],
   );
   const viewerBrands = useMemo(() => {
     if (!user?.brand_memberships) return [];
     const seen = new Set();
     const list = [];
     for (const m of user.brand_memberships) {
-      const key = (m.brand_id || '').toString().trim().toUpperCase();
+      if (m?.status !== "active") continue;
+      const key = (m.brand_id || "").toString().trim().toUpperCase();
       if (key && !seen.has(key)) {
         seen.add(key);
         list.push(key);
@@ -108,30 +388,119 @@ export default function App() {
     }
     return list;
   }, [user]);
+  const snapshotBrands = useMemo(
+    () => (isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }))),
+    [authorBrands, isAuthor, viewerBrands],
+  );
 
   // Initialize tab checking storage; guard against invalid reads
   const [authorTab, setAuthorTab] = useState(() => {
+    const routeTab =
+      typeof window !== "undefined"
+        ? getTabFromPathname(window.location.pathname)
+        : null;
+    if (routeTab) return routeTab;
     try {
-      const stored = localStorage.getItem('author_active_tab_v1') || 'dashboard';
-      return stored === 'adjustments' ? 'dashboard' : stored;
+      const stored =
+        localStorage.getItem("author_active_tab_v1") || "dashboard";
+      return stored === "adjustments" ? "dashboard" : stored;
     } catch {
-      return 'dashboard';
+      return "dashboard";
     }
   });
 
+  const isMobile = useMediaQuery("(max-width:900px)"); // Responsive breakpoint for mobile
+
   const [authorRefreshKey, setAuthorRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false); // Valid New State
   const [darkMode, setDarkMode] = useState(loadInitialThemeMode);
   const [isScrolled, setIsScrolled] = useState(false);
-  const [productOptions, setProductOptions] = useState([DEFAULT_PRODUCT_OPTION]);
+  const [productOptions, setProductOptions] = useState([
+    DEFAULT_PRODUCT_OPTION,
+  ]);
   const [productOptionsLoading, setProductOptionsLoading] = useState(false);
-  const [funnelData, setFunnelData] = useState({ stats: null, deltas: null, loading: true });
+  const [funnelData, setFunnelData] = useState({
+    stats: null,
+    deltas: null,
+    loading: true,
+  });
   const [utmOptions, setUtmOptions] = useState(null);
+  const [webVitalsMetric, setWebVitalsMetric] = useState("FCP");
+  const [trafficSplitRules, setTrafficSplitRules] = useState([]);
+  const [layoutEditMode, setLayoutEditMode] = useState(false);
+  const [dashboardLayout, setDashboardLayout] = useState(() =>
+    normalizeDashboardLayout(),
+  );
+  const [previewDashboardLayout, setPreviewDashboardLayout] = useState(null);
+  const [isSavingDashboardLayout, setIsSavingDashboardLayout] = useState(false);
+
+  // Track navigation direction for transitions
+  const [direction, setDirection] = useState(0);
+  const currentRouteTab = useMemo(
+    () => getTabFromPathname(location.pathname),
+    [location.pathname],
+  );
+  const sanitizedSearch = useMemo(
+    () => getSanitizedSearch(location.search),
+    [location.search],
+  );
+
+  // Animation variants for page content
+  const pageVariants = {
+    initial: (dir) => {
+      const isMobileNow = window.innerWidth <= 900;
+      const offset =
+        dir > 0
+          ? isMobileNow
+            ? "100%"
+            : 40
+          : dir < 0
+            ? isMobileNow
+              ? "-100%"
+              : -40
+            : 0;
+      return isMobileNow
+        ? { x: offset, opacity: 0 }
+        : { y: offset, opacity: 0 };
+    },
+    animate: {
+      x: 0,
+      y: 0,
+      opacity: 1,
+      transition: {
+        type: "spring",
+        stiffness: 260,
+        damping: 28,
+      },
+    },
+    exit: (dir) => {
+      const isMobileNow = window.innerWidth <= 900;
+      const offset =
+        dir > 0
+          ? isMobileNow
+            ? "-100%"
+            : -40
+          : dir < 0
+            ? isMobileNow
+              ? "100%"
+              : 40
+            : 0;
+      return isMobileNow
+        ? { x: offset, opacity: 0 }
+        : { y: offset, opacity: 0 };
+    },
+  };
 
   // Keep a data attribute on the body so global CSS (e.g., Polaris overrides) can react to theme changes.
   useEffect(() => {
     document.body.dataset.theme = darkMode;
+    if (darkMode === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
   }, [darkMode]);
 
   // Track scroll position for sticky panel border
@@ -139,84 +508,1133 @@ export default function App() {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 0);
     };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   useSessionHeartbeat(SESSION_TRACKING_ENABLED && isBrandUser);
 
+  // Push Notification setup
+  useEffect(() => {
+    if (!user) return;
+
+    if (isAuthor) {
+      requestForToken()
+        .then((token) => {
+          if (token) {
+            doPost("/push/register-token", {
+              token,
+              user_info: {
+                id: user.id || user._id,
+                email: user.email,
+                name: user.name,
+              },
+            }).then((res) => {
+              if (res.error) {
+                console.error("Failed to register FCM token:", res.status);
+              } else {
+                console.log("FCM token registered successfully");
+              }
+            });
+          }
+        })
+        .catch((err) => console.error("Token request failed:", err));
+    } else if (
+      typeof Notification !== "undefined" &&
+      Notification.permission === "granted"
+    ) {
+      // Non-admin user with existing permission: ensure token is unregistered
+      requestForToken()
+        .then((token) => {
+          if (token) {
+            doPost("/push/unregister-token", { token });
+          }
+        })
+        .catch(() => {}); // Ignore errors when trying to clear
+    }
+  }, [user, isAuthor]);
+
+  useEffect(() => {
+    if (!isAuthor) return;
+
+    // onMessageListener sometimes returns undefined if permissions aren't granted yet,
+    // but our wrapper returns the unsubscribe function when successfully listening.
+    let unsubscribe;
+    try {
+      unsubscribe = onMessageListener((payload) => {
+        console.log("FCM Foreground message received:", payload);
+        // We can trigger an event or state to refresh the notifications menu!
+        // To keep it simple, we listen for window events in NotificationsMenu.
+        window.dispatchEvent(new CustomEvent("fcm-foreground-message"));
+      });
+    } catch (err) {
+      console.warn("FCM listen failed:", err);
+    }
+    return () => {
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
+  }, [isAuthor]);
+
   const activeBrandKey = isAuthor
-    ? (authorBrandKey || user?.primary_brand_id || '')
-    : (
-      (globalBrandKey || '').toString().trim().toUpperCase() ||
-      (user?.primary_brand_id || '').toString().trim().toUpperCase() ||
-      (user?.brandKey || '').toString().trim().toUpperCase() ||
+    ? authorBrandKey || user?.primary_brand_id || ""
+    : (globalBrandKey || "").toString().trim().toUpperCase() ||
+      (user?.primary_brand_id || "").toString().trim().toUpperCase() ||
+      (user?.brandKey || "").toString().trim().toUpperCase() ||
       viewerBrands[0] ||
-      ''
-    );
+      "";
+
+  useEffect(() => {
+    setFrontendUserContext(user, activeBrandKey);
+  }, [user, activeBrandKey]);
+
+  // Session Tracking Initialization
+  useEffect(() => {
+    if (initialized && user && activeBrandKey) {
+      // Small delay to ensure everything is fully loaded and stable
+      const timer = setTimeout(() => {
+        initializeSessionTracking(user, activeBrandKey);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [initialized, user, activeBrandKey]);
+
+  const trafficSplitRulesStorageKey = useMemo(() => {
+
+    const brand = (activeBrandKey || "GLOBAL").toString().trim().toUpperCase();
+    return `${TRAFFIC_SPLIT_RULES_STORAGE_PREFIX}_${brand}`;
+  }, [activeBrandKey]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(trafficSplitRulesStorageKey);
+      if (!raw) {
+        setTrafficSplitRules([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      setTrafficSplitRules(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setTrafficSplitRules([]);
+    }
+  }, [trafficSplitRulesStorageKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        trafficSplitRulesStorageKey,
+        JSON.stringify(trafficSplitRules || []),
+      );
+    } catch {
+      // Ignore storage write issues
+    }
+  }, [trafficSplitRulesStorageKey, trafficSplitRules]);
 
   const viewerPermissions = useMemo(() => {
-    if (isAuthor) return ['all'];
+    if (isAuthor) return ["all"];
     const memberships = user?.brand_memberships || [];
-    const active = memberships.find((m) => (m.brand_id || '').toString().trim().toUpperCase() === (activeBrandKey || '').toString().trim().toUpperCase());
+    const active = memberships.find(
+      (m) =>
+        (m.brand_id || "").toString().trim().toUpperCase() ===
+        (activeBrandKey || "").toString().trim().toUpperCase(),
+    );
     const source = active || memberships[0];
     const perms = source?.permissions || [];
-    return perms.length ? perms : ['all'];
+    return perms.length ? perms : []; // Default to NO permissions if empty
   }, [isAuthor, user, activeBrandKey]);
 
-  const hasPermission = useCallback((perm) => {
+  const hasPermission = useCallback(
+    (perm) => {
+      if (isAuthor) return true;
+      if (viewerPermissions.includes("all")) return true;
+      return viewerPermissions.includes(perm);
+    },
+    [isAuthor, viewerPermissions],
+  );
+  const canCustomizeDashboardLayout = hasPermission(
+    "dashboard_layout_customize",
+  );
+  const canMultiSelectableKpiCards = hasPermission(
+    "multiselectable_kpi_cards",
+  );
+
+  const canAccessInventoryPanel = useMemo(() => {
     if (isAuthor) return true;
-    if (viewerPermissions.includes('all')) return true;
-    return viewerPermissions.includes(perm);
-  }, [isAuthor, viewerPermissions]);
+    return hasPermission("inventory_panel");
+  }, [hasPermission, isAuthor]);
+
+  const canAccessBundlesPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("bundles_panel");
+  }, [hasPermission, isAuthor]);
+
+  const canAccessDailyFunnelPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("daily_funnel_panel");
+  }, [hasPermission, isAuthor]);
+
+  const canAccessUtmFunnelTable = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("utm_funnel_table");
+  }, [hasPermission, isAuthor]);
+
+  const canAccessRequestsPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("requests_panel");
+  }, [hasPermission, isAuthor]);
+
+  const canAccessSessionAnalyticsPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("session_analytics");
+  }, [hasPermission, isAuthor]);
+
+  const canAccessOverallSnapshotPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("overall_snapshot");
+  }, [hasPermission, isAuthor]);
+
+  const defaultLandingTab = useMemo(() => {
+    if (isAuthor) return "overall-snapshot";
+    return canAccessOverallSnapshotPanel ? "overall-snapshot" : "dashboard";
+  }, [canAccessOverallSnapshotPanel, isAuthor]);
+
+  const accessibleTabs = useMemo(() => {
+    if (isAuthor) return null;
+    const tabs = ["dashboard"];
+    if (canAccessOverallSnapshotPanel) tabs.unshift("overall-snapshot");
+    if (canAccessSessionAnalyticsPanel) tabs.push("session-analytics");
+    if (canAccessDailyFunnelPanel) tabs.push("daily-funnel");
+    if (canAccessRequestsPanel) tabs.push("requests");
+    if (canAccessBundlesPanel) tabs.push("bundles");
+    if (canAccessInventoryPanel) tabs.push("inventory");
+    return tabs;
+  }, [
+    canAccessOverallSnapshotPanel,
+    canAccessDailyFunnelPanel,
+    canAccessBundlesPanel,
+    canAccessInventoryPanel,
+    canAccessRequestsPanel,
+    canAccessSessionAnalyticsPanel,
+    isAuthor,
+  ]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    if (authorTab === "overall-snapshot" && !canAccessOverallSnapshotPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP.dashboard,
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
+    if (authorTab === "inventory" && !canAccessInventoryPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
+    if (authorTab === "bundles" && !canAccessBundlesPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
+    if (authorTab === "daily-funnel" && !canAccessDailyFunnelPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
+    if (authorTab === "requests" && !canAccessRequestsPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
+    if (authorTab === "session-analytics" && !canAccessSessionAnalyticsPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+    }
+  }, [
+    authorTab,
+    defaultLandingTab,
+    canAccessOverallSnapshotPanel,
+    canAccessDailyFunnelPanel,
+    canAccessBundlesPanel,
+    canAccessInventoryPanel,
+    canAccessRequestsPanel,
+    canAccessSessionAnalyticsPanel,
+    initialized,
+    location.search,
+    sanitizedSearch,
+    navigate,
+  ]);
+
+  const showSidebar = isAuthor || (accessibleTabs && accessibleTabs.length > 1);
+
+  const mobileNavItems = useMemo(() => {
+    const base = isAuthor
+      ? MOBILE_NAV_ITEMS
+      : MOBILE_NAV_ITEMS.filter((item) => accessibleTabs?.includes(item.id));
+    return base.filter((item) => item.id !== "tenant-setup");
+  }, [isAuthor, accessibleTabs]);
+
+  // Derived arrays/labels for product multi-select used directly by child components
+  const selectedProductIds = useMemo(() => {
+    if (!productSelection) return "";
+    if (Array.isArray(productSelection)) {
+      return productSelection
+        .map((p) => p.id)
+        .filter(Boolean)
+        .join(",");
+    }
+    return productSelection.id || "";
+  }, [productSelection]);
+
+  const selectedProductLabel = useMemo(() => {
+    if (!productSelection) return "";
+    if (Array.isArray(productSelection)) {
+      if (productSelection.length > 1) {
+        return `${productSelection.length} Products`;
+      }
+      return productSelection[0]?.label || "";
+    }
+    return productSelection.label || "";
+  }, [productSelection]);
+  const dashboardScopeLabel = useMemo(() => {
+    if (!selectedProductIds) return "All products";
+    return selectedProductLabel || selectedProductIds;
+  }, [selectedProductIds, selectedProductLabel]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!initialized || !user || !canCustomizeDashboardLayout) {
+      setDashboardLayout(normalizeDashboardLayout());
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    getDashboardLayout().then((res) => {
+      if (cancelled) return;
+      if (res.error) {
+        setDashboardLayout(normalizeDashboardLayout());
+        return;
+      }
+      setDashboardLayout(normalizeDashboardLayout(res.data));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialized, user, canCustomizeDashboardLayout]);
+
+  const effectiveDashboardLayout = useMemo(
+    () => normalizeDashboardLayout(previewDashboardLayout || dashboardLayout),
+    [dashboardLayout, previewDashboardLayout],
+  );
+
+  const isDashboardLayoutDirty = useMemo(() => {
+    const preview = normalizeDashboardLayout(previewDashboardLayout || dashboardLayout);
+    const saved = normalizeDashboardLayout(dashboardLayout);
+    return (
+      preview.desktop.join("|") !== saved.desktop.join("|")
+      || preview.mobile.join("|") !== saved.mobile.join("|")
+    );
+  }, [dashboardLayout, previewDashboardLayout]);
+
+  const hasActiveProductFilter = useMemo(() => {
+    if (!productSelection) return false;
+    const products = Array.isArray(productSelection)
+      ? productSelection
+      : [productSelection];
+    return products.some((p) => p?.id);
+  }, [productSelection]);
+  const hasActiveUtmFilter = useMemo(() => {
+    const values = [
+      utm?.source,
+      utm?.medium,
+      utm?.campaign,
+      utm?.term,
+      utm?.content,
+    ];
+    return values.some((value) =>
+      Array.isArray(value) ? value.length > 0 : !!value,
+    );
+  }, [utm]);
+  const hasActiveNonSourceUtmFilter = useMemo(() => {
+    const values = [utm?.medium, utm?.campaign, utm?.term, utm?.content];
+    return values.some((value) =>
+      Array.isArray(value) ? value.length > 0 : !!value,
+    );
+  }, [utm]);
+  const hasActiveSourceUtmFilter = useMemo(() => {
+    const value = utm?.source;
+    return Array.isArray(value) ? value.length > 0 : !!value;
+  }, [utm]);
+  const canSyncProductUtmFilters = hasPermission("product_utm_filter_sync");
 
   useEffect(() => {
     if (!isAuthor && viewerBrands.length) {
-      const current = (globalBrandKey || '').toString().trim().toUpperCase();
-      const next = current || viewerBrands[0];
-      if (next && next !== current) {
-        dispatch(setBrand(next));
+      const current = (globalBrandKey || "").toString().trim().toUpperCase();
+      // If current brand is not in the allowed list, force switch to the first allowed brand
+      const isValid = viewerBrands.includes(current);
+      if (!isValid) {
+        dispatch(setBrand(viewerBrands[0]));
       }
     }
   }, [isAuthor, viewerBrands, globalBrandKey, dispatch]);
 
-  const metricsQuery = useMemo(() => {
+  // Trend Query (Supports Arrays)
+  const trendMetricsQuery = useMemo(() => {
     const base = { start: formatDate(start), end: formatDate(end) };
-    const key = (activeBrandKey || '').toString().trim().toUpperCase();
+    const key = (activeBrandKey || "").toString().trim().toUpperCase();
     if (key) base.brand_key = key;
-    if (utm?.source) base.utm_source = utm.source;
+    if (utm?.source && (!hasActiveProductFilter || canSyncProductUtmFilters)) {
+      base.utm_source = utm.source;
+    }
     if (utm?.medium) base.utm_medium = utm.medium;
     if (utm?.campaign) base.utm_campaign = utm.campaign;
+    if (utm?.term) base.utm_term = utm.term;
+    if (utm?.content) base.utm_content = utm.content;
+    if (discountCode) base.discount_code = discountCode;
+
+    // Arrays allowed here
     if (salesChannel) base.sales_channel = salesChannel;
+    if (deviceType && deviceType.length > 0) base.device_type = deviceType;
+    if (city && city.length > 0) base.city = city;
 
     if (isAuthor) {
       base.refreshKey = authorRefreshKey;
-      if (productSelection?.id) {
-        base.product_id = productSelection.id;
-      }
     }
+
+    if (productSelection && (isAuthor || hasPermission("product_filter"))) {
+      // Support array of products
+      const products = Array.isArray(productSelection)
+        ? productSelection
+        : [productSelection];
+      const ids = products.map((p) => p.id).filter(Boolean);
+      if (ids.length > 0) base.product_id = ids;
+    }
+
+    // Compare mode: pass compare date range
+    if (compareMode && compareDateRange?.[0] && compareDateRange?.[1]) {
+      base.compare_start = formatDate(dayjs(compareDateRange[0]));
+      base.compare_end = formatDate(dayjs(compareDateRange[1]));
+    }
+
     return base;
-  }, [start, end, compareMode, activeBrandKey, isAuthor, authorRefreshKey, productSelection?.id, utm, salesChannel]);
+  }, [
+    start,
+    end,
+    compareMode,
+    compareDateRange,
+    activeBrandKey,
+    isAuthor,
+    authorRefreshKey,
+    productSelection,
+    utm,
+    discountCode,
+    salesChannel,
+    deviceType,
+    city,
+    hasActiveProductFilter,
+    canSyncProductUtmFilters,
+  ]);
 
-  const handleAuthorBrandChange = useCallback((nextKeyRaw) => {
-    const normalized = (nextKeyRaw || '').toString().trim().toUpperCase();
-    const changed = normalized !== authorBrandKey;
-    // Persist immediately alongside Redux
+  // General Query (Legacy / Single Value Fallback)
+  const generalMetricsQuery = useMemo(() => {
+    const base = { ...trendMetricsQuery };
+
+    // Fallback to single value for components that don't support arrays yet
+    if (Array.isArray(base.sales_channel)) {
+      base.sales_channel = base.sales_channel[0] || "";
+    }
+    if (Array.isArray(base.product_id)) {
+      base.product_id = base.product_id[0] || "";
+    }
+    // Also fallback UTMs if needed? most backends handle arrays now but let's be safe if specific components break
+    // Actually metricsController seems to handle arrays mostly via `extractUtmParam` or `appendUtmWhere` which handles arrays.
+    // But let's keep consistency with the requirement "only Trend Graph and 6 KPI Cards".
+
+    return base;
+  }, [trendMetricsQuery]);
+  const overallSnapshotQuery = useMemo(() => {
+    const base = { ...generalMetricsQuery };
+    delete base.brand_key;
+    delete base.product_id;
+    delete base.refreshKey;
+    return base;
+  }, [generalMetricsQuery]);
+
+  const escapeCsvCell = useCallback((value) => {
+    const str = value == null ? "" : String(value);
+    if (str.includes('"') || str.includes(",") || str.includes("\n")) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  }, []);
+
+  const exportStartDate =
+    generalMetricsQuery?.start || generalMetricsQuery?.end || "";
+  const exportEndDate =
+    generalMetricsQuery?.end || generalMetricsQuery?.start || exportStartDate;
+
+  const asExcelTextDate = useCallback((value) => {
+    return value ? `'${value}` : "";
+  }, []);
+
+  const buildBaseRow = useCallback((overrides = {}) => ({
+    section: "",
+    subsection: "",
+    item_type: "",
+    item_key: "",
+    item_name: "",
+    hour: "",
+    rank: "",
+    category: "",
+    source_name: "",
+    page_name: "",
+    payment_mode: "",
+    metric: "",
+    value: "",
+    previous_value: "",
+    change_percent: "",
+    unit: "",
+    start_date: asExcelTextDate(exportStartDate),
+    end_date: asExcelTextDate(exportEndDate),
+    brand_key: activeBrandKey || "",
+    selected_web_vitals_metric: "",
+    generated_at: "",
+    ...overrides,
+  }), [activeBrandKey, asExcelTextDate, exportEndDate, exportStartDate]);
+
+  const toBrandNameForPagespeed = useCallback((brandKey) => {
+    switch ((brandKey || "").toUpperCase()) {
+      case "TMC":
+        return "TMC";
+      case "BBB":
+        return "BlaBliBluLife";
+      case "PTS":
+        return "SkincarePersonalTouch";
+      default:
+        return (brandKey || "").toUpperCase();
+    }
+  }, []);
+
+  const getPreviousDateWindow = useCallback((startDate, endDate) => {
+    if (!startDate || !endDate) return { prevStart: null, prevEnd: null };
+    const s = dayjs(startDate);
+    const e = dayjs(endDate);
+    const dayCount = e.diff(s, "day") + 1;
+    const prevEnd = s.subtract(1, "day");
+    const prevStart = prevEnd.subtract(dayCount - 1, "day");
+    return {
+      prevStart: prevStart.format("YYYY-MM-DD"),
+      prevEnd: prevEnd.format("YYYY-MM-DD"),
+    };
+  }, []);
+
+  const fetchPagespeedResults = useCallback(async (brandName, startDate, endDate) => {
+    if (!brandName || !startDate || !endDate) return [];
+    const params = new URLSearchParams({
+      brand_key: brandName,
+      start_date: startDate,
+      end_date: endDate,
+    });
+    const response = await fetch(`/api/external-pagespeed/pagespeed?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error(`pagespeed request failed: ${response.status}`);
+    }
+    const json = await response.json();
+    return Array.isArray(json?.results) ? json.results : [];
+  }, []);
+
+  const buildWebVitalsSnapshot = useCallback(
+    async (query, selectedMetric) => {
+      const metricKey = WEB_VITAL_METRIC_KEYS[selectedMetric] || "fcp";
+      const brandName = toBrandNameForPagespeed(query?.brand_key || activeBrandKey);
+      const currentStart = query?.start;
+      const currentEnd = query?.end;
+      if (!brandName || !currentStart || !currentEnd) {
+        return {
+          selected_metric: selectedMetric,
+          performance: {
+            current_avg: null,
+            previous_avg: null,
+            change_percent: null,
+          },
+          top_pages: [],
+        };
+      }
+
+      const { prevStart, prevEnd } = getPreviousDateWindow(currentStart, currentEnd);
+      const [currentResults, previousResults] = await Promise.all([
+        fetchPagespeedResults(brandName, currentStart, currentEnd),
+        prevStart && prevEnd
+          ? fetchPagespeedResults(brandName, prevStart, prevEnd)
+          : Promise.resolve([]),
+      ]);
+
+      const performanceCurrent =
+        currentResults.reduce((sum, row) => sum + Number(row?.performance || 0), 0) /
+        (currentResults.length || 1);
+      const performancePrevious =
+        previousResults.reduce((sum, row) => sum + Number(row?.performance || 0), 0) /
+        (previousResults.length || 1);
+      const performanceChange =
+        performancePrevious > 0
+          ? ((performanceCurrent - performancePrevious) / performancePrevious) * 100
+          : null;
+
+      const reduceByUrl = (results) => {
+        const grouped = {};
+        for (const row of results) {
+          const url = String(row?.url || "");
+          if (!url) continue;
+          if (!grouped[url]) grouped[url] = [];
+          grouped[url].push(Number(row?.[metricKey] || 0));
+        }
+        return Object.entries(grouped).map(([url, values]) => {
+          const sum = values.reduce((a, b) => a + b, 0);
+          const isSumMetric = metricKey === "sessions";
+          return {
+            url,
+            value: isSumMetric ? sum : sum / values.length,
+          };
+        });
+      };
+
+      const currentPages = reduceByUrl(currentResults);
+      const previousPages = reduceByUrl(previousResults);
+      const topPages = currentPages
+        .map((page) => {
+          const previous = previousPages.find((p) => p.url === page.url);
+          const previousValue = previous?.value ?? null;
+          const changePercent =
+            previousValue && previousValue > 0
+              ? ((page.value - previousValue) / previousValue) * 100
+              : null;
+          return {
+            page_name: page.url,
+            value: Number(page.value || 0),
+            previous_value: previousValue,
+            change_percent: changePercent,
+          };
+        })
+        .sort((a, b) => {
+          const descending = selectedMetric === "SESSIONS" || selectedMetric === "PERFORMANCE";
+          return descending ? b.value - a.value : a.value - b.value;
+        })
+        .slice(0, 5);
+
+      return {
+        selected_metric: selectedMetric,
+        performance: {
+          current_avg: Number.isFinite(performanceCurrent) ? performanceCurrent : null,
+          previous_avg: Number.isFinite(performancePrevious) ? performancePrevious : null,
+          change_percent: Number.isFinite(performanceChange)
+            ? performanceChange
+            : null,
+        },
+        top_pages: topPages,
+      };
+    },
+    [activeBrandKey, fetchPagespeedResults, getPreviousDateWindow, toBrandNameForPagespeed],
+  );
+
+  const handleDownloadSnapshot = useCallback(async () => {
     try {
-      localStorage.setItem('author_active_brand_v1', normalized);
-    } catch {
-      // Ignore storage write errors
-    }
+      const summaryBase = {
+        ...trendMetricsQuery,
+        align: "hour",
+      };
 
-    dispatch(setBrand(normalized || ''));
-    if (changed) {
-      setAuthorRefreshKey((prev) => prev + 1);
+      
+      const [summary, hourlyTrend, orderSplit, salesSplit, trafficSplit, webVitals] =
+        await Promise.all([
+          getDashboardSummary(summaryBase),
+          getHourlyTrend({ ...trendMetricsQuery, aggregate: "avg-by-hour" }),
+          getOrderSplit(generalMetricsQuery),
+          getPaymentSalesSplit(generalMetricsQuery),
+          getTrafficSourceSplit({
+            ...trendMetricsQuery,
+            mappingRules: trafficSplitRules,
+          }),
+          buildWebVitalsSnapshot(generalMetricsQuery, webVitalsMetric),
+        ]);
+
+      const metrics = summary?.metrics || {};
+      const totalOrders = Number(metrics?.total_orders?.value || 0);
+      const cancelledOrders = Number(metrics?.cancelled_orders?.value || 0);
+      const refundedOrders = Number(metrics?.refunded_orders?.value || 0);
+
+      const kpis = [
+        { name: "Total Orders", key: "orders", value: totalOrders },
+        { name: "Gross Revenue", key: "sales", value: Number(metrics?.total_sales?.value || 0) },
+        {
+          name: "Average Order Value",
+          key: "aov",
+          value: Number(metrics?.average_order_value?.value || 0),
+        },
+        {
+          name: "Conversion Rate",
+          key: "cvr",
+          value: Number(metrics?.conversion_rate?.value || 0),
+        },
+        {
+          name: "Total Sessions",
+          key: "sessions",
+          value: Number(metrics?.total_sessions?.value || 0),
+        },
+        {
+          name: "ATC Sessions",
+          key: "atc",
+          value: Number(metrics?.total_atc_sessions?.value || 0),
+        },
+        {
+          name: "Cancellation Rate",
+          key: "cancellation_rate",
+          value: totalOrders > 0 ? (cancelledOrders / totalOrders) * 100 : 0,
+        },
+        {
+          name: "Refund Rate",
+          key: "refund_rate",
+          value: totalOrders > 0 ? (refundedOrders / totalOrders) * 100 : 0,
+        },
+        {
+          name: "Checkout Initiated Events",
+          key: "checkout_initiated_events",
+          value: Number(metrics?.total_ci_events?.value || 0),
+        },
+      ];
+
+      const hourlyPoints = Array.isArray(hourlyTrend?.points) ? hourlyTrend.points : [];
+      const mapHourlySeries = (key, name, getter) => ({
+        key,
+        name,
+        points: hourlyPoints.map((point) => ({
+          hour: point?.hour,
+          value: getter(point?.metrics || {}),
+        })),
+      });
+
+      const hourlyTrends = [
+        mapHourlySeries("orders", "Total Orders", (m) => Number(m?.orders || 0)),
+        mapHourlySeries("sales", "Gross Revenue", (m) => Number(m?.sales || 0)),
+        mapHourlySeries("aov", "Average Order Value", (m) => {
+          const sales = Number(m?.sales || 0);
+          const orders = Number(m?.orders || 0);
+          return orders > 0 ? sales / orders : 0;
+        }),
+        mapHourlySeries("cvr", "Conversion Rate", (m) => Number(m?.cvr_ratio || 0) * 100),
+        mapHourlySeries("sessions", "Total Sessions", (m) => Number(m?.sessions || 0)),
+        mapHourlySeries("atc", "ATC Sessions", (m) => Number(m?.atc || 0)),
+      ];
+
+      const trafficCategories = [
+        {
+          category: "meta",
+          label: "Meta",
+          sessions: Number(trafficSplit?.meta?.sessions || 0),
+          atc_sessions: Number(trafficSplit?.meta?.atc_sessions || 0),
+          delta_percent: trafficSplit?.meta?.delta ?? null,
+          atc_delta_percent: trafficSplit?.meta?.atc_delta ?? null,
+          sources: Array.isArray(trafficSplit?.meta_breakdown)
+            ? trafficSplit.meta_breakdown.map((src) => ({
+                source_name: src?.name || "",
+                sessions: Number(src?.sessions || 0),
+                atc_sessions: Number(src?.atc_sessions || 0),
+              }))
+            : [],
+        },
+        {
+          category: "google",
+          label: "Google",
+          sessions: Number(trafficSplit?.google?.sessions || 0),
+          atc_sessions: Number(trafficSplit?.google?.atc_sessions || 0),
+          delta_percent: trafficSplit?.google?.delta ?? null,
+          atc_delta_percent: trafficSplit?.google?.atc_delta ?? null,
+          sources: [],
+        },
+        {
+          category: "direct",
+          label: "Direct",
+          sessions: Number(trafficSplit?.direct?.sessions || 0),
+          atc_sessions: Number(trafficSplit?.direct?.atc_sessions || 0),
+          delta_percent: trafficSplit?.direct?.delta ?? null,
+          atc_delta_percent: trafficSplit?.direct?.atc_delta ?? null,
+          sources: [],
+        },
+        {
+          category: "others",
+          label: "Others",
+          sessions: Number(trafficSplit?.others?.sessions || 0),
+          atc_sessions: Number(trafficSplit?.others?.atc_sessions || 0),
+          delta_percent: trafficSplit?.others?.delta ?? null,
+          atc_delta_percent: trafficSplit?.others?.atc_delta ?? null,
+          sources: Array.isArray(trafficSplit?.others_breakdown)
+            ? trafficSplit.others_breakdown.map((src) => ({
+                source_name: src?.name || "",
+                sessions: Number(src?.sessions || 0),
+                atc_sessions: Number(src?.atc_sessions || 0),
+              }))
+            : [],
+        },
+      ];
+
+      const generatedAt = new Date().toISOString();
+      const rows = [];
+
+      rows.push(
+        buildBaseRow({
+          section: "meta",
+          subsection: "snapshot",
+          item_type: "generated",
+          item_name: "generated_at",
+          metric: "generated_at",
+          value: generatedAt,
+          generated_at: generatedAt,
+        }),
+      );
+
+      rows.push(
+        buildBaseRow({
+          section: "filters",
+          subsection: "applied",
+          item_type: "flag",
+          item_name: "compare_mode",
+          metric: "compare_mode",
+          value: compareMode ? "true" : "false",
+          generated_at: generatedAt,
+        }),
+      );
+
+      const filterRows = [
+        ["compare_start", generalMetricsQuery?.compare_start || ""],
+        ["compare_end", generalMetricsQuery?.compare_end || ""],
+        ["product_id", Array.isArray(generalMetricsQuery?.product_id)
+          ? generalMetricsQuery.product_id.join("|")
+          : (generalMetricsQuery?.product_id || "")],
+        ["utm_source", Array.isArray(generalMetricsQuery?.utm_source)
+          ? generalMetricsQuery.utm_source.join("|")
+          : (generalMetricsQuery?.utm_source || "")],
+        ["utm_medium", Array.isArray(generalMetricsQuery?.utm_medium)
+          ? generalMetricsQuery.utm_medium.join("|")
+          : (generalMetricsQuery?.utm_medium || "")],
+        ["utm_campaign", Array.isArray(generalMetricsQuery?.utm_campaign)
+          ? generalMetricsQuery.utm_campaign.join("|")
+          : (generalMetricsQuery?.utm_campaign || "")],
+        ["sales_channel", Array.isArray(generalMetricsQuery?.sales_channel)
+          ? generalMetricsQuery.sales_channel.join("|")
+          : (generalMetricsQuery?.sales_channel || "")],
+        ["device_type", Array.isArray(generalMetricsQuery?.device_type)
+          ? generalMetricsQuery.device_type.join("|")
+          : (generalMetricsQuery?.device_type || "")],
+      ];
+
+      for (const [name, value] of filterRows) {
+        rows.push(
+          buildBaseRow({
+            section: "filters",
+            subsection: "applied",
+            item_type: "filter",
+            item_name: name,
+            metric: name,
+            value,
+            generated_at: generatedAt,
+          }),
+        );
+      }
+
+      for (const kpi of kpis) {
+        rows.push(
+          buildBaseRow({
+            section: "kpis",
+            subsection: "summary",
+            item_type: "kpi",
+            item_key: kpi.key,
+            item_name: kpi.name,
+            metric: kpi.key,
+            value: kpi.value,
+            unit: kpi.key.includes("rate") || kpi.key === "cvr" ? "percent" : "value",
+            generated_at: generatedAt,
+          }),
+        );
+      }
+
+      for (const trend of hourlyTrends) {
+        for (const point of trend.points) {
+          rows.push(
+            buildBaseRow({
+              section: "hourly_trends",
+              subsection: trend.key,
+              item_type: "hourly_point",
+              item_key: trend.key,
+              item_name: trend.name,
+              hour: point.hour,
+              metric: trend.key,
+              value: point.value,
+              unit: trend.key.includes("rate") || trend.key === "cvr" ? "percent" : "value",
+              generated_at: generatedAt,
+            }),
+          );
+        }
+      }
+
+      rows.push(
+        buildBaseRow({
+          section: "web_vitals",
+          subsection: "performance",
+          item_type: "summary",
+          item_key: "web_performance_avg",
+          item_name: "Web Performance(Avg)",
+          metric: "performance_avg",
+          value: webVitals?.performance?.current_avg ?? "",
+          previous_value: webVitals?.performance?.previous_avg ?? "",
+          change_percent: webVitals?.performance?.change_percent ?? "",
+          generated_at: generatedAt,
+        }),
+      );
+
+      (webVitals?.top_pages || []).forEach((page, index) => {
+        rows.push(
+          buildBaseRow({
+            section: "web_vitals",
+            subsection: "top_pages",
+            item_type: "top_page",
+            item_name: `Top Page ${index + 1}`,
+            rank: index + 1,
+            page_name: page.page_name || "",
+            metric: webVitals?.selected_metric || webVitalsMetric,
+            value: page.value ?? "",
+            previous_value: page.previous_value ?? "",
+            change_percent: page.change_percent ?? "",
+            selected_web_vitals_metric:
+              webVitals?.selected_metric || webVitalsMetric || "",
+            generated_at: generatedAt,
+          }),
+        );
+      });
+
+      [
+        { subsection: "by_order_count", items: [
+          { payment_mode: "Prepaid", value: Number(orderSplit?.prepaid_orders || 0) },
+          { payment_mode: "COD", value: Number(orderSplit?.cod_orders || 0) },
+          { payment_mode: "Partially paid", value: Number(orderSplit?.partially_paid_orders || 0) },
+        ] },
+        { subsection: "by_sales", items: [
+          { payment_mode: "Prepaid", value: Number(salesSplit?.prepaid_sales || 0) },
+          { payment_mode: "COD", value: Number(salesSplit?.cod_sales || 0) },
+          { payment_mode: "Partial", value: Number(salesSplit?.partial_sales || 0) },
+        ] },
+      ].forEach((split) => {
+        split.items.forEach((item) => {
+          rows.push(
+            buildBaseRow({
+              section: "payment_splits",
+              subsection: split.subsection,
+              item_type: "payment_mode",
+              payment_mode: item.payment_mode,
+              metric: split.subsection,
+              value: item.value,
+              generated_at: generatedAt,
+            }),
+          );
+        });
+      });
+
+      for (const category of trafficCategories) {
+        rows.push(
+          buildBaseRow({
+            section: "traffic_split",
+            subsection: "category_summary",
+            item_type: "traffic_category",
+            category: category.label,
+            metric: "sessions",
+            value: category.sessions,
+            change_percent: category.delta_percent ?? "",
+            generated_at: generatedAt,
+          }),
+        );
+        rows.push(
+          buildBaseRow({
+            section: "traffic_split",
+            subsection: "category_summary",
+            item_type: "traffic_category",
+            category: category.label,
+            metric: "atc_sessions",
+            value: category.atc_sessions,
+            change_percent: category.atc_delta_percent ?? "",
+            generated_at: generatedAt,
+          }),
+        );
+
+        for (const src of category.sources || []) {
+          rows.push(
+            buildBaseRow({
+              section: "traffic_split",
+              subsection: "source_breakdown",
+              item_type: "traffic_source",
+              category: category.label,
+              source_name: src.source_name,
+              metric: "sessions",
+              value: src.sessions,
+              generated_at: generatedAt,
+            }),
+          );
+          rows.push(
+            buildBaseRow({
+              section: "traffic_split",
+              subsection: "source_breakdown",
+              item_type: "traffic_source",
+              category: category.label,
+              source_name: src.source_name,
+              metric: "atc_sessions",
+              value: src.atc_sessions,
+              generated_at: generatedAt,
+            }),
+          );
+        }
+      }
+
+      const csvHeader = [
+        "section",
+        "subsection",
+        "item_type",
+        "item_key",
+        "item_name",
+        "hour",
+        "rank",
+        "category",
+        "source_name",
+        "page_name",
+        "payment_mode",
+        "metric",
+        "value",
+        "previous_value",
+        "change_percent",
+        "unit",
+        "start_date",
+        "end_date",
+        "brand_key",
+        "selected_web_vitals_metric",
+        "generated_at",
+      ];
+      const csvLines = [
+        csvHeader.join(","),
+        ...rows.map((row) => csvHeader.map((col) => escapeCsvCell(row[col])).join(",")),
+      ];
+      const csvText = `${csvLines.join("\n")}\n`;
+
+      const filename = `datum_snapshot_${generalMetricsQuery?.start || "start"}_${generalMetricsQuery?.end || "end"}.csv`;
+      const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to build dashboard snapshot:", error);
+      window.alert("Failed to download dashboard snapshot. Please try again.");
     }
-  }, [authorBrandKey, dispatch]);
+  }, [
+    buildWebVitalsSnapshot,
+    buildBaseRow,
+    compareMode,
+    escapeCsvCell,
+    generalMetricsQuery,
+    trafficSplitRules,
+    trendMetricsQuery,
+    webVitalsMetric,
+  ]);
+
+  const handleAuthorBrandChange = useCallback(
+    (nextKeyRaw) => {
+      const normalized = (nextKeyRaw || "").toString().trim().toUpperCase();
+      const changed = normalized !== authorBrandKey;
+      // Persist immediately alongside Redux
+      try {
+        localStorage.setItem("author_active_brand_v1", normalized);
+      } catch {
+        // Ignore storage write errors
+      }
+
+      dispatch(setBrand(normalized || ""));
+      if (changed) {
+        setAuthorRefreshKey((prev) => prev + 1);
+      }
+    },
+    [authorBrandKey, dispatch],
+  );
+
+  const handleOverallSnapshotBrandSelect = useCallback(
+    (nextKeyRaw) => {
+      const normalized = (nextKeyRaw || "").toString().trim().toUpperCase();
+      if (!normalized) return;
+
+      try {
+        localStorage.setItem("author_active_brand_v1", normalized);
+      } catch {
+        // Ignore storage write errors
+      }
+
+      if (isAuthor) {
+        handleAuthorBrandChange(normalized);
+      } else {
+        dispatch(setBrand(normalized));
+      }
+
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP.dashboard,
+          search: sanitizedSearch,
+        },
+        { replace: currentRouteTab === "dashboard" },
+      );
+    },
+    [
+      currentRouteTab,
+      dispatch,
+      handleAuthorBrandChange,
+      isAuthor,
+      navigate,
+      sanitizedSearch,
+    ],
+  );
 
   // Reset UTM filters when brand changes
   useEffect(() => {
-    dispatch(setUtm({ source: '', medium: '', campaign: '' }));
+    dispatch(
+      setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }),
+    );
   }, [activeBrandKey, dispatch]);
 
   useEffect(() => {
@@ -229,26 +1647,32 @@ export default function App() {
     let cancelled = false;
     setAuthorBrandsLoading(true);
     setBrandsLoaded(false); // Reset loaded state on new fetch start
-    listAuthorBrands().then((json) => {
-      if (cancelled) return;
-      if (json.__error || json.error) {
-        setAuthorBrands([]);
-        return;
-      }
-      const payload = json.data ?? json;
-      const arr = Array.isArray(payload.brands) ? payload.brands.map((b) => ({
-        key: (b.key || '').toString().trim().toUpperCase(),
-        host: b.host,
-        db: b.db,
-      })).filter(b => b.key !== 'MILA') : []; // EXPLICIT REMOVAL
-      setAuthorBrands(arr);
-    }).finally(() => {
-      if (!cancelled) {
-        setAuthorBrandsLoading(false);
-        setBrandsLoaded(true); // Mark as fully loaded
-      }
-    });
-    return () => { cancelled = true; };
+    listAuthorBrands()
+      .then((json) => {
+        if (cancelled) return;
+        if (json.__error || json.error) {
+          setAuthorBrands([]);
+          return;
+        }
+        const payload = json.data ?? json;
+        const arr = Array.isArray(payload.brands)
+          ? payload.brands.map((b) => ({
+              key: (b.key || "").toString().trim().toUpperCase(),
+              host: b.host,
+              db: b.db,
+            }))
+          : []; // EXPLICIT REMOVAL
+        setAuthorBrands(arr);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAuthorBrandsLoading(false);
+          setBrandsLoaded(true); // Mark as fully loaded
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthor]);
 
   useEffect(() => {
@@ -258,39 +1682,159 @@ export default function App() {
 
     if (!authorBrands.length) {
       if (authorBrandKey) {
-        handleAuthorBrandChange('');
+        handleAuthorBrandChange("");
       }
       return;
     }
-    const normalized = (authorBrandKey || '').toString().trim().toUpperCase();
+    const normalized = (authorBrandKey || "").toString().trim().toUpperCase();
     const exists = normalized && authorBrands.some((b) => b.key === normalized);
 
     // Only force reset if we are sure the list is loaded and the key is truly invalid
     if (!exists) {
       handleAuthorBrandChange(authorBrands[0].key);
     }
-  }, [isAuthor, authorBrands, authorBrandKey, handleAuthorBrandChange, brandsLoaded]);
+  }, [
+    isAuthor,
+    authorBrands,
+    authorBrandKey,
+    handleAuthorBrandChange,
+    brandsLoaded,
+  ]);
+
+  // Brand Enforcement on Load (URL Parameter > Primary Brand > Persisted)
+  const [brandEnforcementDone, setBrandEnforcementDone] = useState(false);
+  useEffect(() => {
+    if (!initialized || !user || brandEnforcementDone) return;
+
+    let enforcedBrand = null;
+    const current = (globalBrandKey || "").toString().trim().toUpperCase();
+
+    // 1. Check URL parameters
+    const params = new URLSearchParams(window.location.search);
+    const urlBrand = params.get("brand");
+
+    if (urlBrand) {
+      const normalizedUrl = urlBrand.trim().toUpperCase();
+      // For authors, we assume the URL brand is acceptable for now.
+      // It will be strictly validated later when authorBrands loaded.
+      const isValidUrlBrand = isAuthor || viewerBrands.includes(normalizedUrl);
+
+      if (isValidUrlBrand) {
+        enforcedBrand = normalizedUrl;
+        // Clean URL
+        params.delete("brand");
+        const newSearch = params.toString() ? `?${params.toString()}` : "";
+        const newUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}${newSearch}${window.location.hash}`;
+        window.history.replaceState({ path: newUrl }, "", newUrl);
+      }
+    }
+
+    // 2. If no valid URL brand, and user is viewer, check Primary
+    if (!enforcedBrand && !isAuthor) {
+      const primary = (user.primary_brand_id || "")
+        .toString()
+        .trim()
+        .toUpperCase();
+      if (primary && viewerBrands.includes(primary)) {
+        enforcedBrand = primary;
+      }
+    }
+
+    if (enforcedBrand && current !== enforcedBrand) {
+      handleAuthorBrandChange(enforcedBrand);
+    }
+
+    setBrandEnforcementDone(true);
+  }, [
+    initialized,
+    user,
+    isAuthor,
+    viewerBrands,
+    globalBrandKey,
+    brandEnforcementDone,
+    handleAuthorBrandChange,
+  ]);
+
+  useEffect(() => {
+    const normalizedPath = normalizeRoutePath(location.pathname);
+
+    if (!user && isPublicPath(normalizedPath)) {
+      return;
+    }
+
+    if (normalizedPath === "/") {
+      navigate(
+        {
+          pathname: user ? TAB_ROUTE_MAP[defaultLandingTab] : "/login",
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
+
+    if (!currentRouteTab) {
+      navigate(
+        {
+          pathname: user ? TAB_ROUTE_MAP[defaultLandingTab] : "/login",
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+    }
+  }, [currentRouteTab, defaultLandingTab, location.pathname, sanitizedSearch, navigate, user]);
+
+  useEffect(() => {
+    if (!currentRouteTab) return;
+    setAuthorTab((prev) => (prev === currentRouteTab ? prev : currentRouteTab));
+    try {
+      localStorage.setItem("author_active_tab_v1", currentRouteTab);
+    } catch {
+      // Ignore storage write errors
+    }
+  }, [currentRouteTab]);
 
   // Persist tab state only for authors
   useEffect(() => {
     // Wait until initialized to decide if we should reset tab
-    if (initialized && !isAuthor) {
-      setAuthorTab('dashboard');
+    if (
+      initialized &&
+      !isAuthor &&
+      (!accessibleTabs || !accessibleTabs.includes(authorTab))
+    ) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
     }
+
     // Guard against legacy tab state that no longer exists
-    if (initialized && authorTab === 'adjustments') {
-      setAuthorTab('dashboard');
-      try {
-        localStorage.setItem('author_active_tab_v1', 'dashboard');
-      } catch {
-        // ignore storage issues
-      }
+    if (initialized && authorTab === "adjustments") {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
     }
-  }, [isAuthor, initialized, authorTab]);
+  }, [
+    isAuthor,
+    initialized,
+    defaultLandingTab,
+    authorTab,
+    accessibleTabs,
+    sanitizedSearch,
+    navigate,
+  ]);
 
   useEffect(() => {
-    // Only authors should see/use product filters; reset for everyone else.
-    if (!isAuthor) {
+    // Only authors or users with product_filter permission should see/use product filters; reset for everyone else.
+    if (!isAuthor && !hasPermission("product_filter")) {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
       setProductSelection(DEFAULT_PRODUCT_OPTION);
       setProductOptionsLoading(false);
@@ -326,40 +1870,76 @@ export default function App() {
       limit: 50,
       brand_key: activeBrandKey,
     };
+    if (canSyncProductUtmFilters && utm?.source && utm.source.length > 0) {
+      params.utm_source = utm.source;
+    }
 
     getTopProducts(params)
       .then(({ products, error }) => {
         if (cancelled) return;
+        const existingSelection = Array.isArray(productSelection)
+          ? productSelection.filter((p) => p?.id)
+          : productSelection?.id
+            ? [productSelection]
+            : [];
+
         if (error) {
           setProductOptions([DEFAULT_PRODUCT_OPTION]);
-          setProductSelection(DEFAULT_PRODUCT_OPTION);
+          if (existingSelection.length === 0) {
+            setProductSelection(DEFAULT_PRODUCT_OPTION);
+          }
           return;
         }
 
         const mapped = Array.isArray(products)
           ? products.map((p) => {
-            const rawPath = (p.landing_page_path || '').toString();
-            const slug = rawPath.includes('/products/')
-              ? rawPath.split('/products/')[1] || rawPath
-              : rawPath || p.product_id;
-            const label = slug || p.product_id || 'Unknown product';
-            const sessions = Number(p.sessions || 0);
-            const detail = `${sessions.toLocaleString()} sessions`;
-            return { id: p.product_id, label, detail };
-          })
+              const rawPath = (p.landing_page_path || "").toString();
+              const slug = rawPath.includes("/products/")
+                ? rawPath.split("/products/")[1] || rawPath
+                : rawPath || p.product_id;
+              const label = slug || p.product_id || "Unknown product";
+              const sessions = Number(p.sessions || 0);
+              const detail = `${sessions.toLocaleString()} sessions`;
+              return { id: p.product_id, label, detail };
+            })
           : [];
 
-        const nextOptions = [DEFAULT_PRODUCT_OPTION, ...mapped];
+        const existingById = new Map(
+          existingSelection.map((item) => [String(item.id), item]),
+        );
+        const mergedMapped = [...mapped];
+        for (const item of existingSelection) {
+          const itemId = String(item.id);
+          if (!mergedMapped.some((opt) => String(opt.id) === itemId)) {
+            mergedMapped.unshift(item);
+          }
+        }
+
+        const nextOptions = [DEFAULT_PRODUCT_OPTION, ...mergedMapped];
         setProductOptions(nextOptions);
 
         // map current selection IDs to new options
-        const currentIds = new Set(Array.isArray(productSelection) ? productSelection.map(p => p.id) : []);
-        const validSelection = nextOptions.filter(opt => currentIds.has(opt.id) && opt.id !== '');
+        const currentIds = new Set(
+          existingSelection.map((p) => String(p.id)),
+        );
+        const validSelection = nextOptions.filter(
+          (opt) => opt.id !== "" && currentIds.has(String(opt.id)),
+        );
 
         if (validSelection.length > 0) {
-          setProductSelection(validSelection);
+          setProductSelection(
+            Array.isArray(productSelection)
+              ? validSelection
+              : validSelection[0],
+          );
         } else {
-          setProductSelection([DEFAULT_PRODUCT_OPTION]);
+          setProductSelection(
+            existingSelection.length > 0
+              ? Array.isArray(productSelection)
+                ? existingSelection
+                : existingSelection[0]
+              : DEFAULT_PRODUCT_OPTION,
+          );
         }
       })
       .finally(() => {
@@ -369,54 +1949,216 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [start, end, activeBrandKey, authorRefreshKey, productSelection, initialized, user, isAuthor]);
+  }, [
+    start,
+    end,
+    activeBrandKey,
+    authorRefreshKey,
+    productSelection,
+    utm?.source,
+    canSyncProductUtmFilters,
+    initialized,
+    user,
+    isAuthor,
+    hasPermission,
+  ]);
 
-  const handleSelectMetric = useCallback((metricKey) => {
-    if (!metricKey) return;
-    dispatch(setSelectedMetric(TREND_METRICS.has(metricKey) ? metricKey : DEFAULT_TREND_METRIC));
-  }, [dispatch]);
+  const handleSelectMetric = useCallback(
+    (metricKey) => {
+      const normalizedMetric = normalizeTrendMetric(metricKey);
+      if (!normalizedMetric) return;
 
-  const handleRangeChange = useCallback((nextRange) => {
-    if (!Array.isArray(nextRange)) return;
-    dispatch(setRange(nextRange));
-  }, [dispatch]);
+      dispatch(
+        setTrendMetricSelection(
+          sanitizeTrendMetricSelection(
+            [],
+            normalizedMetric,
+          ),
+        ),
+      );
+    },
+    [dispatch],
+  );
 
-  const handleProductChange = useCallback((value) => {
-    // Reset UTMs when product changes
-    dispatch(setUtm({ source: '', medium: '', campaign: '' }));
-    dispatch(setProductSelection(value || DEFAULT_PRODUCT_OPTION));
-  }, [dispatch]);
+  const handleToggleMetric = useCallback(
+    (metricKey, options = {}) => {
+      if (!canMultiSelectableKpiCards) return;
+      const normalizedMetric = normalizeTrendMetric(metricKey);
+      if (!normalizedMetric) return;
 
-  const handleUtmChange = useCallback((val) => {
-    // If source is changing, reset dependent filters (medium, campaign) ONLY if they aren't provided
-    if (val && typeof val === 'object' && 'source' in val) {
-      const update = { ...val };
-      if (!('medium' in val)) update.medium = '';
-      if (!('campaign' in val)) update.campaign = '';
-      dispatch(setUtm(update));
-    } else {
+      const nextSelection = toggleTrendMetricSelection(
+        selectedMetrics,
+        activeMetric,
+        normalizedMetric,
+        options,
+      );
+
+      let allowedMetrics = Array.isArray(nextSelection.selectedMetrics)
+        ? [...nextSelection.selectedMetrics]
+        : [];
+
+      if (!hasPermission("ci_events")) {
+        allowedMetrics = allowedMetrics.filter(
+          (entry) => !CI_TREND_METRICS.has(entry),
+        );
+      }
+      if (discountCode) {
+        allowedMetrics = allowedMetrics.filter((entry) =>
+          DISCOUNT_ALLOWED_TREND_METRICS.has(entry),
+        );
+      }
+
+      const fallbackMetric =
+        nextSelection.activeMetric &&
+        (!discountCode ||
+          DISCOUNT_ALLOWED_TREND_METRICS.has(nextSelection.activeMetric)) &&
+        (hasPermission("ci_events") ||
+          !CI_TREND_METRICS.has(nextSelection.activeMetric))
+          ? nextSelection.activeMetric
+          : DEFAULT_TREND_METRIC;
+
+      dispatch(
+        setTrendMetricSelection(
+          sanitizeTrendMetricSelection(
+            allowedMetrics,
+            nextSelection.activeMetric || fallbackMetric,
+          ),
+        ),
+      );
+    },
+    [
+      activeMetric,
+      canMultiSelectableKpiCards,
+      dispatch,
+      discountCode,
+      hasPermission,
+      selectedMetrics,
+    ],
+  );
+
+  const handleRangeChange = useCallback(
+    (nextRange) => {
+      if (!Array.isArray(nextRange)) return;
+      dispatch(setRange(nextRange));
+    },
+    [dispatch],
+  );
+
+  const handleProductChange = useCallback(
+    (value) => {
+      if (!canSyncProductUtmFilters && hasActiveUtmFilter) {
+        dispatch(
+          setUtm({
+            source: [],
+            medium: [],
+            campaign: [],
+            term: [],
+            content: [],
+          }),
+        );
+      }
+      dispatch(setProductSelection(value || DEFAULT_PRODUCT_OPTION));
+      dispatch(setDiscountCode(""));
+    },
+    [canSyncProductUtmFilters, dispatch, hasActiveUtmFilter],
+  );
+
+  const handleUtmChange = useCallback(
+    (val) => {
+      if (!canSyncProductUtmFilters && hasActiveProductFilter) {
+        dispatch(setProductSelection(DEFAULT_PRODUCT_OPTION));
+      }
       dispatch(setUtm(val));
-    }
-  }, [dispatch]);
+      dispatch(setDiscountCode(""));
+    },
+    [canSyncProductUtmFilters, dispatch, hasActiveProductFilter],
+  );
 
-  const handleSalesChannelChange = useCallback((val) => {
-    dispatch(setSalesChannel(val));
-  }, [dispatch]);
+  const handleSalesChannelChange = useCallback(
+    (val) => {
+      dispatch(setSalesChannel(val));
+      dispatch(setDiscountCode(""));
+    },
+    [dispatch],
+  );
+
+  const handleDeviceTypeChange = useCallback(
+    (val) => {
+      dispatch(setDeviceType(val));
+      dispatch(setDiscountCode(""));
+    },
+    [dispatch],
+  );
+
+  const handleCityChange = useCallback(
+    (val) => {
+      dispatch(setCity(val));
+    },
+    [dispatch],
+  );
+
+  const handleDiscountCodeChange = useCallback(
+    (val) => {
+      const next = val || "";
+      dispatch(setDiscountCode(next));
+      if (next) {
+        dispatch(setProductSelection(DEFAULT_PRODUCT_OPTION));
+        dispatch(setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }));
+        dispatch(setSalesChannel([]));
+        dispatch(setDeviceType([]));
+        dispatch(setCity([]));
+      }
+    },
+    [dispatch],
+  );
+
+  const handleCompareModeChange = useCallback(
+    (enabled) => {
+      dispatch(setCompareMode(enabled));
+      if (!enabled) {
+        dispatch(setCompareDateRange([null, null]));
+      }
+    },
+    [dispatch],
+  );
+
+  const handleCompareDateRangeChange = useCallback(
+    (nextRange) => {
+      if (!Array.isArray(nextRange)) return;
+      dispatch(setCompareDateRange(nextRange));
+    },
+    [dispatch],
+  );
 
   const handleSidebarOpen = useCallback(() => setSidebarOpen(true), []);
   const handleSidebarClose = useCallback(() => setSidebarOpen(false), []);
   const handleSidebarTabChange = useCallback((tabId) => {
-    setAuthorTab(tabId);
+    const oldIndex = MOBILE_NAV_ITEMS.findIndex((item) => item.id === authorTab);
+    const newIndex = MOBILE_NAV_ITEMS.findIndex((item) => item.id === tabId);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      setDirection(newIndex > oldIndex ? 1 : -1);
+    } else {
+      setDirection(0);
+    }
+
     try {
-      localStorage.setItem('author_active_tab_v1', tabId);
+      localStorage.setItem("author_active_tab_v1", tabId);
     } catch {
       // Ignore storage write errors
     }
-  }, []);
+    navigate(
+      {
+        pathname: getPathForTab(tabId),
+        search: sanitizedSearch,
+      },
+      { replace: false },
+    );
+  }, [authorTab, sanitizedSearch, navigate]);
 
   const handleToggleDarkMode = useCallback(() => {
     setDarkMode((prev) => {
-      const next = prev === 'light' ? 'dark' : 'light';
+      const next = prev === "light" ? "dark" : "light";
       try {
         localStorage.setItem(THEME_MODE_KEY, next);
       } catch {
@@ -426,58 +2168,663 @@ export default function App() {
     });
   }, []);
 
-  const theme = useMemo(() => createTheme({
-    palette: {
-      mode: darkMode,
-      ...(darkMode === 'light'
-        ? {
-          primary: { main: '#0b6bcb' },
-          background: { default: '#FDFDFD', paper: '#ffffff' },
-        }
-        : {
-          primary: { main: '#5ba3e0' },
-          background: { default: '#121212', paper: '#1e1e1e' },
-          text: {
-            primary: '#f0f0f0',
-            secondary: '#c0c0c0',
-            disabled: '#808080',
+  // Wrapper to prevent skeleton flash on refresh
+  const handleFunnelData = useCallback((newData) => {
+    setFunnelData((prev) => {
+      // If we are loading and have no stats yet in the new update,
+      // but we ALREADY have stats from before, keep showing the old stats
+      // to avoid a skeleton flash during the refresh.
+      if (newData.loading && !newData.stats && prev?.stats) {
+        return { ...newData, stats: prev.stats };
+      }
+      return newData;
+    });
+  }, []);
+
+  const visibleDesktopWidgetIds = useMemo(
+    () =>
+      getVisibleDashboardWidgetIds({
+        viewport: "desktop",
+        layout: effectiveDashboardLayout,
+        hasPermission,
+      }),
+    [effectiveDashboardLayout, hasPermission],
+  );
+
+  const visibleMobileWidgetIds = useMemo(
+    () =>
+      getVisibleDashboardWidgetIds({
+        viewport: "mobile",
+        layout: effectiveDashboardLayout,
+        hasPermission,
+      }),
+    [effectiveDashboardLayout, hasPermission],
+  );
+
+  const renderDashboardExtras = useCallback(() => {
+    if (isLongRangeDashboard) {
+      return (
+        <Stack spacing={3} sx={{ mt: 2 }}>
+          {!isAuthor && hasPermission("sessions_drop_off_funnel") && (
+            <DashboardUnavailableCard
+              title="Sessions Drop-off Funnel"
+              description={dataRestrictionDescription}
+              minHeight={250}
+            />
+          )}
+          {!isAuthor && hasPermission("product_conversion") && (
+            <Box>
+              <Typography
+                variant="subtitle2"
+                color="text.secondary"
+                sx={{ mb: 1.5, fontWeight: 500, ml: 1 }}
+              >
+                Product Performance
+              </Typography>
+              <DashboardUnavailableCard
+                title="Product Performance"
+                description={dataRestrictionDescription}
+                minHeight={300}
+              />
+            </Box>
+          )}
+        </Stack>
+      );
+    }
+    return (
+      <>
+        {!isAuthor &&
+          hasPermission("sessions_drop_off_funnel") &&
+          (funnelData?.stats ? (
+            <Suspense
+              fallback={
+                <Skeleton variant="rounded" width="100%" height={250} />
+              }
+            >
+              <Box sx={{ mt: 2 }}>
+                <Typography
+                  variant="subtitle2"
+                  color="text.secondary"
+                  sx={{ mb: 1.5, fontWeight: 500, ml: 1 }}
+                >
+                  Sessions Drop-off Funnel
+                </Typography>
+                <FunnelChart
+                  data={[
+                    {
+                      label: "Sessions",
+                      value: funnelData.stats.total_sessions || 0,
+                      change: funnelData.deltas?.sessions?.diff_pct
+                        ? Number(funnelData.deltas.sessions.diff_pct).toFixed(1)
+                        : undefined,
+                    },
+                    {
+                      label: "Add to Cart",
+                      value: funnelData.stats.total_atc_sessions || 0,
+                      change: funnelData.deltas?.atc?.diff_pct
+                        ? Number(funnelData.deltas.atc.diff_pct).toFixed(1)
+                        : undefined,
+                    },
+                    ...(hasPermission("ci_events")
+                      ? [
+                          {
+                            label: "Checkout Initiated",
+                            value: funnelData.stats.total_ci_events || 0,
+                            change: funnelData.deltas?.ci?.diff_pct
+                              ? Number(funnelData.deltas.ci.diff_pct).toFixed(1)
+                              : undefined,
+                          },
+                        ]
+                      : []),
+                    {
+                      label: "Orders",
+                      value: funnelData.stats.total_orders || 0,
+                      change:
+                        funnelData.deltas?.orders?.diff_pct ||
+                        funnelData.deltas?.orders?.diff_pp
+                          ? Number(
+                              funnelData.deltas?.orders?.diff_pct ||
+                                funnelData.deltas?.orders?.diff_pp,
+                            ).toFixed(1)
+                          : undefined,
+                    },
+                  ]}
+                  height={250}
+                />
+              </Box>
+            </Suspense>
+          ) : (
+            <Skeleton variant="rounded" width="100%" height={290} />
+          ))}
+
+        {!isAuthor && hasPermission("product_conversion") && (
+          <Box sx={{ mt: 3 }}>
+            <Typography
+              variant="subtitle2"
+              color="text.secondary"
+              sx={{ mb: 1.5, fontWeight: 500, ml: 1 }}
+            >
+              Product Performance
+            </Typography>
+            <Suspense
+              fallback={
+                <Skeleton variant="rounded" width="100%" height={300} />
+              }
+            >
+              <ProductConversionTable
+                brandKey={activeBrandKey}
+                showCompareMode={hasPermission("compare_mode")}
+                isAuthor={isAuthor}
+                permissions={viewerPermissions}
+              />
+            </Suspense>
+          </Box>
+        )}
+      </>
+    );
+  }, [
+    activeBrandKey,
+    dataRestrictionDescription,
+    funnelData,
+    hasPermission,
+    isAuthor,
+    isLongRangeDashboard,
+    viewerPermissions,
+  ]);
+
+  const desktopWidgetRegistry = useMemo(
+    () => ({
+      kpi_cards: (
+        <KPIs
+          variant="desktop_paged"
+          query={trendMetricsQuery}
+          selectedMetrics={selectedMetrics}
+          activeMetric={activeMetric}
+          onSelectMetric={handleSelectMetric}
+          onToggleMetric={
+            canMultiSelectableKpiCards ? handleToggleMetric : undefined
+          }
+          onFunnelData={handleFunnelData}
+          productId={selectedProductIds}
+          productLabel={selectedProductLabel}
+          utmOptions={utmOptions}
+          showWebVitals={false}
+          showCiEvents={hasPermission("ci_events")}
+          showRtoKpi={hasPermission("rto_kpi")}
+          compareMode={compareMode}
+          desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
+          onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
+          canEditDesktopKpis={canCustomizeDashboardLayout}
+          dashboardLayoutEditing={layoutEditMode}
+        />
+      ),
+      overall_snapshot: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Overall Snapshot"
+          description={dataRestrictionDescription}
+          minHeight={320}
+        />
+      ) : (
+        <OverallSnapshotWidget
+          query={overallSnapshotQuery}
+          brands={snapshotBrands}
+          brandsLoading={isAuthor && authorBrandsLoading}
+          onBrandSelect={handleOverallSnapshotBrandSelect}
+        />
+      ),
+      kpi_trend: (
+        <Grid container spacing={2}>
+          <Grid
+            size={{
+              xs: 12,
+              md: hasPermission("web_vitals") ? 9 : 12,
+            }}
+          >
+            <HourlySalesCompare
+              query={trendMetricsQuery}
+              selectedMetrics={selectedMetrics}
+              activeMetric={activeMetric}
+              compareMode={compareMode}
+              isLongRange={isLongRangeDashboard}
+            />
+          </Grid>
+          {hasPermission("web_vitals") && (
+            <Grid size={{ xs: 12, md: 3 }}>
+              {isLongRangeDashboard ? (
+                <DashboardUnavailableCard
+                  title="Web Performance(Avg)"
+                  description={dataRestrictionDescription}
+                  minHeight={310}
+                />
+              ) : (
+                <WebPerformancePanel
+                  query={generalMetricsQuery}
+                  selectedMetrics={selectedMetrics}
+                  activeMetric={activeMetric}
+                  onSelectMetric={handleSelectMetric}
+                  onToggleMetric={
+                    canMultiSelectableKpiCards ? handleToggleMetric : undefined
+                  }
+                />
+              )}
+            </Grid>
+          )}
+        </Grid>
+      ),
+      payment_split: hasPermission("web_vitals") ? (
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, md: 8 }}>
+            {isLongRangeDashboard ? (
+              <DashboardUnavailableCard
+                title="Mode of Payment"
+                description={dataRestrictionDescription}
+                minHeight={310}
+              />
+            ) : (
+              <ModeOfPayment
+                query={generalMetricsQuery}
+                selectedMetrics={selectedMetrics}
+                onToggleMetric={
+                  canMultiSelectableKpiCards ? handleToggleMetric : undefined
+                }
+              />
+            )}
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }}>
+            {isLongRangeDashboard ? (
+              <DashboardUnavailableCard
+                title="Top 5 Pages"
+                description={dataRestrictionDescription}
+                minHeight={380}
+              />
+            ) : (
+              <WebVitals
+                query={generalMetricsQuery}
+                metric={webVitalsMetric}
+                onMetricChange={setWebVitalsMetric}
+              />
+            )}
+          </Grid>
+        </Grid>
+      ) : (
+        isLongRangeDashboard ? (
+          <DashboardUnavailableCard
+            title="Mode of Payment"
+            description={dataRestrictionDescription}
+            minHeight={310}
+          />
+        ) : (
+          <ModeOfPayment
+            query={generalMetricsQuery}
+            selectedMetrics={selectedMetrics}
+            onToggleMetric={
+              canMultiSelectableKpiCards ? handleToggleMetric : undefined
+            }
+          />
+        )
+      ),
+      payment_trend: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Payment Trend"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
+        <PaymentSplitTrend query={generalMetricsQuery} />
+      ),
+      traffic_split: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Traffic Split"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
+        <TrafficSourceSplit
+          query={trendMetricsQuery}
+          compareMode={compareMode}
+          mappingRules={trafficSplitRules}
+        />
+      ),
+    }),
+    [
+        compareMode,
+        generalMetricsQuery,
+        handleOverallSnapshotBrandSelect,
+        handleDesktopKpiLayoutChange,
+        handleFunnelData,
+        handleSelectMetric,
+        handleToggleMetric,
+        canCustomizeDashboardLayout,
+        canMultiSelectableKpiCards,
+        effectiveDashboardLayout,
+        hasPermission,
+        isAuthor,
+        authorBrandsLoading,
+        layoutEditMode,
+        overallSnapshotQuery,
+        selectedMetrics,
+        activeMetric,
+        selectedProductIds,
+        selectedProductLabel,
+        snapshotBrands,
+        trafficSplitRules,
+        trendMetricsQuery,
+        utmOptions,
+        dataRestrictionDescription,
+        isLongRangeDashboard,
+        effectiveDashboardLayout,
+        handleDesktopKpiLayoutChange,
+        layoutEditMode,
+      webVitalsMetric,
+    ],
+  );
+
+  const mobileWidgetRegistry = useMemo(
+    () => ({
+      kpi_cards: (
+        <KPIs
+          variant="desktop_paged"
+          key={`mobile-kpis-${layoutEditMode ? "edit" : "view"}-${effectiveDashboardLayout.kpiCardsDesktop.order.join("|")}-${effectiveDashboardLayout.kpiCardsDesktop.pinned.join("|")}`}
+          query={trendMetricsQuery}
+          selectedMetrics={selectedMetrics}
+          activeMetric={activeMetric}
+          onSelectMetric={handleSelectMetric}
+          onToggleMetric={
+            canMultiSelectableKpiCards ? handleToggleMetric : undefined
+          }
+          onFunnelData={handleFunnelData}
+          productId={selectedProductIds}
+          productLabel={selectedProductLabel}
+          utmOptions={utmOptions}
+          showRow="mobile_top"
+          showWebVitals={!isLongRangeDashboard && hasPermission("web_vitals")}
+          showCiEvents={hasPermission("ci_events")}
+          showRtoKpi={hasPermission("rto_kpi")}
+          compareMode={compareMode}
+          desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
+          onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
+          canEditDesktopKpis={canCustomizeDashboardLayout}
+          dashboardLayoutEditing={layoutEditMode}
+        />
+      ),
+      overall_snapshot: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Overall Snapshot"
+          description={dataRestrictionDescription}
+          minHeight={320}
+        />
+      ) : (
+        <OverallSnapshotWidget
+          query={overallSnapshotQuery}
+          brands={snapshotBrands}
+          brandsLoading={isAuthor && authorBrandsLoading}
+          onBrandSelect={handleOverallSnapshotBrandSelect}
+        />
+      ),
+      kpi_trend: (
+        <HourlySalesCompare
+          query={trendMetricsQuery}
+          selectedMetrics={selectedMetrics}
+          activeMetric={activeMetric}
+          compareMode={compareMode}
+          isLongRange={isLongRangeDashboard}
+        />
+      ),
+      top_pages: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Top 5 Pages"
+          description={dataRestrictionDescription}
+          minHeight={380}
+        />
+      ) : (
+        <WebVitals
+          query={generalMetricsQuery}
+          metric={webVitalsMetric}
+          onMetricChange={setWebVitalsMetric}
+        />
+      ),
+      payment_split: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Mode of Payment"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
+        <ModeOfPayment
+          query={generalMetricsQuery}
+          selectedMetrics={selectedMetrics}
+          onToggleMetric={
+            canMultiSelectableKpiCards ? handleToggleMetric : undefined
+          }
+        />
+      ),
+      payment_trend: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Payment Trend"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
+        <PaymentSplitTrend query={generalMetricsQuery} />
+      ),
+      traffic_split: isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Traffic Split"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
+        <TrafficSourceSplit
+          query={trendMetricsQuery}
+          compareMode={compareMode}
+          mappingRules={trafficSplitRules}
+        />
+      ),
+    }),
+    [
+        compareMode,
+        generalMetricsQuery,
+        handleOverallSnapshotBrandSelect,
+        handleFunnelData,
+        handleSelectMetric,
+        handleToggleMetric,
+        canMultiSelectableKpiCards,
+        hasPermission,
+        isAuthor,
+        authorBrandsLoading,
+        overallSnapshotQuery,
+        selectedMetrics,
+        activeMetric,
+        selectedProductIds,
+        selectedProductLabel,
+        snapshotBrands,
+        trafficSplitRules,
+        trendMetricsQuery,
+        utmOptions,
+        dataRestrictionDescription,
+        isLongRangeDashboard,
+      webVitalsMetric,
+    ],
+  );
+
+  const handleSaveDashboardLayout = useCallback(async (draftLayout) => {
+    const payload = normalizeDashboardLayout(draftLayout);
+    setIsSavingDashboardLayout(true);
+    try {
+      const res = await saveDashboardLayout(payload);
+      if (res.error) return;
+      setDashboardLayout(normalizeDashboardLayout(res.data));
+      setPreviewDashboardLayout(null);
+      setLayoutEditMode(false);
+    } finally {
+      setIsSavingDashboardLayout(false);
+    }
+  }, []);
+
+  function handleDesktopKpiLayoutChange(nextKpiLayout, options = {}) {
+    const normalizedKpiLayout = normalizeDesktopKpiLayout(nextKpiLayout);
+
+    if (options.persist && !layoutEditMode) {
+      const nextLayout = normalizeDashboardLayout({
+        ...dashboardLayout,
+        kpiCardsDesktop: normalizedKpiLayout,
+      });
+      handleSaveDashboardLayout(nextLayout);
+      return;
+    }
+
+    setPreviewDashboardLayout((prev) => {
+      const base = normalizeDashboardLayout(prev || dashboardLayout);
+      return normalizeDashboardLayout({
+        ...base,
+        kpiCardsDesktop: normalizedKpiLayout,
+      });
+    });
+  }
+
+  const handleOpenLayoutEditor = useCallback(() => {
+    if (layoutEditMode) return;
+    setPreviewDashboardLayout(normalizeDashboardLayout(dashboardLayout));
+    setLayoutEditMode(true);
+  }, [dashboardLayout, layoutEditMode]);
+
+  const handleCloseLayoutEditor = useCallback(() => {
+    setPreviewDashboardLayout(null);
+    setLayoutEditMode(false);
+  }, []);
+
+  const handleInlineDashboardReorder = useCallback((nextVisibleIds) => {
+    const viewport = isMobile ? "mobile" : "desktop";
+    setPreviewDashboardLayout((prev) => {
+      const base = normalizeDashboardLayout(prev || dashboardLayout);
+      return normalizeDashboardLayout({
+        ...base,
+        [viewport]: nextVisibleIds,
+      });
+    });
+  }, [dashboardLayout, isMobile]);
+
+  const handleResetDashboardLayout = useCallback(() => {
+    const viewport = isMobile ? "mobile" : "desktop";
+    setPreviewDashboardLayout((prev) => {
+      const base = normalizeDashboardLayout(prev || dashboardLayout);
+      return normalizeDashboardLayout({
+        ...base,
+        [viewport]: [...DASHBOARD_LAYOUT_DEFAULTS[viewport]],
+        kpiCardsDesktop:
+          viewport === "desktop"
+            ? DEFAULT_DESKTOP_KPI_LAYOUT
+            : base.kpiCardsDesktop,
+      });
+    });
+  }, [dashboardLayout, isMobile]);
+
+  const activeWidgetIds = isMobile ? visibleMobileWidgetIds : visibleDesktopWidgetIds;
+  const activeWidgetRegistry = isMobile ? mobileWidgetRegistry : desktopWidgetRegistry;
+  const extraAfterId = isMobile
+    ? (visibleMobileWidgetIds.includes("top_pages") ? "top_pages" : "kpi_trend")
+    : "kpi_trend";
+  const dashboardExtrasNode = renderDashboardExtras();
+
+  const glassStyles = useMemo(
+    () => ({
+      backdropFilter: "blur(12px)",
+      backgroundColor:
+        darkMode === "dark"
+          ? "rgba(255, 255, 255, 0.08)"
+          : "rgba(255, 255, 255, 0.7)",
+      border: "1px solid",
+      borderColor:
+        darkMode === "dark"
+          ? "rgba(255, 255, 255, 0.15)"
+          : "rgba(0, 0, 0, 0.05)",
+    }),
+    [darkMode],
+  );
+
+  const depthShadows = useMemo(
+    () => ({
+      boxShadow:
+        darkMode === "dark"
+          ? "0 20px 40px rgba(0, 0, 0, 0.6), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.15)"
+          : "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.5)",
+    }),
+    [darkMode],
+  );
+
+  const theme = useMemo(
+    () =>
+      createTheme({
+        palette: {
+          mode: darkMode,
+          ...(darkMode === "light"
+            ? {
+                primary: { main: "#0b6bcb" },
+                background: { default: "#FDFDFD", paper: "#ffffff" },
+              }
+            : {
+                primary: { main: "#5ba3e0" },
+                background: { default: "#000000", paper: "#1a1a1a" },
+                text: {
+                  primary: "#f0f0f0",
+                  secondary: "#c0c0c0",
+                  disabled: "#808080",
+                },
+                divider: "#404040",
+              }),
+        },
+        shape: { borderRadius: 12 },
+        components: {
+          MuiCard: {
+            styleOverrides: {
+              root: {
+                borderRadius: 16,
+                transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                ...glassStyles,
+                ...depthShadows,
+                backgroundImage: "none",
+                "&:hover": {
+                  transform: "translateY(-4px)",
+                  boxShadow:
+                    darkMode === "dark"
+                      ? "0 30px 60px rgba(0, 0, 0, 0.8), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.25)"
+                      : "0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.08)",
+                },
+              },
+            },
           },
-          divider: '#404040',
-        }),
-    },
-    shape: { borderRadius: 12 },
-    components: {
-      MuiCard: {
-        styleOverrides: {
-          root: {
-            ...(darkMode === 'dark' && {
-              backgroundColor: '#1e1e1e',
-              borderColor: '#333',
-            }),
+          MuiPaper: {
+            styleOverrides: {
+              root: {
+                backgroundImage: "none",
+                ...(darkMode === "dark"
+                  ? {
+                      backgroundColor: "rgba(65, 65, 65, 0.15)",
+                      backdropFilter: "blur(12px)",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                    }
+                  : {}),
+              },
+            },
           },
         },
-      },
-      MuiPaper: {
-        styleOverrides: {
-          root: {
-            ...(darkMode === 'dark' && {
-              backgroundImage: 'none',
-            }),
-          },
-        },
-      },
-    },
-  }), [darkMode]);
+      }),
+    [darkMode],
+  );
 
   // Light-only theme for sign-in page
-  const lightTheme = useMemo(() => createTheme({
-    palette: {
-      mode: 'light',
-      primary: { main: '#0b6bcb' },
-      background: { default: '#FDFDFD', paper: '#ffffff' },
-    },
-    shape: { borderRadius: 12 },
-  }), []);
+  const lightTheme = useMemo(
+    () =>
+      createTheme({
+        palette: {
+          mode: "light",
+          primary: { main: "#0b6bcb" },
+          background: { default: "#FDFDFD", paper: "#ffffff" },
+        },
+        shape: { borderRadius: 12 },
+      }),
+    [],
+  );
 
   // Persist when range changes
   useEffect(() => {
@@ -486,7 +2833,10 @@ export default function App() {
         const sIso = dayjs(start).isValid() ? dayjs(start).toISOString() : null;
         const eIso = dayjs(end).isValid() ? dayjs(end).toISOString() : null;
         if (sIso && eIso) {
-          localStorage.setItem('pts_date_range_v2', JSON.stringify({ start: sIso, end: eIso, savedAt: Date.now() }));
+          localStorage.setItem(
+            "pts_date_range_v2",
+            JSON.stringify({ start: sIso, end: eIso, savedAt: Date.now() }),
+          );
         }
       } catch {
         // Ignore storage write errors
@@ -496,46 +2846,289 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('pts_utm_filters_v1', JSON.stringify(utm));
+      localStorage.setItem("pts_utm_filters_v1", JSON.stringify(utm));
     } catch {
       // Ignore
     }
   }, [utm]);
 
-  // Fetch UTM Options (Lifted from MobileTopBar)
   useEffect(() => {
-    if (!isAuthor || authorTab !== 'dashboard' || !activeBrandKey) return;
-    const s = formatDate(start);
-    const e = formatDate(end);
+    try {
+      localStorage.setItem("pts_discount_filter_v1", JSON.stringify(discountCode || ""));
+    } catch {
+      // Ignore
+    }
+  }, [discountCode]);
 
+  useEffect(() => {
+    if (!canMultiSelectableKpiCards && selectedMetrics.length > 0) {
+      dispatch(
+        setTrendMetricSelection({
+          selectedMetrics: [],
+          activeMetric: activeMetric || DEFAULT_TREND_METRIC,
+        }),
+      );
+    }
+  }, [
+    activeMetric,
+    canMultiSelectableKpiCards,
+    dispatch,
+    selectedMetrics,
+  ]);
+
+  useEffect(() => {
+    if (
+      selectedMetrics.some((metric) => CI_TREND_METRICS.has(metric)) &&
+      !hasPermission("ci_events")
+    ) {
+      const nextSelection = sanitizeTrendMetricSelection(
+        selectedMetrics.filter((metric) => !CI_TREND_METRICS.has(metric)),
+        activeMetric,
+      );
+      dispatch(
+        setTrendMetricSelection(
+          nextSelection.selectedMetrics.length
+            ? nextSelection
+            : {
+                selectedMetrics: [],
+                activeMetric:
+                  CI_TREND_METRICS.has(activeMetric)
+                    ? DEFAULT_TREND_METRIC
+                    : activeMetric || DEFAULT_TREND_METRIC,
+              },
+        ),
+      );
+    }
+  }, [activeMetric, dispatch, hasPermission, selectedMetrics]);
+
+  useEffect(() => {
+    if (
+      !hasPermission("web_vitals") &&
+      (activeMetric === "performance" ||
+        selectedMetrics.includes("performance"))
+    ) {
+      const nextSelection = sanitizeTrendMetricSelection(
+        selectedMetrics.filter((metric) => metric !== "performance"),
+        activeMetric === "performance" ? DEFAULT_TREND_METRIC : activeMetric,
+      );
+      dispatch(
+        setTrendMetricSelection(
+          nextSelection.selectedMetrics.length
+            ? nextSelection
+            : {
+                selectedMetrics: [],
+                activeMetric:
+                  activeMetric === "performance"
+                    ? DEFAULT_TREND_METRIC
+                    : activeMetric || DEFAULT_TREND_METRIC,
+              },
+        ),
+      );
+    }
+  }, [activeMetric, dispatch, hasPermission, selectedMetrics]);
+
+  useEffect(() => {
+    if (
+      discountCode &&
+      selectedMetrics.some((metric) => !DISCOUNT_ALLOWED_TREND_METRICS.has(metric))
+    ) {
+      const nextSelection = sanitizeTrendMetricSelection(
+        selectedMetrics.filter((metric) =>
+          DISCOUNT_ALLOWED_TREND_METRICS.has(metric),
+        ),
+        activeMetric,
+      );
+      dispatch(
+        setTrendMetricSelection(
+          nextSelection.selectedMetrics.length
+            ? nextSelection
+            : {
+                selectedMetrics: [],
+                activeMetric:
+                  activeMetric &&
+                  DISCOUNT_ALLOWED_TREND_METRICS.has(activeMetric)
+                    ? activeMetric
+                    : DEFAULT_TREND_METRIC,
+              },
+        ),
+      );
+    }
+  }, [activeMetric, discountCode, dispatch, selectedMetrics]);
+
+  useEffect(() => {
+    if (!isAuthor && !hasPermission("discount_filter") && discountCode) {
+      dispatch(setDiscountCode(""));
+    }
+  }, [isAuthor, hasPermission, discountCode, dispatch]);
+
+  // Centralized UTM clearing for > 30 days
+  useEffect(() => {
+    if (!start || !end) return;
+    const isOver30 = isRangeOverDataRestrictionPeriod(
+      start,
+      end,
+      dataRestrictionConfig,
+    );
+    const hasUtm = Object.values(utm).some((v) =>
+      Array.isArray(v) ? v.length > 0 : !!v,
+    );
+
+    if (isOver30 && hasUtm) {
+      dispatch(
+        setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }),
+      );
+    }
+  }, [start, end, utm, dispatch, dataRestrictionConfig]);
+
+  useEffect(() => {
+    if (canSyncProductUtmFilters) return;
+    if (!hasActiveProductFilter || !hasActiveSourceUtmFilter) return;
+    dispatch(
+      setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }),
+    );
+  }, [
+    canSyncProductUtmFilters,
+    dispatch,
+    hasActiveProductFilter,
+    hasActiveSourceUtmFilter,
+  ]);
+
+  // Fetch UTM Options (Lifted from MobileTopBar)
+  // Fetch UTM Options (Lifted from MobileTopBar)
+  const lastFetchParams = useMemo(() => {
+    return {
+      brand: activeBrandKey,
+      start: formatDate(start),
+      end: formatDate(end),
+    };
+  }, [
+    activeBrandKey,
+    start,
+    end,
+  ]);
+
+  useEffect(() => {
+    if (!activeBrandKey) return;
+    if (isLongRangeDashboard) {
+      setUtmOptions({ brand_key: activeBrandKey });
+      return;
+    }
+
+    getSummaryFilterOptions({
+      brand_key: activeBrandKey,
+      start: formatDate(start),
+      end: formatDate(end),
+      product_id: canSyncProductUtmFilters ? selectedProductIds : undefined,
+    })
+      .then((res) => {
+        if (res.filter_options) {
+          setUtmOptions({ ...res.filter_options, brand_key: activeBrandKey });
+        }
+      })
+      .catch(() => {});
+  }, [
+    lastFetchParams,
+    activeBrandKey,
+    start,
+    end,
+    isLongRangeDashboard,
+    selectedProductIds,
+    canSyncProductUtmFilters,
+  ]);
+
+  // Sync funnel data with product table's Curr date when on Funnels tab
+  useEffect(() => {
+    if (!isAuthor || authorTab !== "product-conversion") return;
+    if (!activeBrandKey || !productTableStart || !productTableEnd) return;
+
+    // Fetch funnel data using the product table's current date range
     getDashboardSummary({
       brand_key: activeBrandKey,
-      start: s,
-      end: e,
-      include_utm_options: true,
-      utm_source: utm?.source, // Dependent filtering
-      utm_medium: utm?.medium,
-      utm_campaign: utm?.campaign,
-      sales_channel: salesChannel
+      start: productTableStart,
+      end: productTableEnd,
+      include_utm_options: false,
     })
-      .then(res => {
-        if (res.filter_options) setUtmOptions(res.filter_options);
+      .then((res) => {
+        if (res.metrics) {
+          const m = res.metrics;
+          const stats = {
+            total_sessions: m.total_sessions?.value ?? 0,
+            total_atc_sessions: m.total_atc_sessions?.value ?? 0,
+            total_ci_events: m.total_ci_events?.value ?? 0,
+            total_orders: m.total_orders?.value ?? 0,
+          };
+          const deltas = {
+            sessions: {
+              diff_pct: m.total_sessions?.diff_pct,
+              direction: m.total_sessions?.direction,
+            },
+            atc: {
+              diff_pct: m.total_atc_sessions?.diff_pct,
+              direction: m.total_atc_sessions?.direction,
+            },
+            ci: {
+              diff_pct: m.total_ci_events?.diff_pct,
+              direction: m.total_ci_events?.direction,
+            },
+            orders: {
+              diff_pct: m.total_orders?.diff_pct,
+              diff_pp: m.total_orders?.diff_pp,
+              direction: m.total_orders?.direction,
+            },
+          };
+          handleFunnelData({ stats, deltas, loading: false });
+        }
+      })
+      .catch(() => {
+        // Don't clear funnel data on error — keep previous data
       });
-  }, [activeBrandKey, start, end, utm, isAuthor, authorTab, salesChannel]);
+  }, [
+    isAuthor,
+    authorTab,
+    activeBrandKey,
+    productTableStart,
+    productTableEnd,
+    handleFunnelData,
+  ]);
 
   // Check auth on mount
   useEffect(() => {
     // Check for access_token in URL (OAuth callback)
     const params = new URLSearchParams(window.location.search);
-    const token = params.get('access_token');
+    const token = params.get("access_token");
     if (token) {
-      window.localStorage.setItem('gateway_access_token', token);
+      window.localStorage.setItem("gateway_access_token", token);
+      window.localStorage.removeItem("gateway_refresh_token");
       // Clean URL
-      window.history.replaceState({}, document.title, window.location.pathname);
+      params.delete("access_token");
+      const nextSearch = params.toString() ? `?${params.toString()}` : "";
+      const nextUrl = `${window.location.pathname}${nextSearch}${window.location.hash}`;
+      window.history.replaceState({}, document.title, nextUrl);
     }
 
     dispatch(fetchCurrentUser());
+
+    // Check for brand parameter to select it automatically (Deep Linking)
+    const brandParam = params.get("brand");
+    if (brandParam) {
+      dispatch(setBrand(brandParam.toUpperCase()));
+    }
   }, [dispatch]);
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      dispatch(clearAuthState());
+      navigate(
+        {
+          pathname: "/login",
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+    };
+    window.addEventListener("auth:session-expired", handleSessionExpired);
+    return () => window.removeEventListener("auth:session-expired", handleSessionExpired);
+  }, [dispatch, navigate, sanitizedSearch]);
 
   // Session Expiry Notification - DISABLED per user request
   // useEffect(() => {
@@ -562,31 +3155,64 @@ export default function App() {
 
   async function handleLogin(e) {
     e.preventDefault();
-    const action = await dispatch(loginUser({ email: loginForm.email, password: loginForm.password }));
+    const action = await dispatch(
+      loginUser({ email: loginForm.email, password: loginForm.password }),
+    );
     if (loginUser.fulfilled.match(action)) {
-      setLoginForm({ email: '', password: '' });
+      setLoginForm({ email: "", password: "" });
     }
   }
 
-  function handleLogout() {
-    dispatch(logoutUser());
+  async function handleLogout() {
+    // Attempt to unregister FCM token before logging out
+    try {
+      if (
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      ) {
+        const token = await requestForToken();
+        if (token) {
+          await axios.post(
+            "/api/push/unregister-token",
+            { token },
+            { withCredentials: true },
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("FCM unregister on logout failed:", err);
+    }
+    try {
+      localStorage.setItem("author_active_tab_v1", "dashboard");
+    } catch {
+      // Ignore storage write errors
+    }
+    await dispatch(logoutUser());
+    navigate(
+      {
+        pathname: "/login",
+        search: sanitizedSearch,
+      },
+      { replace: true },
+    );
   }
-
-
-
 
   if (!initialized) return null;
 
+  if (maintenanceMode) {
+    return <MaintenanceScreen />;
+  }
+
   if (!user) {
     const params = new URLSearchParams(window.location.search);
-    const path = window.location.pathname || '/';
-    const error = params.get('error') || '';
-    const reason = params.get('reason') || '';
-    const isUnauthorized = (path.startsWith('/login') || path.startsWith('/unauthorized')) && (
-      error === 'google_oauth_failed' ||
-      error === 'not_authorized' ||
-      reason === 'not_authorized_domain'
-    );
+    const path = window.location.pathname || "/";
+    const error = params.get("error") || "";
+    const reason = params.get("reason") || "";
+    const isUnauthorized =
+      (path.startsWith("/login") || path.startsWith("/unauthorized")) &&
+      (error === "google_oauth_failed" ||
+        error === "not_authorized" ||
+        reason === "not_authorized_domain");
 
     if (isUnauthorized) {
       return (
@@ -600,47 +3226,107 @@ export default function App() {
     return (
       <ThemeProvider theme={lightTheme}>
         <CssBaseline />
-        <Box sx={{ minHeight: '100svh', bgcolor: 'background.default', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+        <Box
+          sx={{
+            minHeight: "100svh",
+            bgcolor: "background.default",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            p: 2,
+          }}
+        >
           <Container maxWidth="xs">
-            <Paper elevation={3} sx={{ p: 3, borderRadius: 3 }} component="form" onSubmit={handleLogin}>
+            <Paper
+              elevation={3}
+              sx={{ p: 3, borderRadius: 3 }}
+              component="form"
+              onSubmit={handleLogin}
+            >
               <Stack spacing={2}>
-                <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                  <Box component="img" src="/brand-logo-final.png" alt="Datum" sx={{ height: 80, width: 220, objectFit: 'contain' }} />
+                <Box sx={{ display: "flex", justifyContent: "center" }}>
+                  <Box
+                    component="img"
+                    src="/brand-logo-final.png"
+                    alt="Datum"
+                    sx={{ height: 80, width: 220, objectFit: "contain" }}
+                  />
                 </Box>
-                <TextField size="small" label="Email" type="email" required value={loginForm.email} onChange={e => setLoginForm(f => ({ ...f, email: e.target.value }))} />
-                <TextField size="small" label="Password" type="password" required value={loginForm.password} onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))} />
+                <TextField
+                  size="small"
+                  label="Email"
+                  type="email"
+                  required
+                  value={loginForm.email}
+                  onChange={(e) =>
+                    setLoginForm((f) => ({ ...f, email: e.target.value }))
+                  }
+                />
+                <TextField
+                  size="small"
+                  label="Password"
+                  type="password"
+                  required
+                  value={loginForm.password}
+                  onChange={(e) =>
+                    setLoginForm((f) => ({ ...f, password: e.target.value }))
+                  }
+                />
                 {loginError && <Alert severity="error">{loginError}</Alert>}
-                <Button variant="contained" type="submit" disabled={loggingIn}>{loggingIn ? 'Logging in...' : 'Login'}</Button>
+                <Button variant="contained" type="submit" disabled={loggingIn}>
+                  {loggingIn ? "Logging in..." : "Login"}
+                </Button>
                 <Divider>or</Divider>
                 <button
                   type="button"
                   className="gsi-material-button"
                   onClick={() => {
-                    const base = import.meta.env.VITE_API_BASE || '/api';
-                    const target = base.startsWith('http')
+                    const base = import.meta.env.VITE_API_BASE || "/api";
+                    const target = base.startsWith("http")
                       ? base
                       : `${window.location.origin}${base}`;
 
-                    const redirect = import.meta.env.VITE_OAUTH_REDIRECT || window.location.origin;
+                    const redirect =
+                      import.meta.env.VITE_OAUTH_REDIRECT ||
+                      window.location.origin;
 
-                    window.location.href =
-                      `${target.replace(/\/$/, '')}/auth/google/start?redirect=${encodeURIComponent(redirect)}`;
+                    window.location.href = `${target.replace(/\/$/, "")}/auth/google/start?redirect=${encodeURIComponent(redirect)}`;
                     console.log(window.location.href);
                   }}
                 >
                   <div className="gsi-material-button-state"></div>
                   <div className="gsi-material-button-content-wrapper">
                     <div className="gsi-material-button-icon" aria-hidden>
-                      <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" xmlnsXlink="http://www.w3.org/1999/xlink" style={{ display: 'block' }}>
-                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
-                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
-                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
-                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                      <svg
+                        version="1.1"
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 48 48"
+                        xmlnsXlink="http://www.w3.org/1999/xlink"
+                        style={{ display: "block" }}
+                      >
+                        <path
+                          fill="#EA4335"
+                          d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+                        ></path>
+                        <path
+                          fill="#4285F4"
+                          d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+                        ></path>
+                        <path
+                          fill="#FBBC05"
+                          d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+                        ></path>
+                        <path
+                          fill="#34A853"
+                          d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+                        ></path>
                         <path fill="none" d="M0 0h48v48H0z"></path>
                       </svg>
                     </div>
-                    <span className="gsi-material-button-contents">Sign in with Google</span>
-                    <span style={{ display: 'none' }}>Sign in with Google</span>
+                    <span className="gsi-material-button-contents">
+                      Sign in with Google
+                    </span>
+                    <span style={{ display: "none" }}>Sign in with Google</span>
                   </div>
                 </button>
               </Stack>
@@ -652,24 +3338,58 @@ export default function App() {
   }
 
   // Unified layout for both author and viewer roles
-  const hasBrand = Boolean((activeBrandKey || '').trim());
-  const availableBrands = isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }));
+  const hasBrand = Boolean((activeBrandKey || "").trim());
   const brandsForSelector = isAuthor ? authorBrands : viewerBrands;
-  const showMultipleBrands = isAuthor ? authorBrands.length > 0 : viewerBrands.length > 1;
+  const showMultipleBrands = isAuthor
+    ? authorBrands.length > 0
+    : viewerBrands.length > 1;
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <AppProvider i18n={enTranslations} theme={{ colorScheme: darkMode === 'dark' ? 'dark' : 'light' }}>
-        <Box sx={{ display: 'flex', minHeight: '100svh', bgcolor: 'background.default' }}>
-          {/* Sidebar Navigation - only for authors */}
-          {isAuthor && (
+
+      <AppProvider
+        i18n={enTranslations}
+        theme={{ colorScheme: darkMode === "dark" ? "dark" : "light" }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            minHeight: "100svh",
+            bgcolor: "background.default",
+          }}
+        >
+          {/* Sidebar Navigation - for authors OR viewers with multiple tabs */}
+          {showSidebar && (
             <Sidebar
-              open={sidebarOpen}
-              onClose={handleSidebarClose}
+              open={isMobile ? sidebarOpen : desktopSidebarOpen}
+              onClose={
+                isMobile
+                  ? handleSidebarClose
+                  : () => setDesktopSidebarOpen(false)
+              }
               activeTab={authorTab}
               onTabChange={handleSidebarTabChange}
-              darkMode={darkMode === 'dark'}
+              darkMode={darkMode === "dark"}
+              user={user}
+              onLogout={handleLogout}
+              allowedTabs={accessibleTabs}
+            />
+          )}
+
+          {/* Sidebar Toggle Button - Desktop Only */}
+          {showSidebar && !isMobile && (
+            <SidebarToggle
+              checked={desktopSidebarOpen}
+              onChange={setDesktopSidebarOpen}
+              isDark={darkMode === "dark"}
+              style={{
+                position: "fixed",
+                top: 24,
+                left: desktopSidebarOpen ? DRAWER_WIDTH - 44 : 16,
+                zIndex: 1301,
+                transition: "left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+              }}
             />
           )}
 
@@ -678,198 +3398,782 @@ export default function App() {
             component="main"
             sx={{
               flexGrow: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              minHeight: '100svh',
-              width: isAuthor ? { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` } : '100%',
+              display: "flex",
+              flexDirection: "column",
+              minHeight: "100svh",
+              width: showSidebar
+                ? {
+                    xs: "100%",
+                    md: desktopSidebarOpen
+                      ? `calc(100% - ${DRAWER_WIDTH}px)`
+                      : "100%",
+                  }
+                : "100%",
+              ml: showSidebar
+                ? { xs: 0, md: desktopSidebarOpen ? `${DRAWER_WIDTH}px` : 0 }
+                : 0,
+              transition: (theme) =>
+                theme.transitions.create(["width", "margin"], {
+                  easing: theme.transitions.easing.sharp,
+                  duration: theme.transitions.duration.enteringScreen,
+                }),
             }}
           >
             {/* Sticky Header */}
             <Box
               sx={{
-                position: { xs: 'sticky', md: 'static' },
+                position: { xs: "sticky", md: "static" },
                 top: 0,
                 zIndex: (theme) => theme.zIndex.appBar,
-                bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
+                bgcolor: darkMode === "dark" ? "#000000" : "#FDFDFD",
                 borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
-                borderColor: darkMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-                transition: 'border-color 0.2s ease',
+                borderColor:
+                  darkMode === "dark"
+                    ? "rgba(255,255,255,0.1)"
+                    : "rgba(0,0,0,0.08)",
+                transition: "all 0.3s ease",
+                pl:
+                  showSidebar && !isMobile && !desktopSidebarOpen ? "56px" : 0,
               }}
             >
               <Header
                 user={user}
                 onLogout={handleLogout}
-                onMenuClick={isAuthor ? handleSidebarOpen : undefined}
-                showMenuButton={isAuthor}
-                darkMode={darkMode === 'dark'}
+                onMenuClick={showSidebar ? handleSidebarOpen : undefined}
+                showMenuButton={showSidebar}
+                onTabChange={handleSidebarTabChange}
+                isAdmin={isAuthor}
+                darkMode={darkMode === "dark"}
                 onToggleDarkMode={handleToggleDarkMode}
-                showFilterButton={true}
+                brandKey={activeBrandKey}
+                showFilterButton={
+                  showSidebar ||
+                  hasPermission("product_filter") ||
+                  hasPermission("utm_filter") ||
+                  hasPermission("discount_filter") ||
+                  hasPermission("sales_channel_filter") ||
+                  hasPermission("device_type_filter") ||
+                  showMultipleBrands
+                }
+                showCustomizeButton={
+                  isMobile &&
+                  authorTab === "dashboard" &&
+                  hasBrand &&
+                  canCustomizeDashboardLayout
+                }
                 onFilterClick={() => setMobileFilterOpen(true)}
+                onCustomizeLayoutClick={handleOpenLayoutEditor}
               />
             </Box>
 
-            {/* Non-Sticky Sub-Header (MobileTopBar etc) */}
-            <Box
-              sx={{
-                bgcolor: darkMode === 'dark' ? '#121212' : '#FDFDFD',
-                pb: { xs: 0.5, md: 1 },
-              }}
-            >
-              <Box sx={{ px: { xs: 1.5, sm: 2.5, md: 4 }, pt: { xs: 0.5, sm: 2 }, maxWidth: 1200, mx: 'auto', width: '100%' }}>
-                <Stack spacing={{ xs: 3, sm: 1 }}>
-                  {/* Brand Selector - unified for both roles */}
-                  {(isAuthor || showMultipleBrands) && (
-                    <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                      <AuthorBrandSelector
-                        brands={isAuthor ? authorBrands : viewerBrands.map((key) => ({ key }))}
-                        value={activeBrandKey}
-                        loading={isAuthor ? authorBrandsLoading : false}
-                        onChange={isAuthor ? handleAuthorBrandChange : (val) => dispatch(setBrand((val || '').toString().trim().toUpperCase()))}
+              {/* Non-Sticky Sub-Header (MobileTopBar etc) */}
+              <Box
+                sx={{
+                  bgcolor: darkMode === "dark" ? "#000000" : "#FDFDFD",
+                  pb: 0,
+                }}
+              >
+              <Box
+                sx={{
+                  px: { xs: 1.5, sm: 2.5, md: 4 },
+                  pt: 0,
+                  maxWidth: 1200,
+                  mx: "auto",
+                  width: "100%",
+                  display: "flex",
+                  justifyContent: "space-between",
+                }}
+              >
+                <Box
+                  sx={{
+                    display: "flex",
+                    flexDirection: { xs: "column", md: "row" },
+                    alignItems: "center",
+                    justifyContent: { xs: "space-between", md: "flex-end" },
+                    width: "100%",
+                    gap: 1,
+                  }}
+                >
+                  {/* Unified Filter Bar - Desktop Only (Dashboard Tab) */}
+                  {!isMobile && authorTab === "overall-snapshot" && (
+                    <Box sx={{ mb: { xs: 1, md: 0 } }}>
+                      <UnifiedFilterBar
+                        range={normalizedRange}
+                        onRangeChange={handleRangeChange}
+                        brandKey=""
+                        brands={[]}
+                        onBrandChange={() => {}}
+                        isAuthor={false}
+                        compareMode={compareMode}
+                        onCompareModeChange={handleCompareModeChange}
+                        compareDateRange={compareDateRange}
+                        onCompareDateRangeChange={handleCompareDateRangeChange}
+                        dataRestrictionConfig={dataRestrictionConfig}
+                        hideAllExceptDate
                       />
                     </Box>
                   )}
-                  {/* Date range and product filter - show on dashboard tab */}
-                  {authorTab === 'dashboard' && hasBrand && (
+
+                  {!isMobile && authorTab === "dashboard" && hasBrand && (
+                    <Box sx={{ mb: { xs: 1, md: 0 } }}>
+
+                      <UnifiedFilterBar
+                        range={normalizedRange}
+                        onRangeChange={handleRangeChange}
+                        brandKey={activeBrandKey}
+                        brands={brandsForSelector}
+                        hideAllExceptDate={false}
+                        onBrandChange={
+
+                          isAuthor
+                            ? handleAuthorBrandChange
+                            : (val) =>
+                                dispatch(
+                                  setBrand(
+                                    (val || "").toString().trim().toUpperCase(),
+                                  ),
+                                )
+                        }
+                        isAuthor={isAuthor}
+                        // Compare Mode Props
+                        compareMode={compareMode}
+                        onCompareModeChange={handleCompareModeChange}
+                        compareDateRange={compareDateRange}
+                        onCompareDateRangeChange={handleCompareDateRangeChange}
+                        // Filter Props
+                        productOptions={productOptions}
+                        productValue={productSelection}
+                        onProductChange={handleProductChange}
+                        productDisabled={
+                          (canSyncProductUtmFilters
+                            ? hasActiveNonSourceUtmFilter
+                            : hasActiveUtmFilter) || !!discountCode
+                        }
+                        productLoading={productOptionsLoading}
+                        utm={utm}
+                        onUtmChange={handleUtmChange}
+                        utmDisabled={
+                          !!discountCode ||
+                          (!canSyncProductUtmFilters && hasActiveProductFilter)
+                        }
+                        disableUtmMediumCampaign={hasActiveProductFilter}
+                        allowProductUtmSync={canSyncProductUtmFilters}
+                        salesChannel={salesChannel}
+                        onSalesChannelChange={handleSalesChannelChange}
+                        deviceType={deviceType}
+                        onDeviceTypeChange={handleDeviceTypeChange}
+                        city={city}
+                        onCityChange={handleCityChange}
+                        discountCode={discountCode}
+                        onDiscountCodeChange={handleDiscountCodeChange}
+                        allowedFilters={{
+                          product: hasPermission("product_filter"),
+                          utm: hasPermission("utm_filter"),
+                          salesChannel: hasPermission("sales_channel_filter"),
+                          deviceType: hasPermission("device_type_filter"),
+                          city: true,
+                          discount: hasPermission("discount_filter"),
+                        }}
+                        utmOptions={utmOptions}
+                        dataRestrictionConfig={dataRestrictionConfig}
+                        onDownload={handleDownloadSnapshot}
+                        children={
+                          canCustomizeDashboardLayout ? (
+                            <Tooltip title="Customize Layout">
+                              <IconButton
+                                size="small"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  handleOpenLayoutEditor();
+                                }}
+                                sx={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: "10px",
+                                  color: "text.secondary",
+                                }}
+                              >
+                                <LayoutPanelsIcon size={16} />
+                              </IconButton>
+                            </Tooltip>
+                          ) : null
+                        }
+                      />
+                    </Box>
+                  )}
+
+                  {!isMobile &&
+                    authorTab !== "dashboard" &&
+                    authorTab !== "overall-snapshot" &&
+                    authorTab !== "alerts" &&
+                    authorTab !== "access" &&
+                    authorTab !== "notifications-log" &&
+                    authorTab !== "tenant-setup" &&
+                    authorTab !== "requests" &&
+                    (isAuthor || showMultipleBrands) && (
+                      <Box sx={{ mb: 1 }}>
+                        <AuthorBrandSelector
+                          brands={
+                            isAuthor
+                              ? authorBrands
+                              : viewerBrands.map((key) => ({ key }))
+                          }
+                          value={activeBrandKey}
+                          loading={isAuthor ? authorBrandsLoading : false}
+                          onChange={
+                            isAuthor
+                              ? handleAuthorBrandChange
+                              : (val) =>
+                                  dispatch(
+                                    setBrand(
+                                      (val || "")
+                                        .toString()
+                                        .trim()
+                                        .toUpperCase(),
+                                    ),
+                                  )
+                          }
+                        />
+                      </Box>
+                    )}
+
+                  {/* Mobile Components (Keep existing MobileTopBar for mobile view) */}
+                  {isMobile && authorTab === "dashboard" && hasBrand && (
                     <MobileTopBar
                       value={normalizedRange}
                       onChange={handleRangeChange}
                       brandKey={activeBrandKey}
-                      showProductFilter={hasPermission('product_filter')}
+                      dataRestrictionConfig={dataRestrictionConfig}
+                      compareMode={compareMode}
+                      onCompareModeChange={handleCompareModeChange}
+                      compareDateRange={compareDateRange}
+                      onCompareDateRangeChange={handleCompareDateRangeChange}
+                      showProductFilter={hasPermission("product_filter")}
                       productOptions={productOptions}
                       productValue={productSelection}
                       onProductChange={handleProductChange}
+                      productDisabled={
+                        (canSyncProductUtmFilters
+                          ? hasActiveNonSourceUtmFilter
+                          : hasActiveUtmFilter) || !!discountCode
+                      }
                       productLoading={productOptionsLoading}
                       utm={utm}
                       onUtmChange={handleUtmChange}
+                      utmDisabled={
+                        !!discountCode ||
+                        (!canSyncProductUtmFilters && hasActiveProductFilter)
+                      }
+                      disableUtmMediumCampaign={hasActiveProductFilter}
+                      allowProductUtmSync={canSyncProductUtmFilters}
                       salesChannel={salesChannel}
                       onSalesChannelChange={handleSalesChannelChange}
-                      showUtmFilter={true}
+                      deviceType={deviceType}
+                      onDeviceTypeChange={handleDeviceTypeChange}
+                      city={city}
+                      onCityChange={handleCityChange}
+                      discountCode={discountCode}
+                      onDiscountCodeChange={handleDiscountCodeChange}
+                      showUtmFilter={hasPermission("utm_filter")}
+                      showSalesChannel={hasPermission("sales_channel_filter")}
+                      showCityFilter
+                      showDiscountFilter={hasPermission("discount_filter")}
                       utmOptions={utmOptions}
+                      isAuthor={isAuthor}
                     />
                   )}
-                  <MobileFilterDrawer
-                    open={mobileFilterOpen}
-                    onClose={() => setMobileFilterOpen(false)}
-                    brandKey={authorBrandKey}
-                    brands={authorBrands}
-                    onBrandChange={handleAuthorBrandChange}
-                    productOptions={productOptions}
-                    productValue={productSelection}
-                    onProductChange={handleProductChange}
-                    utm={utm}
-                    onUtmChange={handleUtmChange}
-                    salesChannel={salesChannel}
-                    onSalesChannelChange={handleSalesChannelChange}
-                    utmOptions={utmOptions}
-                    dateRange={range}
-                    isDark={darkMode === 'dark'}
-                  />
-                </Stack>
+                </Box>
+                <MobileFilterDrawer
+                  showBrandFilter={showMultipleBrands}
+                  showProductFilter={hasPermission("product_filter")}
+                  showUtmFilter={hasPermission("utm_filter")}
+                  showSalesChannel={hasPermission("sales_channel_filter")}
+                  showCityFilter
+                  showDeviceType={hasPermission("device_type_filter")}
+                  open={mobileFilterOpen}
+                  onClose={() => setMobileFilterOpen(false)}
+                  brandKey={activeBrandKey}
+                  brands={
+                    isAuthor
+                      ? authorBrands
+                      : viewerBrands.map((b) => ({ key: b }))
+                  }
+                  onBrandChange={handleAuthorBrandChange}
+                  productOptions={productOptions}
+                  productValue={productSelection}
+                  onProductChange={handleProductChange}
+                  productDisabled={
+                    (canSyncProductUtmFilters
+                      ? hasActiveNonSourceUtmFilter
+                      : hasActiveUtmFilter) || !!discountCode
+                  }
+                  utm={utm}
+                  onUtmChange={handleUtmChange}
+                  utmDisabled={
+                    !!discountCode ||
+                    (!canSyncProductUtmFilters && hasActiveProductFilter)
+                  }
+                  disableUtmMediumCampaign={hasActiveProductFilter}
+                  allowProductUtmSync={canSyncProductUtmFilters}
+                  salesChannel={salesChannel}
+                  onSalesChannelChange={handleSalesChannelChange}
+                  deviceType={deviceType}
+                  onDeviceTypeChange={handleDeviceTypeChange}
+                  city={city}
+                  onCityChange={handleCityChange}
+                  discountCode={discountCode}
+                  onDiscountCodeChange={handleDiscountCodeChange}
+                  showDiscountFilter={hasPermission("discount_filter")}
+                  utmOptions={utmOptions}
+                  dateRange={normalizedRange}
+                  dataRestrictionConfig={dataRestrictionConfig}
+                  isDark={darkMode === "dark"}
+                />
               </Box>
-            </Box>
+              </Box>
 
-            <Box
-              sx={{
-                flex: 1,
-                width: '100%',
-                maxWidth: 1200,
-                mx: 'auto',
-                px: { xs: 1.5, sm: 2.5, md: 4 },
-                py: { xs: 1, md: 2 },
-              }}
-            >
-              <Stack spacing={{ xs: 1, md: 2 }}>
-                {authorTab === 'dashboard' && (
-                  hasBrand ? (
-                    <Suspense fallback={<SectionFallback count={5} />}>
-                      <Stack spacing={{ xs: 1, md: 1.5 }}>
-                        <KPIs
-                          query={metricsQuery}
-                          selectedMetric={selectedMetric}
-                          onSelectMetric={handleSelectMetric}
-                          onFunnelData={setFunnelData}
-                          productId={productSelection.id}
-                          productLabel={productSelection.label}
-                          utmOptions={utmOptions}
+              <Box
+                sx={{
+                  flex: 1,
+                  width: "100%",
+                  maxWidth: 1200,
+                  mx: "auto",
+                  px: { xs: 1.5, sm: 2.5, md: 4 },
+                  py: { xs: 1, md: 2 },
+                  pb: { xs: 11, md: 2 }, // Extra space for mobile bottom sheet nav
+                  overflowX: "hidden",
+                  overflowY: authorTab === "overall-snapshot" ? "visible" : "hidden",
+                  position: "relative",
+                }}
+              >
+              <Stack spacing={{ xs: 1, md: 2 }} sx={{ position: "relative" }}>
+                <AnimatePresence mode="wait" custom={direction} initial={false}>
+                  <motion.div
+                    key={authorTab}
+                    custom={direction}
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    style={{ width: "100%" }}
+                  >
+                    {authorTab === "notifications-log" && (
+                      <motion.div
+                        key="notifications-log"
+                        custom={direction}
+                        variants={pageVariants}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        style={{ width: "100%", height: "100%" }}
+                      >
+                        <NotificationsLog darkMode={darkMode === "dark"} />
+                      </motion.div>
+                    )}
+                    {authorTab === "tenant-setup" && !isMobile && (
+                      <motion.div
+                        key="tenant-setup"
+                        custom={direction}
+                        variants={pageVariants}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        style={{ width: "100%" }}
+                      >
+                        <Suspense fallback={<SectionFallback count={1} />}>
+                          <Stack spacing={2}>
+                            <TenantSetupForm onOnboard={(data) => console.log("Onboard:", data)} />
+                            <LogsPanel />
+                          </Stack>
+                        </Suspense>
+                      </motion.div>
+                    )}
+                    {authorTab === "overall-snapshot" && (
+                      <motion.div
+                        key="overall-snapshot"
+                        custom={direction}
+                        variants={pageVariants}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        style={{ width: "100%" }}
+                      >
+                        <Suspense fallback={<SectionFallback count={2} />}>
+                          <Stack spacing={{ xs: 1.25, md: 0 }}>
+                            {isMobile && (
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  justifyContent: "flex-end",
+                                  overflowX: "auto",
+                                  pb: 0.25,
+                                  "&::-webkit-scrollbar": { display: "none" },
+                                  msOverflowStyle: "none",
+                                  scrollbarWidth: "none",
+                                }}
+                              >
+                                <UnifiedFilterBar
+                                  range={normalizedRange}
+                                  onRangeChange={handleRangeChange}
+                                  brandKey=""
+                                  brands={[]}
+                                  onBrandChange={() => {}}
+                                  isAuthor={false}
+                                  compareMode={compareMode}
+                                  onCompareModeChange={handleCompareModeChange}
+                                  compareDateRange={compareDateRange}
+                                  onCompareDateRangeChange={handleCompareDateRangeChange}
+                                  dataRestrictionConfig={dataRestrictionConfig}
+                                  hideAllExceptDate
+                                />
+                              </Box>
+                            )}
+                            <OverallSnapshotWidget
+                              query={overallSnapshotQuery}
+                              brands={snapshotBrands}
+                              brandsLoading={isAuthor && authorBrandsLoading}
+                              onBrandSelect={handleOverallSnapshotBrandSelect}
+                            />
+                          </Stack>
+                        </Suspense>
+                      </motion.div>
+                    )}
+                    {authorTab === "dashboard" &&
+                      (hasBrand ? (
+                        <Suspense fallback={<SectionFallback count={5} />}>
+                          <Stack spacing={{ xs: 1, md: 1.25 }}>
+                            {!isMobile ? (
+                              <Typography
+                                variant="subtitle2"
+                                color="text.secondary"
+                                sx={{ px: 0.5 }}
+                              >
+                                Scope: {dashboardScopeLabel}
+                              </Typography>
+                            ) : null}
+                            <InlineDashboardLayoutEditor
+                              isEditing={layoutEditMode}
+                              itemIds={activeWidgetIds}
+                              renderWidget={(widgetId) =>
+                                activeWidgetRegistry[widgetId]
+                              }
+                              extraAfterId={extraAfterId}
+                              extras={dashboardExtrasNode}
+                              onOrderChange={handleInlineDashboardReorder}
+                              onSave={() =>
+                                handleSaveDashboardLayout(effectiveDashboardLayout)
+                              }
+                              onCancel={handleCloseLayoutEditor}
+                              onReset={handleResetDashboardLayout}
+                              isDirty={isDashboardLayoutDirty}
+                              isSaving={isSavingDashboardLayout}
+                            />
+                          </Stack>
+                        </Suspense>
+                      ) : (
+                        <Paper
+                          variant="outlined"
+                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to load dashboard metrics.
+                          </Typography>
+                        </Paper>
+                      ))}
+
+                    {canAccessSessionAnalyticsPanel &&
+                      authorTab === "session-analytics" && (
+                        <Suspense fallback={<SectionFallback count={4} height={240} />}>
+                          <SessionAnalyticsPage
+                            brandKey={activeBrandKey}
+                            availableBrands={
+                              isAuthor
+                                ? authorBrands
+                                : viewerBrands.map((brand) => ({ key: brand }))
+                            }
+                          />
+                        </Suspense>
+                      )}
+
+                    {canAccessDailyFunnelPanel &&
+                      authorTab === "daily-funnel" &&
+                      (hasBrand ? (
+                        <Suspense fallback={<SectionFallback count={2} height={240} />}>
+                          <DailyFunnelPanel
+                            brandKey={activeBrandKey}
+                            canAccessUtmFunnelTable={canAccessUtmFunnelTable}
+                          />
+                        </Suspense>
+                      ) : (
+                        <Paper
+                          variant="outlined"
+                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to view daily funnel metrics.
+                          </Typography>
+                        </Paper>
+                      ))}
+
+                    {/* Author-only tabs */}
+                    {isAuthor &&
+                      authorTab === "product-conversion" &&
+                      (hasBrand ? (
+                        <Suspense fallback={<SectionFallback />}>
+                          <Stack spacing={{ xs: 2, md: 3 }}>
+                            <Box
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                mb: 2,
+                                mt: 1,
+                              }}
+                            >
+                              <Typography
+                                variant="h6"
+                                sx={{
+                                  color:
+                                    darkMode === "dark"
+                                      ? "text.primary"
+                                      : "text.secondary",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                Product Funnel
+                              </Typography>
+                            </Box>
+                            {funnelData?.stats ? (
+                              <Suspense
+                                fallback={
+                                  <Skeleton
+                                    variant="rounded"
+                                    width="100%"
+                                    height={250}
+                                  />
+                                }
+                              >
+                                <FunnelChart
+                                  data={[
+                                    {
+                                      label: "Sessions",
+                                      value:
+                                        funnelData.stats.total_sessions || 0,
+                                      change: funnelData.deltas?.sessions
+                                        ?.diff_pct
+                                        ? Number(
+                                            funnelData.deltas.sessions.diff_pct,
+                                          ).toFixed(1)
+                                        : undefined,
+                                    },
+                                    {
+                                      label: "Add to Cart",
+                                      value:
+                                        funnelData.stats.total_atc_sessions ||
+                                        0,
+                                      change: funnelData.deltas?.atc?.diff_pct
+                                        ? Number(
+                                            funnelData.deltas.atc.diff_pct,
+                                          ).toFixed(1)
+                                        : undefined,
+                                    },
+                                    ...(hasPermission("ci_events")
+                                      ? [
+                                          {
+                                            label: "Checkout Initiated",
+                                            value:
+                                              funnelData.stats.total_ci_events ||
+                                              0,
+                                            change: funnelData.deltas?.ci
+                                              ?.diff_pct
+                                              ? Number(
+                                                  funnelData.deltas.ci.diff_pct,
+                                                ).toFixed(1)
+                                              : undefined,
+                                          },
+                                        ]
+                                      : []),
+                                    {
+                                      label: "Orders",
+                                      value: funnelData.stats.total_orders || 0,
+                                      change:
+                                        funnelData.deltas?.orders?.diff_pct ||
+                                        funnelData.deltas?.orders?.diff_pp
+                                          ? Number(
+                                              funnelData.deltas?.orders
+                                                ?.diff_pct ||
+                                                funnelData.deltas?.orders
+                                                  ?.diff_pp,
+                                            ).toFixed(1)
+                                          : undefined,
+                                    },
+                                  ]}
+                                  height={250}
+                                />
+                              </Suspense>
+                            ) : (
+                              <Skeleton
+                                variant="rounded"
+                                width="100%"
+                                height={250}
+                              />
+                            )}
+
+                            <ProductConversionTable
+                              brandKey={activeBrandKey}
+                              showCompareMode={true}
+                              isAuthor={isAuthor}
+                              permissions={viewerPermissions}
+                            />
+                          </Stack>
+                        </Suspense>
+                      ) : (
+                        <Paper
+                          variant="outlined"
+                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to view conversion metrics.
+                          </Typography>
+                        </Paper>
+                      ))}
+
+                    {canAccessInventoryPanel &&
+                      authorTab === "inventory" &&
+                      (hasBrand ? (
+                        <Suspense fallback={<SectionFallback count={1} height={280} />}>
+                          <InventoryTable
+                            brandKey={activeBrandKey}
+                            startDate={productTableStart}
+                            endDate={productTableEnd}
+                          />
+                        </Suspense>
+                      ) : (
+                        <Paper
+                          variant="outlined"
+                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to view inventory metrics.
+                          </Typography>
+                        </Paper>
+                      ))}
+
+                    {canAccessBundlesPanel &&
+                      authorTab === "bundles" &&
+                      (hasBrand ? (
+                        <Suspense fallback={<SectionFallback count={2} height={280} />}>
+                          <BundlesPanel
+                            brandKey={activeBrandKey}
+                            initialStartDate={start}
+                            initialEndDate={end}
+                          />
+                        </Suspense>
+                      ) : (
+                        <Paper
+                          variant="outlined"
+                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to view bundle metrics.
+                          </Typography>
+                        </Paper>
+                      ))}
+
+                    {isAuthor && authorTab === "access" && (
+                      <Suspense fallback={<SectionFallback count={2} />}>
+                        <Stack spacing={{ xs: 2, md: 3 }}>
+                          <AccessControlCard />
+                        </Stack>
+                      </Suspense>
+                    )}
+
+                    {isAuthor && authorTab === "traffic-split-config" && (
+                      hasBrand ? (
+                        <Suspense fallback={<SectionFallback count={1} height={220} />}>
+                          <Stack spacing={{ xs: 2, md: 3 }}>
+                            <TrafficSplitConfigPanel
+                              rules={trafficSplitRules}
+                              onAddRule={(rule) =>
+                                setTrafficSplitRules((prev) => [...prev, rule])
+                              }
+                              onRemoveRule={(id) =>
+                                setTrafficSplitRules((prev) =>
+                                  prev.filter((r) => r.id !== id),
+                                )
+                              }
+                              onClearRules={() => setTrafficSplitRules([])}
+                            />
+                          </Stack>
+                        </Suspense>
+                      ) : (
+                        <Paper
+                          variant="outlined"
+                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Select a brand to configure traffic split mapping.
+                          </Typography>
+                        </Paper>
+                      )
+                    )}
+
+                    {/*
+                    {isAuthor && authorTab === 'brands' && (
+                      <Suspense fallback={<SectionFallback count={2} />}>
+                        <Stack spacing={{ xs: 2, md: 3 }}>
+                          <AuthorBrandForm />
+                          <AuthorBrandList />
+                        </Stack>
+                      </Suspense>
+                    )}
+                    */}
+
+                    {authorTab === "alerts" &&
+                      (authorBrands.length ? (
+                        <Suspense fallback={<SectionFallback />}>
+                          <AlertsAdmin
+                            brands={authorBrands}
+                            defaultBrandKey={authorBrandKey}
+                          />
+                        </Suspense>
+                      ) : (
+                        <Paper
+                          variant="outlined"
+                          sx={{ p: { xs: 2, md: 3 }, textAlign: "center" }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Add at least one brand to start configuring alerts.
+                          </Typography>
+                        </Paper>
+                      ))}
+
+                    {authorTab === "requests" && (
+                      <Suspense fallback={<SectionFallback count={2} />}>
+                        <MerchantRequestsPanel
+                          brandKey={activeBrandKey}
+                          isAuthor={isAuthor}
+                          availableBrands={authorBrands}
                         />
-                        <HourlySalesCompare query={metricsQuery} metric={selectedMetric} />
-                        <WebVitals query={metricsQuery} />
-                        <Divider textAlign="left" sx={{ '&::before, &::after': { borderColor: 'divider' }, color: darkMode === 'dark' ? 'text.primary' : 'text.secondary' }}>Funnel</Divider>
-                        <FunnelChart funnelData={funnelData} />
-                        <OrderSplit query={metricsQuery} />
-                        <PaymentSalesSplit query={metricsQuery} />
-                        <TrafficSourceSplit query={metricsQuery} />
-                      </Stack>
-                    </Suspense>
-                  ) : (
-                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Select a brand to load dashboard metrics.
-                      </Typography>
-                    </Paper>
-                  )
-                )}
+                      </Suspense>
+                    )}
 
-                {/* Author-only tabs */}
-                {isAuthor && authorTab === 'access' && (
-                  <Suspense fallback={<SectionFallback count={2} />}>
-                    <Stack spacing={{ xs: 2, md: 3 }}>
-                      <AccessControlCard />
-                    </Stack>
-                  </Suspense>
-                )}
-
-                {isAuthor && authorTab === 'product-conversion' && (
-                  hasBrand ? (
-                    <Suspense fallback={<SectionFallback />}>
-                      <ProductConversionTable
-                        brandKey={activeBrandKey}
-                        brands={authorBrands}
-                        onBrandChange={handleAuthorBrandChange}
-                        brandsLoading={authorBrandsLoading}
-                      />
-                    </Suspense>
-                  ) : (
-                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Select a brand to load product conversion data.
-                      </Typography>
-                    </Paper>
-                  )
-                )}
-
-                {isAuthor && authorTab === 'brands' && (
-                  <Suspense fallback={<SectionFallback count={2} />}>
-                    <Stack spacing={{ xs: 2, md: 3 }}>
-                      <AuthorBrandForm />
-                      <AuthorBrandList />
-                    </Stack>
-                  </Suspense>
-                )}
-
-                {authorTab === 'alerts' && (
-                  authorBrands.length ? (
-                    <Suspense fallback={<SectionFallback />}>
-                      <AlertsAdmin
-                        brands={authorBrands}
-                        defaultBrandKey={authorBrandKey}
-                      />
-                    </Suspense>
-                  ) : (
-                    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Add at least one brand to start configuring alerts.
-                      </Typography>
-                    </Paper>
-                  )
-                )}
+                    {authorTab === "notifications-log" && (
+                      <Suspense fallback={<SectionFallback />}>
+                        <NotificationsLog darkMode={darkMode === "dark"} />
+                      </Suspense>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
               </Stack>
-            </Box>
-            <Footer />
+              </Box>
+              <Suspense fallback={null}>
+                <Footer />
+              </Suspense>
           </Box>
         </Box>
       </AppProvider>
     </ThemeProvider>
   );
 }
-

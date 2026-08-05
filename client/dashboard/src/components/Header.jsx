@@ -1,9 +1,30 @@
-import { AppBar, Toolbar, Box, Button, IconButton, useTheme, useMediaQuery, Tooltip } from '@mui/material';
-import LogoutIcon from '@mui/icons-material/Logout';
-import MenuIcon from '@mui/icons-material/Menu';
-import FilterListIcon from '@mui/icons-material/FilterList'; // New Import
-import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
-import SkyToggle from './ui/SkyToggle';
+import {
+  AppBar,
+  Toolbar,
+  Box,
+  Button,
+  IconButton,
+  useTheme,
+  useMediaQuery,
+  Tooltip,
+  Typography,
+  Card,
+  ButtonBase,
+} from "@mui/material";
+import { useEffect, useState } from "react";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import bridge from "dayjs/plugin/utc"; // Using a different name to avoid collision if needed, but 'utc' is standard
+import customParseFormat from "dayjs/plugin/customParseFormat";
+import { getLastUpdatedPTS } from "../lib/api.js";
+import {
+  SlidersHorizontal,
+  LogOut,
+  Menu,
+} from "lucide-react";
+import SkyToggle from "./ui/SkyToggle.jsx";
+import LayoutPanelsIcon from "./ui/LayoutPanelsIcon.jsx";
+import NotificationsMenu from "./NotificationsMenu.jsx";
 
 export default function Header({
   user,
@@ -12,11 +33,82 @@ export default function Header({
   showMenuButton = false,
   darkMode = false,
   onToggleDarkMode,
-  onFilterClick, // New Prop
-  showFilterButton = false // New Prop to control visibility
+  onFilterClick,
+  onTabChange, // Added
+  showFilterButton = false,
+  showCustomizeButton = false,
+  onCustomizeLayoutClick,
+  isAdmin = false,
+  brandKey = "",
 }) {
+  dayjs.extend(relativeTime);
+  dayjs.extend(customParseFormat);
+
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isDark = theme.palette.mode === "dark";
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
+  const [last, setLast] = useState({ loading: true, ts: null, tz: null });
+
+  useEffect(() => {
+    let cancelled = false;
+    const normalizedKey = (brandKey || "").toString().trim().toUpperCase();
+    setLast({ loading: true, ts: null, tz: null });
+    getLastUpdatedPTS(normalizedKey ? { brandKey: normalizedKey } : undefined)
+      .then((r) => {
+        if (cancelled) return;
+        let parsed = null;
+        const sources = [];
+        if (r.iso) sources.push(r.iso);
+        if (r.raw) sources.push(r.raw);
+        for (const src of sources) {
+          if (parsed) break;
+          const cleaned =
+            typeof src === "string" ? src.replace(/ IST$/, "").trim() : src;
+          if (!cleaned) continue;
+          if (typeof cleaned === "string") {
+            const formats = [
+              "YYYY-MM-DDTHH:mm:ss.SSSZ",
+              "YYYY-MM-DDTHH:mm:ssZ",
+              "YYYY-MM-DD hh:mm:ss A",
+              "YYYY-MM-DD HH:mm:ss",
+              "YYYY-MM-DD hh:mm A",
+            ];
+            for (const f of formats) {
+              const d = dayjs(cleaned, f, true);
+              if (d.isValid()) {
+                parsed = d;
+                break;
+              }
+            }
+            if (!parsed) {
+              const auto = dayjs(cleaned);
+              if (auto.isValid()) parsed = auto;
+            }
+          } else if (cleaned instanceof Date) {
+            const auto = dayjs(cleaned);
+            if (auto.isValid()) parsed = auto;
+          }
+        }
+        setLast((prev) => ({
+          loading: false,
+          ts: parsed || prev.ts,
+          tz: r.timezone || prev.tz || null,
+        }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLast((prev) => ({ loading: false, ts: prev.ts, tz: prev.tz }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [brandKey]);
+
+  // Extract first name for the greeting
+  const firstName = user?.name
+    ? user.name.split(" ")[0]
+    : user?.email?.split("@")[0] || "User";
 
   return (
     <AppBar
@@ -24,153 +116,307 @@ export default function Header({
       color="transparent"
       elevation={0}
       sx={{
-        borderColor: 'grey.100',
-        bgcolor: 'transparent',
-        borderBottom: { xs: '1px solid', md: 'none' }, // Mobile only bottom border
-        borderBottomColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+        bgcolor: "transparent",
+        borderBottom: isMobile ? "1px solid" : "none",
+        borderBottomColor: darkMode
+          ? "rgba(255,255,255,0.1)"
+          : "rgba(0,0,0,0.1)",
+        px: { xs: 1, md: 4 },
+        py: { xs: 0, md: 1 },
       }}
     >
-      <Toolbar sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: { xs: 48, md: 64 }, py: 0 }}>
-
-        {/* Left: Hamburger menu + Mobile Brand Logo */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {showMenuButton && isMobile && (
-            <IconButton
-              onClick={onMenuClick}
-              size="small"
-              aria-label="Open navigation menu"
+      <Toolbar
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          minHeight: { xs: 56, md: 72 },
+          p: 0,
+          position: "relative",
+        }}
+      >
+        {isMobile ? (
+          <>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-start",
+                gap: 1.5,
+                zIndex: 2,
+              }}
             >
-              <MenuIcon />
-            </IconButton>
-          )}
-
-          {/* Mobile Brand Logo */}
-          <Box
-            component="img"
-            src="/brand-logo-dark.png"
-            alt="Brand"
-            loading="eager"
-            decoding="async"
-            sx={{
-              display: { xs: 'block', md: 'none' }, // Mobile only
-              height: { xs: 50, sm: 40 },
-              width: 'auto',
-              ml: 0,
-              mt: 0.3,
-              ...(darkMode
-                ? {
-                  filter: 'invert(1) hue-rotate(180deg) brightness(1.2)',
-                }
-                : {
-                  filter: 'none',
-                }),
-            }}
-          />
-        </Box>
-
-        {/* Center: Desktop Brand image (Absolute Center) - RESTORED */}
-        <Box
-          sx={{
-            position: 'absolute',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            pointerEvents: 'none',
-            borderRadius: 1,
-            p: 0.5,
-            bgcolor: darkMode ? '#121212' : 'transparent',
-            top: -10,
-            display: { xs: 'none', md: 'block' } // Hide on mobile
-          }}
-        >
-          <Box
-            component="img"
-            src="/brand-logo-dark.png"
-            alt="Brand"
-            loading="eager"
-            decoding="async"
-            sx={{
-              display: 'block',
-              height: { xs: 72, sm: 80, md: 96 },
-              width: 'auto',
-              ...(darkMode
-                ? {
-                  filter: 'invert(1) hue-rotate(180deg) brightness(1.2)',
-                }
-                : {
-                  filter: 'none',
-                }),
-            }}
-          />
-        </Box>
-
-        {/* Right: User info and actions */}
-        {user && (
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0 }}>
-
-
-            {/* Filter Button (Mobile: First) */}
-            {showFilterButton && isMobile && (
-              <IconButton
-                onClick={onFilterClick}
-                size="small"
+              {showMenuButton ? (
+                <IconButton
+                  onClick={onMenuClick}
+                  size="small"
+                  sx={{
+                    color: darkMode ? "#f0f0f0" : "inherit",
+                    bgcolor: darkMode
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(0,0,0,0.05)",
+                    border: "1px solid",
+                    borderColor: darkMode
+                      ? "rgba(255,255,255,0.1)"
+                      : "rgba(0,0,0,0.1)",
+                    borderRadius: "8px",
+                    p: 0.8,
+                  }}
+                >
+                  <Menu size={18} />
+                </IconButton>
+              ) : null}
+              <Box
+                component="img"
+                src="/brand-logo-dark.png"
+                alt="Brand"
                 sx={{
-                  color: darkMode ? '#f0f0f0' : 'inherit',
-                  bgcolor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                  border: '1px solid',
-                  borderColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                  borderRadius: '8px',
-                  mr: 1,
-                  p: 0.5,
-                  '&:hover': {
-                    bgcolor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                  },
+                  height: 48,
+                  width: "auto",
+                  filter: darkMode
+                    ? "invert(1) hue-rotate(180deg) brightness(1.2)"
+                    : "none",
                 }}
-              >
-                <TuneRoundedIcon fontSize="small" />
-              </IconButton>
-            )}
-
-            {/* Dark Mode Toggle (Mobile: Second, Desktop: First) */}
-            <Tooltip title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'} arrow>
-              <Box sx={{ mr: { xs: 0.1, sm: 1 } }}>
-                <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
-              </Box>
-            </Tooltip>
-
-            {/* Logout (Mobile: Third, Desktop: Second) */}
-            <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={onLogout}
-                sx={{
-                  color: darkMode ? '#f0f0f0' : 'inherit',
-                  borderColor: darkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.23)',
-                  '&:hover': {
-                    borderColor: darkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)',
-                    bgcolor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
-                  },
-                }}
-              >
-                Logout
-              </Button>
+              />
             </Box>
 
-            <Box sx={{ display: { xs: 'flex', sm: 'none' } }}>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+                ml: "auto",
+                zIndex: 2,
+              }}
+            >
+              {isAdmin && (
+                <NotificationsMenu
+                  darkMode={darkMode}
+                  onTabChange={onTabChange}
+                />
+              )}
+
+              {showFilterButton && (
+                <IconButton
+                  onClick={onFilterClick}
+                  size="small"
+                  sx={{
+                    color: darkMode ? "#f0f0f0" : "inherit",
+                    bgcolor: darkMode
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(0,0,0,0.05)",
+                    border: "1px solid",
+                    borderColor: darkMode
+                      ? "rgba(255,255,255,0.1)"
+                      : "rgba(0,0,0,0.1)",
+                    borderRadius: "8px",
+                    p: 0.8,
+                  }}
+                >
+                  <SlidersHorizontal size={18} />
+                </IconButton>
+              )}
+
+              {showCustomizeButton && (
+                <Tooltip title="Customize Layout">
+                  <ButtonBase
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onCustomizeLayoutClick?.();
+                    }}
+                    sx={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: "8px",
+                      color: darkMode ? "#f0f0f0" : "inherit",
+                      bgcolor: darkMode
+                        ? "rgba(255,255,255,0.05)"
+                        : "rgba(0,0,0,0.05)",
+                      border: "1px solid",
+                      borderColor: darkMode
+                        ? "rgba(255,255,255,0.1)"
+                        : "rgba(0,0,0,0.1)",
+                    }}
+                  >
+                    <LayoutPanelsIcon size={18} />
+                  </ButtonBase>
+                </Tooltip>
+              )}
+
+              <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
               <IconButton
-                size="small"
-                aria-label="logout"
                 onClick={onLogout}
-                sx={{
-                  ml: 0.5,
-                  color: darkMode ? '#f0f0f0' : 'inherit',
-                }}
+                size="small"
+                sx={{ color: "#d32f2f" }}
               >
-                <LogoutIcon fontSize="small" />
+                <LogOut size={20} />
               </IconButton>
             </Box>
+          </>
+        ) : (
+          <>
+            <Box sx={{ display: "flex", flexDirection: "column" }}>
+              <Typography
+                variant="h5"
+                sx={{
+                  fontWeight: 700,
+                  color: darkMode ? "#fff" : "#111",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 2,
+                }}
+              >
+                Welcome, {firstName}{" "}
+                <span style={{ fontSize: "1.2rem" }}>👋</span>
+                {!isMobile && (
+                  <>
+                    {last.loading ? (
+                      <Card
+                        elevation={0}
+                        sx={{
+                          px: 1.5,
+                          height: 28,
+                          display: "flex",
+                          alignItems: "center",
+                          bgcolor: darkMode
+                            ? "rgba(255,255,255,0.05)"
+                            : "rgba(0,0,0,0.03)",
+                          fontSize: 11,
+                          color: "text.secondary",
+                          borderRadius: "6px",
+                          border: "1px solid",
+                          borderColor: darkMode
+                            ? "rgba(255,255,255,0.1)"
+                            : "rgba(0,0,0,0.08)",
+                        }}
+                      >
+                        Updating…
+                      </Card>
+                    ) : last.ts ? (
+                      <Tooltip
+                        title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${last.tz ? ` ${last.tz}` : ""}`}
+                        arrow
+                      >
+                        <Card
+                          elevation={0}
+                          sx={{
+                            px: 1.5,
+                            height: 28,
+                            display: "flex",
+                            alignItems: "center",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "text.secondary",
+                            bgcolor: darkMode
+                              ? "rgba(255,255,255,0.05)"
+                              : "rgba(0,0,0,0.03)",
+                            borderRadius: "6px",
+                            border: "1px solid",
+                            borderColor: darkMode
+                              ? "rgba(255,255,255,0.1)"
+                              : "rgba(0,0,0,0.08)",
+                          }}
+                        >
+                          Updated {last.ts.fromNow()}
+                        </Card>
+                      </Tooltip>
+                    ) : (
+                      <Card
+                        elevation={0}
+                        sx={{
+                          px: 1.5,
+                          height: 28,
+                          display: "flex",
+                          alignItems: "center",
+                          fontSize: 11,
+                          color: "text.secondary",
+                          bgcolor: darkMode
+                            ? "rgba(255,255,255,0.05)"
+                            : "rgba(0,0,0,0.03)",
+                          borderRadius: "6px",
+                          border: "1px solid",
+                          borderColor: darkMode
+                            ? "rgba(255,255,255,0.1)"
+                            : "rgba(0,0,0,0.08)",
+                        }}
+                      >
+                        Updated: unavailable
+                      </Card>
+                    )}
+                  </>
+                )}
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{ color: "text.secondary", fontWeight: 500 }}
+              >
+                Your store at a glance
+              </Typography>
+            </Box>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: { xs: 1, md: 1.5 },
+              }}
+            >
+              {/* Notifications - Only for admins */}
+              {isAdmin && (
+                <NotificationsMenu
+                  darkMode={darkMode}
+                  onTabChange={onTabChange}
+                />
+              )}
 
-          </Box>
+              {/* Theme Toggle */}
+              <SkyToggle checked={darkMode} onChange={onToggleDarkMode} />
+
+              {/* Logout - Only for non-admins (admins have it in sidebar) */}
+              {!isAdmin && (
+                <Tooltip title="Logout">
+                  <IconButton
+                    onClick={onLogout}
+                    size="small"
+                    sx={{
+                      bgcolor: darkMode
+                        ? "rgba(211, 47, 47, 0.1)"
+                        : "rgba(211, 47, 47, 0.05)",
+                      borderRadius: "10px",
+                      p: 1.2,
+                      color: "#d32f2f", // Red color
+                      "&:hover": {
+                        bgcolor: darkMode
+                          ? "rgba(211, 47, 47, 0.2)"
+                          : "rgba(211, 47, 47, 0.1)",
+                      },
+                    }}
+                  >
+                    <LogOut size={20} />
+                  </IconButton>
+                </Tooltip>
+              )}
+
+              {/* Customize Widget Button - Only for admins */}
+              {isAdmin && (
+                <Box sx={{ ml: 1 }}>
+                  <img
+                    src="/brand-logo.jpg"
+                    alt="TechIt"
+                    style={{
+                      height: "36px",
+                      width: "auto",
+                      objectFit: "contain",
+                      opacity: 0.9,
+                      filter: darkMode
+                        ? "invert(1) hue-rotate(180deg) brightness(1.5)"
+                        : "none",
+                    }}
+                  />
+                </Box>
+              )}
+            </Box>
+          </>
         )}
       </Toolbar>
     </AppBar>

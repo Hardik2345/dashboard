@@ -4,7 +4,8 @@ import { login, logout, me } from '../../lib/api.js';
 function normalizeUser(user) {
   if (!user) return null;
   const memberships = Array.isArray(user.brand_memberships) ? user.brand_memberships : [];
-  const hasAuthorRole = (user.role || '').toLowerCase() === 'author';
+  const normalizedRole = (user.role || '').toLowerCase();
+  const hasAuthorRole = normalizedRole === 'author' || normalizedRole === 'super_admin' || normalizedRole === 'admin';
   return {
     ...user,
     isAuthor: hasAuthorRole,
@@ -14,6 +15,7 @@ function normalizeUser(user) {
 
 export const fetchCurrentUser = createAsyncThunk('auth/fetchCurrentUser', async (_, { rejectWithValue }) => {
   const r = await me();
+  if (r.unavailable) return rejectWithValue({ unavailable: true });
   if (!r.authenticated) return { user: null };
   if (!r.user) return rejectWithValue('Missing user payload');
   return { user: normalizeUser(r.user), expiresAt: r.expiresAt };
@@ -22,6 +24,7 @@ export const fetchCurrentUser = createAsyncThunk('auth/fetchCurrentUser', async 
 export const loginUser = createAsyncThunk('auth/loginUser', async ({ email, password }, { rejectWithValue }) => {
   const r = await login(email, password);
   if (r.error) {
+    if (r.unavailable) return rejectWithValue({ unavailable: true });
     const msg = r.data?.error || 'Login failed';
     return rejectWithValue(msg);
   }
@@ -41,6 +44,7 @@ const initialState = {
   loginStatus: 'idle',
   loginError: null,
   logoutStatus: 'idle',
+  maintenanceMode: false,
 };
 
 const authSlice = createSlice({
@@ -50,6 +54,16 @@ const authSlice = createSlice({
     setUser(state, action) {
       state.user = action.payload || null;
     },
+    clearAuthState(state) {
+      state.user = null;
+      state.expiresAt = null;
+      state.initialized = true;
+      state.meStatus = 'idle';
+      state.loginStatus = 'idle';
+      state.loginError = null;
+      state.logoutStatus = 'idle';
+      state.maintenanceMode = false;
+    },
     resetAuthState() {
       return initialState;
     },
@@ -58,17 +72,20 @@ const authSlice = createSlice({
     builder
       .addCase(fetchCurrentUser.pending, (state) => {
         state.meStatus = 'loading';
+        state.maintenanceMode = false;
       })
       .addCase(fetchCurrentUser.fulfilled, (state, action) => {
         state.meStatus = 'succeeded';
         state.initialized = true;
         state.user = action.payload?.user || null;
         state.expiresAt = action.payload?.expiresAt || null;
+        state.maintenanceMode = false;
       })
-      .addCase(fetchCurrentUser.rejected, (state) => {
+      .addCase(fetchCurrentUser.rejected, (state, action) => {
         state.meStatus = 'failed';
         state.initialized = true;
         state.user = null;
+        state.maintenanceMode = Boolean(action.payload?.unavailable);
       })
       .addCase(loginUser.pending, (state) => {
         state.loginStatus = 'loading';
@@ -78,10 +95,12 @@ const authSlice = createSlice({
         state.loginStatus = 'succeeded';
         state.user = action.payload?.user || null;
         state.loginError = null;
+        state.maintenanceMode = false;
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.loginStatus = 'failed';
-        state.loginError = action.payload || 'Login failed';
+        state.maintenanceMode = Boolean(action.payload?.unavailable);
+        state.loginError = action.payload?.unavailable ? null : (action.payload || 'Login failed');
       })
       .addCase(logoutUser.pending, (state) => {
         state.logoutStatus = 'loading';
@@ -91,6 +110,7 @@ const authSlice = createSlice({
         state.user = null;
         state.loginStatus = 'idle';
         state.loginError = null;
+        state.maintenanceMode = false;
       })
       .addCase(logoutUser.rejected, (state) => {
         state.logoutStatus = 'failed';
@@ -99,5 +119,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { setUser, resetAuthState } = authSlice.actions;
+export const { setUser, clearAuthState, resetAuthState } = authSlice.actions;
 export default authSlice.reducer;

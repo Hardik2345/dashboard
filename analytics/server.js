@@ -1,8 +1,17 @@
 require('dotenv').config();
 
+// ── Startup banner (prints BEFORE logger can silence console) ──
+const _realLog = process.stdout.write.bind(process.stdout);
+_realLog(`\n========================================\n`);
+_realLog(`  ANALYTICS SERVICE — NEW CODE v2026-02-14\n`);
+_realLog(`  Started at: ${new Date().toISOString()}\n`);
+_realLog(`  NODE_ENV:   ${process.env.NODE_ENV || '(not set)'}\n`);
+_realLog(`========================================\n\n`);
+
 const { init, sequelize } = require('./app');
-const { closeAll: closeBrandConnections } = require('./lib/brandConnectionManager');
-const logger = require('./utils/logger');
+const { closeAll: closeBrandConnections } = require('./shared/db/brandConnectionManager');
+const logger = require('./shared/utils/logger');
+const { captureError } = require('./observability');
 
 let server = null;
 
@@ -30,6 +39,7 @@ async function gracefulShutdown(signal) {
     await new Promise(resolve => setTimeout(resolve, 500));
     process.exit(0);
   } catch (e) {
+    captureError(e, null, { type: 'shutdown' });
     logger.error('[shutdown] Error during graceful shutdown:', e.message);
     await new Promise(resolve => setTimeout(resolve, 500));
     process.exit(1);
@@ -42,11 +52,14 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Handle uncaught errors gracefully
 process.on('uncaughtException', (err) => {
+  captureError(err, null, { type: 'uncaughtException' });
   logger.error('[uncaughtException]', err);
   gracefulShutdown('uncaughtException');
 });
 
 process.on('unhandledRejection', (reason, promise) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  captureError(err, null, { type: 'unhandledRejection' });
   logger.error('[unhandledRejection] at:', promise, 'reason:', reason);
   // Don't exit on unhandled rejection, just log it
 });
@@ -56,6 +69,7 @@ init()
     server = httpServer;
   })
   .catch((e) => {
+    captureError(e, null, { type: 'startup' });
     logger.error('Startup failure', e);
     process.exit(1);
   });

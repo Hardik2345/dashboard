@@ -1,0 +1,211 @@
+/* eslint-env jest */
+
+const {
+  buildProductConversionService,
+} = require("../../../services/productConversionService");
+
+describe("productConversionService", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    jest.useRealTimers();
+  });
+
+  test("returns paginated rows with compare data and product-type parity", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-03-31T06:30:00Z"));
+
+    const conn = {
+      query: jest.fn().mockImplementation((sql) => {
+        if (sql.includes("COUNT(*) AS total_count")) {
+          return Promise.resolve([{ total_count: 1 }]);
+        }
+        if (
+          sql.includes("FROM product_landing_mapping m")
+        ) {
+          return Promise.resolve([
+            {
+              product_id: "sku-1",
+              landing_page_path: "/products/a",
+              sessions: 100,
+              atc: 25,
+              atc_rate: 25,
+              ci_events: 14,
+              checkout_rate: 14,
+              orders: 8,
+              sales: 640,
+              cvr: 8,
+              prev_sessions: 80,
+              prev_atc: 16,
+              prev_atc_rate: 20,
+              prev_ci_events: 9,
+              prev_checkout_rate: 11.25,
+              prev_orders: 6,
+              prev_sales: 480,
+              prev_cvr: 7.5,
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      }),
+    };
+
+    const service = buildProductConversionService();
+    const normalized = service.normalizeProductConversionRequest({
+      start: "2026-03-31",
+      end: "2026-03-31",
+      page: "1",
+      page_size: "5",
+      sort_by: "sales",
+      sort_dir: "asc",
+      compare_start: "2026-03-30",
+      compare_end: "2026-03-30",
+      search: "/products",
+      product_types: JSON.stringify(["Bundle"]),
+      page_types: JSON.stringify(["Product"]),
+      filters: JSON.stringify([{ field: "sales", operator: "gt", value: 100 }]),
+    });
+
+    expect(normalized.ok).toBe(true);
+    const response = await service.getProductConversion({
+      ...normalized.spec,
+      conn,
+    });
+
+    expect(conn.query.mock.calls[0][0]).toContain("FROM product_landing_mapping m");
+    expect(conn.query.mock.calls[0][0]).toContain("m.product_type IN (?)");
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(response.total_count).toBe(1);
+    expect(response.rows[0]).toEqual(expect.objectContaining({
+      product_id: "sku-1",
+      landing_page_path: "/products/a",
+      sessions: 100,
+      atc: 25,
+      atc_rate: 25,
+      ci_events: 14,
+      checkout_rate: 14,
+      orders: 8,
+      sales: 640,
+      cvr: 8,
+      previous: {
+        sessions: 80,
+        atc: 16,
+        atc_rate: 20,
+        ci_events: 9,
+        checkout_rate: 11.25,
+        orders: 6,
+        sales: 480,
+        cvr: 7.5,
+      },
+    }));
+  });
+
+  test("builds csv output with compare columns and visible-column parity", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-03-31T06:30:00Z"));
+
+    const conn = {
+      query: jest.fn().mockImplementation((sql) => {
+        if (sql.includes("FROM sessions_60d s") && sql.includes("ORDER BY sessions DESC")) {
+          return Promise.resolve([
+            {
+              product_id: "sku-1",
+              landing_page_path: "/products/a",
+              sessions: 100,
+              atc: 25,
+              atc_rate: 25,
+              ci_events: 14,
+              checkout_rate: 14,
+              orders: 8,
+              sales: 640,
+              cvr: 8,
+              prev_sessions: 80,
+              prev_atc: 16,
+              prev_atc_rate: 20,
+              prev_ci_events: 9,
+              prev_checkout_rate: 11.25,
+              prev_orders: 6,
+              prev_sales: 480,
+              prev_cvr: 7.5,
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      }),
+    };
+
+    const service = buildProductConversionService();
+    const normalized = service.normalizeProductConversionRequest({
+      start: "2026-03-31",
+      end: "2026-03-31",
+      compare_start: "2026-03-30",
+      compare_end: "2026-03-30",
+      visible_columns: JSON.stringify(["sessions", "ci_events", "checkout_rate", "cvr"]),
+    });
+
+    const response = await service.getProductConversionCsv({
+      ...normalized.spec,
+      conn,
+    });
+
+    expect(response.filename).toBe("product_conversion_2026-03-31.csv");
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(response.headers).toEqual([
+      "landing_page_path",
+      "sessions",
+      "ci_events",
+      "checkout_rate",
+      "cvr",
+      "prev_sessions",
+      "prev_ci_events",
+      "prev_checkout_rate",
+      "prev_cvr",
+    ]);
+    expect(response.csv).toContain(
+      "landing_page_path,sessions,ci_events,checkout_rate,cvr,prev_sessions,prev_ci_events,prev_checkout_rate,prev_cvr",
+    );
+    expect(response.csv).toContain("/products/a,100,14,14,8,80,9,11.25,7.5");
+  });
+
+  test("uses completed-hour cutoff symmetrically for compare mode when current range includes today", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-04-03T05:20:00Z"));
+
+    const calls = [];
+    const conn = {
+      query: jest.fn().mockImplementation((sql, options = {}) => {
+        calls.push({ sql, replacements: options.replacements || [] });
+        if (sql.includes("COUNT(*) AS total_count")) {
+          return Promise.resolve([{ total_count: 0 }]);
+        }
+        return Promise.resolve([]);
+      }),
+    };
+
+    const service = buildProductConversionService();
+    const normalized = service.normalizeProductConversionRequest({
+      start: "2026-04-03",
+      end: "2026-04-03",
+      compare_start: "2026-04-02",
+      compare_end: "2026-04-02",
+    });
+
+    await service.getProductConversion({
+      ...normalized.spec,
+      conn,
+    });
+
+    expect(calls[0].sql).toContain("FROM hourly_product_sessions");
+    expect(calls[0].sql).toContain("AND (created_date < ? OR created_time < ?)");
+    expect(calls[0].sql).toContain("AND (date < ? OR hour <= ?)");
+    expect(calls[0].replacements).toEqual(
+      expect.arrayContaining([
+        "2026-04-03",
+        "2026-04-03",
+        "10:00:00",
+        9,
+        "2026-04-02",
+        "2026-04-02",
+        "10:00:00",
+        9,
+      ]),
+    );
+    expect(calls[0].replacements).not.toContain("10:50:00");
+  });
+});

@@ -1,303 +1,647 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Card, CardContent, Typography, Skeleton, Box, FormControl, Select, MenuItem, InputLabel, Checkbox, FormControlLabel, Stack } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
-import { Line, Bar } from 'react-chartjs-2';
-import { useRef } from 'react';
+import { Fragment, useEffect, useMemo, useState, memo } from "react";
 import {
-  Chart as ChartJS,
-  LineElement,
-  PointElement,
-  CategoryScale,
-  LinearScale,
+  Card,
+  CardContent,
+  Typography,
+  Skeleton,
+  Box,
+  FormControl,
+  Select,
+  MenuItem,
+  Stack,
+  useMediaQuery,
+} from "@mui/material";
+import { useTheme, alpha } from "@mui/material/styles";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
   Tooltip,
-  Legend,
-  BarElement,
-} from 'chart.js';
-import ChartDataLabels from 'chartjs-plugin-datalabels';
-import { getHourlyTrend, getDailyTrend, getMonthlyTrend, getHourlySalesSummary } from '../lib/api.js';
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
+  getHourlyTrend,
+  getDailyTrend,
+  getMonthlyTrend,
+  getWebPerformanceSummary,
+  getOrderSplit,
+  getPaymentSalesSplit,
+} from "../lib/api.js";
+import { useInrCurrency } from "../lib/currency.js";
 
-function hexToRgba(hex, alpha) {
-  if (!hex || typeof hex !== 'string') return `rgba(0,0,0,${alpha || 1})`;
-  const clean = hex.replace('#', '');
-  const bigint = parseInt(clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean, 16);
-  const r = (bigint >> 16) & 255;
-  const g = (bigint >> 8) & 255;
-  const b = bigint & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-ChartJS.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, BarElement, ChartDataLabels);
-// Configure datalabels defaults (adapted from StackOverflow suggestion)
-if (!ChartJS.defaults.plugins) ChartJS.defaults.plugins = {};
-ChartJS.defaults.plugins.datalabels = ChartJS.defaults.plugins.datalabels || {};
-ChartJS.defaults.plugins.datalabels.anchor = ChartJS.defaults.plugins.datalabels.anchor || 'end';
-ChartJS.defaults.plugins.datalabels.align = ChartJS.defaults.plugins.datalabels.align || 'end';
-// Disable datalabels globally by default — enable only where needed (Bar charts below)
-ChartJS.defaults.plugins.datalabels.display = false;
-const defaultLegendLabels = ChartJS.defaults.plugins.legend.labels.generateLabels;
-
-// Plugin to add extra padding below legend when options.padding isn't respected
-const legendPadPlugin = {
-  id: 'legendPadPlugin',
-  beforeInit(chart) {
-    const legend = chart.legend;
-    if (!legend || typeof legend.fit !== 'function') return;
-    const originalFit = legend.fit;
-    legend.fit = function fit() {
-      originalFit.bind(legend)();
-      this.height += 15; // extra pixels below legend
-    };
-  }
-};
-
-const nfCurrency0 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
-const nfCurrency2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
 const nfInt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
-const nfPercent1 = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 2 });
+const nfPercent1 = new Intl.NumberFormat(undefined, {
+  style: "percent",
+  maximumFractionDigits: 2,
+});
+const nfCompactInt = new Intl.NumberFormat("en-IN", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+const nfFloat2 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+const nfCompactFloat = new Intl.NumberFormat(undefined, {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
 
-// Short formatting for bar labels: prefer compact 'k' for thousands and 'lakhs' for millions
-function shortNumberLabel(value) {
-  const n = Number(value || 0);
-  if (!isFinite(n)) return '';
-  const abs = Math.abs(n);
-  // Use Indian numbering abbreviations: Cr (crore), L (lakh), k (thousand)
-  if (abs >= 10000000) {
-    // 1 crore = 10,000,000
-    const crores = n / 10000000;
-    return `${crores.toFixed(2)} Cr`;
-  }
-  if (abs >= 100000) {
-    // 1 lakh = 100,000
-    const lakhs = n / 100000;
-    return `${lakhs.toFixed(2)}L`;
-  }
-  if (abs >= 1000) {
-    // Show in thousands (no decimals for clarity)
-    const thousands = n / 1000;
-    return `${thousands.toFixed(thousands >= 100 ? 0 : 1)}k`;
-  }
-  return nfInt0.format(n);
-}
-
-const METRIC_CONFIG = {
-  aov: {
-    label: 'Avg Order Value',
-    color: '#f59e0b',
-    bg: 'rgba(245,158,11,0.14)',
-    accessor: (metrics) => {
-      const sales = Number(metrics?.sales || 0);
-      const orders = Number(metrics?.orders || 0);
-      return orders > 0 ? sales / orders : 0;
-    },
-    formatter: (value) => nfCurrency2.format(value || 0),
-  },
-  orders: {
-    label: 'Total Orders',
-    color: '#0ea5e9',
-    bg: 'rgba(14,165,233,0.14)',
-    accessor: (metrics) => metrics?.orders ?? 0,
-    formatter: (value) => nfInt0.format(value || 0),
-  },
-  sales: {
-    label: 'Total Sales',
-    color: '#0b6bcb',
-    bg: 'rgba(11,107,203,0.12)',
-    accessor: (metrics) => metrics?.sales ?? 0,
-    formatter: (value) => nfCurrency0.format(value || 0),
-  },
-  sessions: {
-    label: 'Total Sessions',
-    color: '#2563eb',
-    bg: 'rgba(37,99,235,0.12)',
-    accessor: (metrics) => metrics?.sessions ?? 0,
-    formatter: (value) => nfInt0.format(value || 0),
-  },
-  cvr: {
-    label: 'Conversion Rate',
-    color: '#7c3aed',
-    bg: 'rgba(124,58,237,0.14)',
-    accessor: (metrics) => metrics?.cvr_ratio ?? 0,
-    formatter: (value) => nfPercent1.format(value || 0),
-  },
-  atc: {
-    label: 'ATC Sessions',
-    color: '#16a34a',
-    bg: 'rgba(22,163,74,0.14)',
-    accessor: (metrics) => metrics?.atc ?? 0,
-    formatter: (value) => nfInt0.format(value || 0),
-  },
-};
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+const WEEKLY_LABEL_THRESHOLD = 60;
+const WEEK_SIZE_DAYS = 7;
 
 function formatHourLabel(hour) {
   const normalized = hour % 12 === 0 ? 12 : hour % 12;
-  const suffix = hour >= 12 ? 'pm' : 'am';
-  // Render without a space to reduce visual gap (e.g. '9pm')
-  return `${normalized}${suffix}`;
+  return `${normalized}${hour >= 12 ? "pm" : "am"}`;
 }
 
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-// Resolve Chart.js instance from different react-chartjs-2 ref shapes
-const resolveChart = (ref) => {
-  if (!ref) return null;
-  const r = ref.current;
-  if (!r) return null;
-  if (r.chart) return r.chart;
-  if (typeof r.getChart === 'function') return r.getChart();
-  if (r.config || r.ctx || r.data) return r;
-  return null;
-};
-
-// React-rendered custom legend component using MUI Checkbox controls
-// Moved outside HourlySalesCompare to prevent recreation on every render
-function CustomLegend({ chartRef, dataKey }) {
-  const [items, setItems] = useState([]);
-
-  useEffect(() => {
-    let intervalId = null;
-    let mounted = true;
-    const getChart = () => resolveChart(chartRef);
-
-    const tryBuild = () => {
-      const chart = getChart();
-      if (!chart) return false;
-      const build = () => {
-        const datasets = chart.data?.datasets || [];
-        const arr = datasets.map((ds, i) => {
-          const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
-          const metaHidden = chart.getDatasetMeta?.(i)?.hidden;
-          const visible = typeof chart.isDatasetVisible === 'function'
-            ? chart.isDatasetVisible(i)
-            : !(dsHidden === true || metaHidden === true);
-          return {
-            label: ds.label,
-            color: ds.borderColor || ds.backgroundColor || '#1976d2',
-            index: i,
-            visible,
-          };
-        });
-        if (mounted) setItems(arr);
-      };
-
-      build();
-      const originalUpdate = chart.update.bind(chart);
-      chart.update = function () {
-        const ret = originalUpdate(...arguments);
-        try { build(); } catch { /* ignore */ }
-        return ret;
-      };
-      return () => {
-        try { chart.update = originalUpdate; } catch { /* ignore */ }
-      };
-    };
-
-    const cleanupPatch = tryBuild();
-    if (!cleanupPatch) {
-      let attempts = 0;
-      intervalId = setInterval(() => {
-        attempts += 1;
-        const cleanup = tryBuild();
-        if (cleanup || attempts > 20) {
-          if (intervalId) clearInterval(intervalId);
-        }
-      }, 100);
-    }
-
-    return () => {
-      mounted = false;
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [chartRef, dataKey]);
-
-  const toggle = (idx) => {
-    const chart = resolveChart(chartRef);
-    if (!chart) return;
-    const currentHidden = chart.data?.datasets?.[idx]?.hidden === true;
-    const newHidden = !currentHidden;
-    if (chart.data && chart.data.datasets && chart.data.datasets[idx]) {
-      chart.data.datasets[idx].hidden = newHidden;
-    }
-    try {
-      const meta = chart.getDatasetMeta(idx);
-      if (meta) meta.hidden = newHidden;
-    } catch {
-      // ignore
-    }
-    try { chart.update(); } catch { /* ignore */ }
-    const datasets2 = chart.data?.datasets || [];
-    const arr = datasets2.map((ds, i) => {
-      const dsHidden = chart.data?.datasets?.[i]?.hidden === true;
-      const metaHidden = chart.getDatasetMeta?.(i)?.hidden;
-      const isVisible = typeof chart.isDatasetVisible === 'function' ? chart.isDatasetVisible(i) : !(dsHidden === true || metaHidden === true);
-      return { label: ds.label, color: ds.borderColor || ds.backgroundColor || '#1976d2', index: i, visible: isVisible };
-    });
-    setItems(arr);
-  };
-
-  if (!items.length) {
-    return null;
+function buildDateRange(start, end) {
+  if (!start || !end) return [];
+  const dates = [];
+  const cursor = new Date(`${start}T00:00:00Z`);
+  const endDate = new Date(`${end}T00:00:00Z`);
+  if (Number.isNaN(cursor.getTime()) || Number.isNaN(endDate.getTime())) {
+    return dates;
   }
-  return (
-    <Stack
-      direction={{ xs: 'column', sm: 'row' }}
-      spacing={{ xs: 0, sm: 1 }}
-      sx={{ flexWrap: 'wrap', mb: 1, alignItems: { xs: 'flex-start', sm: 'center' } }}
-    >
-      {items.map((item) => (
-        <FormControlLabel
-          key={item.index}
-          control={(
-            <Checkbox
-              checked={Boolean(item.visible)}
-              onChange={() => toggle(item.index)}
-              sx={{ color: item.color, '&.Mui-checked': { color: item.color } }}
-              size="small"
-            />
-          )}
-          label={<Typography variant="caption" sx={{ ml: 0.25 }}>{item.label}</Typography>}
-        />
-      ))}
-    </Stack>
-  );
+  while (cursor <= endDate) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
 }
 
 function formatRangeLabel(range) {
-  if (!range || !range.start || !range.end) return '';
+  if (!range || !range.start || !range.end) return "";
   const startDate = new Date(`${range.start}T00:00:00Z`);
   const endDate = new Date(`${range.end}T00:00:00Z`);
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return '';
-  const sMonth = MONTH_NAMES[startDate.getUTCMonth()] || '';
-  const eMonth = MONTH_NAMES[endDate.getUTCMonth()] || '';
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return "";
+  }
+
+  const sMonth = MONTH_NAMES[startDate.getUTCMonth()] || "";
+  const eMonth = MONTH_NAMES[endDate.getUTCMonth()] || "";
   const sDay = startDate.getUTCDate();
   const eDay = endDate.getUTCDate();
   const sYear = startDate.getUTCFullYear();
   const eYear = endDate.getUTCFullYear();
+
   if (range.start === range.end) {
     return `${sMonth} ${sDay}, ${sYear}`;
   }
+
   if (sYear === eYear) {
     if (startDate.getUTCMonth() === endDate.getUTCMonth()) {
       return `${sMonth} ${sDay}-${eDay}, ${sYear}`;
     }
     return `${sMonth} ${sDay} - ${eMonth} ${eDay}, ${sYear}`;
   }
+
   return `${sMonth} ${sDay}, ${sYear} - ${eMonth} ${eDay}, ${eYear}`;
 }
 
-export default function HourlySalesCompare({ query, metric = 'sales' }) {
-  const [loading, setLoading] = useState(true);
-  const [state, setState] = useState({
-    labels: [],
-    values: [],
-    comparisonValues: [],
-    points: [],
-    comparisonPoints: [],
-    timezone: 'IST',
-    rangeLabel: '',
-    comparisonLabel: '',
-    error: null,
+function aggregateMetrics(points = []) {
+  return points.reduce((acc, point) => {
+    const metrics = point?.metrics || {};
+    Object.entries(metrics).forEach(([key, value]) => {
+      const numericValue = Number(value || 0);
+      acc[key] = (acc[key] || 0) + numericValue;
+    });
+    return acc;
+  }, {});
+}
+
+function buildWeeklyBuckets(points = [], comparisonPoints = []) {
+  const bucketCount = Math.ceil(points.length / WEEK_SIZE_DAYS);
+
+  return Array.from({ length: bucketCount }, (_, index) => {
+    const startIdx = index * WEEK_SIZE_DAYS;
+    const endIdx = startIdx + WEEK_SIZE_DAYS;
+
+    return {
+      label: `Week ${index + 1}`,
+      metrics: aggregateMetrics(points.slice(startIdx, endIdx)),
+      comparisonMetrics: aggregateMetrics(comparisonPoints.slice(startIdx, endIdx)),
+      isInProgressHour: false,
+      hour: null,
+    };
   });
-  const [viewMode, setViewMode] = useState('hourly'); // 'hourly' | 'daily' | 'monthly'
+}
+
+function buildMetricConfig(convertAmount, formatConvertedAmount) {
+  return {
+    aov: {
+      id: "aov",
+      label: "Avg Order Value",
+      unitKind: "currency",
+      axisGroup: "currency",
+      color: "#8b5cf6",
+      strokeDasharray: "2 0",
+      accessor: (metrics) => {
+        const sales = convertAmount(metrics?.sales || 0);
+        const orders = Number(metrics?.orders || 0);
+        return orders > 0 ? sales / orders : 0;
+      },
+      formatter: (value) =>
+        formatConvertedAmount(value || 0, { maximumFractionDigits: 2 }),
+      compactFormatter: (value) =>
+        formatConvertedAmount(value || 0, {
+          notation: "compact",
+          maximumFractionDigits: 1,
+        }),
+    },
+    orders: {
+      id: "orders",
+      label: "Total Orders",
+      unitKind: "count",
+      axisGroup: "count",
+      color: "#2563eb",
+      strokeDasharray: "2 0",
+      accessor: (metrics) => Number(metrics?.orders || 0),
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    sales: {
+      id: "sales",
+      label: "Total Revenue",
+      unitKind: "currency",
+      axisGroup: "currency",
+      color: "#10b981",
+      strokeDasharray: "2 0",
+      accessor: (metrics) => convertAmount(metrics?.sales ?? 0),
+      formatter: (value) =>
+        formatConvertedAmount(value || 0, { maximumFractionDigits: 0 }),
+      compactFormatter: (value) =>
+        formatConvertedAmount(value || 0, {
+          notation: "compact",
+          maximumFractionDigits: 1,
+        }),
+    },
+    gross_revenue: {
+      id: "gross_revenue",
+      label: "Gross Revenue",
+      unitKind: "currency",
+      axisGroup: "currency",
+      color: "#10b981",
+      strokeDasharray: "2 0",
+      accessor: (metrics) => convertAmount(metrics?.sales ?? 0),
+      formatter: (value) =>
+        formatConvertedAmount(value || 0, { maximumFractionDigits: 0 }),
+      compactFormatter: (value) =>
+        formatConvertedAmount(value || 0, {
+          notation: "compact",
+          maximumFractionDigits: 1,
+        }),
+    },
+    net_revenue: {
+      id: "net_revenue",
+      label: "Net Revenue",
+      unitKind: "currency",
+      axisGroup: "currency",
+      color: "#3b82f6",
+      strokeDasharray: "6 3",
+      accessor: (metrics) => convertAmount(metrics?.sales ?? 0) / 1.18,
+      formatter: (value) =>
+        formatConvertedAmount(value || 0, { maximumFractionDigits: 0 }),
+      compactFormatter: (value) =>
+        formatConvertedAmount(value || 0, {
+          notation: "compact",
+          maximumFractionDigits: 1,
+        }),
+    },
+    sessions: {
+      id: "sessions",
+      label: "Total Sessions",
+      unitKind: "count",
+      axisGroup: "count",
+      color: "#0f766e",
+      strokeDasharray: "8 4",
+      accessor: (metrics) => Number(metrics?.sessions || 0),
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    cvr: {
+      id: "cvr",
+      label: "Conversion Rate",
+      unitKind: "percent",
+      axisGroup: "percent",
+      color: "#f97316",
+      strokeDasharray: "4 3",
+      accessor: (metrics) => Number(metrics?.cvr_ratio || 0),
+      formatter: (value) => nfPercent1.format(value || 0),
+      compactFormatter: (value) => nfPercent1.format(value || 0),
+    },
+    atc: {
+      id: "atc",
+      label: "ATC Sessions",
+      unitKind: "count",
+      axisGroup: "count",
+      color: "#eab308",
+      strokeDasharray: "6 3",
+      accessor: (metrics) => Number(metrics?.atc || 0),
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    atc_sessions: {
+      id: "atc_sessions",
+      label: "ATC Sessions",
+      unitKind: "count",
+      axisGroup: "count",
+      color: "#eab308",
+      strokeDasharray: "6 3",
+      accessor: (metrics) => Number(metrics?.atc || 0),
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    ci_events: {
+      id: "ci_events",
+      label: "Checkout Initiated Events",
+      unitKind: "count",
+      axisGroup: "count",
+      color: "#3b82f6",
+      strokeDasharray: "3 2",
+      accessor: (metrics) => Number(metrics?.ci_events || 0),
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    checkout_rate: {
+      id: "checkout_rate",
+      label: "Checkout Rate",
+      unitKind: "percent",
+      axisGroup: "percent",
+      color: "#14b8a6",
+      strokeDasharray: "10 4",
+      accessor: (metrics) => {
+        const ciEvents = Number(metrics?.ci_events || 0);
+        const sessions = Number(metrics?.sessions || 0);
+        return sessions > 0 ? ciEvents / sessions : 0;
+      },
+      formatter: (value) => nfPercent1.format(value || 0),
+      compactFormatter: (value) => nfPercent1.format(value || 0),
+    },
+    atc_rate: {
+      id: "atc_rate",
+      label: "ATC Rate",
+      unitKind: "percent",
+      axisGroup: "percent",
+      color: "#f59e0b",
+      strokeDasharray: "5 3",
+      accessor: (metrics) => {
+        const atc = Number(metrics?.atc || 0);
+        const sessions = Number(metrics?.sessions || 0);
+        return sessions > 0 ? atc / sessions : 0;
+      },
+      formatter: (value) => nfPercent1.format(value || 0),
+      compactFormatter: (value) => nfPercent1.format(value || 0),
+    },
+    performance: {
+      id: "performance",
+      label: "Web Performance(Avg)",
+      unitKind: "score",
+      axisGroup: "score",
+      color: "#06b6d4",
+      strokeDasharray: "2 0",
+      accessor: (metrics) => {
+        const value = Number(metrics?.performance);
+        return Number.isFinite(value) ? value : null;
+      },
+      formatter: (value) => nfFloat2.format(value || 0),
+      compactFormatter: (value) => nfCompactFloat.format(value || 0),
+    },
+    payment_orders: {
+      id: "payment_orders",
+      label: "Mode of Payment - Order count",
+      compositeDefs: [
+        {
+          id: "payment_orders_prepaid",
+          parentId: "payment_orders",
+          label: "Prepaid Orders",
+          unitKind: "count",
+          axisGroup: "count",
+          color: "#2cc995",
+          strokeDasharray: "2 0",
+          accessor: (metrics) => Number(metrics?.payment_orders_prepaid || 0),
+          formatter: (value) => nfInt0.format(value || 0),
+          compactFormatter: (value) => nfCompactInt.format(value || 0),
+        },
+        {
+          id: "payment_orders_cod",
+          parentId: "payment_orders",
+          label: "COD Orders",
+          unitKind: "count",
+          axisGroup: "count",
+          color: "#1f5748",
+          strokeDasharray: "4 3",
+          accessor: (metrics) => Number(metrics?.payment_orders_cod || 0),
+          formatter: (value) => nfInt0.format(value || 0),
+          compactFormatter: (value) => nfCompactInt.format(value || 0),
+        },
+        {
+          id: "payment_orders_partial",
+          parentId: "payment_orders",
+          label: "Partially Paid Orders",
+          unitKind: "count",
+          axisGroup: "count",
+          color: "#8da399",
+          strokeDasharray: "6 3",
+          accessor: (metrics) => Number(metrics?.payment_orders_partial || 0),
+          formatter: (value) => nfInt0.format(value || 0),
+          compactFormatter: (value) => nfCompactInt.format(value || 0),
+        },
+      ],
+    },
+    payment_sales: {
+      id: "payment_sales",
+      label: "Mode of Payment - Sales",
+      compositeDefs: [
+        {
+          id: "payment_sales_prepaid",
+          parentId: "payment_sales",
+          label: "Prepaid Sales",
+          unitKind: "currency",
+          axisGroup: "currency",
+          color: "#2cc995",
+          strokeDasharray: "2 0",
+          accessor: (metrics) => Number(metrics?.payment_sales_prepaid || 0),
+          formatter: (value) =>
+            formatConvertedAmount(value || 0, { maximumFractionDigits: 0 }),
+          compactFormatter: (value) =>
+            formatConvertedAmount(value || 0, {
+              notation: "compact",
+              maximumFractionDigits: 1,
+            }),
+        },
+        {
+          id: "payment_sales_cod",
+          parentId: "payment_sales",
+          label: "COD Sales",
+          unitKind: "currency",
+          axisGroup: "currency",
+          color: "#1f5748",
+          strokeDasharray: "4 3",
+          accessor: (metrics) => Number(metrics?.payment_sales_cod || 0),
+          formatter: (value) =>
+            formatConvertedAmount(value || 0, { maximumFractionDigits: 0 }),
+          compactFormatter: (value) =>
+            formatConvertedAmount(value || 0, {
+              notation: "compact",
+              maximumFractionDigits: 1,
+            }),
+        },
+        {
+          id: "payment_sales_partial",
+          parentId: "payment_sales",
+          label: "Partially Paid Sales",
+          unitKind: "currency",
+          axisGroup: "currency",
+          color: "#8da399",
+          strokeDasharray: "6 3",
+          accessor: (metrics) => Number(metrics?.payment_sales_partial || 0),
+          formatter: (value) =>
+            formatConvertedAmount(value || 0, { maximumFractionDigits: 0 }),
+          compactFormatter: (value) =>
+            formatConvertedAmount(value || 0, {
+              notation: "compact",
+              maximumFractionDigits: 1,
+            }),
+        },
+      ],
+    },
+  };
+}
+
+function computeAxisDomain(values, unitKind) {
+  const numericValues = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+
+  if (numericValues.length === 0) return [0, 1];
+
+  let min = Math.min(...numericValues);
+  let max = Math.max(...numericValues);
+
+  if (min === max) {
+    const basePad =
+      unitKind === "percent"
+        ? 0.01
+        : unitKind === "count"
+          ? Math.max(1, Math.abs(max) * 0.15)
+          : Math.max(1, Math.abs(max) * 0.08);
+    return [min - basePad, max + basePad];
+  }
+
+  const spread = max - min;
+  const pad = spread * (unitKind === "percent" ? 0.12 : 0.08);
+  min -= pad;
+  max += pad;
+
+  return [min, max];
+}
+
+function SeriesLegend({
+  entries,
+  compareMode = false,
+  hiddenKeys,
+  onToggle,
+  hoveredKey,
+  onHover,
+}) {
+  return (
+    <Stack direction="row" spacing={1.25} sx={{ flexWrap: "wrap", rowGap: 1 }}>
+      {entries.map((entry) => {
+        const hidden = hiddenKeys.includes(entry.id);
+        const muted = hoveredKey && hoveredKey !== entry.id;
+        return (
+          <Box
+            key={entry.id}
+            component="button"
+            type="button"
+            onClick={() => onToggle(entry.id)}
+            onMouseEnter={() => onHover(entry.id)}
+            onMouseLeave={() => onHover(null)}
+            sx={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 1,
+              px: 0,
+              py: 0,
+              border: "none",
+              bgcolor: "transparent",
+              cursor: "pointer",
+              opacity: hidden ? 0.45 : muted ? 0.5 : 1,
+              transition: "opacity 0.18s ease",
+              color: "inherit",
+              font: "inherit",
+            }}
+          >
+            <Box
+              sx={{
+                width: 14,
+                height: 14,
+                borderRadius: compareMode ? "3px" : "999px",
+                border: "1px solid",
+                borderColor: entry.color,
+                bgcolor: hidden ? "transparent" : entry.color,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {!hidden && (
+                <Box
+                  sx={{
+                    width: compareMode ? 6 : 7,
+                    height: compareMode ? 6 : 2,
+                    bgcolor: "#fff",
+                    borderRadius: compareMode ? "2px" : "999px",
+                  }}
+                />
+              )}
+            </Box>
+            <Typography
+              variant="caption"
+              sx={{
+                fontWeight: entry.active ? 700 : 600,
+                color: hidden ? "text.secondary" : "text.primary",
+              }}
+            >
+              {entry.label}
+            </Typography>
+          </Box>
+        );
+      })}
+    </Stack>
+  );
+}
+
+function CustomTooltip({
+  active,
+  label,
+  compareMode = false,
+  selectedDefs = [],
+  rangeLabels,
+  compareFormatter,
+  compareValue,
+  currentValue,
+  metricValues = {},
+  hiddenMetricIds = [],
+}) {
+  if (!active) return null;
+
+  return (
+    <Box
+      sx={{
+        bgcolor: "background.paper",
+        border: "1px solid",
+        borderColor: "divider",
+        borderRadius: 2,
+        boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+        p: 1.5,
+        minWidth: 180,
+      }}
+    >
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ display: "block", mb: 1, fontWeight: 600 }}
+      >
+        {label}
+      </Typography>
+      {compareMode ? (
+        <>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.75 }}>
+            <Box
+              sx={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                bgcolor: "#10b981",
+              }}
+            />
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              {rangeLabels.current || "Current"}
+            </Typography>
+            <Typography variant="body2" sx={{ fontWeight: 600, ml: "auto" }}>
+              {compareFormatter(currentValue)}
+            </Typography>
+          </Box>
+          {rangeLabels.previous && compareValue != null && (
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  bgcolor: alpha("#10b981", 0.5),
+                }}
+              />
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {rangeLabels.previous}
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600, ml: "auto" }}>
+                {compareFormatter(compareValue)}
+              </Typography>
+            </Box>
+          )}
+        </>
+      ) : (
+        selectedDefs
+          .filter((def) => !hiddenMetricIds.includes(def.id))
+          .map((def) => (
+            <Box
+              key={def.id}
+              sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}
+            >
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  bgcolor: def.color,
+                }}
+              />
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {def.label}
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600, ml: "auto" }}>
+                {def.formatter(metricValues[def.id])}
+              </Typography>
+            </Box>
+          ))
+      )}
+    </Box>
+  );
+}
+
+export default memo(function HourlySalesCompare({
+  query,
+  selectedMetrics = [],
+  activeMetric = null,
+  isLongRange = false,
+}) {
+  const [loading, setLoading] = useState(true);
+  const [chartData, setChartData] = useState([]);
+  const [viewMode, setViewMode] = useState("hourly");
+  const [chartMode, setChartMode] = useState("line");
+  const [rangeLabels, setRangeLabels] = useState({ current: "", previous: "" });
+  const [hiddenMetricIds, setHiddenMetricIds] = useState([]);
+  const [visibleRangeLines, setVisibleRangeLines] = useState(["primary"]);
+  const [hoveredMetric, setHoveredMetric] = useState(null);
+
   const start = query?.start;
   const end = query?.end;
   const brandKey = query?.brand_key;
@@ -306,42 +650,121 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
   const utmMedium = query?.utm_medium;
   const utmCampaign = query?.utm_campaign;
   const salesChannel = query?.sales_channel;
+  const deviceType = query?.device_type;
   const productId = query?.product_id;
+  const discountCode = query?.discount_code;
   const compare = query?.compare;
+  const compareStart = query?.compare_start;
+  const compareEnd = query?.compare_end;
+  const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const metricConfig = useMemo(
+    () => buildMetricConfig(convertAmount, formatConvertedAmount),
+    [convertAmount, formatConvertedAmount],
+  );
 
-  const totalDaysSelected = useMemo(() => {
+  const requestedMetricIds = useMemo(
+    () => (Array.isArray(selectedMetrics) ? selectedMetrics.filter(Boolean) : []),
+    [selectedMetrics],
+  );
+  const effectiveMetricIds = useMemo(() => {
+    if (requestedMetricIds.length > 0) return requestedMetricIds;
+    return activeMetric ? [activeMetric] : [];
+  }, [activeMetric, requestedMetricIds]);
+  const activeMetricId = useMemo(() => {
+    if (activeMetric && effectiveMetricIds.includes(activeMetric)) return activeMetric;
+    return effectiveMetricIds[effectiveMetricIds.length - 1] || null;
+  }, [activeMetric, effectiveMetricIds]);
+  const selectedDefs = useMemo(
+    () =>
+      effectiveMetricIds.flatMap((metricId) => {
+        const def = metricConfig[metricId];
+        if (!def) return [];
+        if (Array.isArray(def.compositeDefs)) return def.compositeDefs;
+        return [def];
+      }),
+    [effectiveMetricIds, metricConfig],
+  );
+  const activeDef = activeMetricId ? metricConfig[activeMetricId] : null;
+  const hasPerformanceSelected = effectiveMetricIds.includes("performance");
+  const hasPaymentCompositeSelected = effectiveMetricIds.some((metricId) =>
+    ["payment_orders", "payment_sales"].includes(metricId),
+  );
+
+  const daysInRange = useMemo(() => {
     if (!start || !end) return 0;
-    const startDate = new Date(`${start}T00:00:00Z`);
-    const endDate = new Date(`${end}T00:00:00Z`);
-    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
-    const diffMs = endDate.getTime() - startDate.getTime();
-    const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-    return diffDays + 1;
+    const s = new Date(start);
+    const e = new Date(end);
+    return Math.ceil((e - s) / (1000 * 60 * 60 * 24)) + 1;
   }, [start, end]);
+  const useWeeklyBuckets =
+    viewMode === "daily" &&
+    daysInRange > WEEKLY_LABEL_THRESHOLD &&
+    !hasPerformanceSelected;
+  const canUseHourlyPaymentTrend = daysInRange === 1;
+  const canUseBarChart = daysInRange <= 8;
+  const hasComparisonData = useMemo(
+    () =>
+      chartData.some(
+        (point) =>
+          point.comparisonMetrics &&
+          Object.keys(point.comparisonMetrics).length > 0,
+      ) || Boolean(rangeLabels.previous),
+    [chartData, rangeLabels.previous],
+  );
+  const shouldShowCompare =
+    hasComparisonData &&
+    effectiveMetricIds.length <= 1 &&
+    !hasPaymentCompositeSelected;
 
   useEffect(() => {
-    if (viewMode === 'monthly' && totalDaysSelected < 30) {
-      setViewMode('daily');
+    if (
+      (isLongRange ||
+        hasPerformanceSelected ||
+        (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend)) &&
+      viewMode === "hourly"
+    ) {
+      setViewMode("daily");
     }
-  }, [totalDaysSelected, viewMode]);
+  }, [
+    canUseHourlyPaymentTrend,
+    hasPaymentCompositeSelected,
+    hasPerformanceSelected,
+    isLongRange,
+    viewMode,
+  ]);
+
+  useEffect(() => {
+    setHiddenMetricIds((prev) =>
+      prev.filter((metricId) => selectedDefs.some((def) => def.id === metricId)),
+    );
+  }, [selectedDefs]);
+
+  useEffect(() => {
+    setVisibleRangeLines((prev) =>
+      prev.filter((entry) => ["primary", "comparison"].includes(entry)),
+    );
+  }, [shouldShowCompare]);
+
+  useEffect(() => {
+    if (!canUseBarChart && chartMode === "bar") {
+      setChartMode("line");
+    }
+  }, [canUseBarChart, chartMode]);
 
   useEffect(() => {
     let cancelled = false;
     if (!start || !end) {
-      setState({
-        labels: [],
-        values: [],
-        comparisonValues: [],
-        points: [],
-        comparisonPoints: [],
-        timezone: 'IST',
-        rangeLabel: '',
-        comparisonLabel: '',
-        error: null,
-      });
+      setChartData([]);
       setLoading(false);
-      return () => { cancelled = true; };
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (viewMode === "monthly" && daysInRange < 30) {
+      setViewMode("daily");
     }
     setLoading(true);
 
@@ -351,466 +774,1241 @@ export default function HourlySalesCompare({ query, metric = 'sales' }) {
         utm_medium: utmMedium,
         utm_campaign: utmCampaign,
         sales_channel: salesChannel,
+        device_type: deviceType,
         product_id: productId,
+        discount_code: discountCode,
+        city: query?.city,
       };
-
-      // optimization: use cached hourly summary if sales + hourly view + single day match + no custom comparison
-      if (viewMode === 'hourly' && (metric === 'sales' || metric === 'total_sales') && start === end && !utmParams.utm_source && !utmParams.utm_medium && !utmParams.utm_campaign && !utmParams.product_id && !utmParams.sales_channel && !compare) {
-        try {
-          const res = await getHourlySalesSummary({ brand_key: brandKey });
-          if (!cancelled && res.data && res.data.today && res.data.today.date === start) {
-            let todayPoints = res.data.today.data.map(d => ({
-              hour: d.hour,
-              metrics: {
-                sales: d.total_sales,
-                orders: d.number_of_orders,
-                sessions: d.number_of_sessions,
-                atc: d.number_of_atc_sessions
-              }
-            }));
-            // Filter todayPoints if start is today (IST)
-            const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-
-            if (viewMode === 'hourly' && start === todayIST) {
-              const currentHour = parseInt(new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour12: false, hour: 'numeric' }));
-              todayPoints = todayPoints.filter(p => p.hour <= currentHour);
+      const fetcher =
+        viewMode === "monthly"
+          ? getMonthlyTrend
+          : viewMode === "daily"
+            ? getDailyTrend
+            : getHourlyTrend;
+      const base =
+        viewMode === "daily" || viewMode === "monthly"
+          ? {
+              start,
+              end,
+              compare,
+              compare_start: compareStart,
+              compare_end: compareEnd,
+              ...utmParams,
             }
-
-            const yesterdayPoints = res.data.yesterday.data.map(d => ({
-              hour: d.hour,
-              metrics: {
-                sales: d.total_sales,
-                orders: d.number_of_orders,
-                sessions: d.number_of_sessions,
-                atc: d.number_of_atc_sessions
-              }
-            }));
-
-            const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
-            setState({
-              labels: todayPoints.map(p => formatHourLabel(p.hour)),
-              values: todayPoints.map(p => configNext.accessor(p.metrics)),
-              comparisonValues: yesterdayPoints.map(p => configNext.accessor(p.metrics)),
-              points: todayPoints,
-              comparisonPoints: yesterdayPoints,
-              timezone: 'IST',
-              rangeLabel: formatRangeLabel({ start: res.data.today.date, end: res.data.today.date }),
-              comparisonLabel: formatRangeLabel({ start: res.data.yesterday.date, end: res.data.yesterday.date }),
-              error: null
-            });
-            setLoading(false);
-            return;
-          }
-        } catch (e) {
-          console.warn('Optimized fetch failed, falling back', e);
-        }
-      }
-
-      const isLastWeekMode = compare === 'last_week';
-
-      // Special optimization logic for 'last_week' if available client-side (future)
-      // For now, rely on backend return or manual calculation for updated optimization blocks if we add them.
-
-      if (cancelled) return;
-
-      const fetcher = viewMode === 'monthly' ? getMonthlyTrend : (viewMode === 'daily' ? getDailyTrend : getHourlyTrend);
-      const base = (viewMode === 'daily' || viewMode === 'monthly')
-        ? { start, end, compare, ...utmParams }
-        : { start, end, compare, aggregate: 'avg-by-hour', ...utmParams };
+          : {
+              start,
+              end,
+              compare,
+              compare_start: compareStart,
+              compare_end: compareEnd,
+              aggregate: "avg-by-hour",
+              ...utmParams,
+            };
       const params = brandKey ? { ...base, brand_key: brandKey } : base;
 
       try {
-        const res = await fetcher(params);
+        const [res, performanceSummary] = await Promise.all([
+          fetcher(params),
+          hasPerformanceSelected
+            ? getWebPerformanceSummary(params)
+            : Promise.resolve(null),
+        ]);
         if (cancelled) return;
-        if (res?.error) {
-          throw new Error('Fetch failed');
+        if (res?.error) throw new Error("Fetch failed");
+        if (performanceSummary?.__error) {
+          throw new Error("Performance fetch failed");
         }
 
-        const configNext = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
-        let labels = [];
-        let values = [];
-        let comparisonValues = [];
         let points = [];
         let comparisonPoints = [];
 
-        if (viewMode === 'daily') {
-          const days = Array.isArray(res.days) ? res.days : [];
-          const compDays = Array.isArray(res?.comparison?.days) ? res.comparison.days : [];
-          const n = Math.min(days.length, compDays.length || days.length);
-          const daysAligned = days.slice(0, n);
-          const compAligned = compDays.slice(0, n);
-          points = daysAligned;
-          labels = daysAligned.map((d) => d.date);
-          values = daysAligned.map((d) => (configNext.accessor(d?.metrics || {}) || 0));
-          comparisonPoints = compAligned;
-          comparisonValues = compAligned.map((d) => (configNext.accessor(d?.metrics || {}) || 0));
-        } else if (viewMode === 'monthly') {
+        if (viewMode === "daily") {
+          points = Array.isArray(res.days) ? res.days : [];
+          comparisonPoints = Array.isArray(res?.comparison?.days)
+            ? res.comparison.days
+            : [];
+        } else if (viewMode === "monthly") {
           points = Array.isArray(res.points) ? res.points : [];
-          labels = points.map((p) => p.date);
-          values = points.map((p) => configNext.accessor(p.metrics || {}));
-          comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
-          comparisonValues = comparisonPoints.map((p) => configNext.accessor(p.metrics || {}));
+          comparisonPoints = Array.isArray(res?.comparison?.points)
+            ? res.comparison.points
+            : [];
         } else {
           points = Array.isArray(res.points) ? res.points : [];
+          const timezone = res.timezone || "Asia/Kolkata";
+          const todayInStoreTimezone = new Date().toLocaleDateString("en-CA", {
+            timeZone: timezone,
+          });
+          const isCurrentStoreDay = start === todayInStoreTimezone;
+          let currentHour = null;
 
-          // Filter points if start is today (IST)
-          const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-
-          if (viewMode === 'hourly' && start === todayIST) {
-            const currentHour = parseInt(new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour12: false, hour: 'numeric' }));
-            points = points.filter(p => p.hour <= currentHour);
+          if (start === todayInStoreTimezone) {
+            currentHour = Number.parseInt(
+              new Date().toLocaleTimeString("en-US", {
+                timeZone: timezone,
+                hour12: false,
+                hour: "numeric",
+              }),
+              10,
+            );
+            points = points.filter((point) => point.hour <= currentHour);
           }
 
-          labels = points.map((p) => formatHourLabel(p.hour));
-          values = points.map((p) => configNext.accessor(p.metrics || {}));
-          comparisonPoints = Array.isArray(res?.comparison?.points) ? res.comparison.points : [];
-          comparisonValues = comparisonPoints.map((p) => configNext.accessor(p.metrics || {}));
+          comparisonPoints = Array.isArray(res?.comparison?.points)
+            ? res.comparison.points
+            : [];
+          points = points.map((point) => ({
+            ...point,
+            __isInProgressHour:
+              isCurrentStoreDay &&
+              Number.isInteger(currentHour) &&
+              point?.hour === currentHour,
+          }));
         }
 
-        setState({
-          labels,
-          values,
-          comparisonValues,
-          points,
-          comparisonPoints,
-          timezone: res.timezone || 'IST',
-          rangeLabel: formatRangeLabel(res.range),
-          comparisonLabel: formatRangeLabel(res?.comparison?.range),
-          error: null,
-        });
-        setLoading(false);
+        const buildPerformanceMap = (rows = []) => {
+          if (!Array.isArray(rows) || rows.length === 0) return new Map();
 
+          if (viewMode === "monthly") {
+            const monthlyAverages = new Map();
+            rows.forEach((row) => {
+              if (!row?.date) return;
+              const monthKey = String(row.date).slice(0, 7);
+              const existing = monthlyAverages.get(monthKey) || {
+                sum: 0,
+                count: 0,
+              };
+              existing.sum += Number(row.avg_performance || 0);
+              existing.count += 1;
+              monthlyAverages.set(monthKey, existing);
+            });
+
+            return new Map(
+              Array.from(monthlyAverages.entries()).map(([key, value]) => [
+                key,
+                value.count > 0 ? value.sum / value.count : null,
+              ]),
+            );
+          }
+
+          return new Map(
+            rows.map((row) => [row.date, Number(row.avg_performance || 0)]),
+          );
+        };
+
+        const currentPerformanceMap = buildPerformanceMap(
+          performanceSummary?.daily_averages,
+        );
+        const previousPerformanceMap = buildPerformanceMap(
+          performanceSummary?.previous_daily_averages,
+        );
+        const paymentMetricsByDate = new Map();
+        const paymentMetricsByMonth = new Map();
+        const paymentMetricsByHour = new Map();
+        const previousPaymentMetricsByHour = new Map();
+
+        if (hasPaymentCompositeSelected) {
+          const paymentBaseParams = {
+            brand_key: brandKey,
+            utm_source: utmSource,
+            utm_medium: utmMedium,
+            utm_campaign: utmCampaign,
+            sales_channel: salesChannel,
+            device_type: deviceType,
+            product_id: productId,
+            discount_code: discountCode,
+            city: query?.city,
+          };
+          if (viewMode === "hourly" && canUseHourlyPaymentTrend) {
+            const timezoneMeta = await getOrderSplit({
+              ...paymentBaseParams,
+              start,
+              end,
+            });
+            const splitTimezone = timezoneMeta?.timezone || res.timezone || "Asia/Kolkata";
+            const todayInStoreTimezone = new Date().toLocaleDateString("en-CA", {
+              timeZone: splitTimezone,
+            });
+            const hourLimit =
+              start === todayInStoreTimezone
+                ? Number.parseInt(
+                    new Date().toLocaleTimeString("en-US", {
+                      timeZone: splitTimezone,
+                      hour12: false,
+                      hour: "numeric",
+                    }),
+                    10,
+                  )
+                : 23;
+            const hours = Array.from({ length: hourLimit + 1 }, (_, index) => index);
+
+            const currentHourlySeries = await Promise.all(
+              hours.map(async (hour) => {
+                const [orders, sales] = await Promise.all([
+                  getOrderSplit({ ...paymentBaseParams, start, end, hour_lte: hour }),
+                  getPaymentSalesSplit({
+                    ...paymentBaseParams,
+                    start,
+                    end,
+                    hour_lte: hour,
+                  }),
+                ]);
+                return { hour, orders, sales };
+              }),
+            );
+
+            const previousHourlySeries =
+              compareStart && compareEnd
+                ? await Promise.all(
+                    hours.map(async (hour) => {
+                      const [orders, sales] = await Promise.all([
+                        getOrderSplit({
+                          ...paymentBaseParams,
+                          start: compareStart,
+                          end: compareEnd,
+                          hour_lte: hour,
+                        }),
+                        getPaymentSalesSplit({
+                          ...paymentBaseParams,
+                          start: compareStart,
+                          end: compareEnd,
+                          hour_lte: hour,
+                        }),
+                      ]);
+                      return { hour, orders, sales };
+                    }),
+                  )
+                : [];
+
+            currentHourlySeries.forEach((point, index) => {
+              const previousPoint = index > 0 ? currentHourlySeries[index - 1] : null;
+              const currentValues = {
+                payment_orders_prepaid: Math.max(
+                  0,
+                  Number(point.orders?.prepaid_orders || 0) -
+                    Number(previousPoint?.orders?.prepaid_orders || 0),
+                ),
+                payment_orders_cod: Math.max(
+                  0,
+                  Number(point.orders?.cod_orders || 0) -
+                    Number(previousPoint?.orders?.cod_orders || 0),
+                ),
+                payment_orders_partial: Math.max(
+                  0,
+                  Number(point.orders?.partially_paid_orders || 0) -
+                    Number(previousPoint?.orders?.partially_paid_orders || 0),
+                ),
+                payment_sales_prepaid: convertAmount(
+                  Math.max(
+                    0,
+                    Number(point.sales?.prepaid_sales || 0) -
+                      Number(previousPoint?.sales?.prepaid_sales || 0),
+                  ),
+                ),
+                payment_sales_cod: convertAmount(
+                  Math.max(
+                    0,
+                    Number(point.sales?.cod_sales || 0) -
+                      Number(previousPoint?.sales?.cod_sales || 0),
+                  ),
+                ),
+                payment_sales_partial: convertAmount(
+                  Math.max(
+                    0,
+                    Number(point.sales?.partial_sales || 0) -
+                      Number(previousPoint?.sales?.partial_sales || 0),
+                  ),
+                ),
+              };
+              paymentMetricsByHour.set(point.hour, currentValues);
+            });
+
+            previousHourlySeries.forEach((point, index) => {
+              const previousPoint = index > 0 ? previousHourlySeries[index - 1] : null;
+              const previousValues = {
+                payment_orders_prepaid: Math.max(
+                  0,
+                  Number(point.orders?.prepaid_orders || 0) -
+                    Number(previousPoint?.orders?.prepaid_orders || 0),
+                ),
+                payment_orders_cod: Math.max(
+                  0,
+                  Number(point.orders?.cod_orders || 0) -
+                    Number(previousPoint?.orders?.cod_orders || 0),
+                ),
+                payment_orders_partial: Math.max(
+                  0,
+                  Number(point.orders?.partially_paid_orders || 0) -
+                    Number(previousPoint?.orders?.partially_paid_orders || 0),
+                ),
+                payment_sales_prepaid: convertAmount(
+                  Math.max(
+                    0,
+                    Number(point.sales?.prepaid_sales || 0) -
+                      Number(previousPoint?.sales?.prepaid_sales || 0),
+                  ),
+                ),
+                payment_sales_cod: convertAmount(
+                  Math.max(
+                    0,
+                    Number(point.sales?.cod_sales || 0) -
+                      Number(previousPoint?.sales?.cod_sales || 0),
+                  ),
+                ),
+                payment_sales_partial: convertAmount(
+                  Math.max(
+                    0,
+                    Number(point.sales?.partial_sales || 0) -
+                      Number(previousPoint?.sales?.partial_sales || 0),
+                  ),
+                ),
+              };
+              previousPaymentMetricsByHour.set(point.hour, previousValues);
+            });
+          } else {
+            const currentDates = buildDateRange(start, end);
+            const paymentSeries = await Promise.all(
+              currentDates.map(async (date) => {
+                const [orders, sales] = await Promise.all([
+                  getOrderSplit({ ...paymentBaseParams, start: date, end: date }),
+                  getPaymentSalesSplit({
+                    ...paymentBaseParams,
+                    start: date,
+                    end: date,
+                  }),
+                ]);
+
+                return {
+                  date,
+                  values: {
+                    payment_orders_prepaid: Number(orders?.prepaid_orders || 0),
+                    payment_orders_cod: Number(orders?.cod_orders || 0),
+                    payment_orders_partial: Number(orders?.partially_paid_orders || 0),
+                    payment_sales_prepaid: convertAmount(sales?.prepaid_sales || 0),
+                    payment_sales_cod: convertAmount(sales?.cod_sales || 0),
+                    payment_sales_partial: convertAmount(sales?.partial_sales || 0),
+                  },
+                };
+              }),
+            );
+
+            paymentSeries.forEach(({ date, values }) => {
+              paymentMetricsByDate.set(date, values);
+              const monthKey = String(date).slice(0, 7);
+              const existing = paymentMetricsByMonth.get(monthKey) || {
+                payment_orders_prepaid: 0,
+                payment_orders_cod: 0,
+                payment_orders_partial: 0,
+                payment_sales_prepaid: 0,
+                payment_sales_cod: 0,
+                payment_sales_partial: 0,
+              };
+
+              Object.entries(values).forEach(([key, value]) => {
+                existing[key] = Number(existing[key] || 0) + Number(value || 0);
+              });
+
+              paymentMetricsByMonth.set(monthKey, existing);
+            });
+          }
+        }
+
+        const normalizedPoints = points.map((point) => {
+          let label = point.date;
+          if (viewMode === "hourly") {
+            label = formatHourLabel(point.hour);
+          } else if (point.date) {
+            const dt = new Date(`${point.date}T00:00:00Z`);
+            if (!Number.isNaN(dt.getTime())) {
+              label =
+                viewMode === "monthly"
+                  ? MONTH_NAMES[dt.getUTCMonth()]
+                  : `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
+            }
+          }
+
+          let performanceValue = null;
+          if (hasPerformanceSelected && point.date) {
+            performanceValue =
+              viewMode === "monthly"
+                ? currentPerformanceMap.get(String(point.date).slice(0, 7))
+                : currentPerformanceMap.get(point.date);
+          }
+
+          const paymentMetricValues =
+            hasPaymentCompositeSelected
+              ? viewMode === "hourly"
+                ? paymentMetricsByHour.get(point.hour) || {}
+                : point.date
+                  ? viewMode === "monthly"
+                    ? paymentMetricsByMonth.get(String(point.date).slice(0, 7)) || {}
+                    : paymentMetricsByDate.get(point.date) || {}
+                  : {}
+              : {};
+
+          return {
+            label,
+            date: point.date || null,
+            hour: typeof point.hour === "number" ? point.hour : null,
+            isInProgressHour: Boolean(point.__isInProgressHour),
+            metrics: hasPerformanceSelected || hasPaymentCompositeSelected
+              ? {
+                  ...(point.metrics || {}),
+                  performance: performanceValue,
+                  ...paymentMetricValues,
+                }
+              : point.metrics || {},
+          };
+        });
+
+        const normalizedComparisonPoints = comparisonPoints.map((point) => {
+          let performanceValue = null;
+          if (hasPerformanceSelected && point.date) {
+            performanceValue =
+              viewMode === "monthly"
+                ? previousPerformanceMap.get(String(point.date).slice(0, 7))
+                : previousPerformanceMap.get(point.date);
+          }
+
+          return {
+            date: point.date || null,
+            metrics: hasPerformanceSelected || hasPaymentCompositeSelected
+              ? {
+                  ...(point.metrics || {}),
+                  performance: performanceValue,
+                  ...(viewMode === "hourly"
+                    ? previousPaymentMetricsByHour.get(point.hour) || {}
+                    : {}),
+                }
+              : point.metrics || {},
+          };
+        });
+
+        const data = useWeeklyBuckets
+          ? buildWeeklyBuckets(normalizedPoints, normalizedComparisonPoints)
+          : normalizedPoints.map((point, index) => ({
+              ...point,
+              comparisonMetrics:
+                normalizedComparisonPoints[index]?.metrics || null,
+            }));
+
+        setRangeLabels({
+          current: formatRangeLabel(res.range),
+          previous: formatRangeLabel(res?.comparison?.range),
+        });
+        setChartData(data);
+        setLoading(false);
       } catch {
         if (!cancelled) {
-          setState({
-            labels: [],
-            values: [],
-            comparisonValues: [],
-            points: [],
-            comparisonPoints: [],
-            timezone: 'IST',
-            rangeLabel: '',
-            comparisonLabel: '',
-            error: true,
-          });
+          setChartData([]);
           setLoading(false);
         }
       }
     };
 
     loadData();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    brandKey,
+    compare,
+    compareEnd,
+    compareStart,
+    daysInRange,
+    deviceType,
+    discountCode,
+    end,
+    productId,
+    query?.city,
+    refreshKey,
+    salesChannel,
+    start,
+    useWeeklyBuckets,
+    utmCampaign,
+    utmMedium,
+    utmSource,
+    viewMode,
+    convertAmount,
+    canUseHourlyPaymentTrend,
+    hasPerformanceSelected,
+    hasPaymentCompositeSelected,
+  ]);
 
-    return () => { cancelled = true; };
-  }, [start, end, metric, viewMode, brandKey, refreshKey, utmSource, utmMedium, utmCampaign, salesChannel, productId, compare]);
+  const processedChartData = useMemo(() => {
+    if (selectedDefs.length === 0) return [];
 
-  const config = METRIC_CONFIG[metric] || METRIC_CONFIG.sales;
+    const mapped = chartData.map((point) => {
+      const nextPoint = {
+        label: point.label,
+        hour: point.hour,
+        isInProgressHour: point.isInProgressHour,
+      };
 
-  const showBarLabels = (viewMode === 'daily' || viewMode === 'monthly') && totalDaysSelected > 0 && totalDaysSelected <= 31;
-  const barLabelColor = theme.palette.mode === 'dark'
-    ? theme.palette.grey[100]
-    : theme.palette.text.primary;
+      selectedDefs.forEach((def) => {
+        const value = def.accessor(point.metrics || {});
+        nextPoint[def.id] = value;
+        nextPoint[`${def.id}PrimaryValue`] =
+          point.isInProgressHour && viewMode === "hourly" ? null : value;
+        nextPoint[`${def.id}PrimaryTailValue`] =
+          point.isInProgressHour && viewMode === "hourly" ? value : null;
+      });
 
-  const primaryLabel = state.rangeLabel ? `${config.label} (${state.rangeLabel})` : config.label;
+      if (shouldShowCompare && activeDef) {
+        const currentValue = activeDef.accessor(point.metrics || {});
+        nextPoint.currentValue = currentValue;
+        nextPoint.comparisonValue = point.comparisonMetrics
+          ? activeDef.accessor(point.comparisonMetrics)
+          : null;
+        nextPoint.currentPrimaryValue =
+          point.isInProgressHour && viewMode === "hourly" ? null : currentValue;
+        nextPoint.currentTailValue =
+          point.isInProgressHour && viewMode === "hourly" ? currentValue : null;
+      }
 
-  let compLabelText = 'Prev window';
-  if (state.comparisonLabel) {
-    compLabelText = state.comparisonLabel;
-  } else if (compare === 'last_week') {
-    compLabelText = 'Same day last week';
-  }
-
-  const comparisonLabel = `${config.label} (${compLabelText})`;
-
-  const datasets = [
-    {
-      label: primaryLabel,
-      data: state.values,
-      borderColor: config.color,
-      backgroundColor: config.bg,
-      borderWidth: 2,
-      pointRadius: 2,
-      pointHoverRadius: 4,
-      tension: 0.25,
-    },
-  ];
-
-  if (state.comparisonValues.length) {
-    datasets.push({
-      label: comparisonLabel,
-      data: state.comparisonValues,
-      borderColor: config.color,
-      backgroundColor: 'transparent',
-      borderWidth: 2,
-      borderDash: [6, 4],
-      pointRadius: 1,
-      pointHoverRadius: 3,
-      pointHitRadius: 8,
-      tension: 0.25,
-      hidden: true,
+      return nextPoint;
     });
-  }
 
-  const data = {
-    labels: state.labels,
-    datasets,
-  };
-
-  // Stable key for legend effect dependency (avoids re-running on every render)
-  const dataKey = `${state.labels.length}|${state.values.length}|${state.comparisonValues.length}|${primaryLabel}|${comparisonLabel}`;
-
-  function formatDay(dateStr, isMonthly = false, point = null) {
-    if (!dateStr) return '';
-
-    if (isMonthly && point?.startDate && point?.endDate) {
-      const s = new Date(`${point.startDate}T00:00:00Z`);
-      const e = new Date(`${point.endDate}T00:00:00Z`);
-      if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime())) {
-        const sMonth = MONTH_NAMES[s.getUTCMonth()];
-        const eMonth = MONTH_NAMES[e.getUTCMonth()];
-        const sDay = s.getUTCDate();
-        const eDay = e.getUTCDate();
-        const sYear = s.getUTCFullYear();
-        const eYear = e.getUTCFullYear();
-
-        // If same month and year: "Nov 27 – 30, 2025"
-        if (sMonth === eMonth && sYear === eYear) {
-          return `${sMonth} ${sDay} – ${eDay}, ${sYear}`;
-        }
-        // If same year: "Nov 27 – Dec 26, 2025"
-        if (sYear === eYear) {
-          return `${sMonth} ${sDay} – ${eMonth} ${eDay}, ${sYear}`;
-        }
-        // Different years: "Dec 27, 2024 – Jan 26, 2025"
-        return `${sMonth} ${sDay}, ${sYear} – ${eMonth} ${eDay}, ${eYear}`;
-      }
+    if (viewMode !== "hourly") {
+      return mapped;
     }
 
-    const dt = new Date(`${dateStr}T00:00:00Z`);
-    if (Number.isNaN(dt.getTime())) return dateStr;
-    if (isMonthly) {
-      return `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCFullYear()}`;
+    const tailIndex = mapped.findIndex((point) => point.isInProgressHour);
+    if (tailIndex <= 0) {
+      return mapped;
     }
-    return `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
-  }
 
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-      legend: {
-        display: false,
-        align: 'start',
-        position: 'top',
-        padding: 16,
-        labels: {
-          usePointStyle: true,
-          pointStyle: 'rectRounded',
-          boxWidth: 10,
-          boxHeight: 10,
-          padding: 18,
-          font: { size: 10 },
-          generateLabels: (chart) => {
-            const labels = defaultLegendLabels(chart);
-            return labels.map((item) => ({ ...item, text: `  ${item.text}` }));
-          },
-        },
-      },
-      tooltip: {
-        callbacks: {
-          title: (items) => {
-            if (!items || !items.length) return '';
-            const idx = items[0].dataIndex;
-            if (viewMode === 'daily' || viewMode === 'monthly') {
-              const ds = items[0].datasetIndex;
-              const point = ds === 0 ? state.points[idx] : state.comparisonPoints[idx];
-              return formatDay(point?.date, viewMode === 'monthly', point);
-            }
-            const point = typeof idx === 'number' ? state.points[idx] : null;
-            return point?.label || '';
-          },
-          label: (ctx) => {
-            const value = config.formatter(ctx.parsed.y || 0);
-            const datasetLabel = ctx.dataset?.label || config.label;
-            if (viewMode === 'daily' || viewMode === 'monthly') {
-              return `${datasetLabel}: ${value}`;
-            }
-            const idx = ctx.dataIndex;
-            const label = state.labels[idx] || '';
-            return label ? `${datasetLabel}: ${value} · ${label}` : `${datasetLabel}: ${value}`;
-          },
+    const previousIndex = tailIndex - 1;
+    const enriched = mapped.map((point, index) => {
+      const nextPoint = { ...point };
+
+      selectedDefs.forEach((def) => {
+        if (index === previousIndex || index === tailIndex) {
+          nextPoint[`${def.id}PrimaryTailValue`] = point[def.id];
+          if (index === tailIndex) {
+            nextPoint[`${def.id}PrimaryValue`] = null;
+          }
+        } else {
+          nextPoint[`${def.id}PrimaryTailValue`] = null;
+        }
+      });
+
+      if (shouldShowCompare && activeDef) {
+        if (index === previousIndex || index === tailIndex) {
+          nextPoint.currentTailValue = point.currentValue;
+          if (index === tailIndex) {
+            nextPoint.currentPrimaryValue = null;
+          }
+        } else {
+          nextPoint.currentTailValue = null;
         }
       }
-    },
-    layout: { padding: { top: 12, bottom: 4 } },
-    scales: {
-      x: {
-        grid: { display: false },
-        ticks: {
-          maxRotation: 0,
-          minRotation: 0,
-          autoSkip: true,
-          maxTicksLimit: 12,
-          padding: 2,
-          font: { size: 11 },
-          color: theme.palette.mode === 'dark' ? '#e0e0e0' : '#666',
-        }
-      },
-      y: {
-        grid: { color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' },
-        ticks: {
-          padding: 4,
-          callback: (v) => config.formatter(v),
-          color: theme.palette.mode === 'dark' ? '#e0e0e0' : '#666',
-        }
+
+      return nextPoint;
+    });
+
+    return enriched;
+  }, [activeDef, chartData, selectedDefs, shouldShowCompare, viewMode]);
+
+  const showHourlyTail = useMemo(() => {
+    if (viewMode !== "hourly" || processedChartData.length < 2) return false;
+    return Boolean(processedChartData[processedChartData.length - 1]?.isInProgressHour);
+  }, [processedChartData, viewMode]);
+
+  const visibleDefs = useMemo(
+    () => selectedDefs.filter((def) => !hiddenMetricIds.includes(def.id)),
+    [hiddenMetricIds, selectedDefs],
+  );
+
+  const axisGroups = useMemo(() => {
+    const groups = new Map();
+
+    visibleDefs.forEach((def) => {
+      if (!groups.has(def.axisGroup)) {
+        groups.set(def.axisGroup, {
+          axisGroup: def.axisGroup,
+          unitKind: def.unitKind,
+          defs: [],
+        });
       }
-    }
-  };
+      groups.get(def.axisGroup).defs.push(def);
+    });
 
-  // ...existing code...
+    return Array.from(groups.values()).map((group, index) => {
+      const highlightedDef =
+        group.defs.find(
+          (def) => def.id === activeMetricId || def.parentId === activeMetricId,
+        ) || group.defs[0];
+      const values = processedChartData.flatMap((point) =>
+        group.defs.map((def) => point[def.id]),
+      );
 
-  // Chart ref for legend interaction
-  const chartRef = useRef(null);
+      return {
+        ...group,
+        color: highlightedDef.color,
+        orientation: index === 0 ? "left" : "right",
+        domain: computeAxisDomain(values, group.unitKind),
+      };
+    });
+  }, [activeMetricId, processedChartData, visibleDefs]);
+
+  const shouldTiltDateLabels = processedChartData.length > 30;
+  const useBarChart = chartMode === "bar";
+  const multiChartTitle = activeDef
+    ? `${
+        viewMode === "daily"
+          ? "Day-wise trend"
+          : viewMode === "monthly"
+            ? "Month-wise trend"
+            : "Hour-wise trend"
+      } · ${activeDef.label}`
+    : "Trend";
+
+  const selectedLegendEntries = useMemo(
+    () =>
+      selectedDefs.map((def) => ({
+        id: def.id,
+        label: def.label,
+        color: def.color,
+        active: def.id === activeMetricId || def.parentId === activeMetricId,
+      })),
+    [activeMetricId, selectedDefs],
+  );
+
+  const activeAxisGroups = isMobile
+    ? axisGroups.filter(
+        (group) =>
+          group.defs.some(
+            (def) => def.id === activeMetricId || def.parentId === activeMetricId,
+          ) || axisGroups.length === 1,
+      )
+    : axisGroups;
 
   return (
-    <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-      <CardContent sx={{ minHeight: 320, display: 'flex', flexDirection: 'column' }}>
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 1 }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-            <Typography variant="subtitle2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
-              {viewMode === 'daily' ? 'Day-wise trend' : viewMode === 'monthly' ? 'Month-wise trend' : 'Hour-wise trend'} · {config.label}
+    <Card
+      elevation={0}
+      sx={{
+        borderRadius: isMobile ? 2 : 3,
+        height: isMobile ? "auto" : "380px",
+        minHeight: isMobile ? "340px" : "380px",
+      }}
+    >
+      <CardContent
+        sx={{
+          minHeight: 330,
+          display: "flex",
+          flexDirection: "column",
+          px: 2,
+          py: 3,
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            mb: 3,
+            gap: 2,
+          }}
+        >
+          <Stack spacing={1}>
+            <Typography
+              variant="subtitle2"
+              color="text.secondary"
+              sx={{ fontWeight: 500 }}
+            >
+              {multiChartTitle}
             </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-              Timezone: {state.timezone}
+
+            {shouldShowCompare ? (
+              <Stack
+                direction="row"
+                spacing={isMobile ? 1.5 : 3}
+                alignItems="center"
+                sx={{ flexWrap: "wrap", gap: isMobile ? 1 : 0 }}
+              >
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  alignItems="center"
+                  onClick={() =>
+                    setVisibleRangeLines((prev) =>
+                      prev.includes("primary")
+                        ? prev.filter((entry) => entry !== "primary")
+                        : [...prev, "primary"],
+                    )
+                  }
+                  sx={{ cursor: "pointer", "&:hover": { opacity: 0.8 } }}
+                >
+                  <Box
+                    sx={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: "3px",
+                      bgcolor: visibleRangeLines.includes("primary")
+                        ? "#10b981"
+                        : "transparent",
+                      border: "1px solid",
+                      borderColor: "#10b981",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {visibleRangeLines.includes("primary") && (
+                      <Box
+                        sx={{
+                          width: 6,
+                          height: 6,
+                          bgcolor: "white",
+                          borderRadius: "1px",
+                        }}
+                      />
+                    )}
+                  </Box>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontWeight: 600,
+                      color: visibleRangeLines.includes("primary")
+                        ? "text.primary"
+                        : "text.secondary",
+                    }}
+                  >
+                    {rangeLabels.current}
+                  </Typography>
+                </Stack>
+
+                {rangeLabels.previous && (
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                    onClick={() =>
+                      setVisibleRangeLines((prev) =>
+                        prev.includes("comparison")
+                          ? prev.filter((entry) => entry !== "comparison")
+                          : [...prev, "comparison"],
+                      )
+                    }
+                    sx={{ cursor: "pointer", "&:hover": { opacity: 0.8 } }}
+                  >
+                    <Box
+                      sx={{
+                        width: 14,
+                        height: 14,
+                        borderRadius: "3px",
+                        border: "1px solid",
+                        borderColor: "#10b981",
+                        bgcolor: visibleRangeLines.includes("comparison")
+                          ? "#10b981"
+                          : "transparent",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {visibleRangeLines.includes("comparison") && (
+                        <Box
+                          sx={{
+                            width: 6,
+                            height: 6,
+                            bgcolor: "white",
+                            borderRadius: "1px",
+                          }}
+                        />
+                      )}
+                    </Box>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        fontWeight: 600,
+                        color: visibleRangeLines.includes("comparison")
+                          ? "text.secondary"
+                          : alpha(theme.palette.text.secondary, 0.5),
+                      }}
+                    >
+                      {rangeLabels.previous}
+                    </Typography>
+                  </Stack>
+                )}
+              </Stack>
+            ) : (
+              <SeriesLegend
+                entries={selectedLegendEntries}
+                hiddenKeys={hiddenMetricIds}
+                onToggle={(metricId) =>
+                  setHiddenMetricIds((prev) =>
+                    prev.includes(metricId)
+                      ? prev.filter((entry) => entry !== metricId)
+                      : [...prev, metricId],
+                  )
+                }
+                hoveredKey={hoveredMetric}
+                onHover={setHoveredMetric}
+              />
+            )}
+          </Stack>
+
+          <Stack direction="row" spacing={1}>
+            <FormControl size="small" sx={{ minWidth: 110 }}>
+              <Select
+                value={viewMode}
+                onChange={(event) => setViewMode(event.target.value)}
+                displayEmpty
+                inputProps={{ "aria-label": "View mode" }}
+                sx={{
+                  borderRadius: 2,
+                  height: 30,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  bgcolor: alpha(theme.palette.action.active, 0.04),
+                  "& .MuiOutlinedInput-notchedOutline": { border: "none" },
+                }}
+              >
+                <MenuItem
+                  value="hourly"
+                  disabled={
+                    isLongRange ||
+                    hasPerformanceSelected ||
+                    (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend)
+                  }
+                >
+                  Hourly
+                </MenuItem>
+                <MenuItem value="daily">Daily</MenuItem>
+                {daysInRange >= 30 && <MenuItem value="monthly">Monthly</MenuItem>}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 100 }}>
+              <Select
+                value={chartMode}
+                onChange={(event) => setChartMode(event.target.value)}
+                displayEmpty
+                inputProps={{ "aria-label": "Chart mode" }}
+                sx={{
+                  borderRadius: 2,
+                  height: 30,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  bgcolor: alpha(theme.palette.action.active, 0.04),
+                  "& .MuiOutlinedInput-notchedOutline": { border: "none" },
+                }}
+              >
+                <MenuItem value="line">Line</MenuItem>
+                <MenuItem value="bar" disabled={!canUseBarChart}>
+                  Bar
+                </MenuItem>
+              </Select>
+            </FormControl>
+          </Stack>
+        </Box>
+
+        {loading ? (
+          <Skeleton variant="rounded" width="100%" height={270} />
+        ) : selectedDefs.length === 0 ? (
+          <Box
+            sx={{
+              flexGrow: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Select up to 3 KPIs to view the trend.
             </Typography>
           </Box>
-          <FormControl size="small" sx={{ minWidth: 136 }} variant="outlined">
-            <InputLabel id="trend-view-mode-label" sx={{ fontSize: 12 }}>View</InputLabel>
-            <Select
-              labelId="trend-view-mode-label"
-              id="trend-view-mode"
-              value={viewMode}
-              label="View"
-              onChange={(e) => setViewMode(e.target.value)}
-              MenuProps={{
-                PaperProps: { sx: { borderRadius: 0, mt: 0.5 } },
-                disableScrollLock: true,
-              }}
-              sx={{
-                borderRadius: 999,
-                height: 32,
-                '& .MuiOutlinedInput-notchedOutline': { borderColor: 'divider' },
-                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'text.secondary' },
-                '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'primary.main' },
-                '& .MuiSelect-select': { py: 0.25, px: 1.25, fontSize: 12 },
-                '& .MuiSelect-icon': { fontSize: 18 },
-              }}
-            >
-              <MenuItem value="hourly" sx={{ fontSize: 12, py: 0.5 }}>Hourly</MenuItem>
-              <MenuItem value="daily" sx={{ fontSize: 12, py: 0.5 }}>Day wise</MenuItem>
-              {totalDaysSelected >= 30 && (
-                <MenuItem value="monthly" sx={{ fontSize: 12, py: 0.5 }}>Month wise</MenuItem>
-              )}
-            </Select>
-          </FormControl>
-        </Box>
-        {/* Custom React-rendered legend */}
-        <CustomLegend chartRef={chartRef} dataKey={dataKey} />
-        {loading ? (
-          <Skeleton variant="rounded" width="100%" height={240} />
-        ) : state.error ? (
-          <Typography variant="body2" color="error.main">Failed to load hourly trend.</Typography>
-        ) : state.labels.length === 0 ? (
-          <Typography variant="body2" color="text.secondary">No data available.</Typography>
+        ) : processedChartData.length === 0 ? (
+          <Box
+            sx={{
+              flexGrow: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              No data available.
+            </Typography>
+          </Box>
         ) : (
-          <div style={{ position: 'relative', flexGrow: 1 }}>
-            {(viewMode === 'daily' || viewMode === 'monthly') ? (
-              <Bar
-                ref={chartRef}
-                data={{
-                  labels: state.labels.map(d => {
-                    const dt = new Date(`${d}T00:00:00Z`);
-                    if (viewMode === 'monthly') {
-                      return `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCFullYear()}`;
+          <Box sx={{ width: "100%", height: 270, flexGrow: 1 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              {useBarChart ? (
+                <BarChart
+                  data={processedChartData}
+                  margin={{
+                    top: 24,
+                    right: activeAxisGroups.length > 1 ? 28 : 12,
+                    left: activeAxisGroups.length > 0 ? 12 : 0,
+                    bottom: shouldTiltDateLabels ? 28 : 5,
+                  }}
+                  barGap={8}
+                >
+                  <CartesianGrid
+                    vertical={false}
+                    strokeDasharray="3 3"
+                    stroke={alpha(theme.palette.divider, 0.5)}
+                  />
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={12}
+                    minTickGap={isMobile ? 15 : 0}
+                    interval={isMobile ? "preserveStartEnd" : 0}
+                    tick={
+                      shouldTiltDateLabels
+                        ? {
+                            fontSize: 10,
+                            fill: theme.palette.text.secondary,
+                            angle: -24,
+                            textAnchor: "end",
+                            dy: 8,
+                          }
+                        : { fontSize: 10, fill: theme.palette.text.secondary }
                     }
-                    return `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
-                  }),
-                  datasets: [
-                    {
-                      label: primaryLabel,
-                      data: state.values,
-                      // enable datalabels for primary/current window only
-                      datalabels: { display: showBarLabels },
-                      backgroundColor: config.color,
-                      borderColor: config.color,
-                      borderWidth: 1,
-                      barPercentage: 0.9,
-                      categoryPercentage: 0.8,
-                      borderRadius: 2,
-                    },
-                    ...(state.comparisonValues.length ? [{
-                      label: comparisonLabel,
-                      data: state.comparisonValues,
-                      // explicitly disable datalabels for the previous-window comparison bars
-                      datalabels: { display: false },
-                      backgroundColor: hexToRgba(config.color, 0.25),
-                      borderColor: config.color,
-                      borderWidth: 1,
-                      barPercentage: 0.9,
-                      categoryPercentage: 0.8,
-                      borderRadius: 2,
-                      hidden: true,
-                    }] : []),
-                  ],
-                }}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: {
-                    ...options.plugins,
-                    datalabels: {
-                      display: showBarLabels,
-                      anchor: 'end',
-                      align: 'end',
-                      formatter: (value) => {
-                        const v = value || 0;
-                        if (metric === 'cvr' || metric === 'aov') return config.formatter(v);
-                        return shortNumberLabel(v);
-                      },
-                      color: barLabelColor,
-                      font: {
-                        size: 11,
-                        weight: 600,
-                        family: theme.typography?.fontFamily || 'sans-serif',
-                      },
-                      padding: 6,
-                    },
-                  },
-                  layout: options.layout,
-                  scales: {
-                    x: {
-                      stacked: false,
-                      grid: { color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' },
-                      ticks: { color: theme.palette.mode === 'dark' ? '#e0e0e0' : '#666' },
-                    },
-                    y: {
-                      stacked: false,
-                      grid: { display: false },
-                      ticks: {
-                        callback: (v) => config.formatter(v),
-                        color: theme.palette.mode === 'dark' ? '#e0e0e0' : '#666',
+                    height={shouldTiltDateLabels ? 42 : undefined}
+                  />
+
+                  {shouldShowCompare ? (
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      tickFormatter={activeDef?.compactFormatter}
+                      tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
+                      width={70}
+                      domain={computeAxisDomain(
+                        processedChartData.flatMap((point) => [
+                          point.currentValue,
+                          point.comparisonValue,
+                        ]),
+                        activeDef?.unitKind || "count",
+                      )}
+                    />
+                  ) : (
+                    activeAxisGroups.map((group) => (
+                      <YAxis
+                        key={group.axisGroup}
+                        yAxisId={group.axisGroup}
+                        orientation={group.orientation}
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={8}
+                        tickFormatter={group.defs[0]?.compactFormatter}
+                        tick={{
+                          fontSize: 12,
+                          fill: group.color,
+                          opacity:
+                            hoveredMetric &&
+                            !group.defs.some((def) => def.id === hoveredMetric)
+                              ? 0.4
+                              : 1,
+                        }}
+                        width={70}
+                        domain={group.domain}
+                      />
+                    ))
+                  )}
+
+                  <Tooltip
+                    cursor={{ fill: alpha(theme.palette.divider, 0.2) }}
+                    content={({ active, label, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const point = payload[0]?.payload || {};
+                      return (
+                        <CustomTooltip
+                          active={active}
+                          label={label}
+                          compareMode={shouldShowCompare}
+                          selectedDefs={selectedDefs}
+                          rangeLabels={rangeLabels}
+                          compareFormatter={
+                            activeDef?.formatter || ((value) => String(value ?? 0))
+                          }
+                          compareValue={point.comparisonValue}
+                          currentValue={point.currentValue}
+                          metricValues={point}
+                          hiddenMetricIds={hiddenMetricIds}
+                        />
+                      );
+                    }}
+                  />
+
+                  {shouldShowCompare ? (
+                    <>
+                      <Bar
+                        hide={!visibleRangeLines.includes("comparison")}
+                        dataKey="comparisonValue"
+                        name={rangeLabels.previous || "Previous"}
+                        fill={alpha("#10b981", 0.45)}
+                        radius={[4, 4, 0, 0]}
+                        maxBarSize={26}
+                        onMouseEnter={() => setHoveredMetric("previous")}
+                        onMouseLeave={() => setHoveredMetric(null)}
+                      />
+                      <Bar
+                        hide={!visibleRangeLines.includes("primary")}
+                        dataKey="currentValue"
+                        name={rangeLabels.current || "Current"}
+                        fill="#10b981"
+                        radius={[4, 4, 0, 0]}
+                        maxBarSize={26}
+                        onMouseEnter={() => setHoveredMetric("current")}
+                        onMouseLeave={() => setHoveredMetric(null)}
+                      />
+                    </>
+                  ) : (
+                    visibleDefs.map((def) => {
+                      const muted = hoveredMetric && hoveredMetric !== def.id;
+                      return (
+                        <Bar
+                          key={def.id}
+                          yAxisId={def.axisGroup}
+                          dataKey={`${def.id}PrimaryValue`}
+                          name={def.label}
+                          fill={def.color}
+                          radius={[4, 4, 0, 0]}
+                          maxBarSize={22}
+                          opacity={muted ? 0.28 : 1}
+                          animationDuration={180}
+                          onMouseEnter={() => setHoveredMetric(def.id)}
+                          onMouseLeave={() => setHoveredMetric(null)}
+                        />
+                      );
+                    })
+                  )}
+                </BarChart>
+              ) : (
+                <LineChart
+                  data={processedChartData}
+                  margin={{
+                    top: 18,
+                    right: activeAxisGroups.length > 1 ? 28 : 12,
+                    left: activeAxisGroups.length > 0 ? 12 : 0,
+                    bottom: shouldTiltDateLabels ? 28 : 5,
+                  }}
+                >
+                <CartesianGrid
+                  vertical={false}
+                  strokeDasharray="3 3"
+                  stroke={alpha(theme.palette.divider, 0.5)}
+                />
+                <XAxis
+                  dataKey="label"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={12}
+                  minTickGap={isMobile ? 15 : 0}
+                  interval={isMobile ? "preserveStartEnd" : 0}
+                  tick={
+                    shouldTiltDateLabels
+                      ? {
+                          fontSize: 10,
+                          fill: theme.palette.text.secondary,
+                          angle: -24,
+                          textAnchor: "end",
+                          dy: 8,
+                        }
+                      : { fontSize: 10, fill: theme.palette.text.secondary }
+                  }
+                  height={shouldTiltDateLabels ? 42 : undefined}
+                />
+
+                {shouldShowCompare ? (
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    tickFormatter={activeDef?.compactFormatter}
+                    tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
+                    width={70}
+                    domain={computeAxisDomain(
+                      processedChartData.flatMap((point) => [
+                        point.currentValue,
+                        point.comparisonValue,
+                      ]),
+                      activeDef?.unitKind || "count",
+                    )}
+                  />
+                ) : (
+                  activeAxisGroups.map((group) => (
+                    <YAxis
+                      key={group.axisGroup}
+                      yAxisId={group.axisGroup}
+                      orientation={group.orientation}
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      tickFormatter={group.defs[0]?.compactFormatter}
+                      tick={{
+                        fontSize: 12,
+                        fill: group.color,
+                        opacity:
+                          hoveredMetric &&
+                          !group.defs.some((def) => def.id === hoveredMetric)
+                            ? 0.4
+                            : 1,
+                      }}
+                      width={70}
+                      domain={group.domain}
+                    />
+                  ))
+                )}
+
+                <Tooltip
+                  cursor={{
+                    stroke: theme.palette.divider,
+                    strokeWidth: 1,
+                    strokeDasharray: "4 4",
+                  }}
+                  content={({ active, label, payload }) => {
+                    if (!active || !payload?.length) return null;
+                    const point = payload[0]?.payload || {};
+                    return (
+                      <CustomTooltip
+                        active={active}
+                        label={label}
+                        compareMode={shouldShowCompare}
+                        selectedDefs={selectedDefs}
+                        rangeLabels={rangeLabels}
+                        compareFormatter={
+                          activeDef?.formatter || ((value) => String(value ?? 0))
+                        }
+                        compareValue={point.comparisonValue}
+                        currentValue={point.currentValue}
+                        metricValues={point}
+                        hiddenMetricIds={hiddenMetricIds}
+                      />
+                    );
+                  }}
+                />
+
+                {shouldShowCompare ? (
+                  <>
+                    <Line
+                      type="monotone"
+                      hide={!visibleRangeLines.includes("comparison")}
+                      dataKey="comparisonValue"
+                      name={rangeLabels.previous || "Previous"}
+                      stroke={alpha("#10b981", 0.55)}
+                      strokeWidth={2}
+                      strokeDasharray="6 4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      dot={false}
+                      connectNulls={false}
+                      activeDot={{ r: 4 }}
+                      onMouseEnter={() => setHoveredMetric("previous")}
+                      onMouseLeave={() => setHoveredMetric(null)}
+                    />
+                    <Line
+                      type="monotone"
+                      hide={!visibleRangeLines.includes("primary")}
+                      dataKey="currentPrimaryValue"
+                      name={rangeLabels.current || "Current"}
+                      stroke="#10b981"
+                      strokeWidth={3}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      dot={false}
+                      connectNulls={true}
+                      activeDot={{ r: 5 }}
+                      onMouseEnter={() => setHoveredMetric("current")}
+                      onMouseLeave={() => setHoveredMetric(null)}
+                    />
+                    <Line
+                      type="monotone"
+                      hide={
+                        !visibleRangeLines.includes("primary") || !showHourlyTail
                       }
-                    },
-                  },
-                }}
-                plugins={[legendPadPlugin]}
-              />
-            ) : (
-              <Line ref={chartRef} data={data} options={options} plugins={[legendPadPlugin]} />
-            )}
-          </div>
+                      dataKey="currentTailValue"
+                      name={`${rangeLabels.current || "Current"} (In progress)`}
+                      stroke="#10b981"
+                      strokeDasharray="4 4"
+                      strokeWidth={3}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      dot={false}
+                      connectNulls={false}
+                      activeDot={{ r: 5 }}
+                      onMouseEnter={() => setHoveredMetric("current")}
+                      onMouseLeave={() => setHoveredMetric(null)}
+                    />
+                  </>
+                ) : (
+                  visibleDefs.map((def) => {
+                    const muted = hoveredMetric && hoveredMetric !== def.id;
+                    return (
+                      <Fragment key={def.id}>
+                        <Line
+                          yAxisId={def.axisGroup}
+                          type="monotone"
+                          dataKey={`${def.id}PrimaryValue`}
+                          name={def.label}
+                          stroke={def.color}
+                          strokeWidth={
+                            def.id === activeMetricId || def.parentId === activeMetricId
+                              ? 3.5
+                              : 2.4
+                          }
+                          strokeDasharray={def.strokeDasharray}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          dot={false}
+                          activeDot={{
+                            r:
+                              def.id === activeMetricId ||
+                              def.parentId === activeMetricId
+                                ? 5
+                                : 4,
+                          }}
+                          opacity={muted ? 0.28 : 1}
+                          connectNulls={true}
+                          animationDuration={180}
+                          onMouseEnter={() => setHoveredMetric(def.id)}
+                          onMouseLeave={() => setHoveredMetric(null)}
+                        />
+                        <Line
+                          yAxisId={def.axisGroup}
+                          type="monotone"
+                          dataKey={`${def.id}PrimaryTailValue`}
+                          name={`${def.label} (In progress)`}
+                          stroke={def.color}
+                          strokeWidth={
+                            def.id === activeMetricId || def.parentId === activeMetricId
+                              ? 3.5
+                              : 2.4
+                          }
+                          strokeDasharray="4 4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          dot={false}
+                          activeDot={{
+                            r:
+                              def.id === activeMetricId ||
+                              def.parentId === activeMetricId
+                                ? 5
+                                : 4,
+                          }}
+                          opacity={muted ? 0.28 : 1}
+                          connectNulls={false}
+                          animationDuration={180}
+                          hide={!showHourlyTail}
+                          onMouseEnter={() => setHoveredMetric(def.id)}
+                          onMouseLeave={() => setHoveredMetric(null)}
+                        />
+                      </Fragment>
+                    );
+                  })
+                )}
+                </LineChart>
+              )}
+            </ResponsiveContainer>
+          </Box>
         )}
       </CardContent>
     </Card>
   );
-}
+});

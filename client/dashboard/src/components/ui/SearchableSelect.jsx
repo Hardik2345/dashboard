@@ -43,6 +43,7 @@ export default function SearchableSelect({
     selectSx = {},
     labelSx = {},
     renderValue, // Optional custom renderValue function
+    size, // Extract size
     ...props
 }) {
     const [searchText, setSearchText] = useState('');
@@ -148,8 +149,8 @@ export default function SearchableSelect({
     };
 
     return (
-        <FormControl sx={{ ...sx }}>
-            <InputLabel sx={labelSx}>{label}</InputLabel>
+        <FormControl sx={{ ...sx }} size={size}>
+            <InputLabel sx={labelSx} size={size}>{label}</InputLabel>
             <Select
                 multiple={multiple}
                 value={selectedValues}
@@ -157,6 +158,7 @@ export default function SearchableSelect({
                 label={label}
                 renderValue={renderValue || defaultRenderValue}
                 sx={selectSx}
+                size={size}
                 MenuProps={{
                     autoFocus: false, // Prevent auto focus on first item to allow search focus if we wanted
                     PaperProps: {

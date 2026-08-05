@@ -1,13 +1,38 @@
 version: "3.9"
 
 services:
+  health-monitor-service:
+    container_name: health-monitor-service-main
+    build:
+      context: ./health-monitor-service
+      dockerfile: Dockerfile
+    ports:
+      - "4015:4015"
+    env_file:
+      - .env
+      - ./health-monitor-service/.env
+    environment:
+      HEALTH_MONITOR_PORT: 4015
+      NODE_ENV: production
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    networks:
+      - saas-net
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:4015/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   api-gateway:
-    container_name: api-gateway
+    container_name: api-gateway-main
     build:
       context: ./api-gateway
       dockerfile: Dockerfile
     ports:
-      - "8082:18080"
+      - "8081:18080"
     env_file:
       - .env
       - ./api-gateway/.env
@@ -18,6 +43,8 @@ services:
         condition: service_healthy
       tenant-router:
         condition: service_healthy
+      merchant-requests-service:
+        condition: service_healthy
       alerts-service:
         condition: service_healthy
       analytics-service:
@@ -26,14 +53,14 @@ services:
     networks:
       - saas-net
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:18080/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:18080/health || exit 1"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 20s
 
   auth-service:
-    container_name: auth-service
+    container_name: auth-service-main
     build:
       context: ./api-gateway
       dockerfile: Dockerfile.auth
@@ -47,14 +74,14 @@ services:
     networks:
       - saas-net
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3001/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:3001/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
 
   tenant-router:
-    container_name: tenant-router
+    container_name: tenant-router-main
     build:
       context: ./tenant-router
       dockerfile: Dockerfile
@@ -64,18 +91,22 @@ services:
     environment:
       PORT: 3004
       NODE_ENV: production
+      
     restart: unless-stopped
     networks:
       - saas-net
+      - shared-net
+    
+    
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3004/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:3004/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
 
   alerts-service:
-    container_name: alerts-service
+    container_name: alerts-service-main
     build:
       context: ./alerts-service
       dockerfile: Dockerfile
@@ -89,34 +120,92 @@ services:
     networks:
       - saas-net
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:5005/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:5005/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
+
+  merchant-requests-service:
+    container_name: merchant-requests-service-main
+    build:
+      context: ./merchant-requests-service
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+      - ./merchant-requests-service/.env
+    environment:
+      PORT: 4020
+      NODE_ENV: production
+    restart: unless-stopped
+    networks:
+      - saas-net
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:4020/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   analytics-service:
-    container_name: analytics-service
+    container_name: analytics-service-main
     build:
       context: ./analytics
       dockerfile: Dockerfile
+    ports:
+      - "3006:3006"
     env_file:
       - .env
       - ./analytics/.env
     environment:
       PORT: 3006
       NODE_ENV: production
+
+
+    restart: unless-stopped
+
+    # 🔥 CRITICAL: attach to BOTH networks
+    networks:
+      - saas-net
+      - shared-net
+
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:3006/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  sessions-service:
+    container_name: sessions-service-main
+    build:
+      context: ./sessions-service
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+      - ./sessions-service/.env
+
+    environment:
+      PORT: 4010
+      NODE_ENV: production
+      SESSION_WINDOW_MINUTES: 30
     restart: unless-stopped
     networks:
       - saas-net
+      - shared-net
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3006/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4010/health', res => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));\""]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 10s
 
+
 networks:
   saas-net:
     name: saas-net-staging
     driver: bridge
+
+  # 🔥 ADD THIS
+  shared-net:
+    external: true

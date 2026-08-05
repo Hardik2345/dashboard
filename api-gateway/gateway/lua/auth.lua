@@ -3,10 +3,137 @@ local jwks = require("jwks")
 local cjson = require("cjson")
 local hmac = require("resty.hmac")
 local resty_str = require("resty.string")
+local http = require("resty.http")
 
 local _M = {}
 
+local function is_elevated_role(role)
+    return role == "author" or role == "admin" or role == "super_admin"
+end
+
+local function validate_speed_key_for_top_pdps()
+    local uri = ngx.var.uri or ""
+    if uri ~= "/analytics/metrics/top-pdps" then
+        return false
+    end
+
+    local auth_header = ngx.req.get_headers()["Authorization"]
+    if not auth_header or auth_header == "" then
+        return false
+    end
+
+    local args = ngx.req.get_uri_args() or {}
+    local brand_key = tostring(args["brand_key"] or ""):upper()
+    if brand_key == "" then
+        return false
+    end
+
+    local pipeline_key = os.getenv("X_PIPELINE_KEY") or ""
+    if pipeline_key == "" then
+        ngx.log(ngx.ERR, "[speed-key] X_PIPELINE_KEY not configured")
+        return false
+    end
+
+    local httpc = http.new()
+    httpc:set_timeout(3000)
+
+    local res, err = httpc:request_uri("http://tenant-router:3004/tenant/pipeline/validate-speed-key", {
+        method = "POST",
+        headers = {
+            ["Content-Type"] = "application/json",
+            ["x-pipeline-key"] = pipeline_key,
+            ["Authorization"] = auth_header,
+        },
+        body = cjson.encode({
+            brand_key = brand_key,
+        }),
+    })
+
+    if not res then
+        ngx.log(ngx.ERR, "[speed-key] validation request failed: ", err or "unknown")
+        return false
+    end
+
+    if res.status ~= 200 then
+        return false
+    end
+
+    local ok, payload = pcall(cjson.decode, res.body or "{}")
+    if not ok or not payload or payload.valid ~= true then
+        return false
+    end
+
+    ngx.req.set_header("x-speed-key-validated", "true")
+    ngx.req.set_header("x-brand-id", tostring(payload.brand_key or brand_key):upper())
+    return true
+end
+
 function _M.authenticate()
+    if validate_speed_key_for_top_pdps() then
+        return
+    end
+
+    -- 0. Check for Push Token Bypass (for notification receiver)
+    local push_token = ngx.req.get_headers()["x-push-token"]
+    local secret_push_token = os.getenv("PUSH_TOKEN") or "push@notify321"
+
+    if push_token and push_token ~= "" and secret_push_token and secret_push_token ~= "" then
+        if push_token == secret_push_token then
+             -- Only allow bypass for the receive endpoint
+             if ngx.var.uri == "/push/receive" then
+                ngx.req.set_header("x-user-id", "notification-service")
+                ngx.req.set_header("x-role", "system")
+                return
+             end
+        end
+    end
+
+    -- 0.1 Check for Pipeline Key Bypass
+    local pipeline_key = ngx.req.get_headers()["x-pipeline-key"]
+    local secret_pipeline_key = os.getenv("X_PIPELINE_KEY")
+    local auth_header_env = os.getenv("PIPELINE_AUTH_HEADER")
+
+    local is_pipeline_call = false
+    if pipeline_key and pipeline_key ~= "" then
+        if secret_pipeline_key and secret_pipeline_key ~= "" and pipeline_key == secret_pipeline_key then
+            is_pipeline_call = true
+        end
+        if auth_header_env and auth_header_env ~= "" and pipeline_key == auth_header_env then
+            is_pipeline_call = true
+        end
+    end
+
+    if is_pipeline_call then
+        local uri = ngx.var.uri or ""
+        local method = ngx.req.get_method()
+
+        local is_onboard_logs_endpoint =
+            method == "POST" and (
+                uri == "/tenant/onboard/logs" or
+                uri == "/tenant/onboard/logs/" or
+                uri == "/tenant/tenant-onboard/logs" or
+                uri == "/tenant/tenant-onboard/logs/" or
+                uri == "/api/tenant/onboard/logs" or
+                uri == "/api/tenant/onboard/logs/" or
+                uri == "/api/tenant/tenant-onboard/logs" or
+                uri == "/api/tenant/tenant-onboard/logs/"
+            )
+
+        -- Allow bypass for pipeline-owned tenant routes + onboarding log ingestion endpoints.
+        if uri:find("^/tenant/resolve") or 
+           uri:find("^/tenant/pipeline/") or 
+           uri:find("^/tenant/create") or 
+           uri:find("^/tenant/brands") or 
+           uri:find("^/analytics/admin/api%-keys") or 
+           uri:find("^/analytics/api%-keys") or
+           is_onboard_logs_endpoint then
+            ngx.req.set_header("x-user-id", "pipeline-service")
+            ngx.req.set_header("x-role", "system")
+            return
+        end
+    end
+
+
     -- 1. Extract Bearer Token
     local auth_header = ngx.req.get_headers()["Authorization"]
     if not auth_header then
@@ -117,7 +244,7 @@ function _M.authenticate()
 
     -- Validate Membership (authors/admins are global; viewers must have brand access)
     local role = claims.role
-    local allowed = role == "author"
+    local allowed = is_elevated_role(role)
     if not allowed and claims.brand_ids then
         for _, b_id in ipairs(claims.brand_ids) do
             if tostring(b_id):upper() == target_brand_id then
@@ -142,7 +269,7 @@ function _M.authenticate()
 
     -- Admin Route Protection (author is the elevated role)
     if ngx.var.uri:find("^/admin") then
-        if role ~= "author" then
+        if not is_elevated_role(role) then
             ngx.status = 403
             ngx.say(cjson.encode({error = "Admin access required"}))
             ngx.exit(403)
@@ -155,6 +282,27 @@ function _M.authenticate()
     ngx.req.set_header("x-role", role)
     if claims.email then
         ngx.req.set_header("x-email", claims.email)
+    end
+    
+    -- 8.1 Inject Permissions for target brand
+    local permissions = {}
+    if is_elevated_role(role) then
+        permissions = {"all"}
+    elseif claims.memberships then
+        for _, m in ipairs(claims.memberships) do
+            if tostring(m.brand_id):upper() == target_brand_id then
+                permissions = m.permissions or {}
+                break
+            end
+        end
+    end
+    ngx.req.set_header("x-permissions", table.concat(permissions, ","))
+    if claims.brand_ids then
+        local normalized_brand_ids = {}
+        for _, b_id in ipairs(claims.brand_ids) do
+            table.insert(normalized_brand_ids, tostring(b_id):upper())
+        end
+        ngx.req.set_header("x-brand-ids", table.concat(normalized_brand_ids, ","))
     end
 
     -- 9. Gateway-signed header to prevent spoofing downstream

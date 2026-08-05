@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { randomUUID } = require('crypto');
+const { AUTH_ROLES } = require('../services/rbac.service');
 
 const BrandMembershipSchema = new mongoose.Schema({
   brand_id: {
@@ -15,7 +16,48 @@ const BrandMembershipSchema = new mongoose.Schema({
   permissions: {
     type: [String],
     default: ["all"],
-    enum: ["all", "product_filter", "utm_filter", "web_vitals", "payment_split_order", "payment_split_sales"]
+    enum: [
+      "all",
+      "overall_snapshot",
+      "requests_panel",
+      "requests_timeline",
+      "bundles_panel",
+      "inventory_panel",
+      "daily_funnel_panel",
+      "utm_funnel_table",
+      "product_filter",
+      "utm_filter",
+      "product_utm_filter_sync",
+      "discount_filter",
+      "dashboard_layout_customize",
+      "session_analytics",
+      "web_vitals",
+      "payment_split_order",
+      "payment_split_sales",
+      "traffic_split",
+      "sales_channel_filter",
+      "device_type_filter",
+      "ci_events",
+      "rto_kpi",
+      "sessions_drop_off_funnel",
+      "product_conversion",
+      "compare_mode",
+      "multiselectable_kpi_cards",
+      "product_conversion:landing_page_path",
+      "product_conversion:sessions",
+      "product_conversion:atc",
+      "product_conversion:atc_rate",
+      "product_conversion:orders",
+      "product_conversion:sales",
+      "product_conversion:cvr",
+      "product_conversion:drr",
+      "product_conversion:doh",
+      "product_table_filters",
+      "product_table_filters:inventory",
+      "product_table_filters:page_type",
+      "product_table_filters:product_types",
+      "product_table_filters:sort_filter",
+    ],
   }
 }, { _id: false });
 
@@ -44,7 +86,7 @@ const GlobalUserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['author', 'viewer'],
+    enum: AUTH_ROLES,
     default: 'viewer'
   },
   brand_memberships: {
