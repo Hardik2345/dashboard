@@ -1,0 +1,35 @@
+name: Deploy Main to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  deployments: write
+
+jobs:
+  approval:
+    name: Await deployment approval
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Await manual approval in the production environment
+        run: echo "A repository administrator must approve this deployment via the production environment gate."
+
+  deploy:
+    needs: approval
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/dashboard-main/dashboard/.github/workflows
+            ./deploy-main.sh

@@ -27,6 +27,10 @@ const RefreshTokenSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    revoked_at: {
+        type: Date,
+        default: null
+    },
     created_at: {
         type: Date,
         default: Date.now
@@ -39,7 +43,8 @@ const RefreshTokenSchema = new mongoose.Schema({
 });
 
 // Index for quick lookup by token_hash or validation
-RefreshTokenSchema.index({ token_hash: 1 });
+// Note: _id is already indexed by default
+RefreshTokenSchema.index({ token_hash: 1 }, { unique: true });
 RefreshTokenSchema.index({ user_id: 1 });
 
 module.exports = mongoose.model('RefreshToken', RefreshTokenSchema);

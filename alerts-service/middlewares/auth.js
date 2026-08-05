@@ -1,6 +1,6 @@
 function requireAuthor(req, res, next) {
   const role = (req.headers['x-role'] || req.headers['x-user-role'] || '').toString().toLowerCase();
-  if (role !== 'author') {
+  if (role !== 'author' && role !== 'super_admin' && role !== 'admin') {
     return res.status(403).json({ error: 'Forbidden' });
   }
   return next();

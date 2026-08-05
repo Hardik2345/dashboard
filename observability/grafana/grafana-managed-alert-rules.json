@@ -1,0 +1,118 @@
+{
+  "groupName": "production-core",
+  "intervalSeconds": 30,
+  "rules": [
+    {
+      "uid": "prod-service-down-critical",
+      "title": "ServiceDownCritical",
+      "expr": "up{job=~\"auth-service|analytics-service|alerts-service|tenant-router|sessions-service|api-gateway\"} == bool 0",
+      "for": "2m",
+      "severity": "critical",
+      "summary": "Core service scrape is down: {{ $labels.job }}"
+    },
+    {
+      "uid": "prod-high-5xx-rate-critical",
+      "title": "High5xxRateCritical",
+      "expr": "(\n  sum by (service) (rate(http_requests_total{status=~\"5..\"}[5m]))\n  /\n  sum by (service) (rate(http_requests_total[5m]))\n) > 0.02\nand\nsum by (service) (increase(http_requests_total[5m])) >= 20",
+      "for": "5m",
+      "severity": "critical",
+      "summary": "High 5xx rate on {{ $labels.service }}"
+    },
+    {
+      "uid": "prod-high-latency-warning",
+      "title": "HighLatencyWarning",
+      "expr": "histogram_quantile(\n  0.95,\n  sum by (service, le) (rate(http_request_duration_seconds_bucket[10m]))\n) > 2",
+      "for": "10m",
+      "severity": "warning",
+      "summary": "High p95 latency on {{ $labels.service }}"
+    },
+    {
+      "uid": "prod-auth-login-failure-critical",
+      "title": "AuthLoginFailureSpikeCritical",
+      "expr": "increase(auth_login_total{result=\"error\"}[5m]) > 5\nor\nincrease(auth_refresh_total{result=~\"error|invalid_token\"}[5m]) > 10",
+      "for": "5m",
+      "severity": "critical",
+      "summary": "Auth login or refresh failures spiking"
+    },
+    {
+      "uid": "prod-auth-token-reuse-critical",
+      "title": "AuthTokenReuseCritical",
+      "expr": "increase(auth_token_reuse_total[5m]) > 0",
+      "for": "0m",
+      "severity": "critical",
+      "summary": "Refresh token reuse detected"
+    },
+    {
+      "uid": "prod-tenant-routing-unavailable-critical",
+      "title": "TenantRoutingUnavailableCritical",
+      "expr": "increase(tenant_route_unavailable_total[5m]) > 0",
+      "for": "2m",
+      "severity": "critical",
+      "summary": "Tenant routing unavailable for {{ $labels.brand_key }}"
+    },
+    {
+      "uid": "prod-tenant-serving-stale-warning",
+      "title": "TenantServingStaleWarning",
+      "expr": "increase(tenant_route_stale_served_total[10m]) > 0",
+      "for": "0m",
+      "severity": "warning",
+      "summary": "Tenant-router served stale metadata for {{ $labels.brand_key }}"
+    },
+    {
+      "uid": "prod-fcm-delivery-critical",
+      "title": "FCMDeliveryCritical",
+      "expr": "(\n  sum(rate(fcm_send_total{result=~\"failure|error|not_configured\"}[10m]))\n  /\n  sum(rate(fcm_send_total[10m]))\n) > 0.25\nor\nincrease(fcm_send_total{result=~\"error|not_configured\"}[10m]) > 0",
+      "for": "10m",
+      "severity": "critical",
+      "summary": "FCM delivery failure rate is high"
+    },
+    {
+      "uid": "prod-fcm-zero-tokens-warning",
+      "title": "FCMZeroTokensWarning",
+      "expr": "fcm_registered_tokens == 0",
+      "for": "15m",
+      "severity": "warning",
+      "summary": "No FCM tokens registered"
+    },
+    {
+      "uid": "prod-inventory-cache-stale-critical",
+      "title": "InventoryCacheStaleCritical",
+      "expr": "time() - max(inventory_cache_refresh_last_success_timestamp_seconds) > 2700",
+      "for": "5m",
+      "severity": "critical",
+      "summary": "Inventory cache has not refreshed successfully for 45 minutes"
+    },
+    {
+      "uid": "prod-inventory-cache-brand-failure-warning",
+      "title": "InventoryCacheBrandFailureWarning",
+      "expr": "increase(inventory_cache_refresh_failures_total[30m]) > 0",
+      "for": "0m",
+      "severity": "warning",
+      "summary": "Inventory cache refresh failed for {{ $labels.brand }}"
+    },
+    {
+      "uid": "prod-db-redis-unavailable-critical",
+      "title": "DBOrRedisUnavailableCritical",
+      "expr": "increase(mongo_connection_errors_total[3m]) > 0\nor increase(mysql_connection_errors_total[3m]) > 0\nor increase(redis_connection_errors_total[3m]) > 0",
+      "for": "3m",
+      "severity": "critical",
+      "summary": "Database or Redis connectivity errors detected"
+    },
+    {
+      "uid": "prod-container-restart-critical",
+      "title": "ContainerRestartCritical",
+      "expr": "changes(container_start_time_seconds{name=~\".*-main\"}[10m]) > 2",
+      "for": "0m",
+      "severity": "critical",
+      "summary": "Container restarted repeatedly: {{ $labels.name }}"
+    },
+    {
+      "uid": "prod-host-resource-warning",
+      "title": "HostResourceWarning",
+      "expr": "(\n  1 - (node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay\"})\n) > 0.80\nor\n(\n  1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)\n) > 0.85\nor\n(\n  1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[15m]))\n) > 0.90",
+      "for": "15m",
+      "severity": "warning",
+      "summary": "Host resource usage is high"
+    }
+  ]
+}

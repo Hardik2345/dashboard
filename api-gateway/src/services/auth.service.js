@@ -4,12 +4,88 @@ const TokenService = require('./token.service');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const DomainRule = require('../models/DomainRule.model');
+const {
+    fetchAllBrandIds,
+    isElevatedRole,
+    normalizeBrandIds,
+    normalizePermissions,
+    normalizePrimaryBrand,
+    normalizeRole,
+} = require('./rbac.service');
 
 const REFRESH_TOKEN_EXPIRY_DAYS = process.env.REFRESH_TOKEN_EXPIRY_DAYS || 7;
 
+// --- Rotation grace cache ---------------------------------------------------
+// Maps a just-consumed refresh token_hash -> the raw child token it rotated to.
+// A concurrent/benign double-refresh (e.g. two tabs presenting the same cookie)
+// is served the SAME child instead of being treated as token reuse. Entries
+// self-expire after ROTATION_GRACE_MS.
+// NOTE: in-memory, so it only dedupes within a single auth-service instance.
+// The atomic claim below is what guarantees correctness across instances; if you
+// run >1 instance, back this cache with Redis so losers on another instance can
+// still resolve the child token instead of getting a reuse error.
+const recentRotations = new Map();
+
+// Grace window length. Read dynamically so it can be tuned per environment
+// (e.g. set REFRESH_ROTATION_GRACE_MS=0 to disable and get strict reuse detection).
+function rotationGraceMs() {
+    const raw = process.env.REFRESH_ROTATION_GRACE_MS;
+    const n = raw !== undefined ? Number(raw) : 60 * 1000;
+    return Number.isFinite(n) && n >= 0 ? n : 60 * 1000;
+}
+
+function rememberRotation(consumedHash, rawChild) {
+    const ttl = rotationGraceMs();
+    recentRotations.set(consumedHash, { rawChild, at: Date.now() });
+    const timer = setTimeout(() => recentRotations.delete(consumedHash), ttl);
+    if (timer.unref) timer.unref();
+}
+
+function getRecentRotation(consumedHash) {
+    const entry = recentRotations.get(consumedHash);
+    if (!entry) return null;
+    if (Date.now() - entry.at >= rotationGraceMs()) {
+        recentRotations.delete(consumedHash);
+        return null;
+    }
+    return entry;
+}
+
 class AuthService {
+    static async filterUserToActiveTenants(user) {
+        if (!user) return user;
+
+        const normalizedUser =
+            typeof user.toObject === 'function' ? user.toObject() : { ...user };
+
+        const activeBrandIds = new Set(await fetchAllBrandIds());
+        const memberships = Array.isArray(normalizedUser.brand_memberships)
+            ? normalizedUser.brand_memberships
+            : [];
+
+        const filteredMemberships = memberships.filter(
+            (membership) =>
+                membership &&
+                membership.status === 'active' &&
+                activeBrandIds.has((membership.brand_id || '').toString().trim().toUpperCase()),
+        );
+
+        const nextPrimaryBrandId = activeBrandIds.has(
+            (normalizedUser.primary_brand_id || '').toString().trim().toUpperCase(),
+        )
+            ? normalizedUser.primary_brand_id
+            : filteredMemberships[0]?.brand_id || '';
+
+        return {
+            ...normalizedUser,
+            primary_brand_id: nextPrimaryBrandId,
+            brand_memberships: filteredMemberships,
+        };
+    }
+
     static async issueTokensForUser(user, deviceId = null) {
-        const accessToken = TokenService.generateAccessToken(user);
+        const filteredUser = await this.filterUserToActiveTenants(user);
+        const accessToken = TokenService.generateAccessToken(filteredUser);
         const { tokenId, rawToken, tokenHash } = TokenService.generateRefreshToken();
 
         const expiresAt = new Date();
@@ -79,25 +155,67 @@ class AuthService {
         };
     }
 
-    static normalizeBrands(brand_ids = [], primary_brand_id = null, role = 'viewer') {
-        const brandIds = Array.isArray(brand_ids) ? [...new Set(brand_ids.map(b => (b || '').toUpperCase()).filter(Boolean))] : [];
-        const primary = primary_brand_id ? primary_brand_id.toUpperCase() : null;
+    static normalizeLegacyBrands(brand_ids = [], primary_brand_id = null, role = 'viewer') {
+        const brandIds = normalizeBrandIds(brand_ids);
+        const primary = normalizePrimaryBrand(primary_brand_id);
         if (!primary) throw new Error('primary_brand_id required');
         if (!brandIds.includes(primary)) brandIds.push(primary);
         if (role === 'author' && brandIds.length === 0) brandIds.push(primary);
         return { brandIds, primary };
     }
 
+    static async buildProvisionedMemberships(role, brand_ids = [], primary_brand_id = null, permissions = ['all']) {
+        const normalizedRole = normalizeRole(role);
+
+        if (normalizedRole === 'super_admin') {
+            const brandIds = await fetchAllBrandIds();
+            return {
+                role: normalizedRole,
+                primary: brandIds[0],
+                memberships: brandIds.map((brandId) => ({
+                    brand_id: brandId,
+                    status: 'active',
+                    permissions: ['all']
+                }))
+            };
+        }
+
+        if (normalizedRole === 'brand_user') {
+            const brandIds = normalizeBrandIds([...normalizeBrandIds(brand_ids), normalizePrimaryBrand(primary_brand_id)]);
+            if (brandIds.length !== 1) throw new Error('brand_user requires exactly one brand');
+            const safePermissions = normalizePermissions(permissions);
+            return {
+                role: normalizedRole,
+                primary: brandIds[0],
+                memberships: brandIds.map((brandId) => ({
+                    brand_id: brandId,
+                    status: 'active',
+                    permissions: safePermissions
+                }))
+            };
+        }
+
+        const { brandIds, primary } = this.normalizeLegacyBrands(brand_ids, primary_brand_id, normalizedRole);
+        const perms = normalizedRole === 'author' ? ['all'] : (permissions && permissions.length ? permissions : ['all']);
+        return {
+            role: normalizedRole,
+            primary,
+            memberships: brandIds.map((brandId) => ({
+                brand_id: brandId,
+                status: 'active',
+                permissions: perms
+            }))
+        };
+    }
+
     static async provisionUserFromRule(email, rule) {
         const normalizedEmail = (email || '').toLowerCase();
-        const role = rule.role || 'viewer';
-        const { brandIds, primary } = this.normalizeBrands(rule.brand_ids, rule.primary_brand_id, role);
-        const perms = role === 'author' ? ['all'] : (rule.permissions && rule.permissions.length ? rule.permissions : ['all']);
-        const memberships = brandIds.map((bid) => ({
-            brand_id: bid,
-            status: 'active',
-            permissions: perms
-        }));
+        const assignment = await this.buildProvisionedMemberships(
+            rule.role || 'viewer',
+            rule.brand_ids,
+            rule.primary_brand_id,
+            rule.permissions,
+        );
 
         // Upsert atomically to avoid race duplicates
         const password_hash = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
@@ -108,9 +226,9 @@ class AuthService {
                     password_hash
                 },
                 $set: {
-                    role,
-                    primary_brand_id: primary,
-                    brand_memberships: memberships,
+                    role: assignment.role,
+                    primary_brand_id: assignment.primary,
+                    brand_memberships: assignment.memberships,
                     status: rule.status || 'active',
                 },
             },
@@ -154,7 +272,8 @@ class AuthService {
         if (user.status !== 'active') {
             throw new Error('User suspended');
         }
-        const hasActiveBrand = user.role === 'author' || user.brand_memberships.some(m => m.status === 'active');
+        user = await this.filterUserToActiveTenants(user);
+        const hasActiveBrand = isElevatedRole(user.role) || user.brand_memberships.some(m => m.status === 'active');
         if (!hasActiveBrand) {
             throw new Error('No active brand memberships');
         }
@@ -201,7 +320,8 @@ class AuthService {
         }
 
         if (user.status !== 'active') throw new Error('User suspended');
-        const hasActiveBrand = user.role === 'author' || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
+        user = await this.filterUserToActiveTenants(user);
+        const hasActiveBrand = isElevatedRole(user.role) || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
         if (!hasActiveBrand) throw new Error('No active brand memberships');
 
         try {
@@ -218,44 +338,76 @@ class AuthService {
      * @param {String} rawRefreshToken 
      */
     static async refresh(rawRefreshToken) {
+        const logger = require('../utils/logger');
+
         if (!rawRefreshToken) {
             throw new Error('Token required');
         }
-        const inputHash = require('crypto').createHash('sha256').update(rawRefreshToken).digest('hex');
+        const inputHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
 
         const tokenDoc = await RefreshToken.findOne({ token_hash: inputHash });
 
-        // 2. Edge Case: Token reused (Revoked token used)
-        if (tokenDoc && tokenDoc.revoked) {
-            await this.revokeChain(tokenDoc._id);
-            throw new Error('Token reused - Security Alert');
-        }
-
-        // 3. Validation
+        // 1. Validation
         if (!tokenDoc) {
+            logger.warn('AuthService', 'Refresh failed - Token not found in DB', { inputHash });
             throw new Error('Invalid token');
         }
         if (new Date() > tokenDoc.expires_at) {
+            logger.warn('AuthService', 'Refresh failed - Token expired', {
+                tokenId: tokenDoc._id,
+                expiresAt: tokenDoc.expires_at
+            });
             throw new Error('Token expired');
         }
 
         // 4. Get User
-        const user = await GlobalUser.findById(tokenDoc.user_id);
+        let user = await GlobalUser.findById(tokenDoc.user_id);
         if (!user || user.status !== 'active') {
             throw new Error('User suspended or not found');
         }
+        user = await this.filterUserToActiveTenants(user);
         // Check membership suspension again
-        const hasActiveBrand = user.role === 'author' || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
+        const hasActiveBrand = isElevatedRole(user.role) || (user.brand_memberships && user.brand_memberships.some(m => m.status === 'active'));
         if (!user.brand_memberships || !hasActiveBrand) {
             throw new Error('Membership suspended');
         }
 
-        // 5. Rotate
-        // Revoke old
-        tokenDoc.revoked = true;
-        await tokenDoc.save();
+        // 3. Atomic claim: flip revoked false->true exactly once. Only the winner
+        // rotates; concurrent callers get `null` here and fall back to the grace
+        // cache below. This eliminates duplicate children from the same parent.
+        const claimed = await RefreshToken.findOneAndUpdate(
+            { _id: tokenDoc._id, revoked: false },
+            { $set: { revoked: true, revoked_at: new Date() } },
+            { new: true }
+        );
 
-        // Issue new
+        if (!claimed) {
+            // We lost the race (token already revoked). Benign concurrent refresh?
+            const grace = getRecentRotation(inputHash);
+            if (grace) {
+                logger.info('AuthService', 'Rotation grace hit - returning existing child token', {
+                    tokenId: tokenDoc._id,
+                    userId: tokenDoc.user_id
+                });
+                return {
+                    accessToken: TokenService.generateAccessToken(user),
+                    refreshToken: grace.rawChild
+                };
+            }
+
+            // Revoked, and NOT a rotation we just performed => genuine replay of an
+            // old token. This is the real security signal.
+            logger.warn('AuthService', 'Token reuse detected - Triggering chain revocation', {
+                tokenId: tokenDoc._id,
+                userId: tokenDoc.user_id,
+                revokedAt: tokenDoc.revoked_at
+            });
+            require('../observability').recordAuthTokenReuse();
+            await this.revokeChain(tokenDoc._id);
+            throw new Error('Token reused - Security Alert');
+        }
+
+        // 4. We own the rotation. Issue exactly one child.
         const { tokenId, rawToken, tokenHash } = TokenService.generateRefreshToken();
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + parseInt(REFRESH_TOKEN_EXPIRY_DAYS));
@@ -271,6 +423,16 @@ class AuthService {
 
         await newRefreshToken.save();
 
+        // Remember this rotation so concurrent presenters of the same parent get
+        // this exact child (idempotent) instead of a reuse error.
+        rememberRotation(inputHash, rawToken);
+
+        logger.info('AuthService', 'Token rotated successfully', {
+            oldTokenId: tokenDoc._id,
+            newTokenId: tokenId,
+            userId: user._id
+        });
+
         const accessToken = TokenService.generateAccessToken(user);
 
         return {
@@ -280,10 +442,17 @@ class AuthService {
     }
 
     static async revokeChain(ancestorId) {
-        // Find the token that claims to be rotated from this ancestor
-        const child = await RefreshToken.findOne({ rotated_from: ancestorId });
-        if (child) {
+        const logger = require('../utils/logger');
+        // Follow ALL branches - a corrupted history may have multiple children
+        // pointing at the same ancestor. findOne would miss the others.
+        const children = await RefreshToken.find({ rotated_from: ancestorId });
+        for (const child of children) {
+            logger.warn('AuthService', 'Revoking child token in chain', {
+                tokenId: child._id,
+                userId: child.user_id
+            });
             child.revoked = true;
+            if (!child.revoked_at) child.revoked_at = new Date();
             await child.save();
             // Recurse
             await this.revokeChain(child._id);
@@ -291,16 +460,30 @@ class AuthService {
     }
 
     static async logout(rawRefreshToken) {
-        const inputHash = require('crypto').createHash('sha256').update(rawRefreshToken).digest('hex');
+        const inputHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
         const tokenDoc = await RefreshToken.findOne({ token_hash: inputHash });
         if (tokenDoc) {
+            const logger = require('../utils/logger');
+            logger.info('AuthService', 'Explicit logout - Revoking token', {
+                tokenId: tokenDoc._id,
+                userId: tokenDoc.user_id
+            });
             tokenDoc.revoked = true;
+            tokenDoc.revoked_at = new Date();
             await tokenDoc.save();
         }
     }
 
     static async revokeAllRefreshTokensForUser(userId) {
-        await RefreshToken.updateMany({ user_id: userId }, { revoked: true });
+        const logger = require('../utils/logger');
+        const result = await RefreshToken.updateMany(
+            { user_id: userId, revoked: false },
+            { $set: { revoked: true, revoked_at: new Date() } }
+        );
+        logger.warn('AuthService', 'Revoked all tokens for user', {
+            userId,
+            modifiedCount: result.modifiedCount
+        });
     }
 }
 

@@ -5,14 +5,30 @@ const GlobalUser = require('../models/GlobalUser.model');
 const crypto = require('crypto');
 const AdminUserService = require('../services/adminUser.service');
 const AdminDomainRuleService = require('../services/adminDomainRule.service');
+const {
+    recordAuthLogin,
+    recordAuthRefresh,
+    captureError,
+} = require('../observability');
+const { isElevatedRole } = require('../services/rbac.service');
 
+const RAW_COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'lax').toString().trim().toLowerCase();
+const COOKIE_SAMESITE = (RAW_COOKIE_SAMESITE === 'none' || RAW_COOKIE_SAMESITE === 'lax' || RAW_COOKIE_SAMESITE === 'strict')
+    ? RAW_COOKIE_SAMESITE
+    : 'lax';
+
+const COOKIE_SECURE = COOKIE_SAMESITE === 'none' ? true : process.env.NODE_ENV === 'production';
+
+//fixed cookie options for refresh token cookie (httpOnly, secure in prod, sameSite based on env var, 7 day expiry)
 const COOKIE_OPTIONS = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'Lax',
+    secure: COOKIE_SECURE,
+    sameSite: COOKIE_SAMESITE,
     path: '/', // ensure refresh cookie is sent on /api/auth/* via proxy
     maxAge: 7 * 24 * 60 * 60 * 1000
 };
+
+logger.info('AuthController', 'Cookie config initialized', { samesite: COOKIE_SAMESITE, secure: COOKIE_SECURE });
 
 exports.login = async (req, res) => {
     try {
@@ -20,6 +36,13 @@ exports.login = async (req, res) => {
         logger.info('AuthController', 'Login request received', { email, ip: req.ip });
 
         const result = await AuthService.login(req.body.email, req.body.password, req.headers['user-agent']);
+        recordAuthLogin('success');
+
+        logger.info('AuthController', 'Login success, setting cookie', {
+            origin: req.headers.origin,
+            cookieOptions: COOKIE_OPTIONS,
+            hasRefreshToken: !!result.refreshToken
+        });
 
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
         logger.info('AuthController', 'Login response sent', { email });
@@ -28,6 +51,10 @@ exports.login = async (req, res) => {
             user: result.user
         });
     } catch (err) {
+        recordAuthLogin(err.message === 'Invalid credentials' ? 'invalid_credentials' : 'error');
+        if (err.message !== 'Invalid credentials') {
+            captureError(err, req, { type: 'auth_login' });
+        }
         logger.error('AuthController', 'Login error', { error: err.message });
         if (err.message === 'Invalid credentials') return res.status(401).json({ error: 'Invalid credentials' });
         if (err.message === 'User suspended') return res.status(403).json({ error: 'User suspended' });
@@ -75,15 +102,42 @@ exports.refresh = async (req, res) => {
     try {
         logger.info('AuthController', 'Refresh request received', { ip: req.ip });
         const refreshToken = req.cookies.refresh_token;
-        if (!refreshToken) return res.status(401).json({ error: 'Refresh token required' });
+
+        if (!refreshToken) {
+            logger.warn('AuthController', 'Refresh failed - No refresh_token found', {
+                cookies: Object.keys(req.cookies || {}),
+                ip: req.ip
+            });
+            recordAuthRefresh('missing_token');
+            return res.status(401).json({ error: 'Refresh token required' });
+        }
 
         const result = await AuthService.refresh(refreshToken);
+        recordAuthRefresh('success');
+
+        logger.info('AuthController', 'Refresh success, setting cookie', {
+            origin: req.headers.origin,
+            cookieOptions: COOKIE_OPTIONS
+        });
 
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
         logger.info('AuthController', 'Refresh success');
-        res.json({ access_token: result.accessToken });
+        res.json({
+            access_token: result.accessToken
+        });
     } catch (err) {
+        const refreshResult =
+            err.message === 'Token reused - Security Alert' || err.message === 'Token reuse detected'
+                ? 'token_reuse'
+                : err.message === 'Invalid token' || err.message === 'Token expired'
+                    ? 'invalid_token'
+                    : 'error';
+        recordAuthRefresh(refreshResult);
+        if (refreshResult === 'token_reuse' || refreshResult === 'error') {
+            captureError(err, req, { type: 'auth_refresh', result: refreshResult });
+        }
         logger.error('AuthController', 'Refresh error', { error: err.message });
+        res.clearCookie('refresh_token', { ...COOKIE_OPTIONS, maxAge: 0 });
         // "Revoked token -> 401", "Expired token -> 401", "User suspended -> 403"
         if (err.message === 'Token reuse detected' || err.message === 'Token reused - Security Alert') return res.status(401).json({ error: 'Token revoked' });
         if (err.message === 'Invalid token' || err.message === 'Token expired') return res.status(401).json({ error: 'Token invalid or expired' });
@@ -100,6 +154,8 @@ exports.logout = async (req, res) => {
         if (refreshToken) {
             await AuthService.logout(refreshToken);
         }
+
+        logger.info('AuthController', 'Logout clearing cookie', { cookieOptions: { ...COOKIE_OPTIONS, maxAge: 0 } });
         res.clearCookie('refresh_token', { ...COOKIE_OPTIONS, maxAge: 0 });
         logger.info('AuthController', 'Logout success');
         res.status(200).json({ message: 'Logged out' });
@@ -135,7 +191,8 @@ exports.me = async (req, res) => {
         if (!token) return res.status(401).json({ error: 'Access token required' });
 
         const payload = TokenService.verifyAccessToken(token);
-        const user = await GlobalUser.findById(payload.sub);
+        const rawUser = await GlobalUser.findById(payload.sub);
+        const user = await AuthService.filterUserToActiveTenants(rawUser);
         if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
         return res.json({
@@ -159,7 +216,7 @@ function requireAdminOrAuthor(req) {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) throw new Error('unauthorized');
     const payload = TokenService.verifyAccessToken(token);
-    if (!payload || (payload.role !== 'admin' && payload.role !== 'author')) {
+    if (!payload || !isElevatedRole(payload.role)) {
         throw new Error('forbidden');
     }
     return payload;
@@ -183,7 +240,8 @@ exports.adminUpsertUser = async (req, res) => {
     } catch (err) {
         if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
         if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
-        if (err.message === 'email required' || err.message === 'invalid role') return res.status(400).json({ error: err.message });
+        if (err.message === 'email required' || err.message === 'invalid role' || err.message === 'brand_user requires exactly one brand' || err.message === 'no brands available for super admin') return res.status(400).json({ error: err.message });
+        if (err.name === 'ValidationError') return res.status(400).json({ error: err.message });
         logger.error('AuthController', 'Admin upsert user error', { error: err.message });
         return res.status(500).json({ error: 'Failed to upsert user' });
     }
@@ -226,9 +284,10 @@ exports.adminUpsertDomainRule = async (req, res) => {
     } catch (err) {
         if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
         if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
-        if (err.message === 'invalid domain' || err.message === 'invalid role' || err.message === 'primary_brand_id required') {
+        if (err.message === 'invalid domain' || err.message === 'invalid role' || err.message === 'primary_brand_id required' || err.message === 'brand_user requires exactly one brand' || err.message === 'no brands available for super admin') {
             return res.status(400).json({ error: err.message });
         }
+        if (err.name === 'ValidationError') return res.status(400).json({ error: err.message });
         logger.error('AuthController', 'Admin upsert domain rule error', { error: err.message });
         return res.status(500).json({ error: 'Failed to upsert domain rule' });
     }
@@ -375,12 +434,19 @@ exports.googleCallback = async (req, res) => {
             }
         }
 
+        logger.info('AuthController', 'Google login success, setting cookie', {
+            origin: req.headers.origin,
+            cookieOptions: COOKIE_OPTIONS,
+            hasRefreshToken: !!result.refreshToken
+        });
+
         res.cookie('refresh_token', result.refreshToken, COOKIE_OPTIONS);
         const payload = {
             access_token: result.accessToken,
             user: {
                 id: result.user._id,
                 email: result.user.email,
+                role: result.user.role,
                 primary_brand_id: result.user.primary_brand_id,
                 brand_memberships: result.user.brand_memberships,
                 status: result.user.status,

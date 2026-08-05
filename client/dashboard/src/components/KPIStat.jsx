@@ -1,74 +1,291 @@
-import { Card, CardContent, Typography, Skeleton, Box } from '@mui/material';
-import ArrowDropUpIcon from '@mui/icons-material/ArrowDropUp';
-import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import { Card, CardContent, Typography, Skeleton, Box } from "@mui/material";
+import { useTheme, alpha } from "@mui/material/styles";
+import TrendingUpIcon from "@mui/icons-material/TrendingUp";
+import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 
-export default function KPIStat({ label, value, hint, loading, deltaLoading, formatter, delta, onSelect, selected }) {
-  const clickable = typeof onSelect === 'function';
+const SELECTED_CARD_COLOR = "#10b981";
+
+export default function KPIStat({
+  label,
+  value,
+  hint,
+  loading,
+  deltaLoading,
+  formatter,
+  delta,
+  onSelect,
+  onSelectionToggle,
+  selected,
+  selectionIndicatorSelected,
+  centerOnMobile = false,
+  action,
+  bottomRightAccessory,
+  sx = {},
+  activeColor = "#10b981",
+  compareValue,
+  compareFormatter,
+  invertDeltaColor = false,
+  unavailable = false,
+  showSelectionIndicator,
+}) {
+  const theme = useTheme();
+  const clickable = typeof onSelect === "function" && !unavailable;
+  const selectionClickable =
+    typeof onSelectionToggle === "function" && !unavailable;
+  const shouldShowSelectionIndicator =
+    typeof showSelectionIndicator === "boolean"
+      ? showSelectionIndicator
+      : selectionClickable;
 
   const handleKeyDown = (event) => {
     if (!clickable) return;
-    if (event.key === 'Enter' || event.key === ' ') {
+    if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       onSelect();
     }
   };
 
+  const handleSelectionToggle = (event) => {
+    if (!selectionClickable) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onSelectionToggle();
+  };
+
+  const goodColor = "#10b981"; // Green
+  const badColor = "#ef4444"; // Red
+
   return (
     <Card
+      className="kpi-stat-card"
       elevation={0}
       onClick={clickable ? onSelect : undefined}
       onKeyDown={handleKeyDown}
-      role={clickable ? 'button' : undefined}
+      role={clickable ? "button" : undefined}
       tabIndex={clickable ? 0 : undefined}
       aria-pressed={clickable ? Boolean(selected) : undefined}
       sx={{
-        border: '1px solid',
-        borderColor: selected ? 'primary.main' : 'divider',
-        height: '100%',
-        cursor: clickable ? 'pointer' : 'default',
-        backgroundColor: selected ? 'action.hover' : 'background.paper',
-        transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
-        boxShadow: selected ? '0 0 0 1px rgba(11,107,203,0.25)' : 'none',
-        outline: 'none',
-        '&:hover': clickable ? { borderColor: 'primary.main', boxShadow: '0 0 0 1px rgba(11,107,203,0.2)' } : undefined,
-        '&:focus-visible': clickable ? { borderColor: 'primary.main', boxShadow: '0 0 0 2px rgba(11,107,203,0.35)' } : undefined,
+        height: "100%",
+        transition: "all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+        cursor: clickable ? "pointer" : "default",
+        position: "relative",
+        border: "1px solid",
+        borderColor: selected ? SELECTED_CARD_COLOR : "divider",
+        bgcolor: "background.paper",
+        boxShadow: selected
+          ? `0 0 0 1px ${SELECTED_CARD_COLOR}, 0 10px 20px ${alpha(SELECTED_CARD_COLOR, 0.2)}, 0 6px 6px ${alpha(SELECTED_CARD_COLOR, 0.1)}`
+          : "0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)",
+        "&:hover": clickable
+          ? {
+              borderColor: selected ? SELECTED_CARD_COLOR : "divider",
+              boxShadow: selected
+                ? `0 0 0 1.5px ${SELECTED_CARD_COLOR}, 0 14px 28px ${alpha(SELECTED_CARD_COLOR, 0.25)}, 0 10px 10px ${alpha(SELECTED_CARD_COLOR, 0.15)}`
+                : "0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23)",
+              transform: "translateY(-4px)",
+            }
+          : {},
+        "&:focus-visible": clickable
+          ? { borderColor: "primary.main" }
+          : undefined,
+        ...sx,
       }}
     >
-      <CardContent sx={{ py: 1.25, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.25, whiteSpace: 'nowrap' }}>
-          {label}
-        </Typography>
+      <CardContent
+        sx={{
+          p: { xs: 1.25, md: 1.5 },
+          "&:last-child": { pb: { xs: 1.25, md: 1.5 } },
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          minHeight: 110,
+          alignItems: "stretch",
+          textAlign: centerOnMobile ? { xs: "center", md: "left" } : "left",
+          position: "relative",
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: centerOnMobile
+              ? { xs: "center", md: "flex-start" }
+              : "flex-start",
+            width: "100%",
+            mb: 0.5,
+            px: action && centerOnMobile ? { xs: "46px", md: 0 } : 0,
+          }}
+        >
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{
+              lineHeight: 1.2,
+              pr: action && !centerOnMobile ? { xs: "46px", md: "46px" } : 0,
+            }}
+          >
+            {label}
+          </Typography>
+        </Box>
+        {action && (
+          <Box
+            sx={{
+              position: "absolute",
+              top: 12,
+              right: 12,
+              zIndex: 10,
+            }}
+          >
+            {action}
+          </Box>
+        )}
+        {bottomRightAccessory && (
+          <Box
+            sx={{
+              position: "absolute",
+              right: shouldShowSelectionIndicator ? 36 : 12,
+              bottom: 8,
+              zIndex: 10,
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            {bottomRightAccessory}
+          </Box>
+        )}
+        {shouldShowSelectionIndicator && (
+          <Box
+            component="button"
+            type="button"
+            aria-pressed={Boolean(selectionIndicatorSelected)}
+            aria-label={`${selectionIndicatorSelected ? "Deselect" : "Select"} ${label}`}
+            onClick={handleSelectionToggle}
+            sx={{
+              position: "absolute",
+              right: 12,
+              bottom: 12,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              border: "1.5px solid",
+              borderColor: selectionIndicatorSelected
+                ? activeColor
+                : alpha(theme.palette.text.secondary, 0.35),
+              bgcolor: selectionIndicatorSelected ? activeColor : "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all 0.18s ease",
+              boxShadow: selectionIndicatorSelected
+                ? `0 2px 6px ${alpha(activeColor, 0.35)}`
+                : "none",
+              cursor: selectionClickable ? "pointer" : "default",
+              p: 0,
+              outline: "none",
+              appearance: "none",
+              WebkitAppearance: "none",
+              "&:focus-visible": {
+                boxShadow: `0 0 0 2px ${alpha(activeColor, 0.28)}`,
+              },
+            }}
+          >
+            {selectionIndicatorSelected && (
+              <Box
+                component="span"
+                sx={{
+                  width: 7,
+                  height: 4,
+                  borderLeft: "2px solid #fff",
+                  borderBottom: "2px solid #fff",
+                  transform: "rotate(-45deg) translateY(-1px)",
+                }}
+              />
+            )}
+          </Box>
+        )}
         {loading ? (
           <Skeleton variant="text" width={120} height={32} />
         ) : (
           <>
-            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: 1,
+                justifyContent: centerOnMobile
+                  ? { xs: "center", md: "flex-start" }
+                  : "flex-start",
+              }}
+            >
               <Typography variant="h5" sx={{ fontWeight: 700 }}>
-                {formatter ? formatter(value) : value}
+                {unavailable ? "-" : formatter ? formatter(value) : value}
               </Typography>
-              {hint && (
+              {!unavailable && compareValue != null && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ fontWeight: 400, fontSize: "0.85em" }}
+                >
+                  vs{" "}
+                  {compareFormatter
+                    ? compareFormatter(compareValue)
+                    : formatter
+                      ? formatter(compareValue)
+                      : compareValue}
+                </Typography>
+              )}
+              {hint && !compareValue && !unavailable && (
                 <Typography variant="caption" color="text.secondary">
                   {hint}
                 </Typography>
               )}
             </Box>
-            <Box sx={{ mt: 0.5, height: 20, display: 'flex', alignItems: 'center', gap: 0.25 }}>
+            <Box
+              sx={{
+                mt: 0.5,
+                height: 20,
+                display: "flex",
+                alignItems: "center",
+                gap: 0.25,
+                justifyContent: centerOnMobile
+                  ? { xs: "center", md: "flex-start" }
+                  : "flex-start",
+              }}
+            >
               {deltaLoading ? (
                 <Skeleton variant="text" width={60} height={20} />
-              ) : delta && typeof delta.value === 'number' ? (
+              ) : !unavailable && delta && typeof delta.value === "number" ? (
                 <>
-                  {delta.direction === 'up' ? (
-                    <ArrowDropUpIcon fontSize="small" sx={{ color: 'success.main' }} />
-                  ) : delta.direction === 'down' ? (
-                    <ArrowDropDownIcon fontSize="small" sx={{ color: 'error.main' }} />
+                  {delta.direction === "up" ? (
+                    <TrendingUpIcon
+                      sx={{
+                        fontSize: 16,
+                        color: invertDeltaColor ? badColor : goodColor,
+                      }}
+                    />
+                  ) : delta.direction === "down" ? (
+                    <TrendingDownIcon
+                      sx={{
+                        fontSize: 16,
+                        color: invertDeltaColor ? goodColor : badColor,
+                      }}
+                    />
                   ) : (
                     <Box sx={{ width: 0, height: 0 }} />
                   )}
                   <Typography
-                    variant="body2"
+                    variant="caption"
                     sx={{
-                      color: delta.direction === 'up' ? 'success.main' : delta.direction === 'down' ? 'error.main' : 'text.secondary',
-                      fontWeight: 700,
+                      color:
+                        delta.direction === "up"
+                          ? invertDeltaColor
+                            ? badColor
+                            : goodColor
+                          : delta.direction === "down"
+                            ? invertDeltaColor
+                              ? goodColor
+                              : badColor
+                            : "text.secondary",
+                      fontWeight: 600,
+                      ml: 0.5,
                     }}
                   >
                     {Math.abs(delta.value).toFixed(1)}%
@@ -76,8 +293,8 @@ export default function KPIStat({ label, value, hint, loading, deltaLoading, for
                 </>
               ) : (
                 // Reserve space to keep all cards equal height
-                <Box sx={{ visibility: 'hidden' }}>
-                  <ArrowDropUpIcon fontSize="small" />
+                <Box sx={{ visibility: "hidden" }}>
+                  <TrendingUpIcon sx={{ fontSize: 16 }} />
                   <Typography variant="body2">0.0%</Typography>
                 </Box>
               )}
