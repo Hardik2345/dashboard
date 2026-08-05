@@ -29,7 +29,6 @@ const BrandMembershipSchema = new mongoose.Schema({
       "utm_filter",
       "product_utm_filter_sync",
       "discount_filter",
-      "intent_metrics",
       "dashboard_layout_customize",
       "session_analytics",
       "web_vitals",

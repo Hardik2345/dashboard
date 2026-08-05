@@ -721,7 +721,6 @@ function buildDesktopMetrics({
   activeMetric,
   showCiEvents,
   showRtoKpi,
-  showIntentMetrics,
   convertAmount,
 }) {
   const selectedMetricSet = new Set(Array.isArray(selectedMetrics) ? selectedMetrics : []);
@@ -771,7 +770,6 @@ function buildDesktopMetrics({
     prevSessions,
     prevPercent,
     activeColor,
-    hidden = false,
   }) => ({
     id,
     label,
@@ -798,7 +796,6 @@ function buildDesktopMetrics({
     compareFormatter:
       mode === "S" ? (value) => nfInt.format(value) : (value) => nfPct.format(value),
     activeColor,
-    hidden,
     selected: false,
     selectionIndicatorSelected: false,
     showSelectionIndicator: false,
@@ -1062,7 +1059,6 @@ function buildDesktopMetrics({
       prevSessions: data.intentMetrics?.high?.prevSessions,
       prevPercent: data.intentMetrics?.high?.prevPercent,
       activeColor: "#22c55e",
-      hidden: !showIntentMetrics,
     }),
     createIntentCard({
       id: "medium_intent",
@@ -1076,7 +1072,6 @@ function buildDesktopMetrics({
       prevSessions: data.intentMetrics?.medium?.prevSessions,
       prevPercent: data.intentMetrics?.medium?.prevPercent,
       activeColor: "#f59e0b",
-      hidden: !showIntentMetrics,
     }),
     createIntentCard({
       id: "low_intent",
@@ -1090,7 +1085,6 @@ function buildDesktopMetrics({
       prevSessions: data.intentMetrics?.low?.prevSessions,
       prevPercent: data.intentMetrics?.low?.prevPercent,
       activeColor: "#ef4444",
-      hidden: !showIntentMetrics,
     }),
   ];
 
@@ -1471,7 +1465,6 @@ export default function KPIs({
   showWebVitals = true,
   showCiEvents = true,
   showRtoKpi = true,
-  showIntentMetrics = true,
   desktopKpiLayout,
   onDesktopKpiLayoutChange,
   canEditDesktopKpis = false,
@@ -1999,7 +1992,6 @@ export default function KPIs({
         activeMetric,
         showCiEvents,
         showRtoKpi,
-        showIntentMetrics,
         convertAmount,
       }),
     [
@@ -2024,7 +2016,6 @@ export default function KPIs({
       selectedMetrics,
       showCiEvents,
       showRtoKpi,
-      showIntentMetrics,
     ],
   );
 

@@ -82,7 +82,6 @@ const PERMISSION_OPTIONS = [
   "utm_filter",
   "product_utm_filter_sync",
   "discount_filter",
-  "intent_metrics",
   "ci_events",
   "rto_kpi",
   "web_vitals",
