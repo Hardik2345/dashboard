@@ -2,7 +2,7 @@
 set -e
 
 echo "---- DEPLOY STARTED ----"
-
+echo 
 cd /home/ubuntu/datum-deploy/dashboard
 
 echo "Pulling latest main branch..."
