@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, memo } from "react";
 import dayjs from "dayjs";
 import {
   Alert,
@@ -80,7 +80,7 @@ function formatSku(value) {
   return raw || "-";
 }
 
-export default function InventoryTable({ brandKey, startDate, endDate }) {
+function InventoryTable({ brandKey, startDate, endDate }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [inventoryPeriod, setInventoryPeriod] = useState("7d");
@@ -518,3 +518,5 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
     </Stack>
   );
 }
+
+export default memo(InventoryTable);

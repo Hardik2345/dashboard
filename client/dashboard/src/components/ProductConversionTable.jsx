@@ -714,7 +714,10 @@ function DetailedFilterPanel({
     }
   };
 
-  const metricCols = allColumns.filter((c) => c.id !== "landing_page_path");
+  const metricCols = useMemo(
+    () => allColumns.filter((c) => c.id !== "landing_page_path"),
+    [allColumns],
+  );
   const isAllSelected = metricCols.length > 0 && metricCols.every((c) =>
     visibleColumnIds.includes(c.id),
   );
@@ -2147,12 +2150,19 @@ export default function ProductConversionTable({
     dispatch(setPageSize(nextSize));
     triggerFetch({ page: 1, pageSize: nextSize });
   };
-  const handleSort = (column) => {
-    const isAsc = sortBy === column && sortDir === "asc";
-    const nextDir = isAsc ? "desc" : "asc";
-    dispatch(setSort({ sortBy: column, sortDir: nextDir }));
-    triggerFetch({ page: 1, sortBy: column, sortDir: nextDir });
-  };
+  const handleSort = useCallback(
+    (column) => {
+      const isAsc = sortBy === column && sortDir === "asc";
+      const nextDir = isAsc ? "desc" : "asc";
+      dispatch(setSort({ sortBy: column, sortDir: nextDir }));
+      triggerFetch({ page: 1, sortBy: column, sortDir: nextDir });
+    },
+    [dispatch, sortBy, sortDir, triggerFetch],
+  );
+
+  const handleOpenFilterPanel = useCallback(() => {
+    setShowFilterPanel(true);
+  }, []);
 
   const handleExport = async () => {
     setExporting(true);
@@ -2668,7 +2678,7 @@ export default function ProductConversionTable({
                   compareEnd={compareEnd}
                   columnWidths={columnWidths}
                   handleMouseDown={handleMouseDown}
-                  onOpenFilter={() => setShowFilterPanel(true)}
+                  onOpenFilter={handleOpenFilterPanel}
                   hasActiveFilters={
                     productState.filters?.length > 0 ||
                     visibleColumnIds.length < columns.length

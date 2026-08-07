@@ -1358,6 +1358,18 @@ export default memo(function HourlySalesCompare({
     });
   }, [activeMetricId, processedChartData, visibleDefs]);
 
+  const compareAxisDomain = useMemo(
+    () =>
+      computeAxisDomain(
+        processedChartData.flatMap((point) => [
+          point.currentValue,
+          point.comparisonValue,
+        ]),
+        activeDef?.unitKind || "count",
+      ),
+    [activeDef, processedChartData],
+  );
+
   const shouldTiltDateLabels = processedChartData.length > 30;
   const useBarChart = chartMode === "bar";
   const multiChartTitle = activeDef
@@ -1686,13 +1698,7 @@ export default memo(function HourlySalesCompare({
                       tickFormatter={activeDef?.compactFormatter}
                       tick={{ fontSize: 12, fill: theme.palette.text.secondary }}
                       width={70}
-                      domain={computeAxisDomain(
-                        processedChartData.flatMap((point) => [
-                          point.currentValue,
-                          point.comparisonValue,
-                        ]),
-                        activeDef?.unitKind || "count",
-                      )}
+                      domain={compareAxisDomain}
                     />
                   ) : (
                     activeAxisGroups.map((group) => (
