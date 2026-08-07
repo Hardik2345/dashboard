@@ -1,4 +1,11 @@
-import { cloneElement, useEffect, useMemo, useRef, useState } from "react";
+import {
+  cloneElement,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Grid from "@mui/material/Grid2";
 import {
   Box,
@@ -1453,7 +1460,7 @@ function buildIntentMetricState(metrics = {}) {
   };
 }
 
-export default function KPIs({
+function KPIs({
   variant = "legacy",
   query,
   selectedMetrics = [],
@@ -1526,18 +1533,22 @@ export default function KPIs({
     });
   }, [data, deltaLoading, loading, onFunnelData]);
 
-  const activeFilters = [
-    Array.isArray(utmSource) && utmSource.length > 0
-      ? { key: "source", label: `source: ${utmSource}` }
-      : null,
-    Array.isArray(utmMedium) && utmMedium.length > 0
-      ? { key: "medium", label: `medium: ${utmMedium}` }
-      : null,
-    Array.isArray(utmCampaign) && utmCampaign.length > 0
-      ? { key: "campaign", label: `campaign: ${utmCampaign}` }
-      : null,
-    discountCode ? { key: "discount", label: `discount: ${discountCode}` } : null,
-  ].filter(Boolean);
+  const activeFilters = useMemo(
+    () =>
+      [
+        Array.isArray(utmSource) && utmSource.length > 0
+          ? { key: "source", label: `source: ${utmSource}` }
+          : null,
+        Array.isArray(utmMedium) && utmMedium.length > 0
+          ? { key: "medium", label: `medium: ${utmMedium}` }
+          : null,
+        Array.isArray(utmCampaign) && utmCampaign.length > 0
+          ? { key: "campaign", label: `campaign: ${utmCampaign}` }
+          : null,
+        discountCode ? { key: "discount", label: `discount: ${discountCode}` } : null,
+      ].filter(Boolean),
+    [utmSource, utmMedium, utmCampaign, discountCode],
+  );
 
   const desktopCardsById = useMemo(
     () =>
@@ -2362,3 +2373,5 @@ export default function KPIs({
     </>
   );
 }
+
+export default memo(KPIs);

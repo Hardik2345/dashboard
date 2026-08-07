@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -513,7 +513,7 @@ function SortableBrandTile({ brand, selectedMetrics, onBrandSelect }) {
   );
 }
 
-export default function OverallSnapshotWidget({
+function OverallSnapshotWidget({
   query,
   brands = [],
   brandsLoading = false,
@@ -1435,3 +1435,5 @@ export default function OverallSnapshotWidget({
     </Card>
   );
 }
+
+export default memo(OverallSnapshotWidget);

@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Card, CardHeader, CardContent, Stack, TextField, Button, Grid, Alert, Table, TableHead, TableRow, TableCell, TableBody, IconButton, Box } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { listWhitelist, addWhitelist, removeWhitelist } from '../lib/api.js';
 
-export default function WhitelistTable() {
+function WhitelistTable() {
   const [rows, setRows] = useState([]);
   const [email, setEmail] = useState('');
   const [brandKey, setBrandKey] = useState('');
@@ -88,3 +88,5 @@ export default function WhitelistTable() {
     </Card>
   );
 }
+
+export default memo(WhitelistTable);

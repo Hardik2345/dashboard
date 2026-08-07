@@ -1,10 +1,11 @@
+import { memo } from "react";
 import { Box, Card, CardContent, Skeleton, Typography } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
 import { useDashboardWebVitalsData } from "../features/dashboard/widgetDataHooks.js";
 
 const nfFloat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 
-export default function WebPerformancePanel({
+function WebPerformancePanel({
   query,
   selectedMetrics = [],
   activeMetric = null,
@@ -187,3 +188,5 @@ export default function WebPerformancePanel({
     </Card>
   );
 }
+
+export default memo(WebPerformancePanel);

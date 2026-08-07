@@ -447,32 +447,12 @@ export default function DashboardRouteContainer({
     });
   }, [dashboardLayout, isMobile]);
 
-  const desktopWidgetRegistry = useMemo(
-    () => ({
-      kpi_cards: (
-        <KPIs
-          variant="desktop_paged"
-          query={trendMetricsQuery}
-          selectedMetrics={selectedMetrics}
-          activeMetric={activeMetric}
-          onSelectMetric={onSelectMetric}
-          onToggleMetric={canMultiSelectableKpiCards ? onToggleMetric : undefined}
-          onFunnelData={onFunnelData}
-          productId={selectedProductIds}
-          productLabel={selectedProductLabel}
-          utmOptions={utmOptions}
-          showWebVitals={false}
-          showCiEvents={hasPermission("ci_events")}
-          showRtoKpi={hasPermission("rto_kpi")}
-          showIntentMetrics={hasPermission("intent_metrics")}
-          compareMode={compareMode}
-          desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
-          onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
-          canEditDesktopKpis={canCustomizeDashboardLayout}
-          dashboardLayoutEditing={layoutEditMode}
-        />
-      ),
-      overall_snapshot: isLongRangeDashboard ? (
+  // Each widget slot is memoized independently so that a change scoped to a
+  // single widget (e.g. the WebVitals metric dropdown or opening the layout
+  // editor) does not force every other widget's JSX to be rebuilt.
+  const overallSnapshotElement = useMemo(
+    () =>
+      isLongRangeDashboard ? (
         <DashboardUnavailableCard
           title="Overall Snapshot"
           description={dataRestrictionDescription}
@@ -486,39 +466,150 @@ export default function DashboardRouteContainer({
           onBrandSelect={onOverallSnapshotBrandSelect}
         />
       ),
-      kpi_trend: (
-        <Grid container spacing={2}>
-          <Grid size={{ xs: 12, md: hasPermission("web_vitals") ? 9 : 12 }}>
-            <HourlySalesCompare
-              query={trendMetricsQuery}
-              selectedMetrics={selectedMetrics}
-              activeMetric={activeMetric}
-              compareMode={compareMode}
-              isLongRange={isLongRangeDashboard}
-            />
-          </Grid>
-          {hasPermission("web_vitals") && (
-            <Grid size={{ xs: 12, md: 3 }}>
-              {isLongRangeDashboard ? (
-                <DashboardUnavailableCard
-                  title="Web Performance(Avg)"
-                  description={dataRestrictionDescription}
-                  minHeight={310}
-                />
-              ) : (
-                <WebPerformancePanel
-                  query={generalMetricsQuery}
-                  selectedMetrics={selectedMetrics}
-                  activeMetric={activeMetric}
-                  onSelectMetric={onSelectMetric}
-                  onToggleMetric={canMultiSelectableKpiCards ? onToggleMetric : undefined}
-                />
-              )}
-            </Grid>
-          )}
-        </Grid>
+    [
+      authorBrandsLoading,
+      dataRestrictionDescription,
+      isAuthor,
+      isLongRangeDashboard,
+      onOverallSnapshotBrandSelect,
+      overallSnapshotQuery,
+      snapshotBrands,
+    ],
+  );
+
+  const paymentTrendElement = useMemo(
+    () =>
+      isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Payment Trend"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
+        <PaymentSplitTrend query={generalMetricsQuery} />
       ),
-      payment_split: hasPermission("web_vitals") ? (
+    [dataRestrictionDescription, generalMetricsQuery, isLongRangeDashboard],
+  );
+
+  const trafficSplitElement = useMemo(
+    () =>
+      isLongRangeDashboard ? (
+        <DashboardUnavailableCard
+          title="Traffic Split"
+          description={dataRestrictionDescription}
+          minHeight={310}
+        />
+      ) : (
+        <TrafficSourceSplit
+          query={trendMetricsQuery}
+          compareMode={compareMode}
+          mappingRules={trafficSplitRules}
+        />
+      ),
+    [
+      compareMode,
+      dataRestrictionDescription,
+      isLongRangeDashboard,
+      trafficSplitRules,
+      trendMetricsQuery,
+    ],
+  );
+
+  const kpiCardsDesktopElement = useMemo(
+    () => (
+      <KPIs
+        variant="desktop_paged"
+        query={trendMetricsQuery}
+        selectedMetrics={selectedMetrics}
+        activeMetric={activeMetric}
+        onSelectMetric={onSelectMetric}
+        onToggleMetric={canMultiSelectableKpiCards ? onToggleMetric : undefined}
+        onFunnelData={onFunnelData}
+        productId={selectedProductIds}
+        productLabel={selectedProductLabel}
+        utmOptions={utmOptions}
+        showWebVitals={false}
+        showCiEvents={hasPermission("ci_events")}
+        showRtoKpi={hasPermission("rto_kpi")}
+        showIntentMetrics={hasPermission("intent_metrics")}
+        compareMode={compareMode}
+        desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
+        onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
+        canEditDesktopKpis={canCustomizeDashboardLayout}
+        dashboardLayoutEditing={layoutEditMode}
+      />
+    ),
+    [
+      activeMetric,
+      canCustomizeDashboardLayout,
+      canMultiSelectableKpiCards,
+      compareMode,
+      effectiveDashboardLayout,
+      handleDesktopKpiLayoutChange,
+      hasPermission,
+      layoutEditMode,
+      onFunnelData,
+      onSelectMetric,
+      onToggleMetric,
+      selectedMetrics,
+      selectedProductIds,
+      selectedProductLabel,
+      trendMetricsQuery,
+      utmOptions,
+    ],
+  );
+
+  const kpiTrendDesktopElement = useMemo(
+    () => (
+      <Grid container spacing={2}>
+        <Grid size={{ xs: 12, md: hasPermission("web_vitals") ? 9 : 12 }}>
+          <HourlySalesCompare
+            query={trendMetricsQuery}
+            selectedMetrics={selectedMetrics}
+            activeMetric={activeMetric}
+            compareMode={compareMode}
+            isLongRange={isLongRangeDashboard}
+          />
+        </Grid>
+        {hasPermission("web_vitals") && (
+          <Grid size={{ xs: 12, md: 3 }}>
+            {isLongRangeDashboard ? (
+              <DashboardUnavailableCard
+                title="Web Performance(Avg)"
+                description={dataRestrictionDescription}
+                minHeight={310}
+              />
+            ) : (
+              <WebPerformancePanel
+                query={generalMetricsQuery}
+                selectedMetrics={selectedMetrics}
+                activeMetric={activeMetric}
+                onSelectMetric={onSelectMetric}
+                onToggleMetric={canMultiSelectableKpiCards ? onToggleMetric : undefined}
+              />
+            )}
+          </Grid>
+        )}
+      </Grid>
+    ),
+    [
+      activeMetric,
+      canMultiSelectableKpiCards,
+      compareMode,
+      dataRestrictionDescription,
+      generalMetricsQuery,
+      hasPermission,
+      isLongRangeDashboard,
+      onSelectMetric,
+      onToggleMetric,
+      selectedMetrics,
+      trendMetricsQuery,
+    ],
+  );
+
+  const paymentSplitDesktopElement = useMemo(
+    () =>
+      hasPermission("web_vitals") ? (
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 8 }}>
             {isLongRangeDashboard ? (
@@ -564,110 +655,100 @@ export default function DashboardRouteContainer({
           onToggleMetric={canMultiSelectableKpiCards ? onToggleMetric : undefined}
         />
       ),
-      payment_trend: isLongRangeDashboard ? (
-        <DashboardUnavailableCard
-          title="Payment Trend"
-          description={dataRestrictionDescription}
-          minHeight={310}
-        />
-      ) : (
-        <PaymentSplitTrend query={generalMetricsQuery} />
-      ),
-      traffic_split: isLongRangeDashboard ? (
-        <DashboardUnavailableCard
-          title="Traffic Split"
-          description={dataRestrictionDescription}
-          minHeight={310}
-        />
-      ) : (
-        <TrafficSourceSplit
-          query={trendMetricsQuery}
-          compareMode={compareMode}
-          mappingRules={trafficSplitRules}
-        />
-      ),
-    }),
     [
-      activeMetric,
-      authorBrandsLoading,
-      canCustomizeDashboardLayout,
       canMultiSelectableKpiCards,
-      compareMode,
       dataRestrictionDescription,
-      effectiveDashboardLayout,
       generalMetricsQuery,
-      handleDesktopKpiLayoutChange,
       hasPermission,
-      isAuthor,
       isLongRangeDashboard,
-      layoutEditMode,
-      onFunnelData,
-      onOverallSnapshotBrandSelect,
-      onSelectMetric,
       onToggleMetric,
-      overallSnapshotQuery,
       selectedMetrics,
-      selectedProductIds,
-      selectedProductLabel,
-      snapshotBrands,
-      trafficSplitRules,
-      trendMetricsQuery,
-      utmOptions,
       webVitalsMetric,
     ],
   );
 
-  const mobileWidgetRegistry = useMemo(
+  const desktopWidgetRegistry = useMemo(
     () => ({
-      kpi_cards: (
-        <KPIs
-          variant="desktop_paged"
-          key={`mobile-kpis-${layoutEditMode ? "edit" : "view"}-${effectiveDashboardLayout.kpiCardsDesktop.order.join("|")}-${effectiveDashboardLayout.kpiCardsDesktop.pinned.join("|")}`}
-          query={trendMetricsQuery}
-          selectedMetrics={selectedMetrics}
-          activeMetric={activeMetric}
-          onSelectMetric={onSelectMetric}
-          onToggleMetric={canMultiSelectableKpiCards ? onToggleMetric : undefined}
-          onFunnelData={onFunnelData}
-          productId={selectedProductIds}
-          productLabel={selectedProductLabel}
-          utmOptions={utmOptions}
-          showRow="mobile_top"
-          showWebVitals={!isLongRangeDashboard && hasPermission("web_vitals")}
-          showCiEvents={hasPermission("ci_events")}
-          showRtoKpi={hasPermission("rto_kpi")}
-          showIntentMetrics={hasPermission("intent_metrics")}
-          compareMode={compareMode}
-          desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
-          onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
-          canEditDesktopKpis={canCustomizeDashboardLayout}
-          dashboardLayoutEditing={layoutEditMode}
-        />
-      ),
-      overall_snapshot: isLongRangeDashboard ? (
-        <DashboardUnavailableCard
-          title="Overall Snapshot"
-          description={dataRestrictionDescription}
-          minHeight={320}
-        />
-      ) : (
-        <OverallSnapshotWidget
-          query={overallSnapshotQuery}
-          brands={snapshotBrands}
-          brandsLoading={isAuthor && authorBrandsLoading}
-          onBrandSelect={onOverallSnapshotBrandSelect}
-        />
-      ),
-      kpi_trend: (
-        <HourlySalesCompare
-          query={trendMetricsQuery}
-          selectedMetrics={selectedMetrics}
-          activeMetric={activeMetric}
-          compareMode={compareMode}
-          isLongRange={isLongRangeDashboard}
-        />
-      ),
-      top_pages: isLongRangeDashboard ? (
+      kpi_cards: kpiCardsDesktopElement,
+      overall_snapshot: overallSnapshotElement,
+      kpi_trend: kpiTrendDesktopElement,
+      payment_split: paymentSplitDesktopElement,
+      payment_trend: paymentTrendElement,
+      traffic_split: trafficSplitElement,
+    }),
+    [
+      kpiCardsDesktopElement,
+      overallSnapshotElement,
+      kpiTrendDesktopElement,
+      paymentSplitDesktopElement,
+      paymentTrendElement,
+      trafficSplitElement,
+    ],
+  );
+
+  const kpiCardsMobileElement = useMemo(
+    () => (
+      <KPIs
+        variant="desktop_paged"
+        key={`mobile-kpis-${layoutEditMode ? "edit" : "view"}-${effectiveDashboardLayout.kpiCardsDesktop.order.join("|")}-${effectiveDashboardLayout.kpiCardsDesktop.pinned.join("|")}`}
+        query={trendMetricsQuery}
+        selectedMetrics={selectedMetrics}
+        activeMetric={activeMetric}
+        onSelectMetric={onSelectMetric}
+        onToggleMetric={canMultiSelectableKpiCards ? onToggleMetric : undefined}
+        onFunnelData={onFunnelData}
+        productId={selectedProductIds}
+        productLabel={selectedProductLabel}
+        utmOptions={utmOptions}
+        showRow="mobile_top"
+        showWebVitals={!isLongRangeDashboard && hasPermission("web_vitals")}
+        showCiEvents={hasPermission("ci_events")}
+        showRtoKpi={hasPermission("rto_kpi")}
+        showIntentMetrics={hasPermission("intent_metrics")}
+        compareMode={compareMode}
+        desktopKpiLayout={effectiveDashboardLayout.kpiCardsDesktop}
+        onDesktopKpiLayoutChange={handleDesktopKpiLayoutChange}
+        canEditDesktopKpis={canCustomizeDashboardLayout}
+        dashboardLayoutEditing={layoutEditMode}
+      />
+    ),
+    [
+      activeMetric,
+      canCustomizeDashboardLayout,
+      canMultiSelectableKpiCards,
+      compareMode,
+      effectiveDashboardLayout,
+      handleDesktopKpiLayoutChange,
+      hasPermission,
+      isLongRangeDashboard,
+      layoutEditMode,
+      onFunnelData,
+      onSelectMetric,
+      onToggleMetric,
+      selectedMetrics,
+      selectedProductIds,
+      selectedProductLabel,
+      trendMetricsQuery,
+      utmOptions,
+    ],
+  );
+
+  const kpiTrendMobileElement = useMemo(
+    () => (
+      <HourlySalesCompare
+        query={trendMetricsQuery}
+        selectedMetrics={selectedMetrics}
+        activeMetric={activeMetric}
+        compareMode={compareMode}
+        isLongRange={isLongRangeDashboard}
+      />
+    ),
+    [activeMetric, compareMode, isLongRangeDashboard, selectedMetrics, trendMetricsQuery],
+  );
+
+  const topPagesMobileElement = useMemo(
+    () =>
+      isLongRangeDashboard ? (
         <DashboardUnavailableCard
           title="Top 5 Pages"
           description={dataRestrictionDescription}
@@ -680,7 +761,12 @@ export default function DashboardRouteContainer({
           onMetricChange={setWebVitalsMetric}
         />
       ),
-      payment_split: isLongRangeDashboard ? (
+    [dataRestrictionDescription, generalMetricsQuery, isLongRangeDashboard, webVitalsMetric],
+  );
+
+  const paymentSplitMobileElement = useMemo(
+    () =>
+      isLongRangeDashboard ? (
         <DashboardUnavailableCard
           title="Mode of Payment"
           description={dataRestrictionDescription}
@@ -693,56 +779,34 @@ export default function DashboardRouteContainer({
           onToggleMetric={canMultiSelectableKpiCards ? onToggleMetric : undefined}
         />
       ),
-      payment_trend: isLongRangeDashboard ? (
-        <DashboardUnavailableCard
-          title="Payment Trend"
-          description={dataRestrictionDescription}
-          minHeight={310}
-        />
-      ) : (
-        <PaymentSplitTrend query={generalMetricsQuery} />
-      ),
-      traffic_split: isLongRangeDashboard ? (
-        <DashboardUnavailableCard
-          title="Traffic Split"
-          description={dataRestrictionDescription}
-          minHeight={310}
-        />
-      ) : (
-        <TrafficSourceSplit
-          query={trendMetricsQuery}
-          compareMode={compareMode}
-          mappingRules={trafficSplitRules}
-        />
-      ),
+    [
+      canMultiSelectableKpiCards,
+      dataRestrictionDescription,
+      generalMetricsQuery,
+      isLongRangeDashboard,
+      onToggleMetric,
+      selectedMetrics,
+    ],
+  );
+
+  const mobileWidgetRegistry = useMemo(
+    () => ({
+      kpi_cards: kpiCardsMobileElement,
+      overall_snapshot: overallSnapshotElement,
+      kpi_trend: kpiTrendMobileElement,
+      top_pages: topPagesMobileElement,
+      payment_split: paymentSplitMobileElement,
+      payment_trend: paymentTrendElement,
+      traffic_split: trafficSplitElement,
     }),
     [
-      activeMetric,
-      authorBrandsLoading,
-      canCustomizeDashboardLayout,
-      canMultiSelectableKpiCards,
-      compareMode,
-      dataRestrictionDescription,
-      effectiveDashboardLayout,
-      generalMetricsQuery,
-      handleDesktopKpiLayoutChange,
-      hasPermission,
-      isAuthor,
-      isLongRangeDashboard,
-      layoutEditMode,
-      onFunnelData,
-      onOverallSnapshotBrandSelect,
-      onSelectMetric,
-      onToggleMetric,
-      overallSnapshotQuery,
-      selectedMetrics,
-      selectedProductIds,
-      selectedProductLabel,
-      snapshotBrands,
-      trafficSplitRules,
-      trendMetricsQuery,
-      utmOptions,
-      webVitalsMetric,
+      kpiCardsMobileElement,
+      overallSnapshotElement,
+      kpiTrendMobileElement,
+      topPagesMobileElement,
+      paymentSplitMobileElement,
+      paymentTrendElement,
+      trafficSplitElement,
     ],
   );
 
