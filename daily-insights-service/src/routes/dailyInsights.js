@@ -66,6 +66,20 @@ function buildDailyInsightsRouter({
     }
   });
 
+  router.delete("/", requireAuthor, brandContext, async (req, res) => {
+    const parsed = DailyInsightQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+    }
+    try {
+      const result = await dailyInsightsService.deleteInsight(req.brandDb, parsed.data.date);
+      return res.json({ data: result });
+    } catch (err) {
+      console.error("[daily-insights] delete failed", err);
+      return res.status(500).json({ error: "internal_server_error" });
+    }
+  });
+
   return router;
 }
 

@@ -1411,6 +1411,15 @@ export async function saveDailyInsight({ brandKey, date, insight }) {
   return { error: false, data: res.data?.data ?? null };
 }
 
+export async function deleteDailyInsight({ brandKey, date }) {
+  const normalizedBrandKey = normalizeBrandKey(brandKey);
+  const res = await doDelete(
+    `/daily-insights${qs({ brand_key: normalizedBrandKey, date })}`,
+  );
+  if (res.error) return res;
+  return { error: false, data: res.data?.data ?? null };
+}
+
 export async function getSessionAnalyticsSummary(args = {}) {
   const params = appendBrandKey(
     {

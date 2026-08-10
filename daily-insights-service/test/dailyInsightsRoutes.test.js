@@ -49,6 +49,10 @@ function makeFakeBrandDb(dbName) {
         rowsByDate.set(date, { id: existing?.id || rowsByDate.size + 1, date, insight, updated_at: "2026-08-10 10:00:00" });
         return [];
       }
+      if (sql.startsWith("DELETE FROM daily_insights")) {
+        rowsByDate.delete(date);
+        return [];
+      }
       if (sql.startsWith("SELECT date, updated_at")) {
         return [...rowsByDate.values()].map(({ date: d, updated_at }) => ({ date: d, updated_at }));
       }
@@ -159,6 +163,30 @@ test("brand_user (non-author) cannot create/update, even with every other permis
     .set(headers)
     .send({ date: "2026-08-10", insight: "should be forbidden" })
     .expect(403);
+});
+
+test("author can delete an insight for a selected date", async () => {
+  const { app } = buildTestApp();
+  const headers = gatewayHeaders({ role: "author" });
+
+  await request(app)
+    .post("/daily-insights")
+    .set(headers)
+    .send({ date: "2026-08-10", insight: "removable" })
+    .expect(200);
+
+  await request(app)
+    .delete("/daily-insights")
+    .query({ date: "2026-08-10" })
+    .set(headers)
+    .expect(200);
+
+  const res = await request(app)
+    .get("/daily-insights")
+    .query({ date: "2026-08-10" })
+    .set(headers)
+    .expect(200);
+  assert.equal(res.body.data, null);
 });
 
 test("brand_user (non-author) cannot access the edit history endpoint", async () => {

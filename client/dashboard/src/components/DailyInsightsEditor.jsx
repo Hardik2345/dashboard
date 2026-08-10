@@ -11,20 +11,28 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditNoteIcon from "@mui/icons-material/EditNote";
 import dayjs from "dayjs";
 import { FunnelSingleDatePicker } from "./DailyFunnelPanel.jsx";
-import { getDailyInsight, saveDailyInsight } from "../lib/api.js";
+import {
+  deleteDailyInsight,
+  getDailyInsight,
+  saveDailyInsight,
+} from "../lib/api.js";
 
 // Mirrors the backend's default INSIGHT_CHAR_LIMIT (daily-insights-service/src/config.js).
 const INSIGHT_CHAR_LIMIT = 250;
 
 export default function DailyInsightsEditor({ brandKey, initialDate, onSaved }) {
   const [anchorEl, setAnchorEl] = useState(null);
-  const [editDate, setEditDate] = useState(() => initialDate || dayjs().format("YYYY-MM-DD"));
+  const [editDate, setEditDate] = useState(
+    () => initialDate || dayjs().format("YYYY-MM-DD"),
+  );
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
 
@@ -70,20 +78,46 @@ export default function DailyInsightsEditor({ brandKey, initialDate, onSaved }) 
     }
     setSaving(true);
     setError(null);
-    const res = await saveDailyInsight({ brandKey, date: editDate, insight: trimmed });
+    const res = await saveDailyInsight({
+      brandKey,
+      date: editDate,
+      insight: trimmed,
+    });
     setSaving(false);
     if (res.error) {
       setError(res.data?.error || "Failed to save insight");
       return;
     }
     setNotice("Insight saved");
-    if (typeof onSaved === "function") onSaved({ date: editDate, insight: trimmed });
+    if (typeof onSaved === "function") {
+      onSaved({ date: editDate, insight: trimmed });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!editDate) return;
+    setDeleting(true);
+    setError(null);
+    const res = await deleteDailyInsight({ brandKey, date: editDate });
+    setDeleting(false);
+    if (res.error) {
+      setError(res.data?.error || "Failed to remove insight");
+      return;
+    }
+    setText("");
+    setNotice("Insight removed");
+    if (typeof onSaved === "function") {
+      onSaved({ date: editDate, insight: "", deleted: true });
+    }
   };
 
   return (
     <>
       <Tooltip title="Edit Daily Insight">
-        <IconButton size="small" onClick={(event) => setAnchorEl(event.currentTarget)}>
+        <IconButton
+          size="small"
+          onClick={(event) => setAnchorEl(event.currentTarget)}
+        >
           <EditNoteIcon fontSize="small" />
         </IconButton>
       </Tooltip>
@@ -101,32 +135,65 @@ export default function DailyInsightsEditor({ brandKey, initialDate, onSaved }) 
 
           <FunnelSingleDatePicker date={editDate} onApply={handleDateChange} />
 
-          {error && <Alert severity="error">{error}</Alert>}
+          {error ? <Alert severity="error">{error}</Alert> : null}
 
           <TextField
             multiline
             minRows={4}
             maxRows={10}
             fullWidth
-            placeholder="Write today's business insight…"
+            placeholder="Write today's business insight..."
             value={text}
-            onChange={(event) => setText(event.target.value.slice(0, INSIGHT_CHAR_LIMIT))}
+            onChange={(event) =>
+              setText(event.target.value.slice(0, INSIGHT_CHAR_LIMIT))
+            }
             disabled={loading}
             slotProps={{ htmlInput: { maxLength: INSIGHT_CHAR_LIMIT } }}
           />
 
-          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
             <Typography
               variant="caption"
-              color={text.length >= INSIGHT_CHAR_LIMIT ? "error" : "text.secondary"}
+              color={
+                text.length >= INSIGHT_CHAR_LIMIT
+                  ? "error"
+                  : "text.secondary"
+              }
             >
               {text.length}/{INSIGHT_CHAR_LIMIT}
             </Typography>
           </Box>
 
-          <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-            <Button variant="contained" size="small" onClick={handleSave} disabled={saving || loading}>
-              {saving ? "Saving…" : "Save Insight"}
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <Button
+              variant="text"
+              color="error"
+              size="small"
+              startIcon={<DeleteOutlineIcon />}
+              onClick={handleDelete}
+              disabled={deleting || saving || loading || !text.trim()}
+            >
+              {deleting ? "Removing..." : "Remove Insight"}
+            </Button>
+            <Button
+              variant="contained"
+              size="small"
+              onClick={handleSave}
+              disabled={saving || deleting || loading}
+            >
+              {saving ? "Saving..." : "Save Insight"}
             </Button>
           </Box>
         </Stack>
@@ -138,7 +205,12 @@ export default function DailyInsightsEditor({ brandKey, initialDate, onSaved }) 
         onClose={() => setNotice(null)}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
-        <Alert onClose={() => setNotice(null)} severity="success" variant="filled" sx={{ width: "100%" }}>
+        <Alert
+          onClose={() => setNotice(null)}
+          severity="success"
+          variant="filled"
+          sx={{ width: "100%" }}
+        >
           {notice}
         </Alert>
       </Snackbar>
