@@ -184,6 +184,7 @@ export default async function handler(req, res) {
     const passthroughPrefixes = [
       "/auth",
       "/alerts",
+      "/daily-insights",
       "/tenant",
       "/push",
       "/track",
