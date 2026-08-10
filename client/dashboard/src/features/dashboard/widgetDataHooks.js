@@ -31,42 +31,32 @@ const WEEK_SIZE_DAYS = 7;
 
 function buildIntentMetricState(metrics = {}) {
   const buildIntentEntry = (level) => {
-    const sessionsMetric = metrics?.[`total_${level}_intent_sessions`];
-    const ordersMetric = metrics?.[`total_${level}_intent_orders`];
-    const rateMetric = metrics?.[`${level}_intent_conversion_rate`];
+    const sessionsMetric = metrics?.[`${level}_intent_sessions`];
+    const percentMetric = metrics?.[`${level}_intent_percent`];
 
     return {
       sessions: sessionsMetric?.value ?? 0,
-      orders: ordersMetric?.value ?? 0,
-      conversionRate:
-        rateMetric?.value != null ? Number(rateMetric.value) / 100 : 0,
+      percent:
+        percentMetric?.value != null ? Number(percentMetric.value) / 100 : 0,
       sessionsDelta: sessionsMetric
         ? {
             diff_pct: sessionsMetric.diff_pct ?? 0,
             direction: sessionsMetric.direction ?? "flat",
           }
         : undefined,
-      ordersDelta: ordersMetric
+      percentDelta: percentMetric
         ? {
-            diff_pct: ordersMetric.diff_pct ?? 0,
-            direction: ordersMetric.direction ?? "flat",
-          }
-        : undefined,
-      rateDelta: rateMetric
-        ? {
-            diff_pct: rateMetric.diff_pct ?? 0,
-            diff_pp: rateMetric.diff_pp,
-            direction: rateMetric.direction ?? "flat",
+            diff_pct: percentMetric.diff_pct ?? 0,
+            diff_pp: percentMetric.diff_pp,
+            direction: percentMetric.direction ?? "flat",
           }
         : undefined,
       prevSessions: sessionsMetric?.previous ?? null,
-      prevOrders: ordersMetric?.previous ?? null,
-      prevConversionRate:
-        rateMetric?.previous != null ? Number(rateMetric.previous) / 100 : null,
-      unavailable:
-        !!sessionsMetric?.unavailable ||
-        !!ordersMetric?.unavailable ||
-        !!rateMetric?.unavailable,
+      prevPercent:
+        percentMetric?.previous != null
+          ? Number(percentMetric.previous) / 100
+          : null,
+      unavailable: !!sessionsMetric?.unavailable || !!percentMetric?.unavailable,
     };
   };
 
