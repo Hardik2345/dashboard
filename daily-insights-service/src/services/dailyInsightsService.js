@@ -36,6 +36,14 @@ async function upsertInsight(brandDb, date, insight) {
   return getInsight(brandDb, date);
 }
 
+async function deleteInsight(brandDb, date) {
+  await ensureTable(brandDb);
+  await brandDb.query("DELETE FROM daily_insights WHERE date = ?", {
+    replacements: [date],
+  });
+  return { deleted: true, date };
+}
+
 async function listInsights(brandDb, { limit = 30, before } = {}) {
   const cappedLimit = Math.max(1, Math.min(Number(limit) || 30, 100));
   if (before) {
@@ -49,4 +57,4 @@ async function listInsights(brandDb, { limit = 30, before } = {}) {
   });
 }
 
-module.exports = { ensureTable, getInsight, upsertInsight, listInsights };
+module.exports = { ensureTable, getInsight, upsertInsight, deleteInsight, listInsights };
