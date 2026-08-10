@@ -16,6 +16,7 @@ export default function DailyInsightBar({ brandKey, date, refreshToken }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const containerRef = useRef(null);
   const textRef = useRef(null);
+  const popoverPaperRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,6 +56,36 @@ export default function DailyInsightBar({ brandKey, date, refreshToken }) {
     return () => observer.disconnect();
   }, [insight]);
 
+  useEffect(() => {
+    if (!anchorEl) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      setAnchorEl(null);
+    }, 5000);
+
+    const handleOutsideInteraction = (event) => {
+      const target = event.target;
+      if (
+        anchorEl?.contains?.(target) ||
+        popoverPaperRef.current?.contains?.(target)
+      ) {
+        return;
+      }
+      setAnchorEl(null);
+    };
+
+    document.addEventListener("pointerdown", handleOutsideInteraction, true);
+    document.addEventListener("touchstart", handleOutsideInteraction, true);
+    document.addEventListener("mousedown", handleOutsideInteraction, true);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      document.removeEventListener("pointerdown", handleOutsideInteraction, true);
+      document.removeEventListener("touchstart", handleOutsideInteraction, true);
+      document.removeEventListener("mousedown", handleOutsideInteraction, true);
+    };
+  }, [anchorEl]);
+
   if (!brandKey || !date || !insight?.insight) return null;
 
   const handleTap = (event) => {
@@ -63,7 +94,12 @@ export default function DailyInsightBar({ brandKey, date, refreshToken }) {
   };
 
   return (
-    <Tooltip title={insight.insight} enterDelay={400} placement="bottom-start">
+    <Tooltip
+      title={insight.insight}
+      enterDelay={400}
+      placement="bottom-start"
+      disableTouchListener
+    >
     <Box
       sx={{
         display: "flex",
@@ -126,7 +162,12 @@ export default function DailyInsightBar({ brandKey, date, refreshToken }) {
         onClose={() => setAnchorEl(null)}
         anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
         transformOrigin={{ vertical: "top", horizontal: "left" }}
-        slotProps={{ paper: { sx: { p: 1.5, maxWidth: 360 } } }}
+        slotProps={{
+          paper: {
+            ref: popoverPaperRef,
+            sx: { p: 1.5, maxWidth: 360 },
+          },
+        }}
       >
         <Typography variant="body2">{insight.insight}</Typography>
       </Popover>
