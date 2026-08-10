@@ -34,6 +34,7 @@ const DomainRuleSchema = new mongoose.Schema({
       'daily_funnel_panel',
       'utm_funnel_table',
       'product_filter',
+      "daily_insight_view",
       'utm_filter',
       'product_utm_filter_sync',
       'discount_filter',

@@ -49,6 +49,8 @@ services:
         condition: service_healthy
       analytics-service:
         condition: service_healthy
+      daily-insights-service:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - saas-net
@@ -142,6 +144,28 @@ services:
       - saas-net
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:4020/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  daily-insights-service:
+    container_name: daily-insights-service-main
+    build:
+      context: ./daily-insights-service
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+      - ./daily-insights-service/.env
+    environment:
+      PORT: 4030
+      NODE_ENV: production
+    restart: unless-stopped
+    networks:
+      - saas-net
+      - shared-net
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:4030/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
       interval: 10s
       timeout: 5s
       retries: 5

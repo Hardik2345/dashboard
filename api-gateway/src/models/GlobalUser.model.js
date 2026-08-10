@@ -58,6 +58,7 @@ const BrandMembershipSchema = new mongoose.Schema({
       "product_table_filters:page_type",
       "product_table_filters:product_types",
       "product_table_filters:sort_filter",
+      "daily_insight_view",
     ],
   }
 }, { _id: false });

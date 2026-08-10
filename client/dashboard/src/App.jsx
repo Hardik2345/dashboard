@@ -33,6 +33,8 @@ import SidebarToggle from "./components/ui/SidebarToggle.jsx";
 import InlineDashboardLayoutEditor from "./components/InlineDashboardLayoutEditor.jsx";
 import DashboardUnavailableCard from "./components/DashboardUnavailableCard.jsx";
 import MaintenanceScreen from "./components/MaintenanceScreen.jsx";
+import DailyInsightBar from "./components/DailyInsightBar.jsx";
+import DailyInsightsEditor from "./components/DailyInsightsEditor.jsx";
 
 import {
   LayoutGrid,
@@ -326,6 +328,13 @@ export default function App() {
     [range],
   );
   const normalizedRange = useMemo(() => [start, end], [start, end]);
+  // Daily Insight is keyed to a single business date; multi-day ranges have no
+  // single insight to show, so this is null in that case.
+  const singleDayInsightDate = useMemo(() => {
+    if (!start || !end || !start.isSame(end, "day")) return null;
+    return end.format("YYYY-MM-DD");
+  }, [start, end]);
+  const [dailyInsightRefreshToken, setDailyInsightRefreshToken] = useState(0);
   const [dataRestrictionConfig, setDataRestrictionConfig] = useState(
     DEFAULT_DATA_RESTRICTION_CONFIG,
   );
@@ -3341,7 +3350,9 @@ export default function App() {
 
   // Unified layout for both author and viewer roles
   const hasBrand = Boolean((activeBrandKey || "").trim());
-  const brandsForSelector = isAuthor ? authorBrands : viewerBrands;
+  const brandsForSelector = isAuthor
+    ? authorBrands
+    : viewerBrands.map((key) => ({ key }));
   const showMultipleBrands = isAuthor
     ? authorBrands.length > 0
     : viewerBrands.length > 1;
@@ -3734,6 +3745,42 @@ export default function App() {
                 />
               </Box>
               </Box>
+
+              {authorTab === "dashboard" &&
+                hasBrand &&
+                singleDayInsightDate &&
+                (isAuthor || hasPermission("daily_insight_view")) && (
+                <Box
+                  sx={{
+                    width: "100%",
+                    maxWidth: 1200,
+                    mx: "auto",
+                    px: { xs: 1.5, sm: 2.5, md: 4 },
+                    pt: { xs: 1, md: 1.5 },
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 0.5,
+                  }}
+                >
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <DailyInsightBar
+                      brandKey={activeBrandKey}
+                      date={singleDayInsightDate}
+                      refreshToken={dailyInsightRefreshToken}
+                    />
+                  </Box>
+                  {/* Editing is strictly author/admin only — no permission scope
+                      can grant a brand_user edit access. */}
+                  {isAuthor && (
+                    <DailyInsightsEditor
+                      key={singleDayInsightDate}
+                      brandKey={activeBrandKey}
+                      initialDate={singleDayInsightDate}
+                      onSaved={() => setDailyInsightRefreshToken((t) => t + 1)}
+                    />
+                  )}
+                </Box>
+              )}
 
               <Box
                 sx={{

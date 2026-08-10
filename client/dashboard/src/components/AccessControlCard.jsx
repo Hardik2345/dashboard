@@ -112,6 +112,7 @@ const PERMISSION_OPTIONS = [
   "product_table_filters:page_type",
   "product_table_filters:product_types",
   "product_table_filters:sort_filter",
+  "daily_insight_view",
 ];
 
 const COLUMN_PERMISSIONS = [
