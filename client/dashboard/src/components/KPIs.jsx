@@ -1487,9 +1487,9 @@ export default function KPIs({
   const [checkoutMode, setCheckoutMode] = useState("C");
   const [cancellationMode, setCancellationMode] = useState("C");
   const [rtoMode, setRtoMode] = useState("O");
-  const [highIntentMode, setHighIntentMode] = useState("S");
-  const [mediumIntentMode, setMediumIntentMode] = useState("S");
-  const [lowIntentMode, setLowIntentMode] = useState("S");
+  const [highIntentMode, setHighIntentMode] = useState("%");
+  const [mediumIntentMode, setMediumIntentMode] = useState("%");
+  const [lowIntentMode, setLowIntentMode] = useState("%");
   const [desktopSelectedCardId, setDesktopSelectedCardId] = useState("orders");
   const start = query?.start;
   const end = query?.end;

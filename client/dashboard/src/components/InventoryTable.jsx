@@ -3,6 +3,7 @@ import dayjs from "dayjs";
 import {
   Alert,
   Box,
+  Chip,
   InputAdornment,
   Card,
   CardContent,
@@ -80,6 +81,29 @@ function formatSku(value) {
   return raw || "-";
 }
 
+function parseInventoryUpdatedAt(value) {
+  if (!value) return null;
+  const parsed = dayjs(String(value).replace(" ", "T"));
+  return parsed.isValid() ? parsed : null;
+}
+
+function formatInventoryUpdatedAgo(value, nowValue = Date.now()) {
+  const parsed = parseInventoryUpdatedAt(value);
+  if (!parsed) return null;
+
+  const now = dayjs(nowValue);
+  const minutes = Math.max(0, now.diff(parsed, "minute"));
+
+  if (minutes < 1) return "inventory updated just now";
+  if (minutes < 60) return `inventory updated ${minutes} min${minutes === 1 ? "" : "s"} ago`;
+
+  const hours = now.diff(parsed, "hour");
+  if (hours < 24) return `inventory updated ${hours} hr${hours === 1 ? "" : "s"} ago`;
+
+  const days = now.diff(parsed, "day");
+  return `inventory updated ${days} day${days === 1 ? "" : "s"} ago`;
+}
+
 export default function InventoryTable({ brandKey, startDate, endDate }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -94,6 +118,7 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
+  const [updatedChipNow, setUpdatedChipNow] = useState(() => Date.now());
   const [columnWidths, setColumnWidths] = useState({
     product: 320,
     sku: 180,
@@ -147,6 +172,14 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setUpdatedChipNow(Date.now());
+    }, 60 * 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const columns = useMemo(
     () => [
@@ -248,18 +281,46 @@ export default function InventoryTable({ brandKey, startDate, endDate }) {
     return product + sku + drr + doh;
   }, [columnWidths]);
 
+  const inventoryUpdatedText = useMemo(() => {
+    const latestUpdatedAt = rows
+      .map((row) => row?.updated_at)
+      .filter(Boolean)
+      .sort((left, right) => String(right).localeCompare(String(left)))[0];
+
+    return formatInventoryUpdatedAgo(latestUpdatedAt, updatedChipNow);
+  }, [rows, updatedChipNow]);
+
   return (
     <Stack spacing={2}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-        <Typography
-          variant="h6"
-          sx={{
-            fontWeight: 600,
-            color: theme.palette.mode === "dark" ? "text.primary" : "text.secondary",
-          }}
-        >
-          Inventory Info
-        </Typography>
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+          <Typography
+            variant="h6"
+            sx={{
+              fontWeight: 600,
+              color: theme.palette.mode === "dark" ? "text.primary" : "text.secondary",
+            }}
+          >
+            Inventory Info
+          </Typography>
+          {inventoryUpdatedText ? (
+            <Chip
+              label={inventoryUpdatedText}
+              size="small"
+              sx={{
+                height: 26,
+                color: "rgba(255,255,255,0.82)",
+                bgcolor: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                "& .MuiChip-label": {
+                  px: 1.1,
+                  fontSize: 12,
+                  fontWeight: 500,
+                },
+              }}
+            />
+          ) : null}
+        </Stack>
         <Box
           sx={{
             display: "flex",
