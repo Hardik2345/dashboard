@@ -147,7 +147,6 @@ export default function UnifiedFilterBar({
   hideAllExceptDate = false,
   children,
 }) {
-
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const [start, end] = range || [];
@@ -479,6 +478,20 @@ export default function UnifiedFilterBar({
       ? "Clear UTM medium/campaign filters to use product filter"
       : "Clear UTM filters to use product filter";
 
+  const filteredDiscountCodes = useMemo(() => {
+    const codes = utmOptions?.discount_codes || [];
+    if (!discountSearch) return codes;
+    const lower = discountSearch.toLowerCase();
+    return codes.filter((code) => code.toLowerCase().includes(lower));
+  }, [utmOptions?.discount_codes, discountSearch]);
+
+  const filteredProductOptions = useMemo(() => {
+    if (!productSearch) return productOptions;
+    const lower = productSearch.toLowerCase();
+    return productOptions.filter((p) =>
+      p.label.toLowerCase().includes(lower),
+    );
+  }, [productOptions, productSearch]);
 
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -1319,14 +1332,15 @@ export default function UnifiedFilterBar({
           sx: { mt: 1, borderRadius: 2, minWidth: 200, maxHeight: 300 },
         }}
       >
-        <List dense>
+        <List>
           {brands.map((b) => (
             <ListItemButton
-              key={b.key}
-              selected={(brandKey || "").toUpperCase() === b.key}
-              onClick={() => handleBrandSelect(b.key)}
-            >
-              <ListItemText primary={b.key} />
+              key={b}
+              selected={(brandKey || "").toUpperCase() === b}
+              onClick={() => handleBrandSelect(b)}
+              
+>
+              <ListItemText primary={b} />
             </ListItemButton>
           ))}
         </List>
@@ -1390,6 +1404,7 @@ export default function UnifiedFilterBar({
               onChange={handleAccordionChange("channel")}
               disableGutters
               elevation={0}
+              TransitionProps={{ unmountOnExit: true }}
               sx={{
                 bgcolor: "transparent",
                 "&:before": { display: "none" },
@@ -1487,6 +1502,7 @@ export default function UnifiedFilterBar({
               onChange={handleAccordionChange("deviceType")}
               disableGutters
               elevation={0}
+              TransitionProps={{ unmountOnExit: true }}
               sx={{
                 bgcolor: "transparent",
                 "&:before": { display: "none" },
@@ -1573,6 +1589,7 @@ export default function UnifiedFilterBar({
               onChange={handleAccordionChange("city")}
               disableGutters
               elevation={0}
+              TransitionProps={{ unmountOnExit: true }}
               sx={{
                 bgcolor: "transparent",
                 "&:before": { display: "none" },
@@ -1665,6 +1682,7 @@ export default function UnifiedFilterBar({
               onChange={handleAccordionChange("discount")}
               disableGutters
               elevation={0}
+              TransitionProps={{ unmountOnExit: true }}
               sx={{
                 bgcolor: "transparent",
                 "&:before": { display: "none" },
@@ -1751,10 +1769,7 @@ export default function UnifiedFilterBar({
                       />
                     </ListItemButton>
                   )}
-                  {(utmOptions?.discount_codes || [])
-                    .filter((code) =>
-                      code.toLowerCase().includes(discountSearch.toLowerCase()),
-                    )
+                  {filteredDiscountCodes
                     .map((code) => {
                       const isSelected = discountCode === code;
                       return (
@@ -1814,6 +1829,7 @@ export default function UnifiedFilterBar({
               onChange={handleAccordionChange("product")}
               disableGutters
               elevation={0}
+              TransitionProps={{ unmountOnExit: true }}
               sx={{
                 bgcolor: "transparent",
                 "&:before": { display: "none" },
@@ -1884,12 +1900,7 @@ export default function UnifiedFilterBar({
                       : "rgba(0,0,0,0.05)",
                   }}
                 >
-                  {productOptions
-                    .filter((p) =>
-                      p.label
-                        .toLowerCase()
-                        .includes(productSearch.toLowerCase()),
-                    )
+                  {filteredProductOptions
                     .map((p) => {
                       const selectedProducts = Array.isArray(productValue)
                         ? productValue
