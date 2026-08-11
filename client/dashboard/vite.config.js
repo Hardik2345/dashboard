@@ -142,6 +142,14 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
 
+      // Daily insights service
+      '/api/daily-insights': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
       // 5️⃣ Catch-all analytics (MUST BE LAST)
 
       '/api': {
@@ -232,6 +240,13 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
 
+      // Daily insights service
+      '/api/daily-insights': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
 
       // Catch-all analytics
       '/api': {

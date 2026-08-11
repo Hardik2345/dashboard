@@ -457,7 +457,7 @@ function FunnelDateRangePicker({ startDate, endDate, onApply }) {
   );
 }
 
-function FunnelSingleDatePicker({ date, onApply }) {
+export function FunnelSingleDatePicker({ date, onApply }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const [month, setMonth] = useState(dayjs(date || dayjs()).month());
   const [year, setYear] = useState(dayjs(date || dayjs()).year());
@@ -763,7 +763,7 @@ export default function DailyFunnelPanel({
             : formatCount(row.atc_sessions),
         ciDisplay:
           displayMode === "percent"
-            ? formatPercent(row.ci_events, row.atc_sessions)
+            ? formatPercent(row.ci_events, row.sessions)
             : formatCount(row.ci_events),
         ordersDisplay:
           displayMode === "percent"
