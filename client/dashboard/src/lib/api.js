@@ -1391,6 +1391,45 @@ export async function saveDashboardLayout(payload) {
   return doPost("/dashboard/layout", payload);
 }
 
+export async function getDailyInsight({ brandKey, date } = {}) {
+  const res = await doGet("/daily-insights", { brand_key: normalizeBrandKey(brandKey), date });
+  if (res.error) return res;
+  return { error: false, data: res.data?.data ?? null };
+}
+
+export async function listDailyInsights({ brandKey, limit, before } = {}) {
+  const res = await doGet("/daily-insights/history", {
+    brand_key: normalizeBrandKey(brandKey),
+    limit,
+    before,
+  });
+  if (res.error) return res;
+  return { error: false, data: res.data?.data ?? [] };
+}
+
+export async function saveDailyInsight({ brandKey, date, insight }) {
+  // brand_key must be in the query string (not just the JSON body) — the
+  // gateway's brand-context resolution only reads request headers/query args,
+  // so a body-only brand_key silently falls back to the caller's default brand.
+  const normalizedBrandKey = normalizeBrandKey(brandKey);
+  const res = await doPost(`/daily-insights${qs({ brand_key: normalizedBrandKey })}`, {
+    brand_key: normalizedBrandKey,
+    date,
+    insight,
+  });
+  if (res.error) return res;
+  return { error: false, data: res.data?.data ?? null };
+}
+
+export async function deleteDailyInsight({ brandKey, date }) {
+  const normalizedBrandKey = normalizeBrandKey(brandKey);
+  const res = await doDelete(
+    `/daily-insights${qs({ brand_key: normalizedBrandKey, date })}`,
+  );
+  if (res.error) return res;
+  return { error: false, data: res.data?.data ?? null };
+}
+
 export async function getSessionAnalyticsSummary(args = {}) {
   const params = appendBrandKey(
     {
