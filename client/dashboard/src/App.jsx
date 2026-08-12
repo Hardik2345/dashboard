@@ -667,6 +667,46 @@ export default function App() {
     return hasPermission("bundles_panel");
   }, [hasPermission, isAuthor]);
 
+  const funnelChartData = useMemo(() => {
+    const stats = funnelData?.stats || {};
+    const deltas = funnelData?.deltas || {};
+    return [
+      {
+        label: "Sessions",
+        value: stats.total_sessions || 0,
+        change: deltas.sessions?.diff_pct
+          ? Number(deltas.sessions.diff_pct).toFixed(1)
+          : undefined,
+      },
+      {
+        label: "Add to Cart",
+        value: stats.total_atc_sessions || 0,
+        change: deltas.atc?.diff_pct
+          ? Number(deltas.atc.diff_pct).toFixed(1)
+          : undefined,
+      },
+      ...(hasPermission("ci_events")
+        ? [
+            {
+              label: "Checkout Initiated",
+              value: stats.total_ci_events || 0,
+              change: deltas.ci?.diff_pct
+                ? Number(deltas.ci.diff_pct).toFixed(1)
+                : undefined,
+            },
+          ]
+        : []),
+      {
+        label: "Orders",
+        value: stats.total_orders || 0,
+        change:
+          deltas.orders?.diff_pct || deltas.orders?.diff_pp
+            ? Number(deltas.orders?.diff_pct || deltas.orders?.diff_pp).toFixed(1)
+            : undefined,
+      },
+    ];
+  }, [funnelData, hasPermission]);
+
   const canAccessDailyFunnelPanel = useMemo(() => {
     if (isAuthor) return true;
     return hasPermission("daily_funnel_panel");
@@ -2249,48 +2289,7 @@ export default function App() {
                 >
                   Sessions Drop-off Funnel
                 </Typography>
-                <FunnelChart
-                  data={[
-                    {
-                      label: "Sessions",
-                      value: funnelData.stats.total_sessions || 0,
-                      change: funnelData.deltas?.sessions?.diff_pct
-                        ? Number(funnelData.deltas.sessions.diff_pct).toFixed(1)
-                        : undefined,
-                    },
-                    {
-                      label: "Add to Cart",
-                      value: funnelData.stats.total_atc_sessions || 0,
-                      change: funnelData.deltas?.atc?.diff_pct
-                        ? Number(funnelData.deltas.atc.diff_pct).toFixed(1)
-                        : undefined,
-                    },
-                    ...(hasPermission("ci_events")
-                      ? [
-                          {
-                            label: "Checkout Initiated",
-                            value: funnelData.stats.total_ci_events || 0,
-                            change: funnelData.deltas?.ci?.diff_pct
-                              ? Number(funnelData.deltas.ci.diff_pct).toFixed(1)
-                              : undefined,
-                          },
-                        ]
-                      : []),
-                    {
-                      label: "Orders",
-                      value: funnelData.stats.total_orders || 0,
-                      change:
-                        funnelData.deltas?.orders?.diff_pct ||
-                        funnelData.deltas?.orders?.diff_pp
-                          ? Number(
-                              funnelData.deltas?.orders?.diff_pct ||
-                                funnelData.deltas?.orders?.diff_pp,
-                            ).toFixed(1)
-                          : undefined,
-                    },
-                  ]}
-                  height={250}
-                />
+                <FunnelChart data={funnelChartData} height={250} />
               </Box>
             </Suspense>
           ) : (
@@ -3955,60 +3954,7 @@ export default function App() {
                                 }
                               >
                                 <FunnelChart
-                                  data={[
-                                    {
-                                      label: "Sessions",
-                                      value:
-                                        funnelData.stats.total_sessions || 0,
-                                      change: funnelData.deltas?.sessions
-                                        ?.diff_pct
-                                        ? Number(
-                                            funnelData.deltas.sessions.diff_pct,
-                                          ).toFixed(1)
-                                        : undefined,
-                                    },
-                                    {
-                                      label: "Add to Cart",
-                                      value:
-                                        funnelData.stats.total_atc_sessions ||
-                                        0,
-                                      change: funnelData.deltas?.atc?.diff_pct
-                                        ? Number(
-                                            funnelData.deltas.atc.diff_pct,
-                                          ).toFixed(1)
-                                        : undefined,
-                                    },
-                                    ...(hasPermission("ci_events")
-                                      ? [
-                                          {
-                                            label: "Checkout Initiated",
-                                            value:
-                                              funnelData.stats.total_ci_events ||
-                                              0,
-                                            change: funnelData.deltas?.ci
-                                              ?.diff_pct
-                                              ? Number(
-                                                  funnelData.deltas.ci.diff_pct,
-                                                ).toFixed(1)
-                                              : undefined,
-                                          },
-                                        ]
-                                      : []),
-                                    {
-                                      label: "Orders",
-                                      value: funnelData.stats.total_orders || 0,
-                                      change:
-                                        funnelData.deltas?.orders?.diff_pct ||
-                                        funnelData.deltas?.orders?.diff_pp
-                                          ? Number(
-                                              funnelData.deltas?.orders
-                                                ?.diff_pct ||
-                                                funnelData.deltas?.orders
-                                                  ?.diff_pp,
-                                            ).toFixed(1)
-                                          : undefined,
-                                    },
-                                  ]}
+                                  data={funnelChartData}
                                   height={250}
                                 />
                               </Suspense>
