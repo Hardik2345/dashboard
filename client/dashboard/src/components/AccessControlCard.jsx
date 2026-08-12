@@ -516,6 +516,8 @@ export default function AccessControlCard() {
   const [form, setForm] = useState(emptyForm);
   const [isEdit, setIsEdit] = useState(false);
   const [filterRole, setFilterRole] = useState("all");
+  const [filterBrand, setFilterBrand] = useState("all");
+  const [emailSearch, setEmailSearch] = useState("");
   const [knownBrands, setKnownBrands] = useState([]);
   const [domainRules, setDomainRules] = useState([]);
   const [domainDialogOpen, setDomainDialogOpen] = useState(false);
@@ -539,6 +541,21 @@ export default function AccessControlCard() {
     });
     return Array.from(set);
   }, [users, knownBrands]);
+
+  const filterableBrands = useMemo(() => {
+    const set = new Set();
+    users.forEach((u) => {
+      if (u.primary_brand_id) {
+        set.add(normalizeBrandValue(u.primary_brand_id));
+      }
+      (u.brand_memberships || []).forEach((b) => {
+        if (b.brand_id) {
+          set.add(normalizeBrandValue(b.brand_id));
+        }
+      });
+    });
+    return Array.from(set).filter(Boolean).sort();
+  }, [users]);
 
   async function loadUsers() {
     setLoading(true);
@@ -589,10 +606,30 @@ export default function AccessControlCard() {
   }, []);
 
   const filteredUsers = useMemo(() => {
-    return users.filter((u) =>
-      filterRole === "all" ? true : u.role === filterRole,
-    );
-  }, [users, filterRole]);
+    const normalizedSearch = emailSearch.trim().toLowerCase();
+    const normalizedBrandFilter = normalizeBrandValue(filterBrand);
+
+    return users.filter((u) => {
+      const matchesRole = filterRole === "all" ? true : u.role === filterRole;
+      const matchesEmail = normalizedSearch
+        ? String(u.email || "").toLowerCase().includes(normalizedSearch)
+        : true;
+      const userBrands = new Set(
+        [
+          u.primary_brand_id,
+          ...(u.brand_memberships || []).map((membership) => membership.brand_id),
+        ]
+          .map((brandId) => normalizeBrandValue(brandId))
+          .filter(Boolean),
+      );
+      const matchesBrand =
+        normalizedBrandFilter === "ALL"
+          ? true
+          : userBrands.has(normalizedBrandFilter);
+
+      return matchesRole && matchesEmail && matchesBrand;
+    });
+  }, [users, filterRole, filterBrand, emailSearch]);
 
   function openNew() {
     setForm(emptyForm);
@@ -1046,7 +1083,18 @@ export default function AccessControlCard() {
                 : "rgba(0, 0, 0, 0.05)",
             }}
           >
-            <Stack direction="row" spacing={2} alignItems="center">
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={2}
+              alignItems={{ xs: "stretch", md: "center" }}
+              justifyContent="space-between"
+            >
+              <Stack
+                direction="row"
+                spacing={2}
+                alignItems="center"
+                sx={{ flexWrap: "wrap", rowGap: 1, flexShrink: 0 }}
+              >
               <FilterListIcon
                 size="small"
                 sx={{
@@ -1091,6 +1139,69 @@ export default function AccessControlCard() {
                 <MenuItem value="super_admin">Super Admin</MenuItem>
                 <MenuItem value="brand_user">Brand User</MenuItem>
               </Select>
+              </Stack>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={1.5}
+                alignItems={{ xs: "stretch", sm: "center" }}
+                sx={{
+                  width: { xs: "100%", md: "auto" },
+                  flex: { xs: "1 1 auto", md: "0 1 auto" },
+                  justifyContent: { md: "flex-end" },
+                }}
+              >
+                <Select
+                  size="small"
+                  value={filterBrand}
+                  onChange={(e) => setFilterBrand(e.target.value)}
+                  sx={{
+                    minWidth: { xs: "100%", sm: 140 },
+                    width: { xs: "100%", md: 150 },
+                    bgcolor: isDark
+                      ? "rgba(255, 255, 255, 0.05)"
+                      : "rgba(0, 0, 0, 0.02)",
+                    borderRadius: "10px",
+                    "& .MuiSelect-select": {
+                      py: 0.7,
+                      px: 1.5,
+                      fontSize: "0.85rem",
+                      fontWeight: 600,
+                    },
+                    "& fieldset": { border: "none" },
+                  }}
+                >
+                  <MenuItem value="all">All Brands</MenuItem>
+                  {filterableBrands.map((brand) => (
+                    <MenuItem key={brand} value={brand}>
+                      {brand}
+                    </MenuItem>
+                  ))}
+                </Select>
+                <TextField
+                  size="small"
+                  placeholder="Search by email"
+                  value={emailSearch}
+                  onChange={(event) => setEmailSearch(event.target.value)}
+                  sx={{
+                    minWidth: { xs: "100%", sm: 240 },
+                    width: { xs: "100%", md: 280 },
+                    flex: { xs: "1 1 auto", md: "0 0 auto" },
+                    bgcolor: isDark
+                      ? "rgba(255, 255, 255, 0.05)"
+                      : "rgba(0, 0, 0, 0.02)",
+                    borderRadius: "10px",
+                    "& .MuiInputBase-root": {
+                      borderRadius: "10px",
+                    },
+                    "& .MuiInputBase-input": {
+                      py: 1,
+                      fontSize: "0.85rem",
+                      fontWeight: 500,
+                    },
+                    "& fieldset": { border: "none" },
+                  }}
+                />
+              </Stack>
             </Stack>
           </Box>
 
