@@ -14,10 +14,12 @@ Multi-service dashboard platform with gateway-authenticated APIs, analytics work
 ## Quick Start
 
 ```bash
-docker compose up -d --build
-docker compose logs -f api-gateway
-docker compose down
+node scripts/compose-stack.js up -d --build
+node scripts/compose-stack.js logs -f api-gateway
+node scripts/compose-stack.js down
 ```
+
+Root `.env` supports `HEALTH_MONITOR=true|false`. If omitted, it defaults to `true`.
 
 Gateway URL in local compose:
 

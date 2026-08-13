@@ -4,7 +4,10 @@ import {
   Button,
   Card,
   CardContent,
+  FormControl,
   InputAdornment,
+  MenuItem,
+  Select,
   Skeleton,
   Stack,
   Table,
@@ -46,6 +49,8 @@ export default function UserEngagementTable({
   search = "",
   sort = "sessions",
   direction = "desc",
+  actorType = "viewer",
+  onActorTypeChange,
   onPageChange,
   onRowsPerPageChange,
   onSearchChange,
@@ -66,6 +71,15 @@ export default function UserEngagementTable({
               User Engagement
             </Typography>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+              <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 120 } }}>
+                <Select
+                  value={actorType}
+                  onChange={(event) => onActorTypeChange?.(event.target.value)}
+                >
+                  <MenuItem value="viewer">Viewer</MenuItem>
+                  <MenuItem value="admin">Admin</MenuItem>
+                </Select>
+              </FormControl>
               <TextField
                 size="small"
                 placeholder="Search users"

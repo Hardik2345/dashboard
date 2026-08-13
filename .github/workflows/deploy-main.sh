@@ -10,13 +10,13 @@ GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/deploy_key -o IdentitiesOnly=yes' git 
 GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/deploy_key -o IdentitiesOnly=yes' git reset --hard origin/main
 
 echo "Stopping containers..."
-docker compose -p "dashboard-prod" down --remove-orphans
+node scripts/compose-stack.js -p "dashboard-prod" down --remove-orphans
 
 echo "Rebuilding containers..."
-docker compose -p "dashboard-prod" build --no-cache
+node scripts/compose-stack.js -p "dashboard-prod" build --no-cache
 
 echo "Starting containers..."
-docker compose -p "dashboard-prod" up -d
+node scripts/compose-stack.js -p "dashboard-prod" up -d
 
 echo "Cleaning unused images..."
 docker image prune -f

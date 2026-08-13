@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardContent,
@@ -41,6 +41,7 @@ import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import DomainIcon from "@mui/icons-material/Domain";
 import FilterListIcon from "@mui/icons-material/FilterList";
+import DownloadIcon from "@mui/icons-material/Download";
 import {
   adminListUsers,
   adminUpsertUser,
@@ -184,6 +185,28 @@ function normalizePermissionSelection(permissions = []) {
     next = next.filter((permission) => permission !== "requests_timeline");
   }
   return next;
+}
+
+function escapeCsvValue(value) {
+  const str = value == null ? "" : String(value);
+  if (/[",\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function serializePermissionsPayload(source = {}) {
+  return JSON.stringify({
+    permissions: normalizePermissionSelection(source.permissions || ["all"]),
+  });
+}
+
+function parsePermissionsPayload(raw) {
+  const parsed = JSON.parse(raw);
+  if (!parsed || !Array.isArray(parsed.permissions)) {
+    throw new Error("Invalid permissions payload");
+  }
+  return normalizePermissionSelection(parsed.permissions);
 }
 
 const StatusSwitch = ({ active, onChange, label = "Active", isDark }) => (
@@ -531,6 +554,8 @@ export default function AccessControlCard() {
     status: "active",
   });
   const [domainSaving, setDomainSaving] = useState(false);
+  const userDialogRef = useRef(null);
+  const domainDialogRef = useRef(null);
 
   const availableBrands = useMemo(() => {
     const set = new Set(knownBrands);
@@ -630,6 +655,142 @@ export default function AccessControlCard() {
       return matchesRole && matchesEmail && matchesBrand;
     });
   }, [users, filterRole, filterBrand, emailSearch]);
+
+  async function writePermissionsToClipboard(source) {
+    await navigator.clipboard.writeText(serializePermissionsPayload(source));
+  }
+
+  async function readPermissionsFromClipboard() {
+    const raw = await navigator.clipboard.readText();
+    return parsePermissionsPayload(raw);
+  }
+
+  function shouldInterceptPermissionShortcut(event, container) {
+    if (!container || !container.contains(event.target)) return false;
+    const tagName = event.target?.tagName;
+    if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") {
+      return false;
+    }
+    if (window.getSelection?.()?.toString()) {
+      return false;
+    }
+    return (event.ctrlKey || event.metaKey) && !event.altKey;
+  }
+
+  useEffect(() => {
+    if (!dialogOpen) return undefined;
+
+    const handleKeyDown = async (event) => {
+      if (!shouldInterceptPermissionShortcut(event, userDialogRef.current)) return;
+      const key = event.key.toLowerCase();
+      if (key === "c") {
+        event.preventDefault();
+        try {
+          await writePermissionsToClipboard(form);
+        } catch (error) {
+          console.warn("Failed to copy permissions", error);
+        }
+      }
+      if (key === "v") {
+        event.preventDefault();
+        try {
+          const permissions = await readPermissionsFromClipboard();
+          handleFormChange("permissions", permissions);
+        } catch (error) {
+          console.warn("Failed to paste permissions", error);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [dialogOpen, form]);
+
+  useEffect(() => {
+    if (!domainDialogOpen) return undefined;
+
+    const handleKeyDown = async (event) => {
+      if (!shouldInterceptPermissionShortcut(event, domainDialogRef.current)) return;
+      const key = event.key.toLowerCase();
+      if (key === "c") {
+        event.preventDefault();
+        try {
+          await writePermissionsToClipboard(domainForm);
+        } catch (error) {
+          console.warn("Failed to copy domain permissions", error);
+        }
+      }
+      if (key === "v") {
+        event.preventDefault();
+        try {
+          const permissions = await readPermissionsFromClipboard();
+          setDomainForm((prev) => ({ ...prev, permissions }));
+        } catch (error) {
+          console.warn("Failed to paste domain permissions", error);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [domainDialogOpen, domainForm]);
+
+  function handleExportFilteredUsersCsv() {
+    const rows = filteredUsers.map((user) => {
+      const brandIds = (user.brand_memberships || [])
+        .map((membership) => normalizeBrandValue(membership.brand_id))
+        .filter(Boolean);
+      const permissions = normalizePermissionSelection(
+        user.brand_memberships?.[0]?.permissions || (isElevatedRole(user.role) ? ["all"] : []),
+      );
+
+      return {
+        email: user.email || "",
+        role: getRoleLabel(user.role),
+        primary_brand: user.primary_brand_id || "",
+        all_brands: isElevatedRole(user.role)
+          ? Array.from(new Set([...brandIds, "ALL"])).join(" | ")
+          : brandIds.join(" | "),
+        permissions: permissions.join(" | "),
+        status: user.status || "",
+      };
+    });
+
+    const headers = [
+      "Email",
+      "Role",
+      "Primary Brand",
+      "All Brands",
+      "Permissions",
+      "Status",
+    ];
+
+    const csv = [
+      headers.join(","),
+      ...rows.map((row) =>
+        [
+          row.email,
+          row.role,
+          row.primary_brand,
+          row.all_brands,
+          row.permissions,
+          row.status,
+        ]
+          .map(escapeCsvValue)
+          .join(","),
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "access-control-users.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }
 
   function openNew() {
     setForm(emptyForm);
@@ -1201,6 +1362,23 @@ export default function AccessControlCard() {
                     "& fieldset": { border: "none" },
                   }}
                 />
+                <Button
+                  variant="outlined"
+                  startIcon={<DownloadIcon sx={{ fontSize: 18 }} />}
+                  onClick={handleExportFilteredUsersCsv}
+                  sx={{
+                    minWidth: { xs: "100%", sm: "auto" },
+                    whiteSpace: "nowrap",
+                    textTransform: "none",
+                    borderRadius: "10px",
+                    fontWeight: 600,
+                    px: 1.75,
+                    py: 0.9,
+                    alignSelf: { xs: "stretch", md: "center" },
+                  }}
+                >
+                  Export CSV
+                </Button>
               </Stack>
             </Stack>
           </Box>
@@ -1553,6 +1731,7 @@ export default function AccessControlCard() {
         fullWidth
         maxWidth="sm"
         PaperProps={{
+          ref: userDialogRef,
           sx: { borderRadius: "20px", bgcolor: isDark ? "#1a1a1a" : "#fff" },
         }}
       >
@@ -1976,6 +2155,9 @@ export default function AccessControlCard() {
                 <MenuItem value="suspended">Suspended</MenuItem>
               </Select>
             </FormControl>
+            <Typography variant="caption" sx={{ opacity: 0.6 }}>
+              Click anywhere in this dialog outside text fields, then use Ctrl/Cmd+C to copy permissions and Ctrl/Cmd+V to paste them.
+            </Typography>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>
@@ -2009,6 +2191,7 @@ export default function AccessControlCard() {
         fullWidth
         maxWidth="sm"
         PaperProps={{
+          ref: domainDialogRef,
           sx: { borderRadius: "20px", bgcolor: isDark ? "#1a1a1a" : "#fff" },
         }}
       >
@@ -2250,6 +2433,9 @@ export default function AccessControlCard() {
                 <MenuItem value="suspended">Suspended</MenuItem>
               </Select>
             </FormControl>
+            <Typography variant="caption" sx={{ opacity: 0.6 }}>
+              Click anywhere in this dialog outside text fields, then use Ctrl/Cmd+C to copy permissions and Ctrl/Cmd+V to paste them.
+            </Typography>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>

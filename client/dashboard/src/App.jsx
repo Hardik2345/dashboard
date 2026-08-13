@@ -3619,6 +3619,7 @@ export default function App() {
                   {!isMobile &&
                     authorTab !== "dashboard" &&
                     authorTab !== "overall-snapshot" &&
+                    authorTab !== "session-analytics" &&
                     authorTab !== "alerts" &&
                     authorTab !== "access" &&
                     authorTab !== "notifications-log" &&
@@ -3952,6 +3953,7 @@ export default function App() {
                           <DailyFunnelPanel
                             brandKey={activeBrandKey}
                             canAccessUtmFunnelTable={canAccessUtmFunnelTable}
+                            canAccessPercentBasisToggle={isAuthor}
                           />
                         </Suspense>
                       ) : (
