@@ -60,8 +60,9 @@ async function buildUserAssignment({ role, brand_ids = [], primary_brand_id = nu
 }
 
 class AdminUserService {
-    static async upsertUser({ email, role = 'viewer', brand_ids = [], primary_brand_id = null, status = 'active', permissions = ['all'] }) {
+    static async upsertUser({ name = '', email, role = 'viewer', brand_ids = [], primary_brand_id = null, status = 'active', permissions = ['all'] }) {
         const normalizedEmail = (email || '').toLowerCase();
+        const normalizedName = (name || '').toString().trim();
         if (!normalizedEmail) throw new Error('email required');
         const assignment = await buildUserAssignment({ role, brand_ids, primary_brand_id, permissions });
 
@@ -70,6 +71,7 @@ class AdminUserService {
             const password_hash = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
             user = await GlobalUser.create({
                 email: normalizedEmail,
+                name: normalizedName,
                 password_hash,
                 status,
                 role: assignment.role,
@@ -77,6 +79,7 @@ class AdminUserService {
                 brand_memberships: assignment.memberships,
             });
         } else {
+            user.name = normalizedName;
             user.role = assignment.role;
             user.status = status;
             if (assignment.primary) user.primary_brand_id = assignment.primary;

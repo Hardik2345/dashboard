@@ -518,6 +518,7 @@ const DomainMobileCard = ({ rule, onEdit, onDelete, isDark }) => (
 );
 
 const emptyForm = {
+  name: "",
   email: "",
   role: "viewer",
   brand_ids: [],
@@ -746,6 +747,7 @@ export default function AccessControlCard() {
 
       return {
         email: user.email || "",
+        name: user.name || "",
         role: getRoleLabel(user.role),
         primary_brand: user.primary_brand_id || "",
         all_brands: isElevatedRole(user.role)
@@ -800,6 +802,7 @@ export default function AccessControlCard() {
 
   function openEdit(u) {
     setForm({
+      name: u.name || "",
       email: u.email,
       role: u.role,
       brand_ids: (u.brand_memberships || []).map((b) => b.brand_id),
@@ -828,12 +831,13 @@ export default function AccessControlCard() {
     );
 
     if (role === "super_admin") {
-      return {
-        email,
-        role,
-        brand_ids: [],
-        primary_brand_id: "",
-        permissions: ["all"],
+    return {
+      name: (source.name || "").toString().trim(),
+      email,
+      role,
+      brand_ids: [],
+      primary_brand_id: "",
+      permissions: ["all"],
         status,
       };
     }
@@ -844,6 +848,7 @@ export default function AccessControlCard() {
         throw new Error("Brand is required");
       }
       return {
+        name: (source.name || "").toString().trim(),
         email,
         role,
         brand_ids: [selectedBrand],
@@ -870,6 +875,7 @@ export default function AccessControlCard() {
     }
 
     return {
+      name: (source.name || "").toString().trim(),
       email,
       role,
       brand_ids: brandIds,
@@ -916,6 +922,7 @@ export default function AccessControlCard() {
     try {
       payload = buildUserPayload({
         email: user.email,
+        name: user.name || "",
         role: user.role,
         brand_ids: (user.brand_memberships || []).map((b) => b.brand_id),
         primary_brand_id: user.primary_brand_id,
@@ -1740,6 +1747,12 @@ export default function AccessControlCard() {
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ mt: 1 }}>
+            <TextField
+              label="User Name"
+              fullWidth
+              value={form.name}
+              onChange={(e) => handleFormChange("name", e.target.value)}
+            />
             <TextField
               label="Email Address"
               fullWidth

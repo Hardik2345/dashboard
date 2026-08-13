@@ -73,6 +73,11 @@ const GlobalUserSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+  name: {
+    type: String,
+    trim: true,
+    default: ""
+  },
   password_hash: {
     type: String,
     required: true
