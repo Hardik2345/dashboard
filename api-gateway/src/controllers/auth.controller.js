@@ -84,6 +84,7 @@ exports.signup = async (req, res) => {
             user: {
                 id: result.user._id,
                 email: result.user.email,
+                name: result.user.name,
                 role: result.user.role,
                 primary_brand_id: result.user.primary_brand_id,
                 brand_memberships: result.user.brand_memberships,
@@ -199,6 +200,7 @@ exports.me = async (req, res) => {
             user: {
                 id: user._id,
                 email: user.email,
+                name: user.name,
                 role: user.role,
                 primary_brand_id: user.primary_brand_id,
                 brand_memberships: user.brand_memberships,
@@ -225,12 +227,13 @@ function requireAdminOrAuthor(req) {
 exports.adminUpsertUser = async (req, res) => {
     try {
         requireAdminOrAuthor(req);
-        const { email, role, brand_ids, primary_brand_id, status, permissions } = req.body || {};
-        const user = await AdminUserService.upsertUser({ email, role, brand_ids, primary_brand_id, status, permissions });
+        const { name, email, role, brand_ids, primary_brand_id, status, permissions } = req.body || {};
+        const user = await AdminUserService.upsertUser({ name, email, role, brand_ids, primary_brand_id, status, permissions });
         return res.status(200).json({
             user: {
                 id: user._id,
                 email: user.email,
+                name: user.name,
                 role: user.role,
                 status: user.status,
                 primary_brand_id: user.primary_brand_id,
@@ -446,6 +449,7 @@ exports.googleCallback = async (req, res) => {
             user: {
                 id: result.user._id,
                 email: result.user.email,
+                name: result.user.name,
                 role: result.user.role,
                 primary_brand_id: result.user.primary_brand_id,
                 brand_memberships: result.user.brand_memberships,
