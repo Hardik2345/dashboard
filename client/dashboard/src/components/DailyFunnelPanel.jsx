@@ -129,11 +129,11 @@ function getDailyPercentDisplay(row, columnId, basis) {
       case "discount_amount":
         return formatPercent(row.discount_amount, row.sales);
       case "prepaid_orders":
-        return formatPercent(row.prepaid_orders, row.sessions);
+        return formatPercent(row.prepaid_orders, row.orders);
       case "cod_orders":
-        return formatPercent(row.cod_orders, row.sessions);
+        return formatPercent(row.cod_orders, row.orders);
       case "partially_paid_orders":
-        return formatPercent(row.partially_paid_orders, row.sessions);
+        return formatPercent(row.partially_paid_orders, row.orders);
       case "cvr":
         return formatPercent(row.orders, row.sessions);
       default:
