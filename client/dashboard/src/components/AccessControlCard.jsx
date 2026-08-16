@@ -144,6 +144,23 @@ const ROLE_OPTIONS = [
   { value: "brand_user", label: "Brand User" },
 ];
 
+function isValidEmailAddress(value) {
+  const normalized = (value || "").toString().trim().toLowerCase();
+  if (!normalized || normalized.length > 254) return false;
+  if (normalized.includes("..")) return false;
+
+  const parts = normalized.split("@");
+  if (parts.length !== 2) return false;
+
+  const [localPart, domainPart] = parts;
+  if (!localPart || !domainPart) return false;
+  if (localPart.startsWith(".") || localPart.endsWith(".")) return false;
+  if (domainPart.startsWith(".") || domainPart.endsWith(".")) return false;
+  if (!domainPart.includes(".")) return false;
+
+  return /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(normalized);
+}
+
 function getRoleLabel(role) {
   return ROLE_OPTIONS.find((option) => option.value === role)?.label || role;
 }
@@ -535,6 +552,7 @@ export default function AccessControlCard() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [userFormError, setUserFormError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -797,6 +815,7 @@ export default function AccessControlCard() {
   function openNew() {
     setForm(emptyForm);
     setIsEdit(false);
+    setUserFormError(null);
     setDialogOpen(true);
   }
 
@@ -811,14 +830,33 @@ export default function AccessControlCard() {
       permissions: u.brand_memberships?.[0]?.permissions || ["all"],
     });
     setIsEdit(true);
+    setUserFormError(null);
     setDialogOpen(true);
   }
 
   function handleFormChange(key, value) {
-    setForm((prev) => ({
-      ...prev,
-      [key]: key === "permissions" ? normalizePermissionSelection(value) : value,
-    }));
+    setForm((prev) => {
+      if (key === "brand_ids") {
+        const nextBrandIds = Array.from(
+          new Set((value || []).map((brandId) => normalizeBrandValue(brandId)).filter(Boolean)),
+        );
+        const currentPrimary = normalizeBrandValue(prev.primary_brand_id);
+        const nextPrimary = nextBrandIds.length === 0
+          ? ""
+          : (currentPrimary && nextBrandIds.includes(currentPrimary) ? currentPrimary : nextBrandIds[0]);
+
+        return {
+          ...prev,
+          brand_ids: nextBrandIds,
+          primary_brand_id: nextPrimary,
+        };
+      }
+
+      return {
+        ...prev,
+        [key]: key === "permissions" ? normalizePermissionSelection(value) : value,
+      };
+    });
   }
 
   function buildUserPayload(source, statusOverride = null) {
@@ -887,28 +925,46 @@ export default function AccessControlCard() {
 
   async function handleSave() {
     if (!form.email) {
-      setError("Email is required");
+      setUserFormError("Email is required");
       return;
+    }
+    if (!isValidEmailAddress(form.email)) {
+      setUserFormError("Enter a valid email address");
+      return;
+    }
+    if (!isEdit) {
+      const normalizedEmail = form.email.toString().trim().toLowerCase();
+      const existingUser = users.some(
+        (user) => (user.email || "").toString().trim().toLowerCase() === normalizedEmail,
+      );
+      if (existingUser) {
+        setUserFormError("User with this email id already exists");
+        return;
+      }
     }
 
     setSaving(true);
+    setUserFormError(null);
     let payload;
     try {
-      payload = buildUserPayload(form);
+      payload = {
+        ...buildUserPayload(form),
+        create_only: !isEdit,
+      };
     } catch (err) {
       setSaving(false);
-      setError(err.message);
+      setUserFormError(err.message);
       return;
     }
 
     const r = await adminUpsertUser(payload);
     setSaving(false);
     if (r.error) {
-      setError(r.data?.error || "Save failed");
+      setUserFormError(r.data?.error || "Save failed");
       return;
     }
     setDialogOpen(false);
-    setError(null);
+    setUserFormError(null);
     await loadUsers();
   }
 
@@ -1734,7 +1790,10 @@ export default function AccessControlCard() {
       {/* Dialogs */}
       <Dialog
         open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
+        onClose={() => {
+          setDialogOpen(false);
+          setUserFormError(null);
+        }}
         fullWidth
         maxWidth="sm"
         PaperProps={{
@@ -1747,6 +1806,11 @@ export default function AccessControlCard() {
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ mt: 1 }}>
+            {userFormError && (
+              <Alert severity="error" sx={{ borderRadius: "12px" }}>
+                {userFormError}
+              </Alert>
+            )}
             <TextField
               label="User Name"
               fullWidth
@@ -1821,6 +1885,7 @@ export default function AccessControlCard() {
                   <Select
                     label="Primary Brand"
                     value={form.primary_brand_id}
+                    disabled={(form.brand_ids || []).length === 0}
                     onChange={(e) =>
                       handleFormChange("primary_brand_id", e.target.value)
                     }
@@ -2175,7 +2240,10 @@ export default function AccessControlCard() {
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>
           <Button
-            onClick={() => setDialogOpen(false)}
+            onClick={() => {
+              setDialogOpen(false);
+              setUserFormError(null);
+            }}
             sx={{ textTransform: "none", fontWeight: 600 }}
           >
             Cancel

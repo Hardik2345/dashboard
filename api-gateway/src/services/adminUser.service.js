@@ -15,6 +15,23 @@ function normalizeEmail(email) {
     return (email || '').toString().trim().toLowerCase();
 }
 
+function isValidEmail(email) {
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail || normalizedEmail.length > 254) return false;
+    if (normalizedEmail.includes('..')) return false;
+
+    const parts = normalizedEmail.split('@');
+    if (parts.length !== 2) return false;
+
+    const [localPart, domainPart] = parts;
+    if (!localPart || !domainPart) return false;
+    if (localPart.startsWith('.') || localPart.endsWith('.')) return false;
+    if (domainPart.startsWith('.') || domainPart.endsWith('.')) return false;
+    if (!domainPart.includes('.')) return false;
+
+    return /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(normalizedEmail);
+}
+
 async function findUsersByNormalizedEmail(normalizedEmail) {
     if (!normalizedEmail) return [];
     return GlobalUser.find({
@@ -76,10 +93,11 @@ async function buildUserAssignment({ role, brand_ids = [], primary_brand_id = nu
 }
 
 class AdminUserService {
-    static async upsertUser({ name = '', email, role = 'viewer', brand_ids = [], primary_brand_id = null, status = 'active', permissions = ['all'] }) {
+    static async upsertUser({ name = '', email, role = 'viewer', brand_ids = [], primary_brand_id = null, status = 'active', permissions = ['all'], createOnly = false }) {
         const normalizedEmail = normalizeEmail(email);
         const normalizedName = (name || '').toString().trim();
         if (!normalizedEmail) throw new Error('email required');
+        if (!isValidEmail(normalizedEmail)) throw new Error('invalid email format');
         const assignment = await buildUserAssignment({ role, brand_ids, primary_brand_id, permissions });
 
         const matchingUsers = await findUsersByNormalizedEmail(normalizedEmail);
@@ -107,6 +125,9 @@ class AdminUserService {
                 throw err;
             }
         } else {
+            if (createOnly) {
+                throw new Error('duplicate email exists');
+            }
             user.email = normalizedEmail;
             user.name = normalizedName;
             user.role = assignment.role;

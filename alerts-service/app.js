@@ -824,8 +824,8 @@ async function start() {
         healthEndpoint: "/health",
         dependencies: ["mongo", "redis"],
         endpoints: [
-          { path: "/health", method: "GET", critical: true, intervalSeconds: 30, successStatusFamily: "2xx" },
-          { path: "/health/monitor", method: "GET", critical: true, intervalSeconds: 60, successStatusFamily: "2xx" },
+          { path: "/health", method: "GET", critical: true, intervalSeconds: 3600, successStatusFamily: "2xx" },
+          { path: "/health/monitor", method: "GET", critical: true, intervalSeconds: 3600, successStatusFamily: "2xx" },
         ],
         discoveredRoutes: [
           ...collectRoutes(app, { sourceModule: "app.js" }),
