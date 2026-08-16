@@ -71,7 +71,9 @@ const GlobalUserSchema = new mongoose.Schema({
   email: {
     type: String,
     required: true,
-    unique: true
+    unique: true,
+    trim: true,
+    lowercase: true
   },
   name: {
     type: String,

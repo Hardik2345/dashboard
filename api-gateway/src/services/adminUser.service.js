@@ -11,6 +11,22 @@ const {
     normalizeRole,
 } = require('./rbac.service');
 
+function normalizeEmail(email) {
+    return (email || '').toString().trim().toLowerCase();
+}
+
+async function findUsersByNormalizedEmail(normalizedEmail) {
+    if (!normalizedEmail) return [];
+    return GlobalUser.find({
+        $expr: {
+            $eq: [
+                { $toLower: { $trim: { input: '$email' } } },
+                normalizedEmail,
+            ],
+        },
+    }).sort({ created_at: 1 });
+}
+
 function normalizeLegacyAssignment(brand_ids = [], primary_brand_id = null) {
     const brandIds = normalizeBrandIds(brand_ids);
     let primary = normalizePrimaryBrand(primary_brand_id);
@@ -61,39 +77,66 @@ async function buildUserAssignment({ role, brand_ids = [], primary_brand_id = nu
 
 class AdminUserService {
     static async upsertUser({ name = '', email, role = 'viewer', brand_ids = [], primary_brand_id = null, status = 'active', permissions = ['all'] }) {
-        const normalizedEmail = (email || '').toLowerCase();
+        const normalizedEmail = normalizeEmail(email);
         const normalizedName = (name || '').toString().trim();
         if (!normalizedEmail) throw new Error('email required');
         const assignment = await buildUserAssignment({ role, brand_ids, primary_brand_id, permissions });
 
-        let user = await GlobalUser.findOne({ email: normalizedEmail });
+        const matchingUsers = await findUsersByNormalizedEmail(normalizedEmail);
+        if (matchingUsers.length > 1) {
+            throw new Error('duplicate email exists');
+        }
+
+        let user = matchingUsers[0] || null;
         if (!user) {
             const password_hash = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
-            user = await GlobalUser.create({
-                email: normalizedEmail,
-                name: normalizedName,
-                password_hash,
-                status,
-                role: assignment.role,
-                primary_brand_id: assignment.primary || null,
-                brand_memberships: assignment.memberships,
-            });
+            try {
+                user = await GlobalUser.create({
+                    email: normalizedEmail,
+                    name: normalizedName,
+                    password_hash,
+                    status,
+                    role: assignment.role,
+                    primary_brand_id: assignment.primary || null,
+                    brand_memberships: assignment.memberships,
+                });
+            } catch (err) {
+                if (err?.code === 11000) {
+                    throw new Error('duplicate email exists');
+                }
+                throw err;
+            }
         } else {
+            user.email = normalizedEmail;
             user.name = normalizedName;
             user.role = assignment.role;
             user.status = status;
             if (assignment.primary) user.primary_brand_id = assignment.primary;
             user.brand_memberships = assignment.memberships;
-            await user.save();
+            try {
+                await user.save();
+            } catch (err) {
+                if (err?.code === 11000) {
+                    throw new Error('duplicate email exists');
+                }
+                throw err;
+            }
         }
 
         return user;
     }
 
     static async deleteUserByEmail(email) {
-        const normalizedEmail = (email || '').toLowerCase();
+        const normalizedEmail = normalizeEmail(email);
         if (!normalizedEmail) throw new Error('email required');
-        const result = await GlobalUser.deleteOne({ email: normalizedEmail });
+        const result = await GlobalUser.deleteMany({
+            $expr: {
+                $eq: [
+                    { $toLower: { $trim: { input: '$email' } } },
+                    normalizedEmail,
+                ],
+            },
+        });
         return result.deletedCount || 0;
     }
 
