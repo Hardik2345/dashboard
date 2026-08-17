@@ -37,9 +37,11 @@ Update `.env` and service-specific env files:
 
 ## 4) Start services
 ```bash
-docker compose up -d --build
-docker compose logs -f api-gateway
+node scripts/compose-stack.js up -d --build
+node scripts/compose-stack.js logs -f api-gateway
 ```
+
+Root `.env` supports `HEALTH_MONITOR=true|false`. If omitted, the deploy flow defaults it to `true`.
 
 ## Optional: domain + SSL (Nginx + Certbot)
 If you want HTTPS, place Nginx in front of `api-gateway` and use Certbot:

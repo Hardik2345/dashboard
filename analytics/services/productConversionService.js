@@ -130,7 +130,13 @@ function normalizeProductConversionRequest(query, options = {}) {
   }
   const { start, end } = range.data;
 
-  const sortBy = (query.sort_by || "sessions").toString().toLowerCase();
+  const inventoryOnly =
+    String(query.inventory_only || query.inventoryOnly || "")
+      .toLowerCase()
+      .trim() === "true";
+  const sortBy = (query.sort_by || (inventoryOnly ? "sales" : "sessions"))
+    .toString()
+    .toLowerCase();
   const sortDir = (query.sort_dir || "desc").toString().toLowerCase();
   let visibleColumns = query.visible_columns;
   if (typeof visibleColumns === "string") {
@@ -160,10 +166,7 @@ function normalizeProductConversionRequest(query, options = {}) {
       visibleColumns: Array.isArray(visibleColumns) ? visibleColumns : null,
       inventoryPeriod: (query.inventory_period || "7d").toLowerCase(),
       brandKey: query.brand_key,
-      inventoryOnly:
-        String(query.inventory_only || query.inventoryOnly || "")
-          .toLowerCase()
-          .trim() === "true",
+      inventoryOnly,
       timezone: range.timezone || options.timezone,
     },
   };
@@ -626,6 +629,131 @@ function hasInventoryDerivedFilter(filters) {
   });
 }
 
+function buildInventoryGroupKey({ sku, variantId, productId, fallbackKey }) {
+  const normalizedSku = String(sku || "").trim();
+  if (normalizedSku) return `sku:${normalizedSku.toLowerCase()}`;
+  return `variant:${variantId || productId || fallbackKey}`;
+}
+
+function buildInventorySalesLookup(rawSalesCache) {
+  const groupedSales = new Map();
+  const addSale = (groupKey, amount) => {
+    const numericAmount = Number(amount || 0);
+    if (!groupKey || !Number.isFinite(numericAmount)) return;
+    groupedSales.set(groupKey, Number(groupedSales.get(groupKey) || 0) + numericAmount);
+  };
+
+  if (!rawSalesCache) return groupedSales;
+
+  let parsedSales;
+  try {
+    parsedSales = JSON.parse(rawSalesCache);
+  } catch {
+    return groupedSales;
+  }
+
+  const extractSalesRows = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (Array.isArray(value?.rows)) return value.rows;
+    if (Array.isArray(value?.data)) return value.data;
+    if (Array.isArray(value?.items)) return value.items;
+    if (Array.isArray(value?.products)) return value.products;
+    if (typeof value === "object") {
+      return Object.values(value).filter((entry) => entry && typeof entry === "object");
+    }
+    return [];
+  };
+
+  const topLevelRows = extractSalesRows(parsedSales);
+
+  topLevelRows.forEach((row, rowIndex) => {
+    const fallbackKey = `sales:${rowIndex}`;
+    const sourceRows = Array.isArray(row?.source_rows) && row.source_rows.length > 0
+      ? row.source_rows
+      : [row];
+
+    sourceRows.forEach((sourceRow, sourceIndex) => {
+      const productId =
+        extractNumericId(sourceRow?.product_id ?? row?.product_id, "Product") || null;
+      const variantId =
+        extractNumericId(
+          sourceRow?.product_variant_id ?? row?.product_variant_id,
+          "ProductVariant",
+        ) || null;
+      const sku = String(
+        sourceRow?.product_variant_sku ??
+          sourceRow?.sku ??
+          row?.product_variant_sku ??
+          row?.sku ??
+          "",
+      ).trim();
+      const amount =
+        sourceRow?.gross_sales ??
+        sourceRow?.sales ??
+        row?.gross_sales ??
+        row?.sales ??
+        0;
+      const groupKey = buildInventoryGroupKey({
+        sku,
+        variantId,
+        productId,
+        fallbackKey: `${fallbackKey}:${sourceIndex}`,
+      });
+      addSale(groupKey, amount);
+    });
+  });
+
+  return groupedSales;
+}
+
+async function getInventoryTopProductSalesCache(redisClient, shopName) {
+  if (!redisClient || !shopName) return null;
+
+  const normalizedShopName = String(shopName || "").trim();
+  if (!normalizedShopName) return null;
+
+  const candidates = normalizedShopName.includes(".")
+    ? [
+        `inventory_top_product_sales:${normalizedShopName}`,
+        `inventory_top_product_sales:${normalizedShopName.replace(/\.myshopify\.com$/i, "")}`,
+      ]
+    : [
+        `inventory_top_product_sales:${normalizedShopName}`,
+        `inventory_top_product_sales:${normalizedShopName}.myshopify.com`,
+      ];
+
+  for (const key of candidates) {
+    const value = await redisClient.get(key);
+    if (value) return value;
+  }
+
+  const scanPatterns = normalizedShopName.includes(".")
+    ? [
+        `inventory_top_product_sales:*${normalizedShopName}*`,
+        `inventory_top_product_sales:*${normalizedShopName.replace(/\.myshopify\.com$/i, "")}*`,
+      ]
+    : [
+        `inventory_top_product_sales:*${normalizedShopName}*`,
+        `inventory_top_product_sales:*${normalizedShopName}.myshopify.com*`,
+      ];
+
+  for (const pattern of scanPatterns) {
+    let cursor = "0";
+    do {
+      const result = await redisClient.scan(cursor, "MATCH", pattern, "COUNT", 50);
+      cursor = result[0];
+      const keys = Array.isArray(result[1]) ? result[1] : [];
+      for (const key of keys) {
+        const value = await redisClient.get(key);
+        if (value) return value;
+      }
+    } while (cursor !== "0");
+  }
+
+  return null;
+}
+
 function buildProductConversionService() {
   async function getInventoryOnlyRowsFromRedis(spec, resolveShopSubdomain) {
     const redisClient = getDefaultRedisClient();
@@ -654,19 +782,29 @@ function buildProductConversionService() {
 
       if (redisKeys.length === 0) return [];
 
-      const cachedValues = await redisClient.mget(redisKeys);
+      const [cachedValues, rawSalesCache] = await Promise.all([
+        redisClient.mget(redisKeys),
+        getInventoryTopProductSalesCache(redisClient, shopName),
+      ]);
+      const salesLookup = buildInventorySalesLookup(rawSalesCache);
       const grouped = new Map();
 
-      cachedValues.forEach((val) => {
+      cachedValues.forEach((val, index) => {
         if (!val) return;
         try {
           const parsed = JSON.parse(val);
           const sku = String(parsed.sku || "").trim();
           const variantId = parsed.variantId || null;
           const productId = extractNumericId(parsed.productId, "Product") || null;
-          const groupKey = sku ? `sku:${sku.toLowerCase()}` : `variant:${variantId || productId || Math.random()}`;
+          const groupKey = buildInventoryGroupKey({
+            sku,
+            variantId,
+            productId,
+            fallbackKey: `inventory:${index}`,
+          });
           const drr = Number(parsed[`drr${period}`] ?? 0);
           const liveQty = Number(parsed.liveQty ?? 0);
+          const sales = Number(salesLookup.get(groupKey) || 0);
 
           if (!grouped.has(groupKey)) {
             grouped.set(groupKey, {
@@ -677,7 +815,7 @@ function buildProductConversionService() {
               atc: 0,
               atc_rate: 0,
               orders: 0,
-              sales: 0,
+              sales,
               cvr: 0,
               drr: drr,
               liveQty,

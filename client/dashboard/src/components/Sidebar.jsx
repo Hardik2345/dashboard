@@ -67,12 +67,10 @@ const NAV_ITEMS = [
     items: [
       { id: "overall-snapshot", label: "Overall Snapshot", icon: LayoutGrid },
       { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
-      { id: "session-analytics", label: "Dashboard Sessions", icon: Activity },
       { id: "product-conversion", label: "Product Funnel", icon: Filter },
       { id: "daily-funnel", label: "Conversion Funnel", icon: Table2 },
       { id: "bundles", label: "Bundles", icon: Table2 },
       { id: "inventory", label: "Inventory", icon: Package },
-      { id: "alerts", label: "Alerts", icon: Bell },
       { id: "requests", label: "Requests", icon: ClipboardList },
     ],
   },
@@ -80,6 +78,8 @@ const NAV_ITEMS = [
     group: "admin",
     items: [
       { id: "access", label: "Access Control", icon: ShieldCheck },
+      { id: "session-analytics", label: "Dashboard Sessions", icon: Activity },
+      { id: "alerts", label: "Alerts", icon: Bell },
       {
         id: "traffic-split-config",
         label: "Configurations",
@@ -105,6 +105,11 @@ export default function Sidebar({
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const initials = getInitials(user?.name, user?.email);
   const avatarColor = getAvatarColor(initials);
+  const roleLabel = user?.isAuthor
+    ? "Admin"
+    : user?.role
+      ? String(user.role).replace(/^author$/i, "Admin")
+      : "Viewer";
 
   const filteredNavItems = useMemo(() => {
     let base = NAV_ITEMS;
@@ -212,7 +217,7 @@ export default function Sidebar({
               {user?.name || user?.email?.split("@")[0] || "User"}
             </span>
             <span className="text-xs text-zinc-500 dark:text-zinc-400 capitalize">
-              {user?.role || (user?.isAuthor ? "Admin" : "Viewer")}
+              {roleLabel}
             </span>
           </div>
         </div>

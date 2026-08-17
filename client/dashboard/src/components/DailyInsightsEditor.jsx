@@ -21,8 +21,8 @@ import {
   saveDailyInsight,
 } from "../lib/api.js";
 
-// Mirrors the backend's default INSIGHT_CHAR_LIMIT (daily-insights-service/src/config.js).
-const INSIGHT_CHAR_LIMIT = 250;
+// Mirrors the backend's configured INSIGHT_CHAR_LIMIT.
+const INSIGHT_CHAR_LIMIT = 500;
 
 export default function DailyInsightsEditor({ brandKey, initialDate, onSaved }) {
   const [anchorEl, setAnchorEl] = useState(null);
@@ -89,6 +89,7 @@ export default function DailyInsightsEditor({ brandKey, initialDate, onSaved }) 
       return;
     }
     setNotice("Insight saved");
+    setAnchorEl(null);
     if (typeof onSaved === "function") {
       onSaved({ date: editDate, insight: trimmed });
     }
@@ -106,6 +107,7 @@ export default function DailyInsightsEditor({ brandKey, initialDate, onSaved }) 
     }
     setText("");
     setNotice("Insight removed");
+    setAnchorEl(null);
     if (typeof onSaved === "function") {
       onSaved({ date: editDate, insight: "", deleted: true });
     }

@@ -138,6 +138,11 @@ function normalizeFilters(query = {}) {
     brand: (query.brand || "").toString().trim().toUpperCase() || "",
     user: (query.user || "").toString().trim().toLowerCase() || "",
     search: (query.search || "").toString().trim(),
+    actorType: ["admin", "viewer"].includes(
+      (query.actor_type || "").toString().trim().toLowerCase(),
+    )
+      ? (query.actor_type || "").toString().trim().toLowerCase()
+      : "",
   };
 }
 

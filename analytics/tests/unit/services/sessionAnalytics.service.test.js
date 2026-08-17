@@ -76,6 +76,7 @@ describe("sessionAnalyticsService", () => {
         brand: "",
         user: "",
         search: "",
+        actorType: "",
       },
     });
   });

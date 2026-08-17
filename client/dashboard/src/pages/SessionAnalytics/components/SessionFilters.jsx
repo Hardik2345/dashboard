@@ -4,9 +4,6 @@ import {
   Autocomplete,
   Card,
   CardContent,
-  FormControl,
-  MenuItem,
-  Select,
   Skeleton,
   Stack,
   TextField,
@@ -29,7 +26,6 @@ function toDateString(value) {
 export default function SessionFilters({
   filters,
   onChange,
-  brandOptions = [],
   userOptions = [],
   loading = false,
 }) {
@@ -104,20 +100,6 @@ export default function SessionFilters({
               InputLabelProps={{ shrink: true }}
               fullWidth
             />
-            <FormControl size="small" fullWidth>
-              <Select
-                displayEmpty
-                value={filters.brand || ""}
-                onChange={(event) => onChange({ brand: event.target.value })}
-              >
-                <MenuItem value="">All Brands</MenuItem>
-                {brandOptions.map((brand) => (
-                  <MenuItem key={brand} value={brand}>
-                    {brand}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
             <Autocomplete
               options={userOptions}
               value={selectedUser}
