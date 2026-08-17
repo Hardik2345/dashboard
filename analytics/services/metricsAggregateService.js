@@ -795,7 +795,7 @@ async function queryDiscountAggregateRows(
 }
 
 async function queryUtmSummaryFilterOptions(conn, start, end, filters = {}) {
-  const [rows, discountRows, cityRows] = await Promise.all([
+  const [rows, channelRows, discountRows, cityRows] = await Promise.all([
     hasValue(filters.product_id)
       ? (() => {
           const replacements = [start, end];
@@ -826,6 +826,22 @@ async function queryUtmSummaryFilterOptions(conn, start, end, filters = {}) {
             replacements: [start, end],
           },
         ),
+    (() => {
+      const replacements = [start, end];
+      let sql = `
+        SELECT DISTINCT order_app_name
+        FROM shopify_orders
+        WHERE created_date >= ? AND created_date <= ?
+          AND order_app_name IS NOT NULL
+          AND TRIM(order_app_name) <> ''
+      `;
+      sql = appendProductFilter(sql, replacements, filters.product_id);
+      sql += ` ORDER BY order_app_name`;
+      return conn.query(sql, {
+        type: QueryTypes.SELECT,
+        replacements,
+      });
+    })(),
     conn.query(
       `
         SELECT DISTINCT discount_code
@@ -856,8 +872,12 @@ async function queryUtmSummaryFilterOptions(conn, start, end, filters = {}) {
     ),
   ]);
 
+  const baseFilterOptions = buildSummaryFilterOptions(rows);
   return {
-    ...buildSummaryFilterOptions(rows),
+    ...baseFilterOptions,
+    sales_channel: channelRows
+      .map((row) => row.order_app_name)
+      .filter(Boolean),
     discount_codes: discountRows.map((row) => row.discount_code).filter(Boolean),
     city: cityRows.map((row) => row.city).filter(Boolean),
   };
