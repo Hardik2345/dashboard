@@ -30,6 +30,12 @@ function buildScopedMatch({ scope = {}, filters = {} }) {
     clauses.push({ isAdmin: { $ne: true } });
   }
 
+  if (scope.includeAdmins && filters.actorType === "admin") {
+    clauses.push({ isAdmin: true });
+  } else if (filters.actorType === "viewer") {
+    clauses.push({ isAdmin: { $ne: true } });
+  }
+
   if (Array.isArray(scope.allowedBrands) && scope.allowedBrands.length > 0) {
     clauses.push({ brand: { $in: scope.allowedBrands } });
   }

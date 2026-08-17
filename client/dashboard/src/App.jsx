@@ -2046,6 +2046,7 @@ export default function App() {
             hasBrand={hasBrand}
             activeBrandKey={activeBrandKey}
             canAccessUtmFunnelTable={canAccessUtmFunnelTable}
+            canAccessPercentBasisToggle={isAuthor}
           />
         );
       case "inventory":
@@ -2369,6 +2370,7 @@ export default function App() {
                   {!isMobile &&
                     authorTab !== "dashboard" &&
                     authorTab !== "overall-snapshot" &&
+                    authorTab !== "session-analytics" &&
                     authorTab !== "alerts" &&
                     authorTab !== "access" &&
                     authorTab !== "notifications-log" &&

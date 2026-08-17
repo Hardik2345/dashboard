@@ -3,14 +3,12 @@ import dayjs from "dayjs";
 import {
   Alert,
   Box,
+  Chip,
   InputAdornment,
   Card,
   CardContent,
   CircularProgress,
   Divider,
-  FormControl,
-  MenuItem,
-  Select,
   Stack,
   Table,
   TableBody,
@@ -29,8 +27,13 @@ import {
 import { useTheme } from "@mui/material/styles";
 import KeyboardArrowLeft from "@mui/icons-material/KeyboardArrowLeft";
 import KeyboardArrowRight from "@mui/icons-material/KeyboardArrowRight";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import SearchIcon from "@mui/icons-material/Search";
 import { getProductConversion } from "../lib/api.js";
+
+const INVENTORY_PERIOD = "7d";
+const INVENTORY_INFO_TOOLTIP =
+  "DRR & DOH are based on the last 7 days of net units sold and current available inventory. These are estimated values based on recent sales trends and may vary slightly from the exact inventory position.";
 
 function PaginationActions({ count, page, rowsPerPage, onPageChange, disabled }) {
   const handleBack = (event) => onPageChange(event, page - 1);
@@ -56,12 +59,6 @@ function PaginationActions({ count, page, rowsPerPage, onPageChange, disabled })
   );
 }
 
-function normalizePeriodLabel(period) {
-  if (period === "30d") return "30d";
-  if (period === "90d") return "90d";
-  return "7d";
-}
-
 function formatProductName(path) {
   const raw = String(path || "").trim();
   if (!raw) return "-";
@@ -75,28 +72,64 @@ function formatRounded(value) {
   return Math.round(num).toLocaleString();
 }
 
+function formatFloored(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "-";
+  return Math.floor(num).toLocaleString();
+}
+
+function formatCurrency(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "-";
+  return `₹${Math.round(num).toLocaleString("en-IN")}`;
+}
+
 function formatSku(value) {
   const raw = String(value || "").trim();
   return raw || "-";
 }
 
+function parseInventoryUpdatedAt(value) {
+  if (!value) return null;
+  const parsed = dayjs(String(value).replace(" ", "T"));
+  return parsed.isValid() ? parsed : null;
+}
+
+function formatInventoryUpdatedAgo(value, nowValue = Date.now()) {
+  const parsed = parseInventoryUpdatedAt(value);
+  if (!parsed) return null;
+
+  const now = dayjs(nowValue);
+  const minutes = Math.max(0, now.diff(parsed, "minute"));
+
+  if (minutes < 1) return "inventory updated just now";
+  if (minutes < 60) return `inventory updated ${minutes} min${minutes === 1 ? "" : "s"} ago`;
+
+  const hours = now.diff(parsed, "hour");
+  if (hours < 24) return `inventory updated ${hours} hr${hours === 1 ? "" : "s"} ago`;
+
+  const days = now.diff(parsed, "day");
+  return `inventory updated ${days} day${days === 1 ? "" : "s"} ago`;
+}
+
 function InventoryTable({ brandKey, startDate, endDate }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const [inventoryPeriod, setInventoryPeriod] = useState("7d");
   const [rows, setRows] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [sortBy, setSortBy] = useState("orders");
+  const [sortBy, setSortBy] = useState("sales");
   const [sortDir, setSortDir] = useState("desc");
-  const [activeColumn, setActiveColumn] = useState(null);
+  const [activeColumn, setActiveColumn] = useState("sales");
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
+  const [updatedChipNow, setUpdatedChipNow] = useState(() => Date.now());
   const [columnWidths, setColumnWidths] = useState({
     product: 320,
     sku: 180,
+    sales: 160,
     drr: 140,
     doh: 140,
   });
@@ -128,7 +161,7 @@ function InventoryTable({ brandKey, startDate, endDate }) {
       pageSize,
       sortBy,
       sortDir,
-      inventoryPeriod,
+      inventoryPeriod: INVENTORY_PERIOD,
       inventoryOnly: true,
       search,
     });
@@ -142,20 +175,29 @@ function InventoryTable({ brandKey, startDate, endDate }) {
     setRows(Array.isArray(resp.rows) ? resp.rows : []);
     setTotalCount(Number(resp.total_count || 0));
     setStatus("succeeded");
-  }, [brandKey, start, end, page, pageSize, sortBy, sortDir, inventoryPeriod, search]);
+  }, [brandKey, start, end, page, pageSize, sortBy, sortDir, search]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setUpdatedChipNow(Date.now());
+    }, 60 * 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   const columns = useMemo(
     () => [
       { id: "product", label: "Product", align: "left" },
       { id: "sku", label: "SKU", align: "left" },
-      { id: "drr", label: `DRR (${normalizePeriodLabel(inventoryPeriod)})`, align: "right" },
-      { id: "doh", label: `DOH (${normalizePeriodLabel(inventoryPeriod)})`, align: "right" },
+      { id: "sales", label: "Total Sales", align: "right" },
+      { id: "drr", label: `DRR (${INVENTORY_PERIOD})`, align: "right" },
+      { id: "doh", label: `DOH (${INVENTORY_PERIOD})`, align: "right" },
     ],
-    [inventoryPeriod],
+    [],
   );
 
   const handleSort = useCallback(
@@ -163,6 +205,7 @@ function InventoryTable({ brandKey, startDate, endDate }) {
       const map = {
         product: "landing_page_path",
         sku: "sku",
+        sales: "sales",
         drr: "drr",
         doh: "doh",
       };
@@ -183,11 +226,6 @@ function InventoryTable({ brandKey, startDate, endDate }) {
 
   const handleChangeRowsPerPage = (e) => {
     setPageSize(parseInt(e.target.value, 10));
-    setPage(1);
-  };
-
-  const handleInventoryPeriodChange = (e) => {
-    setInventoryPeriod(e.target.value);
     setPage(1);
   };
 
@@ -234,32 +272,75 @@ function InventoryTable({ brandKey, startDate, endDate }) {
 
   useEffect(() => {
     if (isMobile) {
-      setColumnWidths({ product: 240, sku: 150, drr: 130, doh: 130 });
+      setColumnWidths({ product: 240, sku: 150, sales: 140, drr: 130, doh: 130 });
     } else {
-      setColumnWidths({ product: 320, sku: 180, drr: 140, doh: 140 });
+      setColumnWidths({ product: 320, sku: 180, sales: 160, drr: 140, doh: 140 });
     }
   }, [isMobile]);
 
   const tableMinWidth = useMemo(() => {
     const product = Number(columnWidths.product || 0);
     const sku = Number(columnWidths.sku || 0);
+    const sales = Number(columnWidths.sales || 0);
     const drr = Number(columnWidths.drr || 0);
     const doh = Number(columnWidths.doh || 0);
-    return product + sku + drr + doh;
+    return product + sku + sales + drr + doh;
   }, [columnWidths]);
+
+  const inventoryUpdatedText = useMemo(() => {
+    const latestUpdatedAt = rows
+      .map((row) => row?.updated_at)
+      .filter(Boolean)
+      .sort((left, right) => String(right).localeCompare(String(left)))[0];
+
+    return formatInventoryUpdatedAgo(latestUpdatedAt, updatedChipNow);
+  }, [rows, updatedChipNow]);
 
   return (
     <Stack spacing={2}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-        <Typography
-          variant="h6"
-          sx={{
-            fontWeight: 600,
-            color: theme.palette.mode === "dark" ? "text.primary" : "text.secondary",
-          }}
-        >
-          Inventory Info
-        </Typography>
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+          <Typography
+            variant="h6"
+            sx={{
+              fontWeight: 600,
+              color: theme.palette.mode === "dark" ? "text.primary" : "text.secondary",
+            }}
+          >
+            Inventory Info
+          </Typography>
+          <Tooltip title={INVENTORY_INFO_TOOLTIP} arrow>
+            <Box
+              component="span"
+              sx={{
+                display: "inline-flex",
+                alignItems: "center",
+                color: "rgba(255,255,255,0.58)",
+                cursor: "default",
+                mt: "1px",
+              }}
+            >
+              <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+            </Box>
+          </Tooltip>
+          {inventoryUpdatedText ? (
+            <Chip
+              label={inventoryUpdatedText}
+              size="small"
+              sx={{
+                height: 26,
+                color: "rgba(255,255,255,0.82)",
+                bgcolor: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                "& .MuiChip-label": {
+                  px: 1.1,
+                  fontSize: 12,
+                  fontWeight: 500,
+                },
+              }}
+            />
+          ) : null}
+        </Stack>
         <Box
           sx={{
             display: "flex",
@@ -276,7 +357,7 @@ function InventoryTable({ brandKey, startDate, endDate }) {
             onChange={handleSearchChange}
             sx={{
               minWidth: { xs: 0, sm: 260 },
-              width: { xs: "calc(100% - 128px)", sm: "auto" },
+              width: { xs: "100%", sm: "auto" },
               flex: { xs: "1 1 auto", sm: "0 0 auto" },
             }}
             InputProps={{
@@ -287,19 +368,6 @@ function InventoryTable({ brandKey, startDate, endDate }) {
               ),
             }}
           />
-          <FormControl
-            size="small"
-            sx={{
-              minWidth: 120,
-              flex: { xs: "0 0 120px", sm: "0 0 auto" },
-            }}
-          >
-            <Select value={inventoryPeriod} onChange={handleInventoryPeriodChange}>
-              <MenuItem value="7d">7d</MenuItem>
-              <MenuItem value="30d">30d</MenuItem>
-              <MenuItem value="90d">90d</MenuItem>
-            </Select>
-          </FormControl>
         </Box>
       </Box>
 
@@ -363,7 +431,7 @@ function InventoryTable({ brandKey, startDate, endDate }) {
               <TableBody>
                 {status !== "loading" && rows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} align="center" sx={{ py: 3, color: "text.secondary" }}>
+                    <TableCell colSpan={5} align="center" sx={{ py: 3, color: "text.secondary" }}>
                       No data for the selected range.
                     </TableCell>
                   </TableRow>
@@ -422,6 +490,17 @@ function InventoryTable({ brandKey, startDate, endDate }) {
                     <TableCell
                       align="right"
                       sx={{
+                        width: columnWidths.sales || "auto",
+                        minWidth: columnWidths.sales || "auto",
+                        maxWidth: columnWidths.sales || "auto",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {formatCurrency(row.sales)}
+                    </TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{
                         width: columnWidths.drr || "auto",
                         minWidth: columnWidths.drr || "auto",
                         maxWidth: columnWidths.drr || "auto",
@@ -439,7 +518,7 @@ function InventoryTable({ brandKey, startDate, endDate }) {
                         overflow: "hidden",
                       }}
                     >
-                      {formatRounded(row.doh)}
+                      {formatFloored(row.doh)}
                     </TableCell>
                   </TableRow>
                 ))}

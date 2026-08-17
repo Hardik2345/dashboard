@@ -84,6 +84,7 @@ exports.signup = async (req, res) => {
             user: {
                 id: result.user._id,
                 email: result.user.email,
+                name: result.user.name,
                 role: result.user.role,
                 primary_brand_id: result.user.primary_brand_id,
                 brand_memberships: result.user.brand_memberships,
@@ -199,6 +200,7 @@ exports.me = async (req, res) => {
             user: {
                 id: user._id,
                 email: user.email,
+                name: user.name,
                 role: user.role,
                 primary_brand_id: user.primary_brand_id,
                 brand_memberships: user.brand_memberships,
@@ -225,12 +227,13 @@ function requireAdminOrAuthor(req) {
 exports.adminUpsertUser = async (req, res) => {
     try {
         requireAdminOrAuthor(req);
-        const { email, role, brand_ids, primary_brand_id, status, permissions } = req.body || {};
-        const user = await AdminUserService.upsertUser({ email, role, brand_ids, primary_brand_id, status, permissions });
+        const { name, email, role, brand_ids, primary_brand_id, status, permissions, create_only } = req.body || {};
+        const user = await AdminUserService.upsertUser({ name, email, role, brand_ids, primary_brand_id, status, permissions, createOnly: create_only === true });
         return res.status(200).json({
             user: {
                 id: user._id,
                 email: user.email,
+                name: user.name,
                 role: user.role,
                 status: user.status,
                 primary_brand_id: user.primary_brand_id,
@@ -240,7 +243,8 @@ exports.adminUpsertUser = async (req, res) => {
     } catch (err) {
         if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
         if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
-        if (err.message === 'email required' || err.message === 'invalid role' || err.message === 'brand_user requires exactly one brand' || err.message === 'no brands available for super admin') return res.status(400).json({ error: err.message });
+        if (err.message === 'email required' || err.message === 'invalid email format' || err.message === 'invalid role' || err.message === 'brand_user requires exactly one brand' || err.message === 'no brands available for super admin') return res.status(400).json({ error: err.message });
+        if (err.message === 'duplicate email exists') return res.status(409).json({ error: err.message });
         if (err.name === 'ValidationError') return res.status(400).json({ error: err.message });
         logger.error('AuthController', 'Admin upsert user error', { error: err.message });
         return res.status(500).json({ error: 'Failed to upsert user' });
@@ -446,6 +450,7 @@ exports.googleCallback = async (req, res) => {
             user: {
                 id: result.user._id,
                 email: result.user.email,
+                name: result.user.name,
                 role: result.user.role,
                 primary_brand_id: result.user.primary_brand_id,
                 brand_memberships: result.user.brand_memberships,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardContent,
@@ -41,6 +41,7 @@ import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import DomainIcon from "@mui/icons-material/Domain";
 import FilterListIcon from "@mui/icons-material/FilterList";
+import DownloadIcon from "@mui/icons-material/Download";
 import {
   adminListUsers,
   adminUpsertUser,
@@ -143,6 +144,23 @@ const ROLE_OPTIONS = [
   { value: "brand_user", label: "Brand User" },
 ];
 
+function isValidEmailAddress(value) {
+  const normalized = (value || "").toString().trim().toLowerCase();
+  if (!normalized || normalized.length > 254) return false;
+  if (normalized.includes("..")) return false;
+
+  const parts = normalized.split("@");
+  if (parts.length !== 2) return false;
+
+  const [localPart, domainPart] = parts;
+  if (!localPart || !domainPart) return false;
+  if (localPart.startsWith(".") || localPart.endsWith(".")) return false;
+  if (domainPart.startsWith(".") || domainPart.endsWith(".")) return false;
+  if (!domainPart.includes(".")) return false;
+
+  return /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(normalized);
+}
+
 function getRoleLabel(role) {
   return ROLE_OPTIONS.find((option) => option.value === role)?.label || role;
 }
@@ -184,6 +202,28 @@ function normalizePermissionSelection(permissions = []) {
     next = next.filter((permission) => permission !== "requests_timeline");
   }
   return next;
+}
+
+function escapeCsvValue(value) {
+  const str = value == null ? "" : String(value);
+  if (/[",\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function serializePermissionsPayload(source = {}) {
+  return JSON.stringify({
+    permissions: normalizePermissionSelection(source.permissions || ["all"]),
+  });
+}
+
+function parsePermissionsPayload(raw) {
+  const parsed = JSON.parse(raw);
+  if (!parsed || !Array.isArray(parsed.permissions)) {
+    throw new Error("Invalid permissions payload");
+  }
+  return normalizePermissionSelection(parsed.permissions);
 }
 
 const StatusSwitch = ({ active, onChange, label = "Active", isDark }) => (
@@ -495,6 +535,7 @@ const DomainMobileCard = ({ rule, onEdit, onDelete, isDark }) => (
 );
 
 const emptyForm = {
+  name: "",
   email: "",
   role: "viewer",
   brand_ids: [],
@@ -511,11 +552,14 @@ export default function AccessControlCard() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [userFormError, setUserFormError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [isEdit, setIsEdit] = useState(false);
   const [filterRole, setFilterRole] = useState("all");
+  const [filterBrand, setFilterBrand] = useState("all");
+  const [emailSearch, setEmailSearch] = useState("");
   const [knownBrands, setKnownBrands] = useState([]);
   const [domainRules, setDomainRules] = useState([]);
   const [domainDialogOpen, setDomainDialogOpen] = useState(false);
@@ -529,6 +573,8 @@ export default function AccessControlCard() {
     status: "active",
   });
   const [domainSaving, setDomainSaving] = useState(false);
+  const userDialogRef = useRef(null);
+  const domainDialogRef = useRef(null);
 
   const availableBrands = useMemo(() => {
     const set = new Set(knownBrands);
@@ -539,6 +585,21 @@ export default function AccessControlCard() {
     });
     return Array.from(set);
   }, [users, knownBrands]);
+
+  const filterableBrands = useMemo(() => {
+    const set = new Set();
+    users.forEach((u) => {
+      if (u.primary_brand_id) {
+        set.add(normalizeBrandValue(u.primary_brand_id));
+      }
+      (u.brand_memberships || []).forEach((b) => {
+        if (b.brand_id) {
+          set.add(normalizeBrandValue(b.brand_id));
+        }
+      });
+    });
+    return Array.from(set).filter(Boolean).sort();
+  }, [users]);
 
   async function loadUsers() {
     setLoading(true);
@@ -589,19 +650,178 @@ export default function AccessControlCard() {
   }, []);
 
   const filteredUsers = useMemo(() => {
-    return users.filter((u) =>
-      filterRole === "all" ? true : u.role === filterRole,
-    );
-  }, [users, filterRole]);
+    const normalizedSearch = emailSearch.trim().toLowerCase();
+    const normalizedBrandFilter = normalizeBrandValue(filterBrand);
+
+    return users.filter((u) => {
+      const matchesRole = filterRole === "all" ? true : u.role === filterRole;
+      const matchesEmail = normalizedSearch
+        ? String(u.email || "").toLowerCase().includes(normalizedSearch)
+        : true;
+      const userBrands = new Set(
+        [
+          u.primary_brand_id,
+          ...(u.brand_memberships || []).map((membership) => membership.brand_id),
+        ]
+          .map((brandId) => normalizeBrandValue(brandId))
+          .filter(Boolean),
+      );
+      const matchesBrand =
+        normalizedBrandFilter === "ALL"
+          ? true
+          : userBrands.has(normalizedBrandFilter);
+
+      return matchesRole && matchesEmail && matchesBrand;
+    });
+  }, [users, filterRole, filterBrand, emailSearch]);
+
+  async function writePermissionsToClipboard(source) {
+    await navigator.clipboard.writeText(serializePermissionsPayload(source));
+  }
+
+  async function readPermissionsFromClipboard() {
+    const raw = await navigator.clipboard.readText();
+    return parsePermissionsPayload(raw);
+  }
+
+  function shouldInterceptPermissionShortcut(event, container) {
+    if (!container || !container.contains(event.target)) return false;
+    const tagName = event.target?.tagName;
+    if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") {
+      return false;
+    }
+    if (window.getSelection?.()?.toString()) {
+      return false;
+    }
+    return (event.ctrlKey || event.metaKey) && !event.altKey;
+  }
+
+  useEffect(() => {
+    if (!dialogOpen) return undefined;
+
+    const handleKeyDown = async (event) => {
+      if (!shouldInterceptPermissionShortcut(event, userDialogRef.current)) return;
+      const key = event.key.toLowerCase();
+      if (key === "c") {
+        event.preventDefault();
+        try {
+          await writePermissionsToClipboard(form);
+        } catch (error) {
+          console.warn("Failed to copy permissions", error);
+        }
+      }
+      if (key === "v") {
+        event.preventDefault();
+        try {
+          const permissions = await readPermissionsFromClipboard();
+          handleFormChange("permissions", permissions);
+        } catch (error) {
+          console.warn("Failed to paste permissions", error);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [dialogOpen, form]);
+
+  useEffect(() => {
+    if (!domainDialogOpen) return undefined;
+
+    const handleKeyDown = async (event) => {
+      if (!shouldInterceptPermissionShortcut(event, domainDialogRef.current)) return;
+      const key = event.key.toLowerCase();
+      if (key === "c") {
+        event.preventDefault();
+        try {
+          await writePermissionsToClipboard(domainForm);
+        } catch (error) {
+          console.warn("Failed to copy domain permissions", error);
+        }
+      }
+      if (key === "v") {
+        event.preventDefault();
+        try {
+          const permissions = await readPermissionsFromClipboard();
+          setDomainForm((prev) => ({ ...prev, permissions }));
+        } catch (error) {
+          console.warn("Failed to paste domain permissions", error);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [domainDialogOpen, domainForm]);
+
+  function handleExportFilteredUsersCsv() {
+    const rows = filteredUsers.map((user) => {
+      const brandIds = (user.brand_memberships || [])
+        .map((membership) => normalizeBrandValue(membership.brand_id))
+        .filter(Boolean);
+      const permissions = normalizePermissionSelection(
+        user.brand_memberships?.[0]?.permissions || (isElevatedRole(user.role) ? ["all"] : []),
+      );
+
+      return {
+        email: user.email || "",
+        name: user.name || "",
+        role: getRoleLabel(user.role),
+        primary_brand: user.primary_brand_id || "",
+        all_brands: isElevatedRole(user.role)
+          ? Array.from(new Set([...brandIds, "ALL"])).join(" | ")
+          : brandIds.join(" | "),
+        permissions: permissions.join(" | "),
+        status: user.status || "",
+      };
+    });
+
+    const headers = [
+      "Email",
+      "Role",
+      "Primary Brand",
+      "All Brands",
+      "Permissions",
+      "Status",
+    ];
+
+    const csv = [
+      headers.join(","),
+      ...rows.map((row) =>
+        [
+          row.email,
+          row.role,
+          row.primary_brand,
+          row.all_brands,
+          row.permissions,
+          row.status,
+        ]
+          .map(escapeCsvValue)
+          .join(","),
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "access-control-users.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }
 
   function openNew() {
     setForm(emptyForm);
     setIsEdit(false);
+    setUserFormError(null);
     setDialogOpen(true);
   }
 
   function openEdit(u) {
     setForm({
+      name: u.name || "",
       email: u.email,
       role: u.role,
       brand_ids: (u.brand_memberships || []).map((b) => b.brand_id),
@@ -610,14 +830,33 @@ export default function AccessControlCard() {
       permissions: u.brand_memberships?.[0]?.permissions || ["all"],
     });
     setIsEdit(true);
+    setUserFormError(null);
     setDialogOpen(true);
   }
 
   function handleFormChange(key, value) {
-    setForm((prev) => ({
-      ...prev,
-      [key]: key === "permissions" ? normalizePermissionSelection(value) : value,
-    }));
+    setForm((prev) => {
+      if (key === "brand_ids") {
+        const nextBrandIds = Array.from(
+          new Set((value || []).map((brandId) => normalizeBrandValue(brandId)).filter(Boolean)),
+        );
+        const currentPrimary = normalizeBrandValue(prev.primary_brand_id);
+        const nextPrimary = nextBrandIds.length === 0
+          ? ""
+          : (currentPrimary && nextBrandIds.includes(currentPrimary) ? currentPrimary : nextBrandIds[0]);
+
+        return {
+          ...prev,
+          brand_ids: nextBrandIds,
+          primary_brand_id: nextPrimary,
+        };
+      }
+
+      return {
+        ...prev,
+        [key]: key === "permissions" ? normalizePermissionSelection(value) : value,
+      };
+    });
   }
 
   function buildUserPayload(source, statusOverride = null) {
@@ -630,12 +869,13 @@ export default function AccessControlCard() {
     );
 
     if (role === "super_admin") {
-      return {
-        email,
-        role,
-        brand_ids: [],
-        primary_brand_id: "",
-        permissions: ["all"],
+    return {
+      name: (source.name || "").toString().trim(),
+      email,
+      role,
+      brand_ids: [],
+      primary_brand_id: "",
+      permissions: ["all"],
         status,
       };
     }
@@ -646,6 +886,7 @@ export default function AccessControlCard() {
         throw new Error("Brand is required");
       }
       return {
+        name: (source.name || "").toString().trim(),
         email,
         role,
         brand_ids: [selectedBrand],
@@ -672,6 +913,7 @@ export default function AccessControlCard() {
     }
 
     return {
+      name: (source.name || "").toString().trim(),
       email,
       role,
       brand_ids: brandIds,
@@ -683,28 +925,46 @@ export default function AccessControlCard() {
 
   async function handleSave() {
     if (!form.email) {
-      setError("Email is required");
+      setUserFormError("Email is required");
       return;
+    }
+    if (!isValidEmailAddress(form.email)) {
+      setUserFormError("Enter a valid email address");
+      return;
+    }
+    if (!isEdit) {
+      const normalizedEmail = form.email.toString().trim().toLowerCase();
+      const existingUser = users.some(
+        (user) => (user.email || "").toString().trim().toLowerCase() === normalizedEmail,
+      );
+      if (existingUser) {
+        setUserFormError("User with this email id already exists");
+        return;
+      }
     }
 
     setSaving(true);
+    setUserFormError(null);
     let payload;
     try {
-      payload = buildUserPayload(form);
+      payload = {
+        ...buildUserPayload(form),
+        create_only: !isEdit,
+      };
     } catch (err) {
       setSaving(false);
-      setError(err.message);
+      setUserFormError(err.message);
       return;
     }
 
     const r = await adminUpsertUser(payload);
     setSaving(false);
     if (r.error) {
-      setError(r.data?.error || "Save failed");
+      setUserFormError(r.data?.error || "Save failed");
       return;
     }
     setDialogOpen(false);
-    setError(null);
+    setUserFormError(null);
     await loadUsers();
   }
 
@@ -718,6 +978,7 @@ export default function AccessControlCard() {
     try {
       payload = buildUserPayload({
         email: user.email,
+        name: user.name || "",
         role: user.role,
         brand_ids: (user.brand_memberships || []).map((b) => b.brand_id),
         primary_brand_id: user.primary_brand_id,
@@ -1046,7 +1307,18 @@ export default function AccessControlCard() {
                 : "rgba(0, 0, 0, 0.05)",
             }}
           >
-            <Stack direction="row" spacing={2} alignItems="center">
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={2}
+              alignItems={{ xs: "stretch", md: "center" }}
+              justifyContent="space-between"
+            >
+              <Stack
+                direction="row"
+                spacing={2}
+                alignItems="center"
+                sx={{ flexWrap: "wrap", rowGap: 1, flexShrink: 0 }}
+              >
               <FilterListIcon
                 size="small"
                 sx={{
@@ -1091,6 +1363,86 @@ export default function AccessControlCard() {
                 <MenuItem value="super_admin">Super Admin</MenuItem>
                 <MenuItem value="brand_user">Brand User</MenuItem>
               </Select>
+              </Stack>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={1.5}
+                alignItems={{ xs: "stretch", sm: "center" }}
+                sx={{
+                  width: { xs: "100%", md: "auto" },
+                  flex: { xs: "1 1 auto", md: "0 1 auto" },
+                  justifyContent: { md: "flex-end" },
+                }}
+              >
+                <Select
+                  size="small"
+                  value={filterBrand}
+                  onChange={(e) => setFilterBrand(e.target.value)}
+                  sx={{
+                    minWidth: { xs: "100%", sm: 140 },
+                    width: { xs: "100%", md: 150 },
+                    bgcolor: isDark
+                      ? "rgba(255, 255, 255, 0.05)"
+                      : "rgba(0, 0, 0, 0.02)",
+                    borderRadius: "10px",
+                    "& .MuiSelect-select": {
+                      py: 0.7,
+                      px: 1.5,
+                      fontSize: "0.85rem",
+                      fontWeight: 600,
+                    },
+                    "& fieldset": { border: "none" },
+                  }}
+                >
+                  <MenuItem value="all">All Brands</MenuItem>
+                  {filterableBrands.map((brand) => (
+                    <MenuItem key={brand} value={brand}>
+                      {brand}
+                    </MenuItem>
+                  ))}
+                </Select>
+                <TextField
+                  size="small"
+                  placeholder="Search by email"
+                  value={emailSearch}
+                  onChange={(event) => setEmailSearch(event.target.value)}
+                  sx={{
+                    minWidth: { xs: "100%", sm: 240 },
+                    width: { xs: "100%", md: 280 },
+                    flex: { xs: "1 1 auto", md: "0 0 auto" },
+                    bgcolor: isDark
+                      ? "rgba(255, 255, 255, 0.05)"
+                      : "rgba(0, 0, 0, 0.02)",
+                    borderRadius: "10px",
+                    "& .MuiInputBase-root": {
+                      borderRadius: "10px",
+                    },
+                    "& .MuiInputBase-input": {
+                      py: 1,
+                      fontSize: "0.85rem",
+                      fontWeight: 500,
+                    },
+                    "& fieldset": { border: "none" },
+                  }}
+                />
+                <Button
+                  variant="outlined"
+                  startIcon={<DownloadIcon sx={{ fontSize: 18 }} />}
+                  onClick={handleExportFilteredUsersCsv}
+                  sx={{
+                    minWidth: { xs: "100%", sm: "auto" },
+                    whiteSpace: "nowrap",
+                    textTransform: "none",
+                    borderRadius: "10px",
+                    fontWeight: 600,
+                    px: 1.75,
+                    py: 0.9,
+                    alignSelf: { xs: "stretch", md: "center" },
+                  }}
+                >
+                  Export CSV
+                </Button>
+              </Stack>
             </Stack>
           </Box>
 
@@ -1438,10 +1790,14 @@ export default function AccessControlCard() {
       {/* Dialogs */}
       <Dialog
         open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
+        onClose={() => {
+          setDialogOpen(false);
+          setUserFormError(null);
+        }}
         fullWidth
         maxWidth="sm"
         PaperProps={{
+          ref: userDialogRef,
           sx: { borderRadius: "20px", bgcolor: isDark ? "#1a1a1a" : "#fff" },
         }}
       >
@@ -1450,6 +1806,17 @@ export default function AccessControlCard() {
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ mt: 1 }}>
+            {userFormError && (
+              <Alert severity="error" sx={{ borderRadius: "12px" }}>
+                {userFormError}
+              </Alert>
+            )}
+            <TextField
+              label="User Name"
+              fullWidth
+              value={form.name}
+              onChange={(e) => handleFormChange("name", e.target.value)}
+            />
             <TextField
               label="Email Address"
               fullWidth
@@ -1518,6 +1885,7 @@ export default function AccessControlCard() {
                   <Select
                     label="Primary Brand"
                     value={form.primary_brand_id}
+                    disabled={(form.brand_ids || []).length === 0}
                     onChange={(e) =>
                       handleFormChange("primary_brand_id", e.target.value)
                     }
@@ -1865,11 +2233,17 @@ export default function AccessControlCard() {
                 <MenuItem value="suspended">Suspended</MenuItem>
               </Select>
             </FormControl>
+            <Typography variant="caption" sx={{ opacity: 0.6 }}>
+              Click anywhere in this dialog outside text fields, then use Ctrl/Cmd+C to copy permissions and Ctrl/Cmd+V to paste them.
+            </Typography>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>
           <Button
-            onClick={() => setDialogOpen(false)}
+            onClick={() => {
+              setDialogOpen(false);
+              setUserFormError(null);
+            }}
             sx={{ textTransform: "none", fontWeight: 600 }}
           >
             Cancel
@@ -1898,6 +2272,7 @@ export default function AccessControlCard() {
         fullWidth
         maxWidth="sm"
         PaperProps={{
+          ref: domainDialogRef,
           sx: { borderRadius: "20px", bgcolor: isDark ? "#1a1a1a" : "#fff" },
         }}
       >
@@ -2139,6 +2514,9 @@ export default function AccessControlCard() {
                 <MenuItem value="suspended">Suspended</MenuItem>
               </Select>
             </FormControl>
+            <Typography variant="caption" sx={{ opacity: 0.6 }}>
+              Click anywhere in this dialog outside text fields, then use Ctrl/Cmd+C to copy permissions and Ctrl/Cmd+V to paste them.
+            </Typography>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>

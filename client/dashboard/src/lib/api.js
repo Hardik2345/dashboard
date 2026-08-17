@@ -1509,6 +1509,7 @@ export async function getSessionAnalyticsUsers(args = {}) {
       search: args.search,
       sort: args.sort,
       direction: args.direction,
+      actor_type: args.actor_type,
     },
     { ...args, brand_key: args.brand || args.brand_key },
   );
@@ -1553,6 +1554,7 @@ async function exportSessionAnalyticsCsv(path, args = {}, fallbackName) {
       search: args.search,
       sort: args.sort,
       direction: args.direction,
+      actor_type: args.actor_type,
     },
     { ...args, brand_key: args.brand || args.brand_key },
   );

@@ -10,12 +10,10 @@ import {
   getSessionAnalyticsFilters,
   getSessionAnalyticsInsights,
   getSessionAnalyticsSummary,
-  getSessionAnalyticsTrend,
   getSessionAnalyticsUsers,
 } from "../../lib/api.js";
 import SessionFilters from "./components/SessionFilters.jsx";
 import SessionKPIRow from "./components/SessionKPIRow.jsx";
-import SessionTrendChart from "./components/SessionTrendChart.jsx";
 import SessionInsightsCard from "./components/SessionInsightsCard.jsx";
 import BrandUsageTable from "./components/BrandUsageTable.jsx";
 import UserEngagementTable from "./components/UserEngagementTable.jsx";
@@ -36,7 +34,7 @@ function downloadBlob(blob, filename) {
   window.URL.revokeObjectURL(url);
 }
 
-export default function SessionAnalyticsPage({ brandKey, availableBrands = [] }) {
+export default function SessionAnalyticsPage({ brandKey }) {
   const initialRange = useMemo(() => todayRange(), []);
   const [filters, setFilters] = useState({
     preset: "today",
@@ -44,14 +42,12 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
     to: initialRange.to,
     brand: "",
     user: "",
-    granularity: "hourly",
   });
   const [filterOptions, setFilterOptions] = useState({
     brands: [],
     users: [],
   });
   const [summary, setSummary] = useState(null);
-  const [trendRows, setTrendRows] = useState([]);
   const [insights, setInsights] = useState({});
   const [brandRows, setBrandRows] = useState([]);
   const [userRows, setUserRows] = useState([]);
@@ -61,10 +57,10 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
   const [userSearch, setUserSearch] = useState("");
   const [userSort, setUserSort] = useState("sessions");
   const [userDirection, setUserDirection] = useState("desc");
+  const [userActorType, setUserActorType] = useState("viewer");
   const [loading, setLoading] = useState({
     filters: false,
     summary: false,
-    trend: false,
     insights: false,
     brands: false,
     users: false,
@@ -80,19 +76,6 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
     }),
     [brandKey, filters.brand, filters.from, filters.to, filters.user],
   );
-
-  const mergedBrandOptions = useMemo(() => {
-    const brands = new Set();
-    for (const brand of availableBrands) {
-      const key = (brand?.key || brand || "").toString().trim().toUpperCase();
-      if (key) brands.add(key);
-    }
-    for (const brand of filterOptions.brands || []) {
-      const key = (brand || "").toString().trim().toUpperCase();
-      if (key) brands.add(key);
-    }
-    return Array.from(brands).sort();
-  }, [availableBrands, filterOptions.brands]);
 
   const loadFilters = useCallback(async () => {
     if (!brandKey) return;
@@ -111,18 +94,13 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
     setLoading((prev) => ({
       ...prev,
       summary: true,
-      trend: true,
       insights: true,
       brands: true,
     }));
 
-    const [summaryResponse, trendResponse, insightsResponse, brandsResponse] =
+    const [summaryResponse, insightsResponse, brandsResponse] =
       await Promise.all([
         getSessionAnalyticsSummary(requestBase),
-        getSessionAnalyticsTrend({
-          ...requestBase,
-          granularity: filters.granularity,
-        }),
         getSessionAnalyticsInsights(requestBase),
         getSessionAnalyticsBrands(requestBase),
       ]);
@@ -130,14 +108,12 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
     setLoading((prev) => ({
       ...prev,
       summary: false,
-      trend: false,
       insights: false,
       brands: false,
     }));
 
     if (
       summaryResponse.error ||
-      trendResponse.error ||
       insightsResponse.error ||
       brandsResponse.error
     ) {
@@ -146,10 +122,9 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
     }
 
     setSummary(summaryResponse.data || {});
-    setTrendRows(trendResponse.data || []);
     setInsights(insightsResponse.data || {});
     setBrandRows(brandsResponse.data || []);
-  }, [brandKey, filters.granularity, requestBase]);
+  }, [brandKey, requestBase]);
 
   const loadUsers = useCallback(async () => {
     if (!brandKey) return;
@@ -161,6 +136,7 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
       search: userSearch || undefined,
       sort: userSort,
       direction: userDirection,
+      actor_type: userActorType,
     });
     setLoading((prev) => ({ ...prev, users: false }));
     if (response.error) {
@@ -174,6 +150,7 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
     brandKey,
     requestBase,
     userDirection,
+    userActorType,
     userPage,
     userRowsPerPage,
     userSearch,
@@ -194,7 +171,7 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
 
   useEffect(() => {
     setUserPage(0);
-  }, [filters.brand, filters.user, filters.from, filters.to]);
+  }, [filters.brand, filters.user, filters.from, filters.to, userActorType]);
 
   const handleFilterChange = useCallback((patch) => {
     setFilters((prev) => ({ ...prev, ...patch }));
@@ -215,13 +192,14 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
       search: userSearch || undefined,
       sort: userSort,
       direction: userDirection,
+      actor_type: userActorType,
     });
     if (response.error) {
       toast.error("Failed to load session analytics");
       return;
     }
     downloadBlob(response.blob, response.filename);
-  }, [requestBase, userDirection, userSearch, userSort]);
+  }, [requestBase, userActorType, userDirection, userSearch, userSort]);
 
   if (!brandKey) {
     return (
@@ -252,7 +230,6 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
       <SessionFilters
         filters={filters}
         onChange={handleFilterChange}
-        brandOptions={mergedBrandOptions}
         userOptions={filterOptions.users}
         loading={loading.filters}
       />
@@ -260,15 +237,7 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
       <SessionKPIRow summary={summary} loading={loading.summary} />
 
       <Grid container spacing={{ xs: 2, md: 3 }}>
-        <Grid size={{ xs: 12, md: 9 }}>
-          <SessionTrendChart
-            rows={trendRows}
-            loading={loading.trend}
-            granularity={filters.granularity}
-            onGranularityChange={(value) => handleFilterChange({ granularity: value })}
-          />
-        </Grid>
-        <Grid size={{ xs: 12, md: 3 }}>
+        <Grid size={{ xs: 12 }}>
           <SessionInsightsCard insights={insights} loading={loading.insights} />
         </Grid>
       </Grid>
@@ -288,6 +257,11 @@ export default function SessionAnalyticsPage({ brandKey, availableBrands = [] })
         search={userSearch}
         sort={userSort}
         direction={userDirection}
+        actorType={userActorType}
+        onActorTypeChange={(value) => {
+          setUserActorType(value);
+          setUserPage(0);
+        }}
         onPageChange={setUserPage}
         onRowsPerPageChange={(value) => {
           setUserRowsPerPage(value);

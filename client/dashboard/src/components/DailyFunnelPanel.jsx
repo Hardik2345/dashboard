@@ -117,6 +117,52 @@ function formatPercent(numerator, denominator) {
   return `${value.toFixed(2)}%`;
 }
 
+function getDailyPercentDisplay(row, columnId, basis) {
+  if (basis === "sessions") {
+    switch (columnId) {
+      case "atc_sessions":
+        return formatPercent(row.atc_sessions, row.sessions);
+      case "ci_events":
+        return formatPercent(row.ci_events, row.sessions);
+      case "orders":
+        return formatPercent(row.orders, row.sessions);
+      case "discount_amount":
+        return formatPercent(row.discount_amount, row.sales);
+      case "prepaid_orders":
+        return formatPercent(row.prepaid_orders, row.orders);
+      case "cod_orders":
+        return formatPercent(row.cod_orders, row.orders);
+      case "partially_paid_orders":
+        return formatPercent(row.partially_paid_orders, row.orders);
+      case "cvr":
+        return formatPercent(row.orders, row.sessions);
+      default:
+        return formatCount(row[columnId]);
+    }
+  }
+
+  switch (columnId) {
+    case "atc_sessions":
+      return formatPercent(row.atc_sessions, row.sessions);
+    case "ci_events":
+      return formatPercent(row.ci_events, row.sessions);
+    case "orders":
+      return formatPercent(row.orders, row.ci_events);
+    case "discount_amount":
+      return formatPercent(row.discount_amount, row.sales);
+    case "prepaid_orders":
+      return formatPercent(row.prepaid_orders, row.orders);
+    case "cod_orders":
+      return formatPercent(row.cod_orders, row.orders);
+    case "partially_paid_orders":
+      return formatPercent(row.partially_paid_orders, row.orders);
+    case "cvr":
+      return formatPercent(row.orders, row.sessions);
+    default:
+      return formatCount(row[columnId]);
+  }
+}
+
 function formatPanelDate(value) {
   const parsed = dayjs(value);
   return parsed.isValid() ? parsed.format("DD MMM YYYY") : value || "—";
@@ -599,6 +645,7 @@ export default function DailyFunnelPanel({
   initialStartDate,
   initialEndDate,
   canAccessUtmFunnelTable = true,
+  canAccessPercentBasisToggle = false,
 }) {
   const initialStart = useMemo(
     () => formatDateValue(initialStartDate || dayjs().subtract(6, "day")),
@@ -612,6 +659,7 @@ export default function DailyFunnelPanel({
   const [endDate, setEndDate] = useState(initialEnd);
   const [utmDate, setUtmDate] = useState(initialEnd);
   const [displayMode, setDisplayMode] = useState("count");
+  const [dailyPercentBasis, setDailyPercentBasis] = useState("sessions");
   const [rows, setRows] = useState([]);
   const [utmRows, setUtmRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -759,39 +807,39 @@ export default function DailyFunnelPanel({
         ...row,
         atcDisplay:
           displayMode === "percent"
-            ? formatPercent(row.atc_sessions, row.sessions)
+            ? getDailyPercentDisplay(row, "atc_sessions", dailyPercentBasis)
             : formatCount(row.atc_sessions),
         ciDisplay:
           displayMode === "percent"
-            ? formatPercent(row.ci_events, row.sessions)
+            ? getDailyPercentDisplay(row, "ci_events", dailyPercentBasis)
             : formatCount(row.ci_events),
         ordersDisplay:
           displayMode === "percent"
-            ? formatPercent(row.orders, row.ci_events)
+            ? getDailyPercentDisplay(row, "orders", dailyPercentBasis)
             : formatCount(row.orders),
         cvr: row.sessions > 0 ? (row.orders / row.sessions) * 100 : 0,
         cvrDisplay: formatPercent(row.orders, row.sessions),
         ppDisplay:
           displayMode === "percent"
-            ? formatPercent(row.prepaid_orders, row.orders)
+            ? getDailyPercentDisplay(row, "prepaid_orders", dailyPercentBasis)
             : formatCount(row.prepaid_orders),
         codDisplay:
           displayMode === "percent"
-            ? formatPercent(row.cod_orders, row.orders)
+            ? getDailyPercentDisplay(row, "cod_orders", dailyPercentBasis)
             : formatCount(row.cod_orders),
         ppcodDisplay:
           displayMode === "percent"
-            ? formatPercent(row.partially_paid_orders, row.orders)
+            ? getDailyPercentDisplay(row, "partially_paid_orders", dailyPercentBasis)
             : formatCount(row.partially_paid_orders),
         discountsDisplay:
           displayMode === "percent"
-            ? formatPercent(row.discount_amount, row.sales)
+            ? getDailyPercentDisplay(row, "discount_amount", dailyPercentBasis)
             : currency.formatAmount(row.discount_amount, {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               }),
       })),
-    [currency, displayMode, normalizedRows],
+    [currency, dailyPercentBasis, displayMode, normalizedRows],
   );
 
   const sortedDailyRows = useMemo(
@@ -919,6 +967,10 @@ export default function DailyFunnelPanel({
 
   const handleModeChange = (_event, nextMode) => {
     if (nextMode) setDisplayMode(nextMode);
+  };
+
+  const handleDailyPercentBasisChange = (_event, nextBasis) => {
+    if (nextBasis) setDailyPercentBasis(nextBasis);
   };
 
   const handleDailySort = useCallback((columnId) => {
@@ -1210,6 +1262,35 @@ export default function DailyFunnelPanel({
                 <ToggleButton value="count">Count</ToggleButton>
                 <ToggleButton value="percent">%</ToggleButton>
               </ToggleButtonGroup>
+              {canAccessPercentBasisToggle ? (
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  value={dailyPercentBasis}
+                  onChange={handleDailyPercentBasisChange}
+                  aria-label="Percentage basis"
+                  sx={{
+                    opacity: displayMode === "percent" ? 1 : 0.5,
+                    transition: "opacity 0.2s ease",
+                    "& .MuiToggleButton-root.Mui-disabled": {
+                      color: "text.secondary",
+                      borderColor: "divider",
+                      backgroundColor: "action.disabledBackground",
+                    },
+                    "& .MuiToggleButton-root.Mui-disabled.Mui-selected": {
+                      color: "text.disabled",
+                      backgroundColor: "action.selected",
+                    },
+                  }}
+                >
+                  <ToggleButton value="step" disabled={displayMode !== "percent"}>
+                    Prev Step
+                  </ToggleButton>
+                  <ToggleButton value="sessions" disabled={displayMode !== "percent"}>
+                    Sessions
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              ) : null}
               <Button
                 size="small"
                 variant="outlined"
