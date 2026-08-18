@@ -585,8 +585,8 @@ function getPreviousIsoDate(value) {
   return utcDate.toISOString().slice(0, 10);
 }
 
-async function queryDailyFunnelUtmRowsWithDelta(conn, date) {
-  const previousDate = getPreviousIsoDate(date);
+async function queryDailyFunnelUtmRowsWithDelta(conn, date, compareDate) {
+  const previousDate = compareDate || getPreviousIsoDate(date);
   const [currentRows, previousRows] = await Promise.all([
     queryDailyFunnelUtmRows(conn, date),
     queryDailyFunnelUtmRows(conn, previousDate),
@@ -2402,7 +2402,7 @@ function buildMetricsSnapshotService(deps = {}) {
           )
         : Promise.resolve([]),
       includeUtm
-        ? queryDailyFunnelUtmRowsWithDelta(spec.conn, spec.utmDate || spec.end)
+        ? queryDailyFunnelUtmRowsWithDelta(spec.conn, spec.utmDate || spec.end, spec.compareUtmDate)
         : Promise.resolve([]),
     ]);
 

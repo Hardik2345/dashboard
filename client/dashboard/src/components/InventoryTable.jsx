@@ -72,10 +72,10 @@ function formatRounded(value) {
   return Math.round(num).toLocaleString();
 }
 
-function formatFloored(value) {
+function formatDoh(value) {
   const num = Number(value);
   if (!Number.isFinite(num)) return "-";
-  return Math.floor(num).toLocaleString();
+  return num.toFixed(2);
 }
 
 function formatCurrency(value) {
@@ -518,7 +518,7 @@ function InventoryTable({ brandKey, startDate, endDate }) {
                         overflow: "hidden",
                       }}
                     >
-                      {formatFloored(row.doh)}
+                      {formatDoh(row.doh)}
                     </TableCell>
                   </TableRow>
                 ))}

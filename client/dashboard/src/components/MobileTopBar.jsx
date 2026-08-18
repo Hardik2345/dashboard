@@ -806,6 +806,7 @@ export default function MobileTopBar({
                             }
                           : undefined
                       }
+                      disableDatesAfter={dayjs().endOf("day").toDate()}
                       allowRange
                     />
                   </Box>
@@ -923,6 +924,7 @@ export default function MobileTopBar({
                       onChange={handleRangeChange}
                       onMonthChange={handleMonthChange}
                       selected={selectedRange}
+                      disableDatesAfter={dayjs().endOf("day").toDate()}
                       allowRange
                     />
                   </Box>
@@ -1191,6 +1193,7 @@ export default function MobileTopBar({
                         onChange={handleRangeChange}
                         onMonthChange={handleMonthChange}
                         selected={selectedRange}
+                        disableDatesAfter={dayjs().endOf("day").toDate()}
                         allowRange
                       />
                     </Box>

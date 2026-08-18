@@ -58,8 +58,10 @@ export default function MobileFilterDrawer({
   allowProductUtmSync = false,
   salesChannel = "",
   onSalesChannelChange,
+  salesChannelDisabled = false,
   city = [],
   onCityChange,
+  cityDisabled = false,
   utmOptions: propUtmOptions,
   dateRange,
   dataRestrictionConfig = DEFAULT_DATA_RESTRICTION_CONFIG,
@@ -72,9 +74,11 @@ export default function MobileFilterDrawer({
 
   deviceType = [],
   onDeviceTypeChange,
+  deviceTypeDisabled = false,
   showDeviceType = true,
   discountCode = "",
   onDiscountCodeChange,
+  discountDisabled = false,
   showDiscountFilter = true,
 
   showProductTypeFilter = false,
@@ -404,6 +408,10 @@ export default function MobileFilterDrawer({
   const isUtmBlocked = utmDisabled;
   const areUtmMediumCampaignBlocked =
     utmDisabled || disableUtmMediumCampaign || hasTempProductFilter;
+  const isChannelBlocked = salesChannelDisabled;
+  const isDeviceTypeBlocked = deviceTypeDisabled;
+  const isCityBlocked = cityDisabled;
+  const isDiscountBlocked = discountDisabled;
 
   const handleClearAll = () => {
     if (onUtmChange) onUtmChange({ source: "", medium: "", campaign: "" });
@@ -856,6 +864,7 @@ export default function MobileFilterDrawer({
               {showDiscountFilter && (
                 <ListItemButton
                   onClick={() => setView("DISCOUNT")}
+                  disabled={isDiscountBlocked}
                   sx={{ py: 2, justifyContent: "space-between" }}
                   divider
                 >
@@ -868,7 +877,9 @@ export default function MobileFilterDrawer({
                       Discount Code
                     </Typography>
                     <Typography variant="body1" fontSize={14} fontWeight={500}>
-                      {tempDiscountCode || "All"}
+                      {isDiscountBlocked
+                        ? "Clear other filters first"
+                        : tempDiscountCode || "All"}
                     </Typography>
                   </Box>
                   <ChevronRightIcon color="action" />
@@ -880,6 +891,7 @@ export default function MobileFilterDrawer({
               {showSalesChannel && (
                 <ListItemButton
                   onClick={() => setView("SALES_CHANNEL")}
+                  disabled={isChannelBlocked}
                   sx={{ py: 2, justifyContent: "space-between" }}
                   divider
                 >
@@ -892,7 +904,9 @@ export default function MobileFilterDrawer({
                       Sales Channel
                     </Typography>
                     <Typography variant="body1" fontSize={14} fontWeight={500}>
-                      {Array.isArray(tempSalesChannel)
+                      {isChannelBlocked
+                        ? "Clear other filters first"
+                        : Array.isArray(tempSalesChannel)
                         ? tempSalesChannel.length > 0
                           ? tempSalesChannel.join(", ")
                           : "All"
@@ -906,6 +920,7 @@ export default function MobileFilterDrawer({
               {showCityFilter && (
                 <ListItemButton
                   onClick={() => setView("CITY")}
+                  disabled={isCityBlocked}
                   sx={{ py: 2, justifyContent: "space-between" }}
                   divider
                 >
@@ -918,7 +933,9 @@ export default function MobileFilterDrawer({
                       City
                     </Typography>
                     <Typography variant="body1" fontSize={14} fontWeight={500}>
-                      {Array.isArray(tempCity)
+                      {isCityBlocked
+                        ? "Clear other filters first"
+                        : Array.isArray(tempCity)
                         ? tempCity.length > 0
                           ? `${tempCity.length} selected`
                           : "All"
@@ -933,6 +950,7 @@ export default function MobileFilterDrawer({
               {showDeviceType && (
                 <ListItemButton
                   onClick={() => setView("DEVICE_TYPE")}
+                  disabled={isDeviceTypeBlocked}
                   sx={{ py: 2, justifyContent: "space-between" }}
                 >
                   <Box>
@@ -944,7 +962,9 @@ export default function MobileFilterDrawer({
                       Device Type
                     </Typography>
                     <Typography variant="body1" fontSize={14} fontWeight={500}>
-                      {Array.isArray(tempDeviceType)
+                      {isDeviceTypeBlocked
+                        ? "Clear other filters first"
+                        : Array.isArray(tempDeviceType)
                         ? tempDeviceType.length > 0
                           ? tempDeviceType.join(", ")
                           : "All"

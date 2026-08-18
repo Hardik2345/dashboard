@@ -127,12 +127,16 @@ export default function UnifiedFilterBar({
   allowProductUtmSync = false,
   salesChannel,
   onSalesChannelChange,
+  salesChannelDisabled = false,
   deviceType,
   onDeviceTypeChange,
+  deviceTypeDisabled = false,
   city = [],
   onCityChange,
+  cityDisabled = false,
   discountCode = "",
   onDiscountCodeChange,
+  discountDisabled = false,
   allowedFilters = {
     product: true,
     utm: true,
@@ -465,19 +469,37 @@ export default function UnifiedFilterBar({
       allowedFilters.city ||
       allowedFilters.discount ||
       allowedFilters.product);
-  const disabledUtmTooltip = discountCode
-    ? "Clear discount filter to use UTM filters"
-    : "Clear product filter to use UTM filters";
-  const disabledUtmNestedTooltip = discountCode
+  const hasChannelValue = Array.isArray(salesChannel) && salesChannel.length > 0;
+  const hasDeviceTypeValue = Array.isArray(deviceType) && deviceType.length > 0;
+  const hasCityValue = Array.isArray(city) && city.length > 0;
+  const exclusiveGroupReason = hasChannelValue
+    ? "Channel"
+    : hasDeviceTypeValue
+      ? "Device Type"
+      : hasCityValue
+        ? "City"
+        : "";
+  const disabledUtmTooltip = exclusiveGroupReason
+    ? `Clear ${exclusiveGroupReason} filter to use UTM filters`
+    : discountCode
+      ? "Clear discount filter to use UTM filters"
+      : "Clear product filter to use UTM filters";
+  const disabledUtmNestedTooltip = exclusiveGroupReason || discountCode
     ? disabledUtmTooltip
     : disableUtmMediumCampaign
       ? "Clear product filter to use Medium/Campaign"
       : "";
-  const disabledProductTooltip = discountCode
-    ? "Clear discount filter to use product filter"
-    : allowProductUtmSync
-      ? "Clear UTM medium/campaign filters to use product filter"
-      : "Clear UTM filters to use product filter";
+  const disabledProductTooltip = exclusiveGroupReason
+    ? `Clear ${exclusiveGroupReason} filter to use product filter`
+    : discountCode
+      ? "Clear discount filter to use product filter"
+      : allowProductUtmSync
+        ? "Clear UTM medium/campaign filters to use product filter"
+        : "Clear UTM filters to use product filter";
+  const disabledChannelTooltip = "Clear other active filters to use Channel";
+  const disabledDeviceTypeTooltip = "Clear other active filters to use Device Type";
+  const disabledCityTooltip = "Clear other active filters to use City";
+  const disabledDiscountTooltip = "Clear other active filters to use Discount Code";
 
 
   return (
@@ -1163,6 +1185,7 @@ export default function UnifiedFilterBar({
                   ? { start: start.toDate(), end: end.toDate() }
                   : undefined
               }
+              disableDatesAfter={dayjs().endOf("day").toDate()}
               allowRange
             />
           </Box>
@@ -1303,6 +1326,7 @@ export default function UnifiedFilterBar({
                 ? { start: compStart.toDate(), end: compEnd.toDate() }
                 : undefined
             }
+            disableDatesAfter={dayjs().endOf("day").toDate()}
             allowRange
           />
         </Box>
@@ -1385,7 +1409,10 @@ export default function UnifiedFilterBar({
         <Box sx={{ p: 0.5 }}>
           {/* CHANNEL Section */}
           {allowedFilters.salesChannel && (
+            <Tooltip title={salesChannelDisabled ? disabledChannelTooltip : ""}>
+              <span>
             <Accordion
+              disabled={salesChannelDisabled}
               expanded={expandedAccordion === "channel"}
               onChange={handleAccordionChange("channel")}
               disableGutters
@@ -1393,6 +1420,7 @@ export default function UnifiedFilterBar({
               sx={{
                 bgcolor: "transparent",
                 "&:before": { display: "none" },
+                "&.Mui-disabled": { bgcolor: "transparent" },
                 borderBottom:
                   expandedAccordion === "channel" ? "1px solid" : "none",
                 borderColor: isDark
@@ -1406,6 +1434,7 @@ export default function UnifiedFilterBar({
                   px: 2,
                   minHeight: 44,
                   "& .MuiAccordionSummary-content": { my: 1 },
+                  "&.Mui-disabled": { opacity: 0.5 },
                 }}
               >
                 <Typography
@@ -1420,7 +1449,16 @@ export default function UnifiedFilterBar({
                   Channel
                 </Typography>
               </AccordionSummary>
-              <AccordionDetails sx={{ px: 0, pb: 1, pt: 0 }}>
+              <AccordionDetails
+                sx={{
+                  px: 0,
+                  pb: 1,
+                  pt: 0,
+                  ...(salesChannelDisabled
+                    ? { pointerEvents: "none", opacity: 0.5 }
+                    : {}),
+                }}
+              >
                 <List dense sx={{ py: 0 }}>
                   {(utmOptions?.sales_channel || []).map((channel) => {
                     const selectedChannels = Array.isArray(salesChannel)
@@ -1478,11 +1516,16 @@ export default function UnifiedFilterBar({
                 </List>
               </AccordionDetails>
             </Accordion>
+              </span>
+            </Tooltip>
           )}
 
           {/* DEVICE TYPE Section */}
           {allowedFilters.deviceType && (
+            <Tooltip title={deviceTypeDisabled ? disabledDeviceTypeTooltip : ""}>
+              <span>
             <Accordion
+              disabled={deviceTypeDisabled}
               expanded={expandedAccordion === "deviceType"}
               onChange={handleAccordionChange("deviceType")}
               disableGutters
@@ -1490,6 +1533,7 @@ export default function UnifiedFilterBar({
               sx={{
                 bgcolor: "transparent",
                 "&:before": { display: "none" },
+                "&.Mui-disabled": { bgcolor: "transparent" },
                 borderBottom:
                   expandedAccordion === "deviceType" ? "1px solid" : "none",
                 borderColor: isDark
@@ -1503,6 +1547,7 @@ export default function UnifiedFilterBar({
                   px: 2,
                   minHeight: 44,
                   "& .MuiAccordionSummary-content": { my: 1 },
+                  "&.Mui-disabled": { opacity: 0.5 },
                 }}
               >
                 <Typography
@@ -1517,7 +1562,16 @@ export default function UnifiedFilterBar({
                   Device Type
                 </Typography>
               </AccordionSummary>
-              <AccordionDetails sx={{ px: 0, pb: 1, pt: 0 }}>
+              <AccordionDetails
+                sx={{
+                  px: 0,
+                  pb: 1,
+                  pt: 0,
+                  ...(deviceTypeDisabled
+                    ? { pointerEvents: "none", opacity: 0.5 }
+                    : {}),
+                }}
+              >
                 <List dense sx={{ py: 0 }}>
                   {["Desktop", "Mobile", "Others"].map((type) => {
                     const selectedTypes = Array.isArray(deviceType)
@@ -1565,10 +1619,15 @@ export default function UnifiedFilterBar({
                 </List>
               </AccordionDetails>
             </Accordion>
+              </span>
+            </Tooltip>
           )}
 
           {allowedFilters.city && (
+            <Tooltip title={cityDisabled ? disabledCityTooltip : ""}>
+              <span>
             <Accordion
+              disabled={cityDisabled}
               expanded={expandedAccordion === "city"}
               onChange={handleAccordionChange("city")}
               disableGutters
@@ -1576,6 +1635,7 @@ export default function UnifiedFilterBar({
               sx={{
                 bgcolor: "transparent",
                 "&:before": { display: "none" },
+                "&.Mui-disabled": { bgcolor: "transparent" },
                 borderBottom:
                   expandedAccordion === "city" ? "1px solid" : "none",
                 borderColor: isDark
@@ -1589,6 +1649,7 @@ export default function UnifiedFilterBar({
                   px: 2,
                   minHeight: 44,
                   "& .MuiAccordionSummary-content": { my: 1 },
+                  "&.Mui-disabled": { opacity: 0.5 },
                 }}
               >
                 <Typography
@@ -1603,7 +1664,16 @@ export default function UnifiedFilterBar({
                   City
                 </Typography>
               </AccordionSummary>
-              <AccordionDetails sx={{ px: 0, pb: 1, pt: 0 }}>
+              <AccordionDetails
+                sx={{
+                  px: 0,
+                  pb: 1,
+                  pt: 0,
+                  ...(cityDisabled
+                    ? { pointerEvents: "none", opacity: 0.5 }
+                    : {}),
+                }}
+              >
                 <List dense sx={{ py: 0, maxHeight: 280, overflowY: "auto" }}>
                   {(utmOptions?.city || []).map((cityOption) => {
                     const selectedCities = Array.isArray(city) ? city : [];
@@ -1656,11 +1726,16 @@ export default function UnifiedFilterBar({
                 </List>
               </AccordionDetails>
             </Accordion>
+              </span>
+            </Tooltip>
           )}
 
           {/* DISCOUNT CODE Section */}
           {allowedFilters.discount && (
+            <Tooltip title={discountDisabled ? disabledDiscountTooltip : ""}>
+              <span>
             <Accordion
+              disabled={discountDisabled}
               expanded={expandedAccordion === "discount"}
               onChange={handleAccordionChange("discount")}
               disableGutters
@@ -1668,6 +1743,7 @@ export default function UnifiedFilterBar({
               sx={{
                 bgcolor: "transparent",
                 "&:before": { display: "none" },
+                "&.Mui-disabled": { bgcolor: "transparent" },
                 borderBottom:
                   expandedAccordion === "discount" ? "1px solid" : "none",
                 borderColor: isDark
@@ -1681,6 +1757,7 @@ export default function UnifiedFilterBar({
                   px: 2,
                   minHeight: 44,
                   "& .MuiAccordionSummary-content": { my: 1 },
+                  "&.Mui-disabled": { opacity: 0.5 },
                 }}
               >
                 <Typography
@@ -1695,7 +1772,16 @@ export default function UnifiedFilterBar({
                   Discount Code
                 </Typography>
               </AccordionSummary>
-              <AccordionDetails sx={{ px: 0, pb: 0, pt: 0 }}>
+              <AccordionDetails
+                sx={{
+                  px: 0,
+                  pb: 0,
+                  pt: 0,
+                  ...(discountDisabled
+                    ? { pointerEvents: "none", opacity: 0.5 }
+                    : {}),
+                }}
+              >
                 <Box sx={{ px: 2, pb: 1, pt: 0.5 }}>
                   <TextField
                     size="small"
@@ -1802,6 +1888,8 @@ export default function UnifiedFilterBar({
                 </List>
               </AccordionDetails>
             </Accordion>
+              </span>
+            </Tooltip>
           )}
 
           {/* PRODUCT Section */}
@@ -1817,6 +1905,7 @@ export default function UnifiedFilterBar({
               sx={{
                 bgcolor: "transparent",
                 "&:before": { display: "none" },
+                "&.Mui-disabled": { bgcolor: "transparent" },
                 borderBottom:
                   expandedAccordion === "product" ? "1px solid" : "none",
                 borderColor: isDark
@@ -1830,6 +1919,7 @@ export default function UnifiedFilterBar({
                   px: 2,
                   minHeight: 44,
                   "& .MuiAccordionSummary-content": { my: 1 },
+                  "&.Mui-disabled": { opacity: 0.5 },
                 }}
               >
                 <Typography
@@ -1844,7 +1934,16 @@ export default function UnifiedFilterBar({
                   Product
                 </Typography>
               </AccordionSummary>
-              <AccordionDetails sx={{ px: 0, pb: 0, pt: 0 }}>
+              <AccordionDetails
+                sx={{
+                  px: 0,
+                  pb: 0,
+                  pt: 0,
+                  ...(productDisabled
+                    ? { pointerEvents: "none", opacity: 0.5 }
+                    : {}),
+                }}
+              >
                 <Box sx={{ px: 2, pb: 1, pt: 0.5 }}>
                   <TextField
                     size="small"
