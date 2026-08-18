@@ -342,10 +342,7 @@ async function queryProductKpiTotals({ conn, start, end, filters = {} }) {
   `;
   const rtoReplacements = [start, end];
   rtoSql = appendUtmWhere(rtoSql, rtoReplacements, filters, true);
-  if (filters.product_id) {
-    rtoSql += ` AND so.product_id = ?`;
-    rtoReplacements.push(filters.product_id);
-  }
+  rtoSql = appendProductFilter(rtoSql, rtoReplacements, filters.product_id, "so.product_id");
   const sessionRows = await conn.query(sessionsSql, {
     type: QueryTypes.SELECT,
     replacements: sessionReplacements,

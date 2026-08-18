@@ -1,8 +1,15 @@
 /* eslint-env jest */
 
+jest.mock("../../../shared/db/redis", () => ({
+  get: jest.fn(),
+  scan: jest.fn(),
+  mget: jest.fn(),
+}));
+
 const {
   buildProductConversionService,
 } = require("../../../services/productConversionService");
+const redisClient = require("../../../shared/db/redis");
 
 describe("productConversionService", () => {
   afterEach(() => {
@@ -254,5 +261,134 @@ describe("productConversionService", () => {
         rows: [],
       }),
     );
+  });
+
+  test("inventory_only reads the new single-key inventory_cache shop payload and sums DOH from grouped SKUs", async () => {
+    redisClient.scan.mockResolvedValue(["0", []]);
+    redisClient.get.mockImplementation((key) => {
+      if (key === "Inventory_cache:ajmal-perfumes-india") {
+        return Promise.resolve(
+          JSON.stringify({
+            shop: "ajmal-perfumes-india",
+            cached_at: "2026-08-18T08:48:42Z",
+            row_count: 2,
+            items: [
+              {
+                product_id: 8271489106090,
+                product_title: "Aristocrat Perfume 14 ML for Men",
+                variant_id: 47530002055338,
+                sku: "ARISTOCRAT_EDP_14ML",
+                inventory_available: 1000,
+                drr_7d: 20,
+                doh_7d: 50,
+                updated_at: "2026-08-18 08:48:41",
+              },
+              {
+                product_id: 7987757023402,
+                product_title: "ARISTOCRAT",
+                variant_id: 48165674647722,
+                sku: "ARISTOCRAT_EDP_14ML",
+                inventory_available: 500,
+                drr_7d: 5,
+                doh_7d: 100,
+                updated_at: "2026-08-18 08:46:41",
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(null);
+    });
+
+    const service = buildProductConversionService();
+    const normalized = service.normalizeProductConversionRequest({
+      start: "2026-08-18",
+      end: "2026-08-18",
+      inventory_period: "7d",
+      inventory_only: "true",
+    });
+
+    const response = await service.getProductConversion({
+      ...normalized.spec,
+      resolveShopSubdomain: () => "ajmal-perfumes-india",
+    });
+
+    expect(redisClient.get).toHaveBeenCalledWith("Inventory_cache:ajmal-perfumes-india");
+    expect(response.rows).toHaveLength(1);
+    const [row] = response.rows;
+    expect(row.sku).toBe("ARISTOCRAT_EDP_14ML");
+    // Grouped by SKU: drr summed (20 + 5 = 25), inventory summed (1000 + 500 = 1500),
+    // DOH derived from the summed values (1500 / 25 = 60) rather than either item's own doh_7d.
+    expect(row.drr).toBe(25);
+    expect(row.doh).toBe(60);
+  });
+
+  test("non-inventory-only path merges drr_/doh_ fields directly from the new cache shape", async () => {
+    redisClient.get.mockImplementation((key) => {
+      if (key === "Inventory_cache:ajmal-perfumes-india") {
+        return Promise.resolve(
+          JSON.stringify({
+            shop: "ajmal-perfumes-india",
+            cached_at: "2026-08-18T08:48:42Z",
+            row_count: 1,
+            items: [
+              {
+                product_id: 8271489106090,
+                variant_id: 47530002055338,
+                sku: "ARISTOCRAT_EDP_14ML",
+                drr_7d: 20,
+                doh_7d: 50,
+                updated_at: "2026-08-18 08:48:41",
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(null);
+    });
+
+    const conn = {
+      query: jest.fn().mockImplementation((sql) => {
+        if (sql.includes("COUNT(*) AS total_count")) {
+          return Promise.resolve([{ total_count: 1 }]);
+        }
+        if (sql.includes("FROM sessions_60d s")) {
+          return Promise.resolve([
+            {
+              product_id: "8271489106090",
+              landing_page_path: "/products/aristocrat",
+              sessions: 100,
+              atc: 25,
+              atc_rate: 25,
+              ci_events: 14,
+              checkout_rate: 14,
+              orders: 8,
+              sales: 640,
+              cvr: 8,
+              drr: null,
+              doh: null,
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      }),
+    };
+
+    const service = buildProductConversionService();
+    const normalized = service.normalizeProductConversionRequest({
+      start: "2026-08-18",
+      end: "2026-08-18",
+      inventory_period: "7d",
+    });
+
+    const response = await service.getProductConversion({
+      ...normalized.spec,
+      conn,
+      resolveShopSubdomain: () => "ajmal-perfumes-india",
+    });
+
+    expect(response.rows).toHaveLength(1);
+    expect(response.rows[0].drr).toBe(20);
+    expect(response.rows[0].doh).toBe(50);
   });
 });

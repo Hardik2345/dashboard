@@ -754,6 +754,39 @@ async function getInventoryTopProductSalesCache(redisClient, shopName) {
   return null;
 }
 
+async function getShopInventoryCache(redisClient, shopName) {
+  if (!redisClient || !shopName) return null;
+
+  const normalizedShopName = String(shopName || "").trim();
+  if (!normalizedShopName) return null;
+
+  const candidates = normalizedShopName.includes(".")
+    ? [
+        `Inventory_cache:${normalizedShopName}`,
+        `Inventory_cache:${normalizedShopName.replace(/\.myshopify\.com$/i, "")}`,
+      ]
+    : [
+        `Inventory_cache:${normalizedShopName}`,
+        `Inventory_cache:${normalizedShopName}.myshopify.com`,
+      ];
+
+  for (const key of candidates) {
+    const value = await redisClient.get(key);
+    if (!value) continue;
+    try {
+      const parsed = JSON.parse(value);
+      return {
+        items: Array.isArray(parsed?.items) ? parsed.items : [],
+        cachedAt: parsed?.cached_at || null,
+      };
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 function buildProductConversionService() {
   async function getInventoryOnlyRowsFromRedis(spec, resolveShopSubdomain) {
     const redisClient = getDefaultRedisClient();
@@ -763,54 +796,40 @@ function buildProductConversionService() {
     const shopName = resolveShopSubdomain(brandKey);
     if (!shopName) return [];
 
-    const period = spec.inventoryPeriod.replace("d", "");
+    const period = spec.inventoryPeriod; // e.g. "7d", "30d", "90d" — matches drr_/doh_ field suffixes
 
     try {
-      let cursor = "0";
-      const redisKeys = [];
-      do {
-        const result = await redisClient.scan(
-          cursor,
-          "MATCH",
-          `inventory:cache:${shopName}:*`,
-          "COUNT",
-          500,
-        );
-        cursor = result[0];
-        redisKeys.push(...result[1]);
-      } while (cursor !== "0");
-
-      if (redisKeys.length === 0) return [];
-
-      const [cachedValues, rawSalesCache] = await Promise.all([
-        redisClient.mget(redisKeys),
+      const [shopCache, rawSalesCache] = await Promise.all([
+        getShopInventoryCache(redisClient, shopName),
         getInventoryTopProductSalesCache(redisClient, shopName),
       ]);
+
+      if (!shopCache || shopCache.items.length === 0) return [];
+
       const salesLookup = buildInventorySalesLookup(rawSalesCache);
       const grouped = new Map();
 
-      cachedValues.forEach((val, index) => {
-        if (!val) return;
+      shopCache.items.forEach((parsed, index) => {
+        if (!parsed) return;
         try {
-          const parsed = JSON.parse(val);
           const sku = String(parsed.sku || "").trim();
-          const variantId = parsed.variantId || null;
-          const productId = extractNumericId(parsed.productId, "Product") || null;
+          const variantId = parsed.variant_id || null;
+          const productId = extractNumericId(parsed.product_id, "Product") || null;
           const groupKey = buildInventoryGroupKey({
             sku,
             variantId,
             productId,
             fallbackKey: `inventory:${index}`,
           });
-          const drr = Number(parsed[`drr${period}`] ?? 0);
-          const liveQty = Number(parsed.liveQty ?? 0);
+          const drr = Number(parsed[`drr_${period}`] ?? 0);
+          const liveQty = Number(parsed.inventory_available ?? 0);
           const sales = Number(salesLookup.get(groupKey) || 0);
 
           if (!grouped.has(groupKey)) {
             grouped.set(groupKey, {
               product_id: productId,
-              landing_page_path: parsed.productTitle || "",
-              productTitles: new Set(parsed.productTitle ? [parsed.productTitle] : []),
+              landing_page_path: parsed.product_title || "",
+              productTitles: new Set(parsed.product_title ? [parsed.product_title] : []),
               sessions: 0,
               atc: 0,
               atc_rate: 0,
@@ -821,24 +840,21 @@ function buildProductConversionService() {
               liveQty,
               variant_id: variantId,
               sku,
-              updated_at: parsed.updatedAt || null,
-              calculation_date: parsed.date || null,
+              updated_at: parsed.updated_at || null,
+              calculation_date: shopCache.cachedAt || null,
               previous: null,
             });
             return;
           }
 
           const current = grouped.get(groupKey);
-          if (parsed.productTitle) current.productTitles.add(parsed.productTitle);
+          if (parsed.product_title) current.productTitles.add(parsed.product_title);
           current.drr += drr;
           current.liveQty += liveQty;
           if (!current.product_id && productId) current.product_id = productId;
           if (!current.variant_id && variantId) current.variant_id = variantId;
-          if (!current.updated_at || (parsed.updatedAt && parsed.updatedAt > current.updated_at)) {
-            current.updated_at = parsed.updatedAt || current.updated_at;
-          }
-          if (!current.calculation_date || (parsed.date && parsed.date > current.calculation_date)) {
-            current.calculation_date = parsed.date || current.calculation_date;
+          if (!current.updated_at || (parsed.updated_at && parsed.updated_at > current.updated_at)) {
+            current.updated_at = parsed.updated_at || current.updated_at;
           }
         } catch (_err) {
           // ignore invalid cache entry
@@ -882,27 +898,17 @@ function buildProductConversionService() {
     const shopName = resolveShopSubdomain(brandKey);
     if (!shopName) return rows;
 
-    const period = spec.inventoryPeriod.replace("d", ""); // "7", "30", "90"
+    const period = spec.inventoryPeriod; // e.g. "7d", "30d", "90d" — matches drr_/doh_ field suffixes
 
     try {
-      let cursor = "0";
-      const redisKeys = [];
-      do {
-        const result = await redisClient.scan(cursor, "MATCH", `inventory:cache:${shopName}:*`, "COUNT", 500);
-        cursor = result[0];
-        redisKeys.push(...result[1]);
-      } while (cursor !== "0");
-
-      if (redisKeys.length === 0) return rows;
-
-      const cachedValues = await redisClient.mget(redisKeys);
+      const shopCache = await getShopInventoryCache(redisClient, shopName);
+      if (!shopCache || shopCache.items.length === 0) return rows;
 
       const cacheMap = new Map();
-      cachedValues.forEach((val) => {
-        if (!val) return;
+      shopCache.items.forEach((parsed) => {
+        if (!parsed) return;
         try {
-          const parsed = JSON.parse(val);
-          const productId = extractNumericId(parsed.productId, "Product");
+          const productId = extractNumericId(parsed.product_id, "Product");
           if (!productId || cacheMap.has(productId)) return;
           cacheMap.set(productId, parsed);
         } catch (_err) {
@@ -917,11 +923,11 @@ function buildProductConversionService() {
 
         return {
           ...row,
-          drr: metrics[`drr${period}`] ?? row.drr,
-          doh: metrics[`doh${period}`] ?? row.doh,
-          variant_id: metrics.variantId || row.variant_id,
-          updated_at: metrics.updatedAt || row.updated_at,
-          calculation_date: metrics.date || row.calculation_date,
+          drr: metrics[`drr_${period}`] ?? row.drr,
+          doh: metrics[`doh_${period}`] ?? row.doh,
+          variant_id: metrics.variant_id || row.variant_id,
+          updated_at: metrics.updated_at || row.updated_at,
+          calculation_date: shopCache.cachedAt || row.calculation_date,
         };
       });
     } catch (error) {

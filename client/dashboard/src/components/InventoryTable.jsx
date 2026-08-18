@@ -288,8 +288,11 @@ function InventoryTable({ brandKey, startDate, endDate }) {
   }, [columnWidths]);
 
   const inventoryUpdatedText = useMemo(() => {
+    // Prefer calculation_date (the whole cache snapshot's timestamp) over the
+    // per-product updated_at, which reflects when that individual product was
+    // last recalculated within the cache and can lag behind the cache refresh.
     const latestUpdatedAt = rows
-      .map((row) => row?.updated_at)
+      .map((row) => row?.calculation_date || row?.updated_at)
       .filter(Boolean)
       .sort((left, right) => String(right).localeCompare(String(left)))[0];
 
