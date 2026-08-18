@@ -494,6 +494,7 @@ function FunnelDateRangePicker({ startDate, endDate, onApply }) {
               onChange={handleRangeChange}
               onMonthChange={handleMonthChange}
               selected={selectedRange}
+              disableDatesAfter={dayjs().endOf("day").toDate()}
               allowRange
             />
           </Box>
@@ -624,6 +625,7 @@ export function FunnelSingleDatePicker({ date, onApply }) {
             year={year}
             onMonthChange={handleMonthChange}
             selected={selected}
+            disableDatesAfter={dayjs().endOf("day").toDate()}
             onChange={({ start: rawStart, end: rawEnd }) => {
               const picked = rawEnd || rawStart;
               if (!picked) return;
@@ -658,6 +660,9 @@ export default function DailyFunnelPanel({
   const [startDate, setStartDate] = useState(initialStart);
   const [endDate, setEndDate] = useState(initialEnd);
   const [utmDate, setUtmDate] = useState(initialEnd);
+  const [compareUtmDate, setCompareUtmDate] = useState(() =>
+    dayjs(initialEnd).subtract(1, "day").format("YYYY-MM-DD"),
+  );
   const [displayMode, setDisplayMode] = useState("count");
   const [dailyPercentBasis, setDailyPercentBasis] = useState("sessions");
   const [rows, setRows] = useState([]);
@@ -692,6 +697,7 @@ export default function DailyFunnelPanel({
 
   useEffect(() => {
     setUtmDate(initialEnd);
+    setCompareUtmDate(dayjs(initialEnd).subtract(1, "day").format("YYYY-MM-DD"));
   }, [initialEnd]);
 
   useEffect(() => {
@@ -756,6 +762,7 @@ export default function DailyFunnelPanel({
       start: utmDate,
       end: utmDate,
       utmDate,
+      compareUtmDate,
       includeDaily: false,
       includeUtm: true,
     })
@@ -780,7 +787,7 @@ export default function DailyFunnelPanel({
     return () => {
       cancelled = true;
     };
-  }, [brandKey, canAccessUtmFunnelTable, utmDate]);
+  }, [brandKey, canAccessUtmFunnelTable, utmDate, compareUtmDate]);
 
   const normalizedRows = useMemo(
     () =>
@@ -1177,6 +1184,7 @@ export default function DailyFunnelPanel({
     if (!filteredUtmRows.length) return;
 
     const headers = [
+      "Date",
       "UTM Source",
       "Sessions",
       "ATC Sessions",
@@ -1187,10 +1195,15 @@ export default function DailyFunnelPanel({
       "Conversion Rate",
     ];
 
+    const formattedDate = dayjs(utmDate).isValid()
+      ? dayjs(utmDate).format("DD-MM-YYYY")
+      : "";
+
     const lines = [
       headers.join(","),
       ...filteredUtmRows.map((row) =>
         [
+          formattedDate,
           row.utm_source,
           formatCount(row.sessions),
           row.atcDisplay,
@@ -1495,12 +1508,25 @@ export default function DailyFunnelPanel({
               alignItems={{ xs: "stretch", sm: "center" }}
             >
               <Typography variant="body2" color="text.secondary">
-                Selected date: {formatPanelDate(utmDate)}
+                Current date: {formatPanelDate(utmDate)}
               </Typography>
               <FunnelSingleDatePicker
                 date={utmDate}
+                onApply={(nextDate) => {
+                  const formatted = nextDate.format("YYYY-MM-DD");
+                  setUtmDate(formatted);
+                  setCompareUtmDate(
+                    nextDate.subtract(1, "day").format("YYYY-MM-DD"),
+                  );
+                }}
+              />
+              <Typography variant="body2" color="text.secondary">
+                Compare to: {formatPanelDate(compareUtmDate)}
+              </Typography>
+              <FunnelSingleDatePicker
+                date={compareUtmDate}
                 onApply={(nextDate) =>
-                  setUtmDate(nextDate.format("YYYY-MM-DD"))
+                  setCompareUtmDate(nextDate.format("YYYY-MM-DD"))
                 }
               />
               <Button

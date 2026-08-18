@@ -1229,6 +1229,7 @@ export async function getDailyFunnel(args = {}) {
       start: args.start,
       end: args.end,
       utm_date: args.utmDate,
+      compare_utm_date: args.compareUtmDate,
       include_utm:
         typeof args.includeUtm === "boolean" ? String(args.includeUtm) : undefined,
       include_daily:

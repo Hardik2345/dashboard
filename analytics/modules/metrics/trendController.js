@@ -77,6 +77,7 @@ function buildTrendController({ metricsService }) {
           await metricsService.getDailyFunnel({
             ...normalized.spec,
             utmDate: req.query.utm_date ? String(req.query.utm_date) : normalized.spec.end,
+            compareUtmDate: req.query.compare_utm_date ? String(req.query.compare_utm_date) : null,
             includeDaily,
             includeUtm,
           }),

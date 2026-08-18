@@ -763,6 +763,58 @@ export default function App() {
     return Array.isArray(value) ? value.length > 0 : !!value;
   }, [utm]);
   const canSyncProductUtmFilters = hasPermission("product_utm_filter_sync");
+  const hasActiveSalesChannelFilter = useMemo(
+    () => Array.isArray(salesChannel) && salesChannel.length > 0,
+    [salesChannel],
+  );
+  const hasActiveDeviceTypeFilter = useMemo(
+    () => Array.isArray(deviceType) && deviceType.length > 0,
+    [deviceType],
+  );
+  const hasActiveCityFilter = useMemo(
+    () => Array.isArray(city) && city.length > 0,
+    [city],
+  );
+  const hasActiveDiscountFilter = !!discountCode;
+  // Channel / Device Type / City / Discount Code are mutually exclusive with
+  // every other filter (including each other) — applying any one of them
+  // locks out Product, UTM, and the remaining three of this group.
+  const hasActiveExclusiveGroupFilter =
+    hasActiveSalesChannelFilter ||
+    hasActiveDeviceTypeFilter ||
+    hasActiveCityFilter ||
+    hasActiveDiscountFilter;
+  const salesChannelDisabled =
+    hasActiveDeviceTypeFilter ||
+    hasActiveCityFilter ||
+    hasActiveDiscountFilter ||
+    hasActiveProductFilter ||
+    hasActiveUtmFilter;
+  const deviceTypeDisabled =
+    hasActiveSalesChannelFilter ||
+    hasActiveCityFilter ||
+    hasActiveDiscountFilter ||
+    hasActiveProductFilter ||
+    hasActiveUtmFilter;
+  const cityDisabled =
+    hasActiveSalesChannelFilter ||
+    hasActiveDeviceTypeFilter ||
+    hasActiveDiscountFilter ||
+    hasActiveProductFilter ||
+    hasActiveUtmFilter;
+  const discountDisabled =
+    hasActiveSalesChannelFilter ||
+    hasActiveDeviceTypeFilter ||
+    hasActiveCityFilter ||
+    hasActiveProductFilter ||
+    hasActiveUtmFilter;
+  const productFilterDisabled =
+    hasActiveExclusiveGroupFilter ||
+    (canSyncProductUtmFilters ? hasActiveNonSourceUtmFilter : hasActiveUtmFilter);
+  const utmFilterDisabled =
+    hasActiveExclusiveGroupFilter ||
+    (!canSyncProductUtmFilters && hasActiveProductFilter);
+  const utmMediumCampaignDisabled = hasActiveExclusiveGroupFilter || hasActiveProductFilter;
 
   useEffect(() => {
     if (!isAuthor && viewerBrands.length) {
@@ -2308,28 +2360,25 @@ export default function App() {
                         productOptions={productOptions}
                         productValue={productSelection}
                         onProductChange={handleProductChange}
-                        productDisabled={
-                          (canSyncProductUtmFilters
-                            ? hasActiveNonSourceUtmFilter
-                            : hasActiveUtmFilter) || !!discountCode
-                        }
+                        productDisabled={productFilterDisabled}
                         productLoading={productOptionsLoading}
                         utm={utm}
                         onUtmChange={handleUtmChange}
-                        utmDisabled={
-                          !!discountCode ||
-                          (!canSyncProductUtmFilters && hasActiveProductFilter)
-                        }
-                        disableUtmMediumCampaign={hasActiveProductFilter}
+                        utmDisabled={utmFilterDisabled}
+                        disableUtmMediumCampaign={utmMediumCampaignDisabled}
                         allowProductUtmSync={canSyncProductUtmFilters}
                         salesChannel={salesChannel}
                         onSalesChannelChange={handleSalesChannelChange}
+                        salesChannelDisabled={salesChannelDisabled}
                         deviceType={deviceType}
                         onDeviceTypeChange={handleDeviceTypeChange}
+                        deviceTypeDisabled={deviceTypeDisabled}
                         city={city}
                         onCityChange={handleCityChange}
+                        cityDisabled={cityDisabled}
                         discountCode={discountCode}
                         onDiscountCodeChange={handleDiscountCodeChange}
+                        discountDisabled={discountDisabled}
                         allowedFilters={{
                           product: hasPermission("product_filter"),
                           utm: hasPermission("utm_filter"),
@@ -2418,28 +2467,25 @@ export default function App() {
                       productOptions={productOptions}
                       productValue={productSelection}
                       onProductChange={handleProductChange}
-                      productDisabled={
-                        (canSyncProductUtmFilters
-                          ? hasActiveNonSourceUtmFilter
-                          : hasActiveUtmFilter) || !!discountCode
-                      }
+                      productDisabled={productFilterDisabled}
                       productLoading={productOptionsLoading}
                       utm={utm}
                       onUtmChange={handleUtmChange}
-                      utmDisabled={
-                        !!discountCode ||
-                        (!canSyncProductUtmFilters && hasActiveProductFilter)
-                      }
-                      disableUtmMediumCampaign={hasActiveProductFilter}
+                      utmDisabled={utmFilterDisabled}
+                      disableUtmMediumCampaign={utmMediumCampaignDisabled}
                       allowProductUtmSync={canSyncProductUtmFilters}
                       salesChannel={salesChannel}
                       onSalesChannelChange={handleSalesChannelChange}
+                      salesChannelDisabled={salesChannelDisabled}
                       deviceType={deviceType}
                       onDeviceTypeChange={handleDeviceTypeChange}
+                        deviceTypeDisabled={deviceTypeDisabled}
                       city={city}
                       onCityChange={handleCityChange}
+                        cityDisabled={cityDisabled}
                       discountCode={discountCode}
                       onDiscountCodeChange={handleDiscountCodeChange}
+                        discountDisabled={discountDisabled}
                       showUtmFilter={hasPermission("utm_filter")}
                       showSalesChannel={hasPermission("sales_channel_filter")}
                       showCityFilter
@@ -2468,27 +2514,24 @@ export default function App() {
                   productOptions={productOptions}
                   productValue={productSelection}
                   onProductChange={handleProductChange}
-                  productDisabled={
-                    (canSyncProductUtmFilters
-                      ? hasActiveNonSourceUtmFilter
-                      : hasActiveUtmFilter) || !!discountCode
-                  }
+                  productDisabled={productFilterDisabled}
                   utm={utm}
                   onUtmChange={handleUtmChange}
-                  utmDisabled={
-                    !!discountCode ||
-                    (!canSyncProductUtmFilters && hasActiveProductFilter)
-                  }
-                  disableUtmMediumCampaign={hasActiveProductFilter}
+                  utmDisabled={utmFilterDisabled}
+                  disableUtmMediumCampaign={utmMediumCampaignDisabled}
                   allowProductUtmSync={canSyncProductUtmFilters}
                   salesChannel={salesChannel}
                   onSalesChannelChange={handleSalesChannelChange}
+                  salesChannelDisabled={salesChannelDisabled}
                   deviceType={deviceType}
                   onDeviceTypeChange={handleDeviceTypeChange}
+                        deviceTypeDisabled={deviceTypeDisabled}
                   city={city}
                   onCityChange={handleCityChange}
+                        cityDisabled={cityDisabled}
                   discountCode={discountCode}
                   onDiscountCodeChange={handleDiscountCodeChange}
+                        discountDisabled={discountDisabled}
                   showDiscountFilter={hasPermission("discount_filter")}
                   utmOptions={utmOptions}
                   dateRange={normalizedRange}
