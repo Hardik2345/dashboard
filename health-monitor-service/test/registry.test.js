@@ -88,6 +88,78 @@ test("registry service appends only new endpoints", async () => {
   assert.equal(saved.endpoints.length, 2);
 });
 
+test("registry service updates intervalSeconds on an existing endpoint when re-registered", async () => {
+  const saved = {
+    serviceName: "alerts-service",
+    baseUrl: "http://alerts-service:5005",
+    healthEndpoint: "/health",
+    endpoints: [
+      { path: "/health", method: "GET", critical: true, intervalSeconds: 30, successStatusFamily: DEFAULT_SUCCESS_STATUS_FAMILY },
+      { path: "/health/monitor", method: "GET", critical: true, intervalSeconds: 60, successStatusFamily: DEFAULT_SUCCESS_STATUS_FAMILY },
+    ],
+    async save() {
+      return this;
+    },
+  };
+
+  const Service = require("../src/models/Service");
+  Service.findOne = async () => saved;
+
+  const service = createRegistryService({
+    logger: buildLogger(),
+    defaultEndpointIntervalSeconds: 300,
+  });
+
+  // Same endpoints (same method+path), but the interval changed from 30s/60s to hourly.
+  const result = await service.register({
+    serviceName: "alerts-service",
+    baseUrl: "http://alerts-service:5005",
+    healthEndpoint: "/health",
+    endpoints: [
+      { path: "/health", method: "GET", critical: true, intervalSeconds: 3600 },
+      { path: "/health/monitor", method: "GET", critical: true, intervalSeconds: 3600 },
+    ],
+  });
+
+  assert.equal(result.message, "Service Updated");
+  assert.equal(result.changed, true);
+  assert.equal(saved.endpoints.length, 2);
+  assert.equal(saved.endpoints.find((e) => e.path === "/health").intervalSeconds, 3600);
+  assert.equal(saved.endpoints.find((e) => e.path === "/health/monitor").intervalSeconds, 3600);
+});
+
+test("registry service reports no change when re-registered with identical endpoints", async () => {
+  const saved = {
+    serviceName: "alerts-service",
+    baseUrl: "http://alerts-service:5005",
+    healthEndpoint: "/health",
+    endpoints: [
+      { path: "/health", method: "GET", critical: true, intervalSeconds: 3600, successStatusFamily: DEFAULT_SUCCESS_STATUS_FAMILY },
+    ],
+    async save() {
+      return this;
+    },
+  };
+
+  const Service = require("../src/models/Service");
+  Service.findOne = async () => saved;
+
+  const service = createRegistryService({
+    logger: buildLogger(),
+    defaultEndpointIntervalSeconds: 300,
+  });
+
+  const result = await service.register({
+    serviceName: "alerts-service",
+    baseUrl: "http://alerts-service:5005",
+    healthEndpoint: "/health",
+    endpoints: [{ path: "/health", method: "GET", critical: true, intervalSeconds: 3600 }],
+  });
+
+  assert.equal(result.message, "Already Registered");
+  assert.equal(result.changed, false);
+});
+
 test("registry service preserves dependencies when re-registration omits them", async () => {
   const saved = {
     serviceName: "analytics-service",
@@ -146,7 +218,9 @@ test("registry service forwards discovered routes to the catalog service without
     serviceName: "alerts-service",
     baseUrl: "http://alerts-service:5005",
     healthEndpoint: "/health",
-    endpoints: [{ path: "/health", method: "GET", critical: true, intervalSeconds: 30 }],
+    endpoints: [
+      { path: "/health", method: "GET", critical: true, intervalSeconds: 30, successStatusFamily: DEFAULT_SUCCESS_STATUS_FAMILY },
+    ],
     async save() {
       return this;
     },
