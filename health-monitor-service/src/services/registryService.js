@@ -126,10 +126,30 @@ function createRegistryService({
       return { message: "Registered Successfully", changed: true };
     }
 
-    const existingKeys = new Set(existing.endpoints.map(getEndpointKey));
-    const newEndpoints = normalizedEndpoints.filter(
-      (endpoint) => !existingKeys.has(getEndpointKey(endpoint)),
-    );
+    // Merge by endpoint key (method+path): endpoints already known are updated
+    // in place so field changes (e.g. intervalSeconds) from a later
+    // registration actually take effect, not just appended when brand new.
+    const endpointSyncFields = ["critical", "intervalSeconds", "expectedStatus", "successStatusFamily"];
+    const existingByKey = new Map(existing.endpoints.map((endpoint) => [getEndpointKey(endpoint), endpoint]));
+    let endpointsChanged = false;
+
+    const mergedEndpoints = normalizedEndpoints.map((endpoint) => {
+      const key = getEndpointKey(endpoint);
+      const existingEndpoint = existingByKey.get(key);
+      if (!existingEndpoint) {
+        endpointsChanged = true;
+        return endpoint;
+      }
+      existingByKey.delete(key);
+      const fieldChanged = endpointSyncFields.some(
+        (field) => existingEndpoint[field] !== endpoint[field],
+      );
+      if (fieldChanged) endpointsChanged = true;
+      return endpoint;
+    });
+    // Endpoints registered previously but not present in this registration are
+    // preserved (registration has never removed stale endpoints; keep that).
+    mergedEndpoints.push(...existingByKey.values());
 
     const baseChanged =
       existing.baseUrl !== payload.baseUrl
@@ -138,6 +158,7 @@ function createRegistryService({
     existing.baseUrl = payload.baseUrl;
     existing.healthEndpoint = payload.healthEndpoint;
     existing.lastRegistrationAt = now;
+    existing.endpoints = mergedEndpoints;
     if (normalizedDependencies.shouldUpdate) {
       existing.dependencies = normalizedDependencies.dependencies;
     }
@@ -149,23 +170,18 @@ function createRegistryService({
       });
     }
 
-    if (newEndpoints.length > 0) {
-      existing.endpoints.push(...newEndpoints);
-      await existing.save();
-      logger.info("service.updated", {
-        serviceName: payload.serviceName,
-        endpointsAdded: newEndpoints.length,
-      });
+    await existing.save();
+
+    if (endpointsChanged) {
+      logger.info("service.updated", { serviceName: payload.serviceName });
       return { message: "Service Updated", changed: true };
     }
 
     if (baseChanged) {
-      await existing.save();
       logger.info("service.metadata_refreshed", { serviceName: payload.serviceName });
       return { message: "Already Registered", changed: false };
     }
 
-    await existing.save();
     return { message: "Already Registered", changed: false };
   }
 
