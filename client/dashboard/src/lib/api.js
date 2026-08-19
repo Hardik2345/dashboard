@@ -45,6 +45,7 @@ function appendBrandKey(params, source) {
   if (source?.device_type) out.device_type = source.device_type;
   if (source?.discount_code) out.discount_code = source.discount_code;
   if (source?.city) out.city = source.city;
+  if (source?.product_type) out.product_type = source.product_type;
   if (source?.refreshKey) out.refreshKey = source.refreshKey;
   return out;
 }
@@ -878,19 +879,24 @@ export async function getOrderSplit(args) {
     args,
   );
   const json = await getJSON("/metrics/order-split", params);
-  const cod_orders = Number(json?.cod_orders || 0);
-  const prepaid_orders = Number(json?.prepaid_orders || 0);
-  const partially_paid_orders = Number(json?.partially_paid_orders || 0);
+  const unavailable = !!json?.payment_mode_unavailable;
+  const cod_orders = unavailable ? null : Number(json?.cod_orders || 0);
+  const prepaid_orders = unavailable ? null : Number(json?.prepaid_orders || 0);
+  const partially_paid_orders = unavailable
+    ? null
+    : Number(json?.partially_paid_orders || 0);
   const total = Number(
     json?.total_orders_from_split ||
-      cod_orders + prepaid_orders + partially_paid_orders,
+      (cod_orders || 0) + (prepaid_orders || 0) + (partially_paid_orders || 0),
   );
-  const cod_percent = Number(json?.cod_percent || 0);
-  const prepaid_percent = Number(json?.prepaid_percent || 0);
-  const partially_paid_percent = Number(
-    json?.partially_paid_percent ||
-      (total > 0 ? (partially_paid_orders / total) * 100 : 0),
-  );
+  const cod_percent = unavailable ? null : Number(json?.cod_percent || 0);
+  const prepaid_percent = unavailable ? null : Number(json?.prepaid_percent || 0);
+  const partially_paid_percent = unavailable
+    ? null
+    : Number(
+        json?.partially_paid_percent ||
+          (total > 0 ? (partially_paid_orders / total) * 100 : 0),
+      );
   return {
     timezone: json?.timezone || "Asia/Kolkata",
     cod_orders,
@@ -900,6 +906,7 @@ export async function getOrderSplit(args) {
     cod_percent,
     prepaid_percent,
     partially_paid_percent,
+    unavailable,
     error: json?.__error,
   };
 }
@@ -915,17 +922,19 @@ export async function getPaymentSalesSplit(args) {
     args,
   );
   const json = await getJSON("/metrics/payment-sales-split", params);
-  const cod_sales = Number(json?.cod_sales || 0);
-  const prepaid_sales = Number(json?.prepaid_sales || 0);
-  const partial_sales = Number(json?.partial_sales || 0);
+  const unavailable = !!json?.payment_mode_unavailable;
+  const cod_sales = unavailable ? null : Number(json?.cod_sales || 0);
+  const prepaid_sales = unavailable ? null : Number(json?.prepaid_sales || 0);
+  const partial_sales = unavailable ? null : Number(json?.partial_sales || 0);
   const total = Number(
-    json?.total_sales_from_split || cod_sales + prepaid_sales + partial_sales,
+    json?.total_sales_from_split ||
+      (cod_sales || 0) + (prepaid_sales || 0) + (partial_sales || 0),
   );
-  const cod_percent = Number(json?.cod_percent || 0);
-  const prepaid_percent = Number(json?.prepaid_percent || 0);
-  const partial_percent = Number(
-    json?.partial_percent || (total > 0 ? (partial_sales / total) * 100 : 0),
-  );
+  const cod_percent = unavailable ? null : Number(json?.cod_percent || 0);
+  const prepaid_percent = unavailable ? null : Number(json?.prepaid_percent || 0);
+  const partial_percent = unavailable
+    ? null
+    : Number(json?.partial_percent || (total > 0 ? (partial_sales / total) * 100 : 0));
   // Backward-compatible return shape with new fields appended
   return {
     timezone: json?.timezone || "Asia/Kolkata",
@@ -936,6 +945,7 @@ export async function getPaymentSalesSplit(args) {
     cod_percent,
     prepaid_percent,
     partial_percent,
+    unavailable,
     error: json?.__error,
   };
 }
@@ -1173,6 +1183,7 @@ export async function getHourlyTrend(args) {
   if (args.device_type) base.device_type = args.device_type;
   if (args.product_id) base.product_id = args.product_id;
   if (args.discount_code) base.discount_code = args.discount_code;
+  if (args.product_type) base.product_type = args.product_type;
   const params = appendBrandKey(base, args);
   const json = await getJSON("/metrics/hourly-trend", params);
   const comparison = json?.comparison;
@@ -1209,6 +1220,7 @@ export async function getDailyTrend(args) {
   if (args.device_type) base.device_type = args.device_type;
   if (args.product_id) base.product_id = args.product_id;
   if (args.discount_code) base.discount_code = args.discount_code;
+  if (args.product_type) base.product_type = args.product_type;
   const params = appendBrandKey(base, args);
   const json = await getJSON("/metrics/daily-trend", params);
   return {
@@ -1261,6 +1273,7 @@ export async function getMonthlyTrend(args) {
   if (args.device_type) base.device_type = args.device_type;
   if (args.product_id) base.product_id = args.product_id;
   if (args.discount_code) base.discount_code = args.discount_code;
+  if (args.product_type) base.product_type = args.product_type;
   const params = appendBrandKey(base, args);
   const json = await getJSON("/metrics/monthly-trend", params);
   return {
@@ -1429,6 +1442,50 @@ export async function deleteDailyInsight({ brandKey, date }) {
   );
   if (res.error) return res;
   return { error: false, data: res.data?.data ?? null };
+}
+
+// Health Monitor — global infra observability data, not brand-scoped, so
+// these never call appendBrandKey.
+export async function getHealthMonitorSummary() {
+  const res = await doGet("/health-monitor/summary", {});
+  if (res.error) return { error: true, status: res.status, data: res.data };
+  return { error: false, data: res.data || {} };
+}
+
+export async function getHealthMonitorServices() {
+  const res = await doGet("/health-monitor/services", {});
+  if (res.error) return { error: true, status: res.status, data: res.data };
+  return { error: false, data: Array.isArray(res.data?.services) ? res.data.services : [] };
+}
+
+export async function getHealthMonitorServiceDetail(serviceName) {
+  const res = await doGet(`/health-monitor/services/${encodeURIComponent(serviceName)}`, {});
+  if (res.error) return { error: true, status: res.status, data: res.data };
+  return { error: false, data: res.data || null };
+}
+
+export async function getHealthMonitorEndpointHistory({ serviceName, endpoint, range }) {
+  const res = await doGet(
+    `/health-monitor/services/${encodeURIComponent(serviceName)}/endpoints/history`,
+    { endpoint, range },
+  );
+  if (res.error) return { error: true, status: res.status, data: res.data };
+  return { error: false, data: res.data || { buckets: [], availabilityPct: null } };
+}
+
+export async function getHealthMonitorIncidents(filters = {}) {
+  const params = {
+    status: filters.status,
+    severity: filters.severity,
+    service: filters.service,
+    from: filters.from,
+    to: filters.to,
+    page: filters.page,
+    pageSize: filters.pageSize,
+  };
+  const res = await doGet("/health-monitor/incidents", params);
+  if (res.error) return { error: true, status: res.status, data: res.data };
+  return { error: false, data: res.data || { incidents: [], page: 1, pageSize: 25, total: 0 } };
 }
 
 export async function getSessionAnalyticsSummary(args = {}) {

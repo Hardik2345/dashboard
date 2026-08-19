@@ -174,6 +174,7 @@ function extractFilters(req) {
     product_id,
     discount_code,
     city,
+    product_type,
   } = req.query;
 
   // Suppress UTM filters for date ranges exceeding 30 days to prevent heavy queries.
@@ -197,6 +198,7 @@ function extractFilters(req) {
     product_id: rawProductId,
     discount_code: extractSingleParam(discount_code),
     city: extractUtmParam(city),
+    product_type: extractUtmParam(product_type),
   };
 }
 

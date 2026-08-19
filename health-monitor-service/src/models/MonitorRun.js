@@ -17,5 +17,8 @@ const monitorRunSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+monitorRunSchema.index({ service: 1, endpoint: 1, timestamp: -1 });
+monitorRunSchema.index({ service: 1, timestamp: -1 });
+
 module.exports = mongoose.models.HealthMonitorRun
   || mongoose.model("HealthMonitorRun", monitorRunSchema, "monitor_runs");

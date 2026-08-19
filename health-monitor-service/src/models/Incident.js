@@ -42,6 +42,8 @@ const incidentSchema = new mongoose.Schema(
 incidentSchema.index({ service: 1, endpoint: 1, incidentType: 1, status: 1 });
 incidentSchema.index({ service: 1, fingerprint: 1, incidentType: 1, status: 1 });
 incidentSchema.index({ service: 1, resolutionKey: 1, incidentType: 1, status: 1 });
+incidentSchema.index({ status: 1, startedAt: -1 });
+incidentSchema.index({ severity: 1, status: 1, startedAt: -1 });
 
 module.exports = mongoose.models.HealthMonitorIncident
   || mongoose.model("HealthMonitorIncident", incidentSchema, "incidents");

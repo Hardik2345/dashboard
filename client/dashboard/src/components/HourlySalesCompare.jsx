@@ -654,6 +654,10 @@ export default memo(function HourlySalesCompare({
   const deviceType = query?.device_type;
   const productId = query?.product_id;
   const discountCode = query?.discount_code;
+  const productType = query?.product_type;
+  // mv_product_type_funnel_daily has no hourly grain — Hourly view is
+  // disabled while a Product Type filter is active (see Division filters).
+  const hasActiveProductTypeFilter = Array.isArray(productType) && productType.length > 0;
   const compare = query?.compare;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
@@ -723,6 +727,7 @@ export default memo(function HourlySalesCompare({
     if (
       (isLongRange ||
         hasPerformanceSelected ||
+        hasActiveProductTypeFilter ||
         (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend)) &&
       viewMode === "hourly"
     ) {
@@ -730,6 +735,7 @@ export default memo(function HourlySalesCompare({
     }
   }, [
     canUseHourlyPaymentTrend,
+    hasActiveProductTypeFilter,
     hasPaymentCompositeSelected,
     hasPerformanceSelected,
     isLongRange,
@@ -779,6 +785,7 @@ export default memo(function HourlySalesCompare({
         product_id: productId,
         discount_code: discountCode,
         city: query?.city,
+        product_type: productType,
       };
       const fetcher =
         viewMode === "monthly"
@@ -1589,6 +1596,7 @@ export default memo(function HourlySalesCompare({
                   disabled={
                     isLongRange ||
                     hasPerformanceSelected ||
+                    hasActiveProductTypeFilter ||
                     (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend)
                   }
                 >

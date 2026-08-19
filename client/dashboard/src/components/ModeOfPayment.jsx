@@ -205,9 +205,12 @@ const ModeOfPayment = React.memo(function ModeOfPayment({
 
             <div className="flex flex-col gap-2 w-full mt-6 px-2 md:px-4">
                 {chartData.map((entry, index) => {
-                    const pctLabel = entry.percent !== undefined
-                        ? Number(entry.percent).toFixed(1)
-                        : (rawTotal > 0 ? ((entry.value / rawTotal) * 100).toFixed(1) : '0.0');
+                    const isUnavailable = entry.percent === null;
+                    const pctLabel = isUnavailable
+                        ? null
+                        : entry.percent !== undefined
+                            ? Number(entry.percent).toFixed(1)
+                            : (rawTotal > 0 ? ((entry.value / rawTotal) * 100).toFixed(1) : '0.0');
                     return (
                         <div key={index} className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50 dark:bg-white/[0.04] border border-gray-100 dark:border-white/[0.08] transition-colors">
                             <div className="flex items-center gap-2.5">
@@ -216,9 +219,11 @@ const ModeOfPayment = React.memo(function ModeOfPayment({
                             </div>
                             <div className="flex items-center gap-3">
                                 <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{entry.formattedValue}</span>
-                                <span className="text-[13px] font-semibold text-gray-500 dark:text-gray-400 w-10 text-right">
-                                    {pctLabel}%
-                                </span>
+                                {!isUnavailable && (
+                                    <span className="text-[13px] font-semibold text-gray-500 dark:text-gray-400 w-10 text-right">
+                                        {pctLabel}%
+                                    </span>
+                                )}
                             </div>
                         </div>
                     );

@@ -137,6 +137,9 @@ export default function UnifiedFilterBar({
   discountCode = "",
   onDiscountCodeChange,
   discountDisabled = false,
+  productType,
+  onProductTypeChange,
+  productTypeDisabled = false,
   allowedFilters = {
     product: true,
     utm: true,
@@ -144,6 +147,7 @@ export default function UnifiedFilterBar({
     deviceType: true,
     city: true,
     discount: true,
+    productType: true,
   },
   utmOptions = {}, // Add prop
   dataRestrictionConfig = DEFAULT_DATA_RESTRICTION_CONFIG,
@@ -292,6 +296,7 @@ export default function UnifiedFilterBar({
     ...(Array.isArray(deviceType) ? deviceType : []),
     ...(Array.isArray(city) ? city : [city]),
     discountCode,
+    ...(Array.isArray(productType) ? productType : []),
     ...(Array.isArray(productValue) ? productValue : [productValue])?.map(
       (p) => p?.id,
     ),
@@ -468,17 +473,21 @@ export default function UnifiedFilterBar({
       allowedFilters.deviceType ||
       allowedFilters.city ||
       allowedFilters.discount ||
+      allowedFilters.productType ||
       allowedFilters.product);
   const hasChannelValue = Array.isArray(salesChannel) && salesChannel.length > 0;
   const hasDeviceTypeValue = Array.isArray(deviceType) && deviceType.length > 0;
   const hasCityValue = Array.isArray(city) && city.length > 0;
+  const hasProductTypeValue = Array.isArray(productType) && productType.length > 0;
   const exclusiveGroupReason = hasChannelValue
     ? "Channel"
     : hasDeviceTypeValue
       ? "Device Type"
       : hasCityValue
         ? "City"
-        : "";
+        : hasProductTypeValue
+          ? "Product Type"
+          : "";
   const disabledUtmTooltip = exclusiveGroupReason
     ? `Clear ${exclusiveGroupReason} filter to use UTM filters`
     : discountCode
@@ -500,6 +509,7 @@ export default function UnifiedFilterBar({
   const disabledDeviceTypeTooltip = "Clear other active filters to use Device Type";
   const disabledCityTooltip = "Clear other active filters to use City";
   const disabledDiscountTooltip = "Clear other active filters to use Discount Code";
+  const disabledProductTypeTooltip = "Clear other active filters to use Product Type";
 
 
   return (
@@ -1892,6 +1902,119 @@ export default function UnifiedFilterBar({
             </Tooltip>
           )}
 
+          {/* PRODUCT TYPE Section */}
+          {allowedFilters.productType && (
+            <Tooltip title={productTypeDisabled ? disabledProductTypeTooltip : ""}>
+              <span>
+            <Accordion
+              disabled={productTypeDisabled}
+              expanded={expandedAccordion === "productType"}
+              onChange={handleAccordionChange("productType")}
+              disableGutters
+              elevation={0}
+              sx={{
+                bgcolor: "transparent",
+                "&:before": { display: "none" },
+                "&.Mui-disabled": { bgcolor: "transparent" },
+                borderBottom:
+                  expandedAccordion === "productType" ? "1px solid" : "none",
+                borderColor: isDark
+                  ? "rgba(255,255,255,0.1)"
+                  : "rgba(0,0,0,0.05)",
+              }}
+            >
+              <AccordionSummary
+                expandIcon={<ExpandMoreIcon sx={{ fontSize: 18 }} />}
+                sx={{
+                  px: 2,
+                  minHeight: 44,
+                  "& .MuiAccordionSummary-content": { my: 1 },
+                  "&.Mui-disabled": { opacity: 0.5 },
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontSize: "0.75rem",
+                    fontWeight: 700,
+                    color: "text.secondary",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  Product Type
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails
+                sx={{
+                  px: 0,
+                  pb: 1,
+                  pt: 0,
+                  ...(productTypeDisabled
+                    ? { pointerEvents: "none", opacity: 0.5 }
+                    : {}),
+                }}
+              >
+                <List dense sx={{ py: 0 }}>
+                  {(utmOptions?.product_types || []).map((type) => {
+                    const selectedTypes = Array.isArray(productType)
+                      ? productType
+                      : productType
+                        ? [productType]
+                        : [];
+                    const isSelected = selectedTypes.includes(type);
+                    return (
+                      <ListItemButton
+                        key={type}
+                        dense
+                        onClick={() => {
+                          const newTypes = isSelected
+                            ? selectedTypes.filter((t) => t !== type)
+                            : [...selectedTypes, type];
+                          onProductTypeChange(newTypes);
+                        }}
+                        sx={{
+                          px: 2,
+                          py: 0.5,
+                          "&:hover": {
+                            bgcolor: isDark
+                              ? "rgba(255,255,255,0.05)"
+                              : "rgba(0,0,0,0.03)",
+                          },
+                        }}
+                      >
+                        <Checkbox
+                          edge="start"
+                          checked={isSelected}
+                          tabIndex={-1}
+                          disableRipple
+                          size="small"
+                          sx={{ py: 0 }}
+                        />
+                        <ListItemText
+                          primary={type}
+                          primaryTypographyProps={{
+                            fontSize: "0.85rem",
+                            fontWeight: isSelected ? 600 : 400,
+                          }}
+                        />
+                      </ListItemButton>
+                    );
+                  })}
+                  {(!utmOptions?.product_types ||
+                    utmOptions.product_types.length === 0) && (
+                    <Box sx={{ p: 2, textAlign: "center" }}>
+                      <Typography variant="caption" color="text.secondary">
+                        No product types found
+                      </Typography>
+                    </Box>
+                  )}
+                </List>
+              </AccordionDetails>
+            </Accordion>
+              </span>
+            </Tooltip>
+          )}
+
           {/* PRODUCT Section */}
           {allowedFilters.product && (
             <Tooltip title={productDisabled ? disabledProductTooltip : ""}>
@@ -2084,6 +2207,7 @@ export default function UnifiedFilterBar({
               onCityChange?.([]);
               onProductChange(null);
               onDiscountCodeChange?.("");
+              onProductTypeChange?.([]);
               handleFilterClose();
             }}
             sx={{

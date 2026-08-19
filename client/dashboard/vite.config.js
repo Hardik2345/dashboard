@@ -150,6 +150,14 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
 
+      // Health monitor service
+      '/api/health-monitor': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
       // 5️⃣ Catch-all analytics (MUST BE LAST)
 
       '/api': {
@@ -242,6 +250,14 @@ export default defineConfig({
 
       // Daily insights service
       '/api/daily-insights': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
+      // Health monitor service
+      '/api/health-monitor': {
         target: 'http://localhost:8081',
         changeOrigin: true,
         secure: false,

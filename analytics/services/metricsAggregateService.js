@@ -62,6 +62,36 @@ function appendDiscountWhere(sql, replacements, filters = {}) {
   return `${sql} AND discount_code = ?`;
 }
 
+function normalizeProductTypes(filters = {}) {
+  const value = filters.product_type;
+  const list = Array.isArray(value) ? value : value ? [value] : [];
+  return list.map((entry) => String(entry || "").trim()).filter(Boolean);
+}
+
+function hasProductTypeFilter(filters = {}) {
+  return normalizeProductTypes(filters).length > 0;
+}
+
+function resolveProductTypeAggregateSource(filters = {}, granularity = "daily") {
+  // mv_product_type_funnel_daily has no hourly grain — always unavailable at
+  // hourly granularity so callers fall through / fail loudly instead of
+  // silently serving unfiltered data.
+  if (granularity === "hourly") return null;
+  const productTypes = normalizeProductTypes(filters);
+  if (!productTypes.length) return null;
+  return {
+    table: "mv_product_type_funnel_daily",
+    filters: { product_type: productTypes },
+  };
+}
+
+function appendProductTypeWhere(sql, replacements, filters = {}) {
+  const productTypes = normalizeProductTypes(filters);
+  if (!productTypes.length) return sql;
+  replacements.push(...productTypes);
+  return `${sql} AND product_type IN (${productTypes.map(() => "?").join(", ")})`;
+}
+
 function resolveUtmAggregateSource(filters = {}, granularity = "daily") {
   if (isCombinedProductUtmSourceFilter(filters)) {
     return {
@@ -791,8 +821,149 @@ async function queryDiscountAggregateRows(
   });
 }
 
+async function queryProductTypeAggregateRows(
+  conn,
+  start,
+  end,
+  filters = {},
+  options = {},
+) {
+  const { granularity = "daily" } = options;
+  const source = resolveProductTypeAggregateSource(filters, granularity);
+  if (!source) return null;
+
+  const replacements = [start, end];
+  let sql = `
+    SELECT
+      DATE_FORMAT(date, '%Y-%m-%d') AS date,
+      COALESCE(SUM(net_revenue), 0) AS sales,
+      COALESCE(SUM(total_orders), 0) AS orders,
+      COALESCE(SUM(sessions), 0) AS sessions,
+      COALESCE(SUM(sessions_with_cart_additions), 0) AS atc
+    FROM ${source.table}
+    WHERE date >= ? AND date <= ?
+  `;
+  sql = appendProductTypeWhere(sql, replacements, source.filters);
+  sql += ` GROUP BY date ORDER BY date ASC`;
+
+  return conn.query(sql, {
+    type: QueryTypes.SELECT,
+    replacements,
+  });
+}
+
+async function queryProductTypeAggregateTotals(
+  conn,
+  start,
+  end,
+  filters = {},
+  options = {},
+) {
+  const { granularity = "daily" } = options;
+  const source = resolveProductTypeAggregateSource(filters, granularity);
+  if (!source) return null;
+
+  let sql = `
+    SELECT
+      COALESCE(SUM(total_orders), 0) AS total_orders,
+      COALESCE(SUM(net_revenue), 0) AS total_sales,
+      COALESCE(SUM(sessions), 0) AS total_sessions,
+      COALESCE(SUM(sessions_with_cart_additions), 0) AS total_atc_sessions
+    FROM ${source.table}
+    WHERE date >= ? AND date <= ?
+  `;
+  const replacements = [start, end];
+  sql = appendProductTypeWhere(sql, replacements, source.filters);
+
+  const rows = await conn.query(sql, {
+    type: QueryTypes.SELECT,
+    replacements,
+  });
+  const row = rows?.[0] || {};
+  return {
+    total_orders: Number(row.total_orders || 0),
+    total_sales: Number(row.total_sales || 0),
+    total_sessions: Number(row.total_sessions || 0),
+    total_atc_sessions: Number(row.total_atc_sessions || 0),
+    cancelled_orders: null,
+    refunded_orders: null,
+  };
+}
+
+function buildProductTypeAggregateSelect(alias) {
+  return {
+    sql: `
+      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_orders ELSE 0 END), 0) AS ${alias}_total_orders,
+      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN net_revenue ELSE 0 END), 0) AS ${alias}_total_sales,
+      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN sessions ELSE 0 END), 0) AS ${alias}_total_sessions,
+      COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN sessions_with_cart_additions ELSE 0 END), 0) AS ${alias}_total_atc_sessions
+    `,
+    replacementsForRange(start, end) {
+      return [start, end, start, end, start, end, start, end];
+    },
+  };
+}
+
+async function queryProductTypeAggregatePair(
+  conn,
+  currentRange,
+  previousRange,
+  filters = {},
+  options = {},
+) {
+  const { granularity = "daily" } = options;
+  const source = resolveProductTypeAggregateSource(filters, granularity);
+  if (!source) return null;
+
+  const combinedStart =
+    currentRange.start <= previousRange.start ? currentRange.start : previousRange.start;
+  const combinedEnd =
+    currentRange.end >= previousRange.end ? currentRange.end : previousRange.end;
+
+  const currentSelect = buildProductTypeAggregateSelect("current");
+  const previousSelect = buildProductTypeAggregateSelect("previous");
+  let sql = `
+    SELECT
+      ${currentSelect.sql},
+      ${previousSelect.sql}
+    FROM ${source.table}
+    WHERE date >= ? AND date <= ?
+  `;
+  const replacements = [
+    ...currentSelect.replacementsForRange(currentRange.start, currentRange.end),
+    ...previousSelect.replacementsForRange(previousRange.start, previousRange.end),
+    combinedStart,
+    combinedEnd,
+  ];
+  sql = appendProductTypeWhere(sql, replacements, source.filters);
+
+  const rows = await conn.query(sql, {
+    type: QueryTypes.SELECT,
+    replacements,
+  });
+  const row = rows?.[0] || {};
+  return {
+    current: {
+      total_orders: Number(row.current_total_orders || 0),
+      total_sales: Number(row.current_total_sales || 0),
+      total_sessions: Number(row.current_total_sessions || 0),
+      total_atc_sessions: Number(row.current_total_atc_sessions || 0),
+      cancelled_orders: null,
+      refunded_orders: null,
+    },
+    previous: {
+      total_orders: Number(row.previous_total_orders || 0),
+      total_sales: Number(row.previous_total_sales || 0),
+      total_sessions: Number(row.previous_total_sessions || 0),
+      total_atc_sessions: Number(row.previous_total_atc_sessions || 0),
+      cancelled_orders: null,
+      refunded_orders: null,
+    },
+  };
+}
+
 async function queryUtmSummaryFilterOptions(conn, start, end, filters = {}) {
-  const [rows, channelRows, discountRows, cityRows] = await Promise.all([
+  const [rows, channelRows, discountRows, cityRows, productTypeRows] = await Promise.all([
     hasValue(filters.product_id)
       ? (() => {
           const replacements = [start, end];
@@ -867,6 +1038,20 @@ async function queryUtmSummaryFilterOptions(conn, start, end, filters = {}) {
         replacements: [start, end],
       },
     ),
+    conn.query(
+      `
+        SELECT DISTINCT product_type
+        FROM mv_product_type_funnel_daily
+        WHERE date >= ? AND date <= ?
+          AND product_type IS NOT NULL
+          AND product_type <> ''
+        ORDER BY product_type
+      `,
+      {
+        type: QueryTypes.SELECT,
+        replacements: [start, end],
+      },
+    ),
   ]);
 
   const baseFilterOptions = buildSummaryFilterOptions(rows);
@@ -877,6 +1062,7 @@ async function queryUtmSummaryFilterOptions(conn, start, end, filters = {}) {
       .filter(Boolean),
     discount_codes: discountRows.map((row) => row.discount_code).filter(Boolean),
     city: cityRows.map((row) => row.city).filter(Boolean),
+    product_types: productTypeRows.map((row) => row.product_type).filter(Boolean),
   };
 }
 
@@ -943,6 +1129,9 @@ module.exports = {
   appendDiscountWhere,
   hasDiscountFilter,
   resolveDiscountAggregateSource,
+  appendProductTypeWhere,
+  hasProductTypeFilter,
+  resolveProductTypeAggregateSource,
   resolveUtmAggregateSource,
   queryOverallSummaryTotals,
   queryOverallSummaryPair,
@@ -953,6 +1142,9 @@ module.exports = {
   queryDiscountAggregateTotals,
   queryDiscountAggregatePair,
   queryDiscountAggregateRows,
+  queryProductTypeAggregateTotals,
+  queryProductTypeAggregatePair,
+  queryProductTypeAggregateRows,
   queryUtmSummaryFilterOptions,
   queryProductDailySessionTotals,
   queryProductKpiTotals,

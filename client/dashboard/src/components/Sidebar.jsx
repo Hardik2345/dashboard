@@ -11,6 +11,7 @@ import {
 import {
   LayoutGrid,
   Activity,
+  HeartPulse,
   ShieldCheck,
   SlidersHorizontal,
   Store,
@@ -79,6 +80,7 @@ const NAV_ITEMS = [
     items: [
       { id: "access", label: "Access Control", icon: ShieldCheck },
       { id: "session-analytics", label: "Dashboard Sessions", icon: Activity },
+      { id: "health-monitor", label: "Health Monitor", icon: HeartPulse },
       { id: "alerts", label: "Alerts", icon: Bell },
       {
         id: "traffic-split-config",

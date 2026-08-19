@@ -17,6 +17,7 @@ const { createEvidenceService } = require("./services/evidenceService");
 const { createIncidentEnrichmentService } = require("./services/incidentEnrichmentService");
 const { createRouteCatalogService } = require("./services/routeCatalogService");
 const { createApplicationEventService } = require("./services/applicationEventService");
+const { createHealthQueryService } = require("./services/healthQueryService");
 const { buildApp } = require("./app");
 
 async function start() {
@@ -103,11 +104,15 @@ async function start() {
     requestTimeoutMs: config.requestTimeoutMs,
   });
 
+  const healthQueryService = createHealthQueryService({ logger });
+
   const app = buildApp({
     logger,
     registryService,
     schedulerService,
     applicationEventService,
+    config,
+    healthQueryService,
   });
 
   const server = app.listen(config.port, () => {
@@ -144,6 +149,7 @@ async function start() {
       monitorRunService,
       routeCatalogService,
       applicationEventService,
+      healthQueryService,
     },
   };
 }

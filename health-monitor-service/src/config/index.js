@@ -103,6 +103,10 @@ function getConfig() {
     ),
     dockerSocketPath: process.env.DOCKER_SOCKET_PATH || "/var/run/docker.sock",
     logLevel: process.env.LOG_LEVEL || "info",
+    gatewaySharedSecret: process.env.GATEWAY_SHARED_SECRET || "",
+    // Escape hatch for local dev / tests only: when no GATEWAY_SHARED_SECRET is
+    // set, trust gateway identity headers unsigned. Never enable in production.
+    allowInsecureAuth: String(process.env.ALLOW_INSECURE_AUTH || "").toLowerCase() === "true",
     smtp: {
       host: process.env.GMAIL_SMTP_HOST || "smtp.gmail.com",
       port: Number(process.env.GMAIL_SMTP_PORT || 587),

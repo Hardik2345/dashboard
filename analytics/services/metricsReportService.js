@@ -6,6 +6,8 @@ const {
   resolveUtmAggregateSource,
   resolveDiscountAggregateSource,
   appendDiscountWhere,
+  resolveProductTypeAggregateSource,
+  appendProductTypeWhere,
 } = require("./metricsAggregateService");
 const {
   pad2,
@@ -321,6 +323,46 @@ function buildMetricsReportService() {
       };
     }
 
+    // mv_product_type_funnel_daily has no payment-mode breakdown — surface
+    // the real gross_revenue total (for the donut center) but mark the
+    // cod/prepaid/partial split unavailable so the UI shows "-" instead of
+    // a misleading 0.
+    const productTypeSource = resolveProductTypeAggregateSource(filters, "daily");
+    if (productTypeSource && !productId) {
+      let sql = `
+        SELECT COALESCE(SUM(gross_revenue), 0) AS gross_sales
+        FROM ${productTypeSource.table}
+        WHERE date >= ? AND date <= ?
+      `;
+      const replacements = [effectiveStart, effectiveEnd];
+      sql = appendProductTypeWhere(sql, replacements, productTypeSource.filters);
+
+      const rows = await conn.query(sql, {
+        type: QueryTypes.SELECT,
+        replacements,
+      });
+      const total = Number(rows?.[0]?.gross_sales || 0);
+
+      return {
+        metric: "PAYMENT_SPLIT_SALES",
+        timezone: resolvedTimezone,
+        range: {
+          start: effectiveStart,
+          end: effectiveEnd,
+          hour_lte: null,
+        },
+        cod_sales: null,
+        prepaid_sales: null,
+        partial_sales: null,
+        total_sales_from_split: total,
+        cod_percent: null,
+        prepaid_percent: null,
+        partial_percent: null,
+        payment_mode_unavailable: true,
+        sql_used: includeSql ? sql : undefined,
+      };
+    }
+
     let whereSql = isSingleDay
       ? `WHERE created_date = ?`
       : `WHERE created_date >= ? AND created_date <= ?`;
@@ -531,6 +573,46 @@ function buildMetricsReportService() {
         includeSql,
         sql,
       });
+    }
+
+    // mv_product_type_funnel_daily has no payment-mode breakdown — surface
+    // the real total_orders (for the donut center) but mark the
+    // cod/prepaid/partial split unavailable so the UI shows "-" instead of
+    // a misleading 0.
+    const productTypeSource = resolveProductTypeAggregateSource(filters, "daily");
+    if (productTypeSource && !productId) {
+      let sql = `
+        SELECT COALESCE(SUM(total_orders), 0) AS total_orders
+        FROM ${productTypeSource.table}
+        WHERE date >= ? AND date <= ?
+      `;
+      const replacements = [effectiveStart, effectiveEnd];
+      sql = appendProductTypeWhere(sql, replacements, productTypeSource.filters);
+
+      const rows = await conn.query(sql, {
+        type: QueryTypes.SELECT,
+        replacements,
+      });
+      const total = Number(rows?.[0]?.total_orders || 0);
+
+      return {
+        metric: "ORDER_SPLIT",
+        timezone: resolvedTimezone,
+        range: {
+          start: effectiveStart,
+          end: effectiveEnd,
+          hour_lte: null,
+        },
+        cod_orders: null,
+        prepaid_orders: null,
+        partially_paid_orders: null,
+        total_orders_from_split: total,
+        cod_percent: null,
+        prepaid_percent: null,
+        partially_paid_percent: null,
+        payment_mode_unavailable: true,
+        sql_used: includeSql ? sql : undefined,
+      };
     }
 
     const aggregateSource = resolveUtmAggregateSource(

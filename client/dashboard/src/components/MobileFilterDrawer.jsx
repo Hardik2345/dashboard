@@ -84,6 +84,14 @@ export default function MobileFilterDrawer({
   showProductTypeFilter = false,
   productTypes = [],
   onProductTypeChange,
+
+  // Division "Product Type" filter (mv_product_type_funnel_daily) — distinct
+  // from showProductTypeFilter/productTypes/onProductTypeChange above, which
+  // is the unrelated client-side product-table type filter.
+  divisionProductType = [],
+  onDivisionProductTypeChange,
+  divisionProductTypeDisabled = false,
+  showDivisionProductType = true,
 }) {
   // Local state for deferred application
   const [tempBrand, setTempBrand] = useState(brandKey);
@@ -93,6 +101,7 @@ export default function MobileFilterDrawer({
   const [tempCity, setTempCity] = useState(city);
   const [tempDeviceType, setTempDeviceType] = useState(deviceType);
   const [tempDiscountCode, setTempDiscountCode] = useState(discountCode);
+  const [tempDivisionProductType, setTempDivisionProductType] = useState(divisionProductType);
   const [drawerProductOptions, setDrawerProductOptions] = useState(productOptions);
 
   // Product Type State
@@ -132,9 +141,10 @@ export default function MobileFilterDrawer({
       setTempDeviceType(deviceType);
       setTempDiscountCode(discountCode);
       setTempProductTypes(productTypes || []);
+      setTempDivisionProductType(divisionProductType || []);
       setView("ROOT");
     }
-  }, [open, brandKey, productValue, utm, salesChannel, city, deviceType, discountCode]); // Removed productTypes to prevent reset loop
+  }, [open, brandKey, productValue, utm, salesChannel, city, deviceType, discountCode, divisionProductType]); // Removed productTypes to prevent reset loop
 
   useEffect(() => {
     setDrawerProductOptions(productOptions);
@@ -265,7 +275,7 @@ export default function MobileFilterDrawer({
 
   const handleBack = () => {
     if (
-      ["BRAND", "PRODUCT", "UTM", "SALES_CHANNEL", "CITY", "DEVICE_TYPE", "DISCOUNT"].includes(view)
+      ["BRAND", "PRODUCT", "UTM", "SALES_CHANNEL", "CITY", "DEVICE_TYPE", "DISCOUNT", "DIVISION_PRODUCT_TYPE"].includes(view)
     ) {
       setView("ROOT");
     } else if (["UTM_SOURCE", "UTM_MEDIUM", "UTM_CAMPAIGN"].includes(view)) {
@@ -322,6 +332,8 @@ export default function MobileFilterDrawer({
         return "Device Type";
       case "DISCOUNT":
         return "Discount Code";
+      case "DIVISION_PRODUCT_TYPE":
+        return "Product Type";
       default:
         return "Filters";
     }
@@ -412,6 +424,7 @@ export default function MobileFilterDrawer({
   const isDeviceTypeBlocked = deviceTypeDisabled;
   const isCityBlocked = cityDisabled;
   const isDiscountBlocked = discountDisabled;
+  const isDivisionProductTypeBlocked = divisionProductTypeDisabled;
 
   const handleClearAll = () => {
     if (onUtmChange) onUtmChange({ source: "", medium: "", campaign: "" });
@@ -421,6 +434,7 @@ export default function MobileFilterDrawer({
     if (onCityChange) onCityChange([]);
     if (onDeviceTypeChange) onDeviceTypeChange([]);
     if (onDiscountCodeChange) onDiscountCodeChange("");
+    if (onDivisionProductTypeChange) onDivisionProductTypeChange([]);
     onClose();
   };
 
@@ -433,6 +447,7 @@ export default function MobileFilterDrawer({
     if (onDeviceTypeChange) onDeviceTypeChange(tempDeviceType);
     if (onDiscountCodeChange) onDiscountCodeChange(tempDiscountCode);
     if (onProductTypeChange) onProductTypeChange(tempProductTypes);
+    if (onDivisionProductTypeChange) onDivisionProductTypeChange(tempDivisionProductType);
     onClose();
   };
 
@@ -969,6 +984,35 @@ export default function MobileFilterDrawer({
                           ? tempDeviceType.join(", ")
                           : "All"
                         : tempDeviceType || "All"}
+                    </Typography>
+                  </Box>
+                  <ChevronRightIcon color="action" />
+                </ListItemButton>
+              )}
+
+              {/* DIVISION PRODUCT TYPE Item */}
+              {showDivisionProductType && (
+                <ListItemButton
+                  onClick={() => setView("DIVISION_PRODUCT_TYPE")}
+                  disabled={isDivisionProductTypeBlocked}
+                  sx={{ py: 2, justifyContent: "space-between" }}
+                >
+                  <Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ fontSize: 12 }}
+                    >
+                      Product Type
+                    </Typography>
+                    <Typography variant="body1" fontSize={14} fontWeight={500}>
+                      {isDivisionProductTypeBlocked
+                        ? "Clear other filters first"
+                        : Array.isArray(tempDivisionProductType)
+                        ? tempDivisionProductType.length > 0
+                          ? tempDivisionProductType.join(", ")
+                          : "All"
+                        : tempDivisionProductType || "All"}
                     </Typography>
                   </Box>
                   <ChevronRightIcon color="action" />
@@ -1522,6 +1566,49 @@ export default function MobileFilterDrawer({
                     sx={{ py: 1.5 }}
                   >
                     <ListItemText primary={type} />
+                    {isSelected && (
+                      <CheckIcon fontSize="small" color="primary" />
+                    )}
+                  </ListItemButton>
+                );
+              })}
+            </List>
+          )}
+
+          {/* DIVISION PRODUCT TYPE VIEW */}
+          {view === "DIVISION_PRODUCT_TYPE" && (
+            <List disablePadding>
+              <ListItemButton
+                onClick={() => {
+                  setTempDivisionProductType([]);
+                  handleBack();
+                }}
+                selected={!tempDivisionProductType || tempDivisionProductType.length === 0}
+                sx={{ py: 1.5 }}
+              >
+                <ListItemText primary="All" />
+                {(!tempDivisionProductType || tempDivisionProductType.length === 0) && (
+                  <CheckIcon fontSize="small" color="primary" />
+                )}
+              </ListItemButton>
+              {(utmOptions?.product_types || []).map((typeOption) => {
+                const selectedTypes = Array.isArray(tempDivisionProductType)
+                  ? tempDivisionProductType
+                  : [];
+                const isSelected = selectedTypes.includes(typeOption);
+                return (
+                  <ListItemButton
+                    key={typeOption}
+                    onClick={() => {
+                      const nextTypes = isSelected
+                        ? selectedTypes.filter((value) => value !== typeOption)
+                        : [...selectedTypes, typeOption];
+                      setTempDivisionProductType(nextTypes);
+                    }}
+                    selected={isSelected}
+                    sx={{ py: 1.5 }}
+                  >
+                    <ListItemText primary={typeOption} />
                     {isSelected && (
                       <CheckIcon fontSize="small" color="primary" />
                     )}

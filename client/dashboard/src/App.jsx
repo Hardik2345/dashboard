@@ -33,6 +33,7 @@ import DailyInsightsEditor from "./components/DailyInsightsEditor.jsx";
 import {
   LayoutGrid,
   Activity,
+  HeartPulse,
   Table2,
   Bell,
   ShieldCheck,
@@ -50,6 +51,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "daily-funnel", label: "Conversion Funnel", icon: Table2 },
   { id: "bundles", label: "Bundles", icon: Table2 },
   { id: "inventory", label: "Inventory", icon: Package },
+  { id: "health-monitor", label: "Health Monitor", icon: HeartPulse },
   { id: "alerts", label: "Alerts", icon: Bell },
   { id: "requests", label: "Requests", icon: ClipboardList },
   { id: "tenant-setup", label: "Tenant Setup", icon: Store },
@@ -67,6 +69,7 @@ const TAB_ROUTE_MAP = {
   "daily-funnel": "/daily-funnel",
   bundles: "/bundles",
   inventory: "/inventory",
+  "health-monitor": "/health-monitor",
   alerts: "/alerts",
   requests: "/requests",
   access: "/access-control",
@@ -146,6 +149,7 @@ import {
   setDeviceType,
   setDiscountCode,
   setCity,
+  setProductType,
 } from "./state/slices/filterSlice.js";
 import {
   CI_TREND_METRICS,
@@ -166,6 +170,7 @@ import MerchantRequestsRouteContainer from "./routes/MerchantRequestsRouteContai
 import OverallSnapshotRouteContainer from "./routes/OverallSnapshotRouteContainer.jsx";
 import ProductConversionRouteContainer from "./routes/ProductConversionRouteContainer.jsx";
 import SessionAnalyticsRouteContainer from "./routes/SessionAnalyticsRouteContainer.jsx";
+import HealthMonitorRouteContainer from "./routes/HealthMonitorRouteContainer.jsx";
 const MobileFilterDrawer = lazy(
   () => import("./components/MobileFilterDrawer.jsx"),
 );
@@ -219,6 +224,7 @@ export default function App() {
     salesChannel,
     deviceType,
     city,
+    productType,
   } = useAppSelector((state) => state.filters);
   const productTableStart = useAppSelector(
     (state) => state.productConversion?.start,
@@ -603,6 +609,11 @@ export default function App() {
     return hasPermission("overall_snapshot");
   }, [hasPermission, isAuthor]);
 
+  const canAccessHealthMonitorPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("health_monitor_panel");
+  }, [hasPermission, isAuthor]);
+
   const defaultLandingTab = useMemo(() => {
     if (isAuthor) return "overall-snapshot";
     return canAccessOverallSnapshotPanel ? "overall-snapshot" : "dashboard";
@@ -617,6 +628,7 @@ export default function App() {
     if (canAccessRequestsPanel) tabs.push("requests");
     if (canAccessBundlesPanel) tabs.push("bundles");
     if (canAccessInventoryPanel) tabs.push("inventory");
+    if (canAccessHealthMonitorPanel) tabs.push("health-monitor");
     return tabs;
   }, [
     canAccessOverallSnapshotPanel,
@@ -625,6 +637,7 @@ export default function App() {
     canAccessInventoryPanel,
     canAccessRequestsPanel,
     canAccessSessionAnalyticsPanel,
+    canAccessHealthMonitorPanel,
     isAuthor,
   ]);
 
@@ -688,6 +701,16 @@ export default function App() {
         },
         { replace: true },
       );
+      return;
+    }
+    if (authorTab === "health-monitor" && !canAccessHealthMonitorPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
     }
   }, [
     authorTab,
@@ -698,6 +721,7 @@ export default function App() {
     canAccessInventoryPanel,
     canAccessRequestsPanel,
     canAccessSessionAnalyticsPanel,
+    canAccessHealthMonitorPanel,
     initialized,
     location.search,
     sanitizedSearch,
@@ -776,36 +800,52 @@ export default function App() {
     [city],
   );
   const hasActiveDiscountFilter = !!discountCode;
-  // Channel / Device Type / City / Discount Code are mutually exclusive with
-  // every other filter (including each other) — applying any one of them
-  // locks out Product, UTM, and the remaining three of this group.
+  const hasActiveProductTypeFilter = useMemo(
+    () => Array.isArray(productType) && productType.length > 0,
+    [productType],
+  );
+  // Channel / Device Type / City / Discount Code / Product Type are mutually
+  // exclusive with every other filter (including each other) — applying any
+  // one of them locks out Product, UTM, and the remaining four of this group.
   const hasActiveExclusiveGroupFilter =
     hasActiveSalesChannelFilter ||
     hasActiveDeviceTypeFilter ||
     hasActiveCityFilter ||
-    hasActiveDiscountFilter;
+    hasActiveDiscountFilter ||
+    hasActiveProductTypeFilter;
   const salesChannelDisabled =
     hasActiveDeviceTypeFilter ||
     hasActiveCityFilter ||
     hasActiveDiscountFilter ||
+    hasActiveProductTypeFilter ||
     hasActiveProductFilter ||
     hasActiveUtmFilter;
   const deviceTypeDisabled =
     hasActiveSalesChannelFilter ||
     hasActiveCityFilter ||
     hasActiveDiscountFilter ||
+    hasActiveProductTypeFilter ||
     hasActiveProductFilter ||
     hasActiveUtmFilter;
   const cityDisabled =
     hasActiveSalesChannelFilter ||
     hasActiveDeviceTypeFilter ||
     hasActiveDiscountFilter ||
+    hasActiveProductTypeFilter ||
     hasActiveProductFilter ||
     hasActiveUtmFilter;
   const discountDisabled =
     hasActiveSalesChannelFilter ||
     hasActiveDeviceTypeFilter ||
     hasActiveCityFilter ||
+    hasActiveProductTypeFilter ||
+    hasActiveProductFilter ||
+    hasActiveUtmFilter;
+  const productTypeDisabled =
+    hasActiveSalesChannelFilter ||
+    hasActiveDeviceTypeFilter ||
+    hasActiveCityFilter ||
+    hasActiveDiscountFilter ||
     hasActiveProductFilter ||
     hasActiveUtmFilter;
   const productFilterDisabled =
@@ -845,6 +885,7 @@ export default function App() {
     if (salesChannel) base.sales_channel = salesChannel;
     if (deviceType && deviceType.length > 0) base.device_type = deviceType;
     if (city && city.length > 0) base.city = city;
+    if (productType && productType.length > 0) base.product_type = productType;
 
     if (isAuthor) {
       base.refreshKey = authorRefreshKey;
@@ -881,6 +922,7 @@ export default function App() {
     salesChannel,
     deviceType,
     city,
+    productType,
     hasActiveProductFilter,
     canSyncProductUtmFilters,
   ]);
@@ -1428,6 +1470,14 @@ export default function App() {
     [dispatch],
   );
 
+  const handleProductTypeChange = useCallback(
+    (val) => {
+      dispatch(setProductType(val));
+      dispatch(setDiscountCode(""));
+    },
+    [dispatch],
+  );
+
   const handleDiscountCodeChange = useCallback(
     (val) => {
       const next = val || "";
@@ -1438,6 +1488,7 @@ export default function App() {
         dispatch(setSalesChannel([]));
         dispatch(setDeviceType([]));
         dispatch(setCity([]));
+        dispatch(setProductType([]));
       }
     },
     [dispatch],
@@ -2119,6 +2170,8 @@ export default function App() {
             viewerBrands={viewerBrands}
           />
         );
+      case "health-monitor":
+        return <HealthMonitorRouteContainer />;
       case "bundles":
         return (
           <BundlesRouteContainer
@@ -2379,6 +2432,9 @@ export default function App() {
                         discountCode={discountCode}
                         onDiscountCodeChange={handleDiscountCodeChange}
                         discountDisabled={discountDisabled}
+                        productType={productType}
+                        onProductTypeChange={handleProductTypeChange}
+                        productTypeDisabled={productTypeDisabled}
                         allowedFilters={{
                           product: hasPermission("product_filter"),
                           utm: hasPermission("utm_filter"),
@@ -2386,6 +2442,7 @@ export default function App() {
                           deviceType: hasPermission("device_type_filter"),
                           city: true,
                           discount: hasPermission("discount_filter"),
+                          productType: true,
                         }}
                         utmOptions={utmOptions}
                         dataRestrictionConfig={dataRestrictionConfig}
@@ -2533,6 +2590,10 @@ export default function App() {
                   onDiscountCodeChange={handleDiscountCodeChange}
                         discountDisabled={discountDisabled}
                   showDiscountFilter={hasPermission("discount_filter")}
+                  divisionProductType={productType}
+                  onDivisionProductTypeChange={handleProductTypeChange}
+                  divisionProductTypeDisabled={productTypeDisabled}
+                  showDivisionProductType
                   utmOptions={utmOptions}
                   dateRange={normalizedRange}
                   dataRestrictionConfig={dataRestrictionConfig}
