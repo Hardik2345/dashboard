@@ -18,6 +18,7 @@
     { "source": "/daily-funnel", "destination": "/" },
     { "source": "/bundles", "destination": "/" },
     { "source": "/inventory", "destination": "/" },
+    { "source": "/health-monitor", "destination": "/" },
     { "source": "/alerts", "destination": "/" },
     { "source": "/requests", "destination": "/" },
     { "source": "/access-control", "destination": "/" },
