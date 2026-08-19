@@ -384,15 +384,30 @@ app.get("/events", async (req, res) => {
   try {
     const shop = (req.body?.shop || req.query?.shop || "").toString().trim();
     const event = (req.body?.event || req.query?.event || "").toString().trim();
+    const date = (req.body?.date || req.query?.date || "").toString().trim();
 
     if (!shop || !event) {
       return res.status(400).json({ error: "shop and event are required" });
     }
 
-    const count = await Session.countDocuments({
+    const filter = {
       event_type: event,
       shop_name: shop,
-    });
+    };
+
+    if (date) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ error: "date must be in yyyy-mm-dd format" });
+      }
+      const dayStart = new Date(`${date}T00:00:00.000Z`);
+      if (Number.isNaN(dayStart.getTime())) {
+        return res.status(400).json({ error: "date must be in yyyy-mm-dd format" });
+      }
+      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+      filter.createdAt = { $gte: dayStart, $lt: dayEnd };
+    }
+
+    const count = await Session.countDocuments(filter);
 
     return res.status(200).json({ count });
   } catch (err) {
