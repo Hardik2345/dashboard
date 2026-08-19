@@ -94,6 +94,7 @@ const PERMISSION_OPTIONS = [
   "session_analytics",
   "sales_channel_filter",
   "device_type_filter",
+  "product_type_filter",
   "sessions_drop_off_funnel",
   "product_conversion",
   "compare_mode",
