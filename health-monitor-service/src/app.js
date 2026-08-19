@@ -1,6 +1,8 @@
 const express = require("express");
 const { buildRegisterRouter } = require("./routes/register");
 const { buildEventsRouter } = require("./routes/events");
+const { buildHealthMonitorQueryRouter } = require("./routes/healthMonitorQuery");
+const { buildAuthMiddleware, requirePermission } = require("./middleware/gatewayAuth");
 
 function buildApp(deps) {
   const app = express();
@@ -23,6 +25,16 @@ function buildApp(deps) {
     "/events",
     buildEventsRouter({
       applicationEventService: deps.applicationEventService,
+      logger: deps.logger,
+    }),
+  );
+
+  app.use(
+    "/health-monitor",
+    buildAuthMiddleware(deps.config),
+    requirePermission("health_monitor_panel"),
+    buildHealthMonitorQueryRouter({
+      healthQueryService: deps.healthQueryService,
       logger: deps.logger,
     }),
   );

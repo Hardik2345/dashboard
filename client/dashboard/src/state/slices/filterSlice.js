@@ -92,6 +92,7 @@ const filterSlice = createSlice({
     salesChannel: [],
     deviceType: [],
     city: [],
+    productType: [],
   },
   reducers: {
     setRange(state, action) {
@@ -200,8 +201,18 @@ const filterSlice = createSlice({
         state.city = [];
       }
     },
+    setProductType(state, action) {
+      const payload = action.payload;
+      if (Array.isArray(payload)) {
+        state.productType = payload;
+      } else if (typeof payload === 'string') {
+        state.productType = payload ? [payload] : [];
+      } else {
+        state.productType = [];
+      }
+    },
   },
 });
 
-export const { setRange, setCompareMode, setCompareDateRange, setTrendMetricSelection, setProductSelection, setUtm, setSalesChannel, setDeviceType, setDiscountCode, setCity } = filterSlice.actions;
+export const { setRange, setCompareMode, setCompareDateRange, setTrendMetricSelection, setProductSelection, setUtm, setSalesChannel, setDeviceType, setDiscountCode, setCity, setProductType } = filterSlice.actions;
 export default filterSlice.reducer;

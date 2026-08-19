@@ -324,6 +324,7 @@ export function useDashboardKpiData({
   const deviceType = query?.device_type;
   const discountCode = query?.discount_code;
   const city = query?.city;
+  const productType = query?.product_type;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
   const hasScopedUtmSource = Array.isArray(utmSource)
@@ -549,6 +550,7 @@ export function useDashboardKpiData({
                 device_type: deviceType,
                 discount_code: discountCode,
                 city,
+                product_type: productType,
               }
             : {
                 start,
@@ -561,6 +563,7 @@ export function useDashboardKpiData({
                 device_type: deviceType,
                 discount_code: discountCode,
                 city,
+                product_type: productType,
               };
           if (compareStart && compareEnd) {
             base.compare_start = compareStart;
@@ -741,6 +744,7 @@ export function useDashboardKpiData({
     hasScopedUtmSource,
     isProductScoped,
     onLoaded,
+    productType,
     refreshKey,
     salesChannel,
     scopedProductId,
@@ -860,6 +864,7 @@ export function useDashboardModeOfPaymentData({
   const deviceType = query?.device_type;
   const discountCode = query?.discount_code;
   const city = query?.city;
+  const productType = query?.product_type;
   const timezone = query?.timezone;
 
   useEffect(() => {
@@ -885,6 +890,7 @@ export function useDashboardModeOfPaymentData({
           device_type: deviceType,
           discount_code: discountCode,
           city,
+          product_type: productType,
         };
 
         const [currOrders, currSales, prevFullOrders, prevFullSales] =
@@ -945,11 +951,31 @@ export function useDashboardModeOfPaymentData({
         const processMetric = (curr, compareCurr, comparePrev, type) => {
           const isValue = type === "value";
           const total = Number(curr?.total || 0);
+          // mv_product_type_funnel_daily-backed responses (Product Type
+          // filter active) carry a real total but no payment-mode split —
+          // show "-" for each segment instead of a misleading 0.
+          const unavailable = !!curr?.unavailable;
           const comparisonCurrent = compareCurr || curr;
           const comparisonPrevious = comparePrev || {};
           const compareTotal = Number(comparisonCurrent?.total || 0);
           const prevTotal = Number(comparisonPrevious?.total || 0);
           const segments = ["Prepaid", "COD", "Partial"].map((key) => {
+            const name =
+              key === "Partial" ? "Partially paid" : key === "Prepaid" ? "Prepaid" : "COD";
+            const color =
+              key === "Prepaid" ? "#2cc995" : key === "COD" ? "#1f5748" : "#8da399";
+
+            if (unavailable) {
+              return {
+                name,
+                value: 0,
+                percent: null,
+                delta: 0,
+                color,
+                formattedValue: "-",
+              };
+            }
+
             const valKey = isValue
               ? key === "Partial"
                 ? "partial_sales"
@@ -973,21 +999,11 @@ export function useDashboardModeOfPaymentData({
                   : 0;
             const displayValue = isValue ? convertAmount(currVal) : currVal;
             return {
-              name:
-                key === "Partial"
-                  ? "Partially paid"
-                  : key === "Prepaid"
-                    ? "Prepaid"
-                    : "COD",
+              name,
               value: displayValue,
               percent: currPct.toFixed(1),
               delta: Math.round(delta),
-              color:
-                key === "Prepaid"
-                  ? "#2cc995"
-                  : key === "COD"
-                    ? "#1f5748"
-                    : "#8da399",
+              color,
               formattedValue: isValue
                 ? formatConvertedAmount(displayValue, {
                     notation: "compact",
@@ -1052,6 +1068,7 @@ export function useDashboardModeOfPaymentData({
     getOrderSplit,
     getPaymentSalesSplit,
     productId,
+    productType,
     salesChannel,
     start,
     timezone,

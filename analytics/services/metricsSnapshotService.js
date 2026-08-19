@@ -36,17 +36,23 @@ const {
   queryDiscountAggregateTotals,
   queryDiscountAggregatePair,
   queryDiscountAggregateRows,
+  queryProductTypeAggregateTotals,
+  queryProductTypeAggregatePair,
+  queryProductTypeAggregateRows,
   queryUtmSummaryFilterOptions,
   queryProductDailySessionTotals,
   resolveUtmAggregateSource,
   resolveDiscountAggregateSource,
+  resolveProductTypeAggregateSource,
   hasDiscountFilter,
+  hasProductTypeFilter,
   isCombinedProductUtmSourceFilter,
 } = require("./metricsAggregateService");
 
 const buildCutoffContext = buildLiveCutoffContext;
 const getUtmAggregateSource = resolveUtmAggregateSource;
 const getDiscountAggregateSource = resolveDiscountAggregateSource;
+const getProductTypeAggregateSource = resolveProductTypeAggregateSource;
 
 function hasAnyFilters(filters = {}) {
   return !!(
@@ -59,7 +65,8 @@ function hasAnyFilters(filters = {}) {
     filters.device_type ||
     filters.product_id ||
     filters.discount_code ||
-    filters.city
+    filters.city ||
+    hasProductTypeFilter(filters)
   );
 }
 
@@ -824,6 +831,30 @@ function buildDiscountSnapshotPayload(metrics = {}, source = "db") {
   };
 }
 
+function buildProductTypeSnapshotPayload(metrics = {}, source = "db") {
+  const total_orders = Number(metrics.total_orders || 0);
+  const total_sales = Number(metrics.total_sales || 0);
+  const total_sessions = Number(metrics.total_sessions || 0);
+  const total_atc_sessions = Number(metrics.total_atc_sessions || 0);
+  const conversion_rate = total_sessions > 0 ? total_orders / total_sessions : 0;
+  return {
+    total_orders,
+    total_sales,
+    total_sessions,
+    total_atc_sessions,
+    total_ci_events: null,
+    average_order_value: total_orders > 0 ? total_sales / total_orders : 0,
+    conversion_rate,
+    conversion_rate_percent: conversion_rate * 100,
+    cancelled_orders: null,
+    refunded_orders: null,
+    rto_orders: null,
+    rto_rate: null,
+    rto_rate_percent: null,
+    source,
+  };
+}
+
 function buildCachedSnapshot(
   cachedData = {},
   returnsObj = {},
@@ -1410,6 +1441,12 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
     });
   }
 
+  if (getProductTypeAggregateSource(filters, "daily")) {
+    return queryProductTypeAggregateRows(conn, start, end, filters, {
+      granularity: "daily",
+    });
+  }
+
   if (getUtmAggregateSource(filters, "daily")) {
     return queryUtmAggregateRows(conn, start, end, filters, {
       granularity: "daily",
@@ -1745,6 +1782,13 @@ function buildMetricsSnapshotService(deps = {}) {
       return buildDiscountSnapshotPayload(totals, "db");
     }
 
+    if (getProductTypeAggregateSource(filters, cutoffTime ? "hourly" : "daily")) {
+      const totals = await queryProductTypeAggregateTotals(conn, start, end, filters, {
+        granularity: cutoffTime ? "hourly" : "daily",
+      });
+      return buildProductTypeSnapshotPayload(totals, "db");
+    }
+
     if (getUtmAggregateSource(filters, cutoffTime ? "hourly" : "daily")) {
       const cutoffHour = cutoffTime ? parseHourFromCutoff(cutoffTime) : null;
       const totals = await queryUtmAggregateTotals(conn, start, end, filters, {
@@ -1885,6 +1929,28 @@ function buildMetricsSnapshotService(deps = {}) {
       return {
         current: buildDiscountSnapshotPayload(pair.current, "db"),
         previous: buildDiscountSnapshotPayload(pair.previous, "db"),
+      };
+    }
+
+    if (
+      !cachedCurrent &&
+      !cachedPrevious &&
+      getProductTypeAggregateSource(
+        filters,
+        cutoffTime !== null ||
+          currentCutoffHour !== null ||
+          previousCutoffHour !== null
+          ? "hourly"
+          : "daily",
+      )
+    ) {
+      const pair = await queryProductTypeAggregatePair(conn, currentRange, previousRange, filters, {
+        granularity: "daily",
+      });
+
+      return {
+        current: buildProductTypeSnapshotPayload(pair.current, "db"),
+        previous: buildProductTypeSnapshotPayload(pair.previous, "db"),
       };
     }
 
@@ -2065,7 +2131,8 @@ function buildMetricsSnapshotService(deps = {}) {
     const discountActive = hasDiscountFilter(spec.filters);
     const cityActive = hasCityFilter(spec.filters);
     const combinedProductUtmSourceActive = isCombinedProductUtmSourceFilter(spec.filters);
-    const rowTwoComparison = discountActive
+    const productTypeActive = hasProductTypeFilter(spec.filters);
+    const rowTwoComparison = discountActive || productTypeActive
       ? null
       : await getRowTwoComparisonSnapshots({
           conn: spec.conn,
@@ -2165,7 +2232,7 @@ function buildMetricsSnapshotService(deps = {}) {
               deltaCurrentRowTwo.total_atc_sessions,
               deltaPreviousRowTwo.total_atc_sessions,
             ),
-        total_ci_events: discountActive || cityActive || combinedProductUtmSourceActive
+        total_ci_events: discountActive || cityActive || combinedProductUtmSourceActive || productTypeActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
               checkoutInitiatedPair.current,
@@ -2173,7 +2240,7 @@ function buildMetricsSnapshotService(deps = {}) {
               checkoutInitiatedDeltaPair.current,
               checkoutInitiatedDeltaPair.previous,
             ),
-        checkout_rate: discountActive || cityActive || combinedProductUtmSourceActive
+        checkout_rate: discountActive || cityActive || combinedProductUtmSourceActive || productTypeActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
               computeRatePercent(checkoutInitiatedPair.current, current.total_atc_sessions),
@@ -2201,7 +2268,7 @@ function buildMetricsSnapshotService(deps = {}) {
                 deltaPreviousRowTwo.total_sessions,
               ),
             ),
-        cancelled_orders: discountActive || cityActive
+        cancelled_orders: discountActive || cityActive || productTypeActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
               current.cancelled_orders,
@@ -2209,7 +2276,7 @@ function buildMetricsSnapshotService(deps = {}) {
               deltaCurrent.cancelled_orders,
               deltaPrevious.cancelled_orders,
             ),
-        refunded_orders: discountActive || cityActive
+        refunded_orders: discountActive || cityActive || productTypeActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
               current.refunded_orders,
@@ -2217,7 +2284,7 @@ function buildMetricsSnapshotService(deps = {}) {
               deltaCurrent.refunded_orders,
               deltaPrevious.refunded_orders,
             ),
-        rto_orders: discountActive || cityActive || combinedProductUtmSourceActive
+        rto_orders: discountActive || cityActive || combinedProductUtmSourceActive || productTypeActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
               current.rto_orders,
@@ -2225,7 +2292,7 @@ function buildMetricsSnapshotService(deps = {}) {
               deltaCurrent.rto_orders,
               deltaPrevious.rto_orders,
             ),
-        rto_rate: discountActive || cityActive || combinedProductUtmSourceActive
+        rto_rate: discountActive || cityActive || combinedProductUtmSourceActive || productTypeActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
               current.rto_rate_percent,
