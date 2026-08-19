@@ -377,6 +377,30 @@ app.post("/track", async (req, res) => {
   }
 });
 
+// Fully public — no auth, no gateway trust headers, no nginx-level gating.
+// Returns a count of session events matching { event, shop } from either the
+// request body or query string, e.g. { shop: "tmc", event: "add_to_cart" }.
+app.get("/events", async (req, res) => {
+  try {
+    const shop = (req.body?.shop || req.query?.shop || "").toString().trim();
+    const event = (req.body?.event || req.query?.event || "").toString().trim();
+
+    if (!shop || !event) {
+      return res.status(400).json({ error: "shop and event are required" });
+    }
+
+    const count = await Session.countDocuments({
+      event_type: event,
+      shop_name: shop,
+    });
+
+    return res.status(200).json({ count });
+  } catch (err) {
+    logger.error("Error counting events:", err);
+    return res.status(500).json({ error: "Failed to count events" });
+  }
+});
+
 app.post("/push/receive", async (req, res) => {
   try {
     logger.info("[push/receive] Received push notification:", req.body);

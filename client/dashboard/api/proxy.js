@@ -191,6 +191,7 @@ export default async function handler(req, res) {
       "/analytics",
       "/sessions",
       "/merchant-requests",
+      "/health-monitor",
     ];
 
 
