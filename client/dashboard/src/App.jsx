@@ -2442,7 +2442,7 @@ export default function App() {
                           deviceType: hasPermission("device_type_filter"),
                           city: true,
                           discount: hasPermission("discount_filter"),
-                          productType: true,
+                          productType: hasPermission("product_type_filter"),
                         }}
                         utmOptions={utmOptions}
                         dataRestrictionConfig={dataRestrictionConfig}
@@ -2593,7 +2593,7 @@ export default function App() {
                   divisionProductType={productType}
                   onDivisionProductTypeChange={handleProductTypeChange}
                   divisionProductTypeDisabled={productTypeDisabled}
-                  showDivisionProductType
+                  showDivisionProductType={hasPermission("product_type_filter")}
                   utmOptions={utmOptions}
                   dateRange={normalizedRange}
                   dataRestrictionConfig={dataRestrictionConfig}

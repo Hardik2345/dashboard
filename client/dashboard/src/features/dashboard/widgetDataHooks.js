@@ -766,10 +766,16 @@ export function useDashboardTrafficSourceSplitData({ query, mappingRules = [] })
   const { getTrafficSourceSplit } = useDashboardDataApi();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
+  const productType = query?.product_type;
+  const hasActiveProductTypeFilter =
+    Array.isArray(productType) && productType.length > 0;
 
   useEffect(() => {
     let cancelled = false;
-    if (!query?.start || !query?.end) {
+    // Traffic source split is sourced from ad-attribution tables entirely
+    // unrelated to mv_product_type_funnel_daily — it has no way to honor a
+    // Product Type filter, so don't fetch/render it while one is active.
+    if (!query?.start || !query?.end || hasActiveProductTypeFilter) {
       setData(null);
       setLoading(false);
       return () => {
@@ -792,7 +798,7 @@ export function useDashboardTrafficSourceSplitData({ query, mappingRules = [] })
     return () => {
       cancelled = true;
     };
-  }, [getTrafficSourceSplit, mappingRules, query]);
+  }, [getTrafficSourceSplit, hasActiveProductTypeFilter, mappingRules, query]);
 
   return { loading, data };
 }
@@ -1253,13 +1259,19 @@ export function useDashboardPaymentSplitTrendData({
   const deviceType = query?.device_type;
   const productId = query?.product_id;
   const discountCode = query?.discount_code;
+  const productType = query?.product_type;
+  const hasActiveProductTypeFilter =
+    Array.isArray(productType) && productType.length > 0;
   const compareStart = query?.compare_start;
   const compareEnd = query?.compare_end;
   const queryTimezone = query?.timezone;
 
   useEffect(() => {
     let cancelled = false;
-    if (!start || !end) {
+    // mv_product_type_funnel_daily has no payment-mode breakdown — don't
+    // fetch/render this trend while a Product Type filter is active, rather
+    // than silently showing a flat 0%/unfiltered line.
+    if (!start || !end || hasActiveProductTypeFilter) {
       setChartData([]);
       setRangeLabels({ current: "", previous: "" });
       setLoading(false);
@@ -1646,6 +1658,7 @@ export function useDashboardPaymentSplitTrendData({
     end,
     getOrderSplit,
     getPaymentSalesSplit,
+    hasActiveProductTypeFilter,
     metric,
     productId,
     query?.city,
