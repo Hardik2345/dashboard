@@ -1577,8 +1577,12 @@ export default function DailyFunnelPanel({
               direction={{ xs: "column", sm: "row" }}
               spacing={1.5}
               alignItems={{ xs: "stretch", sm: "center" }}
+              sx={{ width: { xs: "100%", sm: "auto" } }}
             >
-              <FormControl size="small" sx={{ minWidth: 180 }}>
+              <FormControl
+                size="small"
+                sx={{ minWidth: { xs: "100%", sm: 180 } }}
+              >
                 <InputLabel>UTM Source</InputLabel>
                 <Select
                   label="UTM Source"
@@ -1620,53 +1624,61 @@ export default function DailyFunnelPanel({
                   ))}
                 </Select>
               </FormControl>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ whiteSpace: "nowrap" }}
+              <Stack
+                direction="row"
+                spacing={1}
+                alignItems="center"
+                flexWrap="wrap"
+                useFlexGap
               >
-                Date
-              </Typography>
-              <FunnelSingleDatePicker
-                compact
-                date={utmDate}
-                onApply={(nextDate) => {
-                  const formatted = nextDate.format("YYYY-MM-DD");
-                  setUtmDate(formatted);
-                  setCompareUtmDate(
-                    nextDate.subtract(1, "day").format("YYYY-MM-DD"),
-                  );
-                }}
-              />
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ whiteSpace: "nowrap" }}
-              >
-                vs
-              </Typography>
-              <FunnelSingleDatePicker
-                compact
-                date={compareUtmDate}
-                onApply={(nextDate) =>
-                  setCompareUtmDate(nextDate.format("YYYY-MM-DD"))
-                }
-              />
-              <Tooltip title="Export CSV">
-                <span>
-                  <IconButton
-                    size="small"
-                    onClick={handleExportUtmCsv}
-                    disabled={!hasUtmRows}
-                    sx={{
-                      border: "1px solid",
-                      borderColor: "divider",
-                    }}
-                  >
-                    <DownloadIcon fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  Date
+                </Typography>
+                <FunnelSingleDatePicker
+                  compact
+                  date={utmDate}
+                  onApply={(nextDate) => {
+                    const formatted = nextDate.format("YYYY-MM-DD");
+                    setUtmDate(formatted);
+                    setCompareUtmDate(
+                      nextDate.subtract(1, "day").format("YYYY-MM-DD"),
+                    );
+                  }}
+                />
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  vs
+                </Typography>
+                <FunnelSingleDatePicker
+                  compact
+                  date={compareUtmDate}
+                  onApply={(nextDate) =>
+                    setCompareUtmDate(nextDate.format("YYYY-MM-DD"))
+                  }
+                />
+                <Tooltip title="Export CSV">
+                  <span>
+                    <IconButton
+                      size="small"
+                      onClick={handleExportUtmCsv}
+                      disabled={!hasUtmRows}
+                      sx={{
+                        border: "1px solid",
+                        borderColor: "divider",
+                      }}
+                    >
+                      <DownloadIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </Stack>
             </Stack>
           </Stack>
           <Accordion
