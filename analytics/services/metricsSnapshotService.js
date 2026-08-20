@@ -1782,9 +1782,12 @@ function buildMetricsSnapshotService(deps = {}) {
       return buildDiscountSnapshotPayload(totals, "db");
     }
 
-    if (getProductTypeAggregateSource(filters, cutoffTime ? "hourly" : "daily")) {
+    // mv_product_type_funnel_daily has no hourly grain — a same-day
+    // cutoff-hour comparison isn't possible, so always use the full-day
+    // total rather than silently falling through to unfiltered data.
+    if (getProductTypeAggregateSource(filters, "daily")) {
       const totals = await queryProductTypeAggregateTotals(conn, start, end, filters, {
-        granularity: cutoffTime ? "hourly" : "daily",
+        granularity: "daily",
       });
       return buildProductTypeSnapshotPayload(totals, "db");
     }
@@ -1932,17 +1935,13 @@ function buildMetricsSnapshotService(deps = {}) {
       };
     }
 
+    // mv_product_type_funnel_daily has no hourly grain — always use the
+    // full-day daily source here too, even when a cutoff-hour comparison
+    // was requested, rather than falling through to unfiltered data.
     if (
       !cachedCurrent &&
       !cachedPrevious &&
-      getProductTypeAggregateSource(
-        filters,
-        cutoffTime !== null ||
-          currentCutoffHour !== null ||
-          previousCutoffHour !== null
-          ? "hourly"
-          : "daily",
-      )
+      getProductTypeAggregateSource(filters, "daily")
     ) {
       const pair = await queryProductTypeAggregatePair(conn, currentRange, previousRange, filters, {
         granularity: "daily",

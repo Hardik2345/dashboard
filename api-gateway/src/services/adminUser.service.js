@@ -10,6 +10,7 @@ const {
     normalizePrimaryBrand,
     normalizeRole,
 } = require('./rbac.service');
+const CustomRoleService = require('./customRole.service');
 
 function normalizeEmail(email) {
     return (email || '').toString().trim().toLowerCase();
@@ -59,7 +60,7 @@ function buildMemberships(brandIds, permissions) {
     }));
 }
 
-async function buildUserAssignment({ role, brand_ids = [], primary_brand_id = null, permissions = DEFAULT_PERMISSIONS }) {
+async function buildUserAssignment({ role, brand_ids = [], primary_brand_id = null, permissions = DEFAULT_PERMISSIONS, customRoleId = null }) {
     const normalizedRole = normalizeRole(role);
 
     if (!AUTH_ROLES.includes(normalizedRole)) throw new Error('invalid role');
@@ -73,10 +74,15 @@ async function buildUserAssignment({ role, brand_ids = [], primary_brand_id = nu
         };
     }
 
+    // Custom Role mode only applies to viewer/brand_user — author/super_admin
+    // already hardcode permissions:['all'] and have no manual-permissions UI,
+    // so a role assignment there would be meaningless; ignore it.
+    const effectivePermissions = customRoleId ? [] : permissions;
+
     if (normalizedRole === 'brand_user') {
         const merged = normalizeBrandIds([...normalizeBrandIds(brand_ids), normalizePrimaryBrand(primary_brand_id)]);
         if (merged.length !== 1) throw new Error('brand_user requires exactly one brand');
-        const safePermissions = normalizePermissions(permissions);
+        const safePermissions = customRoleId ? [] : normalizePermissions(permissions);
         return {
             role: normalizedRole,
             primary: merged[0],
@@ -88,17 +94,24 @@ async function buildUserAssignment({ role, brand_ids = [], primary_brand_id = nu
     return {
         role: normalizedRole,
         primary: primary || null,
-        memberships: buildMemberships(brandIds, permissions),
+        memberships: buildMemberships(brandIds, effectivePermissions),
     };
 }
 
 class AdminUserService {
-    static async upsertUser({ name = '', email, role = 'viewer', brand_ids = [], primary_brand_id = null, status = 'active', permissions = ['all'], createOnly = false }) {
+    static async upsertUser({ name = '', email, role = 'viewer', brand_ids = [], primary_brand_id = null, status = 'active', permissions = ['all'], customRoleId = null, createOnly = false }) {
         const normalizedEmail = normalizeEmail(email);
         const normalizedName = (name || '').toString().trim();
         if (!normalizedEmail) throw new Error('email required');
         if (!isValidEmail(normalizedEmail)) throw new Error('invalid email format');
-        const assignment = await buildUserAssignment({ role, brand_ids, primary_brand_id, permissions });
+
+        const normalizedCustomRoleId = (customRoleId || '').toString().trim() || null;
+        if (normalizedCustomRoleId) {
+            const customRole = await CustomRoleService.getRole(normalizedCustomRoleId);
+            if (!customRole) throw new Error('invalid custom role');
+        }
+
+        const assignment = await buildUserAssignment({ role, brand_ids, primary_brand_id, permissions, customRoleId: normalizedCustomRoleId });
 
         const matchingUsers = await findUsersByNormalizedEmail(normalizedEmail);
         if (matchingUsers.length > 1) {
@@ -117,6 +130,7 @@ class AdminUserService {
                     role: assignment.role,
                     primary_brand_id: assignment.primary || null,
                     brand_memberships: assignment.memberships,
+                    custom_role_id: normalizedCustomRoleId,
                 });
             } catch (err) {
                 if (err?.code === 11000) {
@@ -134,6 +148,7 @@ class AdminUserService {
             user.status = status;
             if (assignment.primary) user.primary_brand_id = assignment.primary;
             user.brand_memberships = assignment.memberships;
+            user.custom_role_id = normalizedCustomRoleId;
             try {
                 await user.save();
             } catch (err) {

@@ -50,6 +50,10 @@ import {
   listDomainRules,
   upsertDomainRule,
   deleteDomainRule,
+  listCustomRoles,
+  createCustomRole,
+  updateCustomRole,
+  deleteCustomRole,
 } from "../lib/api";
 
 const GlassChip = ({ label, size = "small", isDark }) => (
@@ -95,6 +99,7 @@ const PERMISSION_OPTIONS = [
   "sales_channel_filter",
   "device_type_filter",
   "product_type_filter",
+  "city_filter",
   "sessions_drop_off_funnel",
   "product_conversion",
   "compare_mode",
@@ -103,11 +108,10 @@ const PERMISSION_OPTIONS = [
   "product_conversion:sessions",
   "product_conversion:atc",
   "product_conversion:atc_rate",
-  "product_conversion:ci_events",
-  "product_conversion:checkout_rate",
   "product_conversion:orders",
   "product_conversion:sales",
   "product_conversion:cvr",
+  "product_conversion:drr",
   "product_conversion:doh",
   "product_table_filters",
   "product_table_filters:inventory",
@@ -123,8 +127,6 @@ const COLUMN_PERMISSIONS = [
   { id: "product_conversion:sessions", label: "Sessions" },
   { id: "product_conversion:atc", label: "ATC" },
   { id: "product_conversion:atc_rate", label: "ATC Rate" },
-  { id: "product_conversion:ci_events", label: "CI Events" },
-  { id: "product_conversion:checkout_rate", label: "Checkout Rate" },
   { id: "product_conversion:orders", label: "Orders" },
   { id: "product_conversion:sales", label: "Sales" },
   { id: "product_conversion:cvr", label: "CVR" },
@@ -137,6 +139,68 @@ const FILTER_PANEL_PERMISSIONS = [
   { id: "product_table_filters:page_type", label: "Page Type" },
   { id: "product_table_filters:product_types", label: "Product Types" },
   { id: "product_table_filters:sort_filter", label: "Sort Filter" },
+];
+
+// UI-only grouping for the Custom Role permission picker — organizational
+// metadata only, does not change what any permission string means anywhere
+// else in the app.
+const PERMISSION_CATEGORIES = [
+  {
+    label: "Dashboard",
+    permissions: [
+      "overall_snapshot",
+      "requests_panel",
+      "requests_timeline",
+      "bundles_panel",
+      "inventory_panel",
+      "daily_funnel_panel",
+      "dashboard_layout_customize",
+      "session_analytics",
+      "sessions_drop_off_funnel",
+      "intent_metrics",
+      "rto_kpi",
+      "web_vitals",
+      "health_monitor_panel",
+      "daily_insight_view",
+      "compare_mode",
+      "multiselectable_kpi_cards",
+      "product_conversion",
+    ],
+  },
+  {
+    label: "Filters",
+    permissions: [
+      "product_filter",
+      "utm_filter",
+      "product_utm_filter_sync",
+      "discount_filter",
+      "sales_channel_filter",
+      "device_type_filter",
+      "product_type_filter",
+      "city_filter",
+      "utm_funnel_table",
+    ],
+  },
+  {
+    label: "Payment",
+    permissions: ["payment_split_order", "payment_split_sales"],
+  },
+  {
+    label: "Traffic & Events",
+    permissions: ["traffic_split", "ci_events"],
+  },
+  {
+    label: "Product Table Columns",
+    permissions: COLUMN_PERMISSIONS.map((p) => p.id),
+  },
+  {
+    label: "Product Table Filters",
+    permissions: FILTER_PANEL_PERMISSIONS.map((p) => p.id),
+  },
+  {
+    label: "Other",
+    permissions: ["all"],
+  },
 ];
 
 const ROLE_OPTIONS = [
@@ -282,7 +346,35 @@ const StatusSwitch = ({ active, onChange, label = "Active", isDark }) => (
   </Stack>
 );
 
-const UserMobileCard = ({ user, onEdit, onDelete, onStatusToggle, isDark }) => (
+// Small reusable confirmation dialog, styled to match this file's existing
+// Add/Edit dialogs exactly (same Dialog/DialogTitle/DialogContent/DialogActions
+// shapes and button colors) — there's no prior ConfirmDialog precedent in the
+// codebase (only native window.confirm), but the mode-switch/role-update
+// flows need distinctly-labeled buttons a native confirm can't provide.
+const ConfirmDialog = ({ open, title, description, confirmLabel = "Confirm", onConfirm, onCancel, isDark }) => (
+  <Dialog
+    open={open}
+    onClose={onCancel}
+    fullWidth
+    maxWidth="xs"
+    PaperProps={{ sx: { borderRadius: "20px", bgcolor: isDark ? "#1a1a1a" : "#fff" } }}
+  >
+    <DialogTitle sx={{ fontWeight: 700 }}>{title}</DialogTitle>
+    <DialogContent>
+      <Typography variant="body2" color="text.secondary">
+        {description}
+      </Typography>
+    </DialogContent>
+    <DialogActions sx={{ px: 3, pb: 2.5 }}>
+      <Button onClick={onCancel}>Cancel</Button>
+      <Button onClick={onConfirm} variant="contained" sx={{ bgcolor: "#10b981", "&:hover": { bgcolor: "#059669" } }}>
+        {confirmLabel}
+      </Button>
+    </DialogActions>
+  </Dialog>
+);
+
+const UserMobileCard = ({ user, onEdit, onDelete, onStatusToggle, isDark, roles = [] }) => (
   <Box
     sx={{
       p: 2,
@@ -372,7 +464,13 @@ const UserMobileCard = ({ user, onEdit, onDelete, onStatusToggle, isDark }) => (
             Permissions
           </Typography>
           <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-            {user.brand_memberships?.[0]?.permissions?.length > 0 ? (
+            {user.custom_role_id ? (
+              <GlassChip
+                label={`Role: ${roles.find((r) => r._id === user.custom_role_id)?.name || "Unknown role"}`}
+                size="small"
+                isDark={isDark}
+              />
+            ) : user.brand_memberships?.[0]?.permissions?.length > 0 ? (
               user.brand_memberships[0].permissions.map((p) => (
                 <GlassChip key={p} label={p} size="small" isDark={isDark} />
               ))
@@ -544,6 +642,14 @@ const emptyForm = {
   primary_brand_id: "",
   status: "active",
   permissions: ["all"],
+  permission_mode: "manual",
+  custom_role_id: "",
+};
+
+const emptyRoleForm = {
+  name: "",
+  description: "",
+  permissions: [],
 };
 
 export default function AccessControlCard() {
@@ -577,6 +683,21 @@ export default function AccessControlCard() {
   const [domainSaving, setDomainSaving] = useState(false);
   const userDialogRef = useRef(null);
   const domainDialogRef = useRef(null);
+
+  // ---- Custom Roles state ----
+  const [roles, setRoles] = useState([]);
+  const [rolesLoading, setRolesLoading] = useState(true);
+  const [rolesError, setRolesError] = useState(null);
+  const [roleDialogOpen, setRoleDialogOpen] = useState(false);
+  const [isEditingRole, setIsEditingRole] = useState(false);
+  const [roleForm, setRoleForm] = useState(emptyRoleForm);
+  const [editingRoleId, setEditingRoleId] = useState(null);
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [roleFormError, setRoleFormError] = useState(null);
+  const [roleDeleteBlockedMessage, setRoleDeleteBlockedMessage] = useState(null);
+  // Generic confirm-dialog state, reused for: assign-role, switch-to-manual,
+  // update-in-use-role, and delete-unused-role.
+  const [confirmDialog, setConfirmDialog] = useState(null); // { title, description, confirmLabel, onConfirm }
 
   const availableBrands = useMemo(() => {
     const set = new Set(knownBrands);
@@ -627,6 +748,21 @@ export default function AccessControlCard() {
 
   useEffect(() => {
     loadDomainRules();
+  }, []);
+
+  async function loadRoles() {
+    setRolesLoading(true);
+    const r = await listCustomRoles();
+    if (r.error) setRolesError(r.data?.error || "Failed to load custom roles");
+    else {
+      setRoles(r.data?.roles || []);
+      setRolesError(null);
+    }
+    setRolesLoading(false);
+  }
+
+  useEffect(() => {
+    loadRoles();
   }, []);
 
   useEffect(() => {
@@ -830,6 +966,8 @@ export default function AccessControlCard() {
       primary_brand_id: u.primary_brand_id || "",
       status: u.status || "active",
       permissions: u.brand_memberships?.[0]?.permissions || ["all"],
+      permission_mode: u.custom_role_id ? "role" : "manual",
+      custom_role_id: u.custom_role_id || "",
     });
     setIsEdit(true);
     setUserFormError(null);
@@ -861,6 +999,33 @@ export default function AccessControlCard() {
     });
   }
 
+  function handlePermissionModeChange(nextMode) {
+    if (nextMode === form.permission_mode) return;
+    if (nextMode === "role") {
+      setConfirmDialog({
+        title: "Assign Custom Role?",
+        description:
+          "This user currently has manually assigned permissions. Assigning a Custom Role will replace those permissions with the permissions defined by the selected role.",
+        confirmLabel: "Assign Role",
+        onConfirm: () => {
+          setForm((prev) => ({ ...prev, permission_mode: "role" }));
+          setConfirmDialog(null);
+        },
+      });
+    } else {
+      const roleName = roles.find((r) => r._id === form.custom_role_id)?.name || "the assigned role";
+      setConfirmDialog({
+        title: "Switch to Manual Permissions?",
+        description: `This user currently inherits permissions from the custom role "${roleName}". Switching to manual permissions will remove the role association and require permissions to be configured individually.`,
+        confirmLabel: "Switch to Manual",
+        onConfirm: () => {
+          setForm((prev) => ({ ...prev, permission_mode: "manual", custom_role_id: "" }));
+          setConfirmDialog(null);
+        },
+      });
+    }
+  }
+
   function buildUserPayload(source, statusOverride = null) {
     const role = source.role;
     const status = statusOverride ?? source.status ?? "active";
@@ -878,8 +1043,14 @@ export default function AccessControlCard() {
       brand_ids: [],
       primary_brand_id: "",
       permissions: ["all"],
+      custom_role_id: null,
         status,
       };
+    }
+
+    const isRoleMode = source.permission_mode === "role";
+    if (isRoleMode && !source.custom_role_id) {
+      throw new Error("Select a custom role");
     }
 
     if (role === "brand_user") {
@@ -893,7 +1064,8 @@ export default function AccessControlCard() {
         role,
         brand_ids: [selectedBrand],
         primary_brand_id: selectedBrand,
-        permissions: normalizePermissionSelection(source.permissions || ["all"]),
+        permissions: isRoleMode ? [] : normalizePermissionSelection(source.permissions || ["all"]),
+        custom_role_id: isRoleMode ? source.custom_role_id : null,
         status,
       };
     }
@@ -920,7 +1092,13 @@ export default function AccessControlCard() {
       role,
       brand_ids: brandIds,
       primary_brand_id: normalizedPrimaryBrand,
-      permissions: role === "author" ? ["all"] : normalizePermissionSelection(source.permissions || ["all"]),
+      permissions:
+        role === "author"
+          ? ["all"]
+          : isRoleMode
+            ? []
+            : normalizePermissionSelection(source.permissions || ["all"]),
+      custom_role_id: role !== "author" && isRoleMode ? source.custom_role_id : null,
       status,
     };
   }
@@ -985,6 +1163,8 @@ export default function AccessControlCard() {
         brand_ids: (user.brand_memberships || []).map((b) => b.brand_id),
         primary_brand_id: user.primary_brand_id,
         permissions: user.brand_memberships?.[0]?.permissions || ["all"],
+        permission_mode: user.custom_role_id ? "role" : "manual",
+        custom_role_id: user.custom_role_id || "",
         status: nextStatus,
       });
     } catch (err) {
@@ -1000,6 +1180,118 @@ export default function AccessControlCard() {
       return;
     }
     await loadUsers();
+  }
+
+  // ---- Custom Roles handlers ----
+  function openNewRole() {
+    setRoleForm(emptyRoleForm);
+    setEditingRoleId(null);
+    setIsEditingRole(false);
+    setRoleFormError(null);
+    setRoleDialogOpen(true);
+  }
+
+  function openEditRole(role) {
+    setRoleForm({
+      name: role.name || "",
+      description: role.description || "",
+      permissions: role.permissions || [],
+    });
+    setEditingRoleId(role._id);
+    setIsEditingRole(true);
+    setRoleFormError(null);
+    setRoleDialogOpen(true);
+  }
+
+  function toggleRolePermission(permissionId) {
+    setRoleForm((prev) => {
+      const has = prev.permissions.includes(permissionId);
+      return {
+        ...prev,
+        permissions: has
+          ? prev.permissions.filter((p) => p !== permissionId)
+          : [...prev.permissions, permissionId],
+      };
+    });
+  }
+
+  async function persistRole() {
+    setRoleSaving(true);
+    setRoleFormError(null);
+    const payload = {
+      name: roleForm.name.trim(),
+      description: roleForm.description.trim(),
+      permissions: roleForm.permissions,
+    };
+
+    const r = isEditingRole
+      ? await updateCustomRole(editingRoleId, payload)
+      : await createCustomRole(payload);
+
+    setRoleSaving(false);
+    if (r.error) {
+      setRoleFormError(r.data?.error || "Save failed");
+      return;
+    }
+    setRoleDialogOpen(false);
+    setConfirmDialog(null);
+    await loadRoles();
+  }
+
+  function handleSaveRole() {
+    if (!roleForm.name.trim()) {
+      setRoleFormError("Role name is required");
+      return;
+    }
+
+    const existingRole = isEditingRole ? roles.find((r) => r._id === editingRoleId) : null;
+    const assignedCount = existingRole?.assigned_user_count || 0;
+
+    // Only prompt when there are affected users AND something actually
+    // changed from the loaded values — not on every save.
+    const changed =
+      !existingRole ||
+      existingRole.name !== roleForm.name.trim() ||
+      (existingRole.description || "") !== roleForm.description.trim() ||
+      JSON.stringify([...(existingRole.permissions || [])].sort()) !==
+        JSON.stringify([...roleForm.permissions].sort());
+
+    if (isEditingRole && assignedCount > 0 && changed) {
+      setConfirmDialog({
+        title: "Update Role?",
+        description: `This role is assigned to ${assignedCount} user${assignedCount === 1 ? "" : "s"}. Changing its permissions will immediately change their effective access.`,
+        confirmLabel: "Update Role",
+        onConfirm: persistRole,
+      });
+      return;
+    }
+
+    persistRole();
+  }
+
+  function handleDeleteRole(role) {
+    const assignedCount = role.assigned_user_count || 0;
+    if (assignedCount > 0) {
+      setRoleDeleteBlockedMessage(
+        `"${role.name}" is currently assigned to ${assignedCount} user${assignedCount === 1 ? "" : "s"}. Reassign those users to another role or switch them to manual permissions before deleting this role.`,
+      );
+      return;
+    }
+
+    setConfirmDialog({
+      title: "Delete Custom Role?",
+      description: "This action cannot be undone.",
+      confirmLabel: "Delete Role",
+      onConfirm: async () => {
+        const r = await deleteCustomRole(role._id);
+        setConfirmDialog(null);
+        if (r.error) {
+          setRolesError(r.data?.error || "Failed to delete role");
+          return;
+        }
+        await loadRoles();
+      },
+    });
   }
 
   const filteredDomainRules = useMemo(() => domainRules, [domainRules]);
@@ -1255,7 +1547,28 @@ export default function AccessControlCard() {
               Manage who can sign in (author/viewer) and their brand access
             </Typography>
           </Box>
-          <Stack direction="row" spacing={1.5}>
+          <Stack direction="row" spacing={1.5} flexWrap="wrap">
+            <Button
+              variant="outlined"
+              onClick={openNewRole}
+              sx={{
+                borderRadius: "12px",
+                textTransform: "none",
+                borderColor: isDark
+                  ? "rgba(255,255,255,0.2)"
+                  : "rgba(0,0,0,0.1)",
+                color: isDark ? "#fff" : "#000",
+                px: 2,
+                "&:hover": {
+                  borderColor: isDark ? "#fff" : "#000",
+                  bgcolor: isDark
+                    ? "rgba(255,255,255,0.05)"
+                    : "rgba(0,0,0,0.02)",
+                },
+              }}
+            >
+              Create Role
+            </Button>
             <Button
               variant="outlined"
               onClick={openNewDomainRule}
@@ -1472,6 +1785,7 @@ export default function AccessControlCard() {
                     onDelete={handleDelete}
                     onStatusToggle={handleStatusToggle}
                     isDark={isDark}
+                    roles={roles}
                   />
                 ))}
                 {!loading && filteredUsers.length === 0 && (
@@ -1552,10 +1866,12 @@ export default function AccessControlCard() {
                             fontWeight: 500,
                           }}
                         >
-                          {summarizePermissions(
-                            u.role,
-                            u.brand_memberships?.[0]?.permissions || [],
-                          )}
+                          {u.custom_role_id
+                            ? `Role: ${roles.find((r) => r._id === u.custom_role_id)?.name || "Unknown role"}`
+                            : summarizePermissions(
+                                u.role,
+                                u.brand_memberships?.[0]?.permissions || [],
+                              )}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -1787,6 +2103,129 @@ export default function AccessControlCard() {
             )}
           </Box>
         </Paper>
+
+        {/* Custom Roles Panel */}
+        <Paper sx={containerSx}>
+          <Box
+            sx={{
+              p: 3,
+              borderBottom: "1px solid",
+              borderColor: isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.05)",
+            }}
+          >
+            <Stack direction="row" spacing={1} alignItems="center">
+              <ShieldOutlinedIcon
+                sx={{ color: isDark ? "rgba(255, 255, 255, 0.4)" : "rgba(0, 0, 0, 0.4)" }}
+              />
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, color: isDark ? "#fff" : "#000" }}>
+                Custom Roles :
+              </Typography>
+            </Stack>
+          </Box>
+          <Box sx={{ maxHeight: "400px", overflowY: "auto", ...scrollbarSx }}>
+            {rolesError && (
+              <Alert severity="error" sx={{ m: 2 }}>
+                {rolesError}
+              </Alert>
+            )}
+            {isMobile ? (
+              <Box sx={{ p: 2 }}>
+                {roles.map((role) => (
+                  <Box
+                    key={role._id}
+                    sx={{
+                      p: 2,
+                      mb: 2,
+                      borderRadius: "16px",
+                      bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
+                      border: "1px solid",
+                      borderColor: isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.05)",
+                    }}
+                  >
+                    <Stack spacing={1}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                        {role.name}
+                      </Typography>
+                      {role.description && (
+                        <Typography variant="body2" color="text.secondary">
+                          {role.description}
+                        </Typography>
+                      )}
+                      <Stack direction="row" spacing={1}>
+                        <Chip size="small" label={`${role.permissions?.length || 0} permissions`} />
+                        <Chip size="small" label={`${role.assigned_user_count || 0} users`} />
+                      </Stack>
+                      <Stack direction="row" spacing={1} justifyContent="flex-end">
+                        <IconButton size="small" onClick={() => openEditRole(role)} sx={actionButtonSx("primary")}>
+                          <EditIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                        <IconButton size="small" onClick={() => handleDeleteRole(role)} sx={actionButtonSx("error")}>
+                          <DeleteIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                      </Stack>
+                    </Stack>
+                  </Box>
+                ))}
+                {!rolesLoading && roles.length === 0 && (
+                  <Typography variant="body2" sx={{ textAlign: "center", py: 4, opacity: 0.5 }}>
+                    No custom roles yet
+                  </Typography>
+                )}
+              </Box>
+            ) : (
+              <Table stickyHeader>
+                <TableHead sx={tableHeaderSx}>
+                  <TableRow>
+                    <TableCell sx={{ pl: 4 }}>Name</TableCell>
+                    <TableCell>Description</TableCell>
+                    <TableCell>Permissions</TableCell>
+                    <TableCell>Assigned Users</TableCell>
+                    <TableCell align="right" sx={{ pr: 4 }}>
+                      Actions
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {roles.map((role) => (
+                    <TableRow key={role._id} sx={tableRowSx}>
+                      <TableCell sx={{ pl: 4, fontWeight: 600, color: isDark ? "#fff" : "#000" }}>
+                        {role.name}
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {role.description || "—"}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>{role.permissions?.length || 0} permissions</TableCell>
+                      <TableCell>{role.assigned_user_count || 0} users</TableCell>
+                      <TableCell align="right" sx={{ pr: 4 }}>
+                        <Stack direction="row" spacing={1} justifyContent="flex-end">
+                          <Tooltip title="Edit">
+                            <IconButton sx={actionButtonSx("primary")} onClick={() => openEditRole(role)}>
+                              <EditIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton sx={actionButtonSx("error")} onClick={() => handleDeleteRole(role)}>
+                              <DeleteIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          </Tooltip>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!rolesLoading && roles.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} sx={{ textAlign: "center", py: 8, opacity: 0.5 }}>
+                        No custom roles yet
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            )}
+          </Box>
+        </Paper>
       </Stack>
 
       {/* Dialogs */}
@@ -1902,132 +2341,186 @@ export default function AccessControlCard() {
                     ))}
                   </Select>
                 </FormControl>
-                <Autocomplete
-                  multiple
-                  options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                  value={form.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                  onChange={(_, val) => {
-                    const nestedPerms = form.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
-                    handleFormChange("permissions", [...val, ...nestedPerms]);
-                  }}
-                  slotProps={{
-                    popper: {
-                      sx: { zIndex: 1400 },
-                      placement: "bottom-start",
-                      modifiers: [
-                        {
-                          name: "flip",
-                          enabled: false,
-                        },
-                      ],
-                    },
-                  }}
-                  ListboxProps={{
-                    sx: { maxHeight: 250 },
-                  }}
-                  renderTags={(value, getTagProps) =>
-                    value.map((option, index) => (
-                      <Chip
-                        variant="outlined"
-                        label={option}
-                        {...getTagProps({ index })}
-                      />
-                    ))
-                  }
-                  renderInput={(params) => (
-                    <TextField {...params} label="General Permissions" fullWidth />
-                  )}
-                />
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Typography variant="caption" sx={{ fontWeight: 700, opacity: 0.7 }}>
+                    ACCESS / PERMISSION MODE
+                  </Typography>
+                </Stack>
+                <Stack direction="row" spacing={1}>
+                  <Chip
+                    label="Manual Permissions"
+                    onClick={() => handlePermissionModeChange("manual")}
+                    color={form.permission_mode === "manual" ? "primary" : "default"}
+                    variant={form.permission_mode === "manual" ? "filled" : "outlined"}
+                  />
+                  <Chip
+                    label="Custom Role"
+                    onClick={() => handlePermissionModeChange("role")}
+                    color={form.permission_mode === "role" ? "primary" : "default"}
+                    variant={form.permission_mode === "role" ? "filled" : "outlined"}
+                  />
+                </Stack>
 
-                {form.permissions.includes("product_conversion") && (
-                  <Box sx={{ 
-                    p: 2, 
-                    borderRadius: "12px", 
-                    bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
-                    border: "1px dashed",
-                    borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
-                  }}>
-                    <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
-                      PRODUCT TABLE COLUMNS
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {COLUMN_PERMISSIONS.map((col) => {
-                        const active = form.permissions.includes(col.id);
-                        return (
-                          <Chip
-                            key={col.id}
-                            label={col.label}
-                            onClick={() => {
-                              let next = active
-                                ? form.permissions.filter(p => p !== col.id)
-                                : [...form.permissions, col.id];
-                              
-                              // Enforcement: If removing DRR/DOH results in none being selected,
-                              // auto-remove Inventory Analysis filter scope.
-                              const hasDrrDoh = next.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
-                              if (!hasDrrDoh) {
-                                next = next.filter(p => p !== "product_table_filters:inventory");
-                              }
-
-                              handleFormChange("permissions", next);
-                            }}
-                            color={active ? "primary" : "default"}
-                            variant={active ? "filled" : "outlined"}
-                            size="small"
-                            sx={{ borderRadius: '8px' }}
-                          />
-                        );
-                      })}
+                {form.permission_mode === "role" ? (
+                  <>
+                    <FormControl fullWidth>
+                      <InputLabel>Custom Role</InputLabel>
+                      <Select
+                        label="Custom Role"
+                        value={form.custom_role_id}
+                        onChange={(e) => handleFormChange("custom_role_id", e.target.value)}
+                        MenuProps={{ PaperProps: { sx: { zIndex: 1400 } } }}
+                      >
+                        {roles.map((role) => (
+                          <MenuItem key={role._id} value={role._id}>
+                            {role.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                        Permissions inherited from{" "}
+                        {roles.find((r) => r._id === form.custom_role_id)?.name || "this role"}. Permissions are
+                        managed by the assigned custom role.
+                      </Typography>
+                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                        {(roles.find((r) => r._id === form.custom_role_id)?.permissions || []).map((p) => (
+                          <GlassChip key={p} label={p} isDark={isDark} />
+                        ))}
+                      </Box>
                     </Box>
-                  </Box>
-                )}
+                  </>
+                ) : (
+                  <>
+                    <Autocomplete
+                      multiple
+                      options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                      value={form.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                      onChange={(_, val) => {
+                        const nestedPerms = form.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
+                        handleFormChange("permissions", [...val, ...nestedPerms]);
+                      }}
+                      slotProps={{
+                        popper: {
+                          sx: { zIndex: 1400 },
+                          placement: "bottom-start",
+                          modifiers: [
+                            {
+                              name: "flip",
+                              enabled: false,
+                            },
+                          ],
+                        },
+                      }}
+                      ListboxProps={{
+                        sx: { maxHeight: 250 },
+                      }}
+                      renderTags={(value, getTagProps) =>
+                        value.map((option, index) => (
+                          <Chip
+                            variant="outlined"
+                            label={option}
+                            {...getTagProps({ index })}
+                          />
+                        ))
+                      }
+                      renderInput={(params) => (
+                        <TextField {...params} label="General Permissions" fullWidth />
+                      )}
+                    />
 
-                {form.permissions.includes("product_table_filters") && (
-                  <Box sx={{ 
-                    p: 2, 
-                    borderRadius: "12px", 
-                    bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
-                    border: "1px dashed",
-                    borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
-                  }}>
-                    <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
-                      PRODUCT TABLE FILTERS
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {FILTER_PANEL_PERMISSIONS.map((f) => {
-                        const active = form.permissions.includes(f.id);
-                        const isInventory = f.id === "product_table_filters:inventory";
-                        const hasDrrDoh = form.permissions.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
-                        const disabled = isInventory && !hasDrrDoh;
-
-                        return (
-                          <Tooltip 
-                            key={f.id} 
-                            title={disabled ? "Requires DRR or DOH column access" : ""}
-                            arrow
-                          >
-                            <span>
+                    {form.permissions.includes("product_conversion") && (
+                      <Box sx={{
+                        p: 2,
+                        borderRadius: "12px",
+                        bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
+                        border: "1px dashed",
+                        borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
+                      }}>
+                        <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
+                          PRODUCT TABLE COLUMNS
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          {COLUMN_PERMISSIONS.map((col) => {
+                            const active = form.permissions.includes(col.id);
+                            return (
                               <Chip
-                                label={f.label}
+                                key={col.id}
+                                label={col.label}
                                 onClick={() => {
-                                  if (disabled) return;
-                                  const next = active
-                                    ? form.permissions.filter(p => p !== f.id)
-                                    : [...form.permissions, f.id];
+                                  let next = active
+                                    ? form.permissions.filter(p => p !== col.id)
+                                    : [...form.permissions, col.id];
+
+                                  // Enforcement: If removing DRR/DOH results in none being selected,
+                                  // auto-remove Inventory Analysis filter scope.
+                                  const hasDrrDoh = next.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
+                                  if (!hasDrrDoh) {
+                                    next = next.filter(p => p !== "product_table_filters:inventory");
+                                  }
+
                                   handleFormChange("permissions", next);
                                 }}
-                                disabled={disabled}
                                 color={active ? "primary" : "default"}
                                 variant={active ? "filled" : "outlined"}
                                 size="small"
-                                sx={{ borderRadius: '8px', opacity: disabled ? 0.5 : 1 }}
+                                sx={{ borderRadius: '8px' }}
                               />
-                            </span>
-                          </Tooltip>
-                        );
-                      })}
-                    </Box>
-                  </Box>
+                            );
+                          })}
+                        </Box>
+                      </Box>
+                    )}
+
+                    {form.permissions.includes("product_table_filters") && (
+                      <Box sx={{
+                        p: 2,
+                        borderRadius: "12px",
+                        bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
+                        border: "1px dashed",
+                        borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
+                      }}>
+                        <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
+                          PRODUCT TABLE FILTERS
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          {FILTER_PANEL_PERMISSIONS.map((f) => {
+                            const active = form.permissions.includes(f.id);
+                            const isInventory = f.id === "product_table_filters:inventory";
+                            const hasDrrDoh = form.permissions.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
+                            const disabled = isInventory && !hasDrrDoh;
+
+                            return (
+                              <Tooltip
+                                key={f.id}
+                                title={disabled ? "Requires DRR or DOH column access" : ""}
+                                arrow
+                              >
+                                <span>
+                                  <Chip
+                                    label={f.label}
+                                    onClick={() => {
+                                      if (disabled) return;
+                                      const next = active
+                                        ? form.permissions.filter(p => p !== f.id)
+                                        : [...form.permissions, f.id];
+                                      handleFormChange("permissions", next);
+                                    }}
+                                    disabled={disabled}
+                                    color={active ? "primary" : "default"}
+                                    variant={active ? "filled" : "outlined"}
+                                    size="small"
+                                    sx={{ borderRadius: '8px', opacity: disabled ? 0.5 : 1 }}
+                                  />
+                                </span>
+                              </Tooltip>
+                            );
+                          })}
+                        </Box>
+                      </Box>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -2096,123 +2589,172 @@ export default function AccessControlCard() {
                     ))}
                   </Select>
                 </FormControl>
-                <Autocomplete
-                  multiple
-                  options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                  value={form.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                  onChange={(_, val) => {
-                    const nestedPerms = form.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
-                    handleFormChange("permissions", [...val, ...nestedPerms]);
-                  }}
-                  slotProps={{
-                    popper: {
-                      sx: { zIndex: 1400 },
-                      placement: "bottom-start",
-                      modifiers: [{ name: "flip", enabled: false }],
-                    },
-                  }}
-                  ListboxProps={{
-                    sx: { maxHeight: 250 },
-                  }}
-                  renderTags={(value, getTagProps) =>
-                    value.map((option, index) => (
-                      <Chip
-                        variant="outlined"
-                        label={option}
-                        {...getTagProps({ index })}
-                      />
-                    ))
-                  }
-                  renderInput={(params) => (
-                    <TextField {...params} label="General Permissions" fullWidth />
-                  )}
-                />
-                {form.permissions.includes("product_conversion") && (
-                  <Box sx={{ 
-                    p: 2, 
-                    borderRadius: "12px", 
-                    bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
-                    border: "1px dashed",
-                    borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
-                  }}>
-                    <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
-                      PRODUCT TABLE COLUMNS
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {COLUMN_PERMISSIONS.map((col) => {
-                        const active = form.permissions.includes(col.id);
-                        return (
-                          <Chip
-                            key={col.id}
-                            label={col.label}
-                            onClick={() => {
-                              let next = active
-                                ? form.permissions.filter(p => p !== col.id)
-                                : [...form.permissions, col.id];
+                <Stack direction="row" spacing={1}>
+                  <Chip
+                    label="Manual Permissions"
+                    onClick={() => handlePermissionModeChange("manual")}
+                    color={form.permission_mode === "manual" ? "primary" : "default"}
+                    variant={form.permission_mode === "manual" ? "filled" : "outlined"}
+                  />
+                  <Chip
+                    label="Custom Role"
+                    onClick={() => handlePermissionModeChange("role")}
+                    color={form.permission_mode === "role" ? "primary" : "default"}
+                    variant={form.permission_mode === "role" ? "filled" : "outlined"}
+                  />
+                </Stack>
 
-                              const hasDrrDoh = next.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
-                              if (!hasDrrDoh) {
-                                next = next.filter(p => p !== "product_table_filters:inventory");
-                              }
-
-                              handleFormChange("permissions", next);
-                            }}
-                            color={active ? "primary" : "default"}
-                            variant={active ? "filled" : "outlined"}
-                            size="small"
-                            sx={{ borderRadius: '8px' }}
-                          />
-                        );
-                      })}
+                {form.permission_mode === "role" ? (
+                  <>
+                    <FormControl fullWidth>
+                      <InputLabel>Custom Role</InputLabel>
+                      <Select
+                        label="Custom Role"
+                        value={form.custom_role_id}
+                        onChange={(e) => handleFormChange("custom_role_id", e.target.value)}
+                        MenuProps={{ PaperProps: { sx: { zIndex: 1400 } } }}
+                      >
+                        {roles.map((role) => (
+                          <MenuItem key={role._id} value={role._id}>
+                            {role.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                        Permissions inherited from{" "}
+                        {roles.find((r) => r._id === form.custom_role_id)?.name || "this role"}. Permissions are
+                        managed by the assigned custom role.
+                      </Typography>
+                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                        {(roles.find((r) => r._id === form.custom_role_id)?.permissions || []).map((p) => (
+                          <GlassChip key={p} label={p} isDark={isDark} />
+                        ))}
+                      </Box>
                     </Box>
-                  </Box>
-                )}
-                {form.permissions.includes("product_table_filters") && (
-                  <Box sx={{ 
-                    p: 2, 
-                    borderRadius: "12px", 
-                    bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
-                    border: "1px dashed",
-                    borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
-                  }}>
-                    <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
-                      PRODUCT TABLE FILTERS
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {FILTER_PANEL_PERMISSIONS.map((f) => {
-                        const active = form.permissions.includes(f.id);
-                        const isInventory = f.id === "product_table_filters:inventory";
-                        const hasDrrDoh = form.permissions.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
-                        const disabled = isInventory && !hasDrrDoh;
-
-                        return (
-                          <Tooltip
-                            key={f.id}
-                            title={disabled ? "Requires DRR or DOH column access" : ""}
-                            arrow
-                          >
-                            <span>
+                  </>
+                ) : (
+                  <>
+                    <Autocomplete
+                      multiple
+                      options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                      value={form.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
+                      onChange={(_, val) => {
+                        const nestedPerms = form.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
+                        handleFormChange("permissions", [...val, ...nestedPerms]);
+                      }}
+                      slotProps={{
+                        popper: {
+                          sx: { zIndex: 1400 },
+                          placement: "bottom-start",
+                          modifiers: [{ name: "flip", enabled: false }],
+                        },
+                      }}
+                      ListboxProps={{
+                        sx: { maxHeight: 250 },
+                      }}
+                      renderTags={(value, getTagProps) =>
+                        value.map((option, index) => (
+                          <Chip
+                            variant="outlined"
+                            label={option}
+                            {...getTagProps({ index })}
+                          />
+                        ))
+                      }
+                      renderInput={(params) => (
+                        <TextField {...params} label="General Permissions" fullWidth />
+                      )}
+                    />
+                    {form.permissions.includes("product_conversion") && (
+                      <Box sx={{
+                        p: 2,
+                        borderRadius: "12px",
+                        bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
+                        border: "1px dashed",
+                        borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
+                      }}>
+                        <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
+                          PRODUCT TABLE COLUMNS
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          {COLUMN_PERMISSIONS.map((col) => {
+                            const active = form.permissions.includes(col.id);
+                            return (
                               <Chip
-                                label={f.label}
+                                key={col.id}
+                                label={col.label}
                                 onClick={() => {
-                                  if (disabled) return;
-                                  const next = active
-                                    ? form.permissions.filter(p => p !== f.id)
-                                    : [...form.permissions, f.id];
+                                  let next = active
+                                    ? form.permissions.filter(p => p !== col.id)
+                                    : [...form.permissions, col.id];
+
+                                  const hasDrrDoh = next.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
+                                  if (!hasDrrDoh) {
+                                    next = next.filter(p => p !== "product_table_filters:inventory");
+                                  }
+
                                   handleFormChange("permissions", next);
                                 }}
-                                disabled={disabled}
                                 color={active ? "primary" : "default"}
                                 variant={active ? "filled" : "outlined"}
                                 size="small"
-                                sx={{ borderRadius: '8px', opacity: disabled ? 0.5 : 1 }}
+                                sx={{ borderRadius: '8px' }}
                               />
-                            </span>
-                          </Tooltip>
-                        );
-                      })}
-                    </Box>
-                  </Box>
+                            );
+                          })}
+                        </Box>
+                      </Box>
+                    )}
+                    {form.permissions.includes("product_table_filters") && (
+                      <Box sx={{
+                        p: 2,
+                        borderRadius: "12px",
+                        bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
+                        border: "1px dashed",
+                        borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
+                      }}>
+                        <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
+                          PRODUCT TABLE FILTERS
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          {FILTER_PANEL_PERMISSIONS.map((f) => {
+                            const active = form.permissions.includes(f.id);
+                            const isInventory = f.id === "product_table_filters:inventory";
+                            const hasDrrDoh = form.permissions.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
+                            const disabled = isInventory && !hasDrrDoh;
+
+                            return (
+                              <Tooltip
+                                key={f.id}
+                                title={disabled ? "Requires DRR or DOH column access" : ""}
+                                arrow
+                              >
+                                <span>
+                                  <Chip
+                                    label={f.label}
+                                    onClick={() => {
+                                      if (disabled) return;
+                                      const next = active
+                                        ? form.permissions.filter(p => p !== f.id)
+                                        : [...form.permissions, f.id];
+                                      handleFormChange("permissions", next);
+                                    }}
+                                    disabled={disabled}
+                                    color={active ? "primary" : "default"}
+                                    variant={active ? "filled" : "outlined"}
+                                    size="small"
+                                    sx={{ borderRadius: '8px', opacity: disabled ? 0.5 : 1 }}
+                                  />
+                                </span>
+                              </Tooltip>
+                            );
+                          })}
+                        </Box>
+                      </Box>
+                    )}
+                  </>
                 )}
               </Stack>
             )}
@@ -2544,6 +3086,138 @@ export default function AccessControlCard() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Create/Edit Custom Role */}
+      <Dialog
+        open={roleDialogOpen}
+        onClose={() => {
+          setRoleDialogOpen(false);
+          setRoleFormError(null);
+        }}
+        fullWidth
+        maxWidth="sm"
+        PaperProps={{ sx: { borderRadius: "20px", bgcolor: isDark ? "#1a1a1a" : "#fff" } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          {isEditingRole ? "Edit Custom Role" : "Create Custom Role"}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2.5} sx={{ mt: 1 }}>
+            {roleFormError && <Alert severity="error">{roleFormError}</Alert>}
+            <TextField
+              label="Role Name"
+              fullWidth
+              value={roleForm.name}
+              onChange={(e) => setRoleForm((prev) => ({ ...prev, name: e.target.value }))}
+              required
+            />
+            <TextField
+              label="Description"
+              fullWidth
+              multiline
+              minRows={2}
+              value={roleForm.description}
+              onChange={(e) => setRoleForm((prev) => ({ ...prev, description: e.target.value }))}
+            />
+
+            {isEditingRole && (
+              <Alert severity={(roles.find((r) => r._id === editingRoleId)?.assigned_user_count || 0) > 0 ? "warning" : "info"}>
+                {(roles.find((r) => r._id === editingRoleId)?.assigned_user_count || 0) > 0
+                  ? `This role is currently assigned to ${roles.find((r) => r._id === editingRoleId)?.assigned_user_count} user${roles.find((r) => r._id === editingRoleId)?.assigned_user_count === 1 ? "" : "s"}. Changes to this role's permissions will also change the permissions of those users.`
+                  : "This role is not currently assigned to any users."}
+              </Alert>
+            )}
+
+            <Stack spacing={2}>
+              {PERMISSION_CATEGORIES.map((category) => (
+                <Box key={category.label}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontWeight: 700,
+                      letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                      color: isDark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.5)",
+                    }}
+                  >
+                    {category.label}
+                  </Typography>
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mt: 0.75 }}>
+                    {category.permissions.map((permissionId) => {
+                      const columnMeta = COLUMN_PERMISSIONS.find((p) => p.id === permissionId);
+                      const filterMeta = FILTER_PANEL_PERMISSIONS.find((p) => p.id === permissionId);
+                      const label = columnMeta?.label || filterMeta?.label || permissionId;
+                      const active = roleForm.permissions.includes(permissionId);
+                      return (
+                        <Chip
+                          key={permissionId}
+                          label={label}
+                          size="small"
+                          color={active ? "primary" : "default"}
+                          variant={active ? "filled" : "outlined"}
+                          onClick={() => toggleRolePermission(permissionId)}
+                          sx={{ cursor: "pointer" }}
+                        />
+                      );
+                    })}
+                  </Box>
+                </Box>
+              ))}
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button
+            onClick={() => {
+              setRoleDialogOpen(false);
+              setRoleFormError(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveRole}
+            variant="contained"
+            disabled={roleSaving}
+            sx={{ borderRadius: "10px", textTransform: "none", fontWeight: 600, bgcolor: "#10b981", "&:hover": { bgcolor: "#059669" } }}
+          >
+            {roleSaving ? <CircularProgress size={18} sx={{ color: "#fff" }} /> : "Save Role"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Role delete blocked (in-use) message */}
+      <Dialog
+        open={!!roleDeleteBlockedMessage}
+        onClose={() => setRoleDeleteBlockedMessage(null)}
+        fullWidth
+        maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: "20px", bgcolor: isDark ? "#1a1a1a" : "#fff" } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Cannot Delete Role</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            {roleDeleteBlockedMessage}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setRoleDeleteBlockedMessage(null)} variant="contained" sx={{ bgcolor: "#10b981", "&:hover": { bgcolor: "#059669" } }}>
+            OK
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Generic confirmation dialog — assign role / switch to manual / update
+          in-use role / delete unused role */}
+      <ConfirmDialog
+        open={!!confirmDialog}
+        title={confirmDialog?.title}
+        description={confirmDialog?.description}
+        confirmLabel={confirmDialog?.confirmLabel}
+        onConfirm={() => confirmDialog?.onConfirm?.()}
+        onCancel={() => setConfirmDialog(null)}
+        isDark={isDark}
+      />
     </Box>
   );
 }
