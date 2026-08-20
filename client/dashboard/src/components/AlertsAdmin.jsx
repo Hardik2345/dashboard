@@ -67,27 +67,19 @@ dayjs.extend(relativeTime);
 // defined base metrics that cannot be derived
 const BASE_METRICS = ['total_orders', 'total_sales', 'total_sessions', 'atc_sessions', 'performance'];
 
-const METRIC_TYPES = [
-  { value: 'base', label: 'Base' },
-  { value: 'derived', label: 'Derived' },
-];
-
 const THRESHOLD_TYPES = [
   { value: 'percentage_drop', label: 'Percentage Drop' },
   { value: 'percentage_rise', label: 'Percentage Rise' },
   { value: 'less_than', label: 'Less Than' },
-  { value: 'greater_than', label: 'More Than' },
+  { value: 'greater_than', label: 'Greater Than' },
+  { value: 'more_than', label: 'More Than' },
+  { value: 'absolute', label: 'Absolute' },
 ];
 
 const SEVERITY_OPTIONS = [
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
-];
-
-const TRIGGER_MODE_OPTIONS = [
-  { value: 'alert_system', label: 'Alert System' },
-  { value: 'dsl_engine', label: 'DSL Engine' },
 ];
 
 const MINIMUM_VOLUME_OPTIONS = [
@@ -97,8 +89,9 @@ const MINIMUM_VOLUME_OPTIONS = [
   { value: 'total_sales', label: 'Total Sales' },
 ];
 
+// Quiet hours are stored/read as a plain hour integer (0-23) on the backend —
+// minutes are never persisted, so the UI only offers hour-level precision.
 const HOURS = Array.from({ length: 24 }, (_, idx) => String(idx).padStart(2, '0'));
-const MINUTES = Array.from({ length: 60 }, (_, idx) => String(idx).padStart(2, '0'));
 
 function buildInitialForm(defaultBrand = '') {
   return {
@@ -114,8 +107,6 @@ function buildInitialForm(defaultBrand = '') {
     severity: 'low',
     cooldown_minutes: '30',
     lookback_days: '1',
-    is_dsl_engine_alert: false,
-    trigger_mode: 'alert_system',
     have_recipients: 0,
     quiet_hours_start: '00:00',
     quiet_hours_end: '00:00',
@@ -219,6 +210,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
   const [error, setError] = useState(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [alertToDelete, setAlertToDelete] = useState(null);
+  const [formDialogOpen, setFormDialogOpen] = useState(false);
 
   const brandOptions = useMemo(
     () => (Array.isArray(brands) ? brands : []).map((b) => ({
@@ -299,17 +291,14 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
         const next = { ...prev, [field]: value };
         if (isBase) next.metric_type = 'base';
 
-        // [Modified] Logic for Conversion Rate and AOV
+        // conversion_rate and AOV are the only two "computed" metrics — always
+        // auto-set as derived with their fixed formula, never user-editable.
         if (value === 'conversion_rate') {
           next.metric_type = 'derived';
           next.formula = '(total_orders / total_sessions)*100';
         } else if (value === 'aov') {
-          // For AOV, if they are already on derived or switch to it, we want a default.
-          // But here we just switched metric. If the new metric is AOV and type is derived (or we default?), set formula.
-          // If we don't force derived, we just check current type.
-          if (prev.metric_type === 'derived') {
-            next.formula = 'total_sales / total_orders';
-          }
+          next.metric_type = 'derived';
+          next.formula = 'total_sales / total_orders';
         }
 
         if (isPerformance) {
@@ -318,27 +307,6 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
         }
         return next;
       });
-    } else if (field === 'metric_type') {
-      setForm((prev) => {
-        const next = { ...prev, [field]: value };
-        // If switching TO derived for AOV, set default
-        if (value === 'derived' && prev.metric_name === 'aov') {
-          next.formula = 'total_sales / total_orders';
-        }
-        return next;
-      });
-    } else if (field === 'trigger_mode') {
-      setForm((prev) => ({
-        ...prev,
-        trigger_mode: value,
-        is_dsl_engine_alert: value === 'dsl_engine',
-      }));
-    } else if (field === 'is_dsl_engine_alert') {
-      setForm((prev) => ({
-        ...prev,
-        is_dsl_engine_alert: Boolean(value),
-        trigger_mode: value ? 'dsl_engine' : 'alert_system',
-      }));
     } else {
       setForm((prev) => ({ ...prev, [field]: value }));
     }
@@ -370,6 +338,15 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
     setValidationErrors({});
   }, [defaultBrandKey, brandOptions]);
 
+  const openCreateDialog = () => {
+    resetForm();
+    setFormDialogOpen(true);
+  };
+
+  const closeFormDialog = () => {
+    setFormDialogOpen(false);
+  };
+
   const fillFormForEdit = (alert) => {
     const deriveLookbackDays = () => {
       if (alert.lookback_days != null && alert.lookback_days !== '') {
@@ -400,8 +377,6 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
       severity: alert.severity || 'low',
       cooldown_minutes: String(alert.cooldown_minutes ?? 30),
       lookback_days: String(deriveLookbackDays() ?? ''),
-      is_dsl_engine_alert: alert.is_dsl_engine_alert === true,
-      trigger_mode: alert.trigger_mode || (alert.is_dsl_engine_alert ? 'dsl_engine' : 'alert_system'),
       quiet_hours_start: formatTimeValue(alert.quiet_hours_start),
       quiet_hours_end: formatTimeValue(alert.quiet_hours_end),
       minimum_volume: normalizeMinimumVolume(alert.minimum_volume),
@@ -413,6 +388,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
     });
     setValidationErrors({});
     setError(null);
+    setFormDialogOpen(true);
   };
 
   const buildPayload = () => {
@@ -436,8 +412,8 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
       lookback_start: null,
       lookback_end: null,
       lookback_days: form.metric_name === 'performance' ? null : lookbackDays,
-      is_dsl_engine_alert: Boolean(form.is_dsl_engine_alert),
-      trigger_mode: form.trigger_mode || (form.is_dsl_engine_alert ? 'dsl_engine' : 'alert_system'),
+      is_dsl_engine_alert: false,
+      trigger_mode: 'alert_system',
       quiet_hours_start: form.quiet_hours_start || null,
       quiet_hours_end: form.quiet_hours_end || null,
       minimum_volume: minimumVolume,
@@ -477,7 +453,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
   };
 
   const handleSubmit = async (event) => {
-    event.preventDefault();
+    event?.preventDefault?.();
     if (!validate()) {
       toast.error("Please fix the errors in the form");
       return;
@@ -497,6 +473,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
     }
     toast.success(hasId ? 'Alert updated successfully' : 'Alert created successfully');
     resetForm();
+    setFormDialogOpen(false);
     fetchAlerts();
   };
 
@@ -566,6 +543,7 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
       fetchAlerts();
       if (form.id === alertToDelete.id) {
         resetForm();
+        setFormDialogOpen(false);
       }
     }
     setDeleteDialogOpen(false);
@@ -592,37 +570,34 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
 
   return (
     <Stack spacing={4} sx={{ maxWidth: 1600, mx: 'auto' }}>
-      {/* Create / Edit Section */}
-      <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-        <CardHeader
-          title={form.id ? 'Edit Alert Configuration' : 'New Alert Configuration'}
-          subheader={
-            <Typography variant="caption" color="text.secondary">
-              Define metric thresholds and notification rules for your brands
-            </Typography>
-          }
-          titleTypographyProps={{ variant: 'h6', fontWeight: 700 }}
-          action={
-            form.id && (
-              <Button
-                startIcon={<AddCircleOutlineIcon />}
-                onClick={resetForm}
-                size="small"
-              >
-                Create New
-              </Button>
-            )
-          }
-        />
+      <Alert severity="warning" sx={{ borderRadius: 2 }}>
+        Alert evaluation is not currently active — these rules are saved but are not being monitored against live
+        metrics.
+      </Alert>
 
-        <CardContent sx={{ pt: 0 }} component="form" onSubmit={handleSubmit}>
+      {/* Create / Edit Dialog */}
+      <Dialog
+        open={formDialogOpen}
+        onClose={closeFormDialog}
+        fullWidth
+        maxWidth="md"
+        PaperProps={{ sx: { borderRadius: '20px', bgcolor: isDark ? '#1a1a1a' : '#fff' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          {form.id ? 'Edit Alert Configuration' : 'New Alert Configuration'}
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 400 }}>
+            Define metric thresholds and notification rules for your brands
+          </Typography>
+        </DialogTitle>
+
+        <DialogContent>
           {error && (
-            <Alert severity="error" sx={{ mb: 4, borderRadius: 2 }}>
+            <Alert severity="error" sx={{ mb: 3, mt: 1, borderRadius: 2 }}>
               {error}
             </Alert>
           )}
 
-          <Grid container spacing={3}>
+          <Grid container spacing={3} sx={{ mt: 0.5 }}>
 
             {/* --- General Information --- */}
             <Grid item xs={12}>
@@ -660,33 +635,6 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 {validationErrors.brand_key && <FormHelperText>{validationErrors.brand_key}</FormHelperText>}
               </FormControl>
             </Grid>
-            <Grid item xs={12} md={6}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Trigger Mode</InputLabel>
-                <Select
-                  value={form.trigger_mode}
-                  onChange={handleInputChange('trigger_mode')}
-                  label="Trigger Mode"
-                >
-                  {TRIGGER_MODE_OPTIONS.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={Boolean(form.is_dsl_engine_alert)}
-                    onChange={handleInputChange('is_dsl_engine_alert')}
-                    color="primary"
-                  />
-                }
-                label="DSL Engine Alert"
-              />
-            </Grid>
-
             {/* --- Metric Logic --- */}
             <Grid item xs={12}>
               <Divider sx={{ my: 2 }} />
@@ -712,40 +660,26 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
               </FormControl>
             </Grid>
             <Grid item xs={12} md={6}>
-              <FormControl fullWidth size="small" error={!!validationErrors.metric_type}>
-                <InputLabel>Logic Type</InputLabel>
-                <Select
-                  value={form.metric_type}
-                  onChange={handleInputChange('metric_type')}
-                  label="Logic Type"
-                  disabled={BASE_METRICS.includes(form.metric_name) || form.metric_name === 'conversion_rate'}
+              {form.metric_type === 'derived' && form.formula ? (
+                <Box
+                  sx={{
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    px: 2,
+                    py: 1,
+                    borderRadius: 2,
+                    border: '1px dashed',
+                    borderColor: 'divider',
+                    bgcolor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                  }}
                 >
-                  {METRIC_TYPES.filter(opt => {
-                    if (form.metric_name === 'conversion_rate') return opt.value === 'derived';
-                    return true;
-                  }).map((option) => (
-                    <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                  ))}
-                </Select>
-                {validationErrors.metric_type && <FormHelperText>{validationErrors.metric_type}</FormHelperText>}
-              </FormControl>
+                  <Typography variant="caption" color="text.secondary">
+                    Computed automatically as <code>{form.formula}</code>
+                  </Typography>
+                </Box>
+              ) : null}
             </Grid>
-
-            {form.metric_type === 'derived' && (
-              <Grid item xs={12}>
-                <TextField
-                  label="Derived Formula (SQL)"
-                  value={form.formula}
-                  onChange={handleInputChange('formula')}
-                  fullWidth
-                  multiline
-                  minRows={2}
-                  helperText={validationErrors.formula || "Example: (sales / visits) * 100"}
-                  error={!!validationErrors.formula}
-                  sx={{ '& .MuiOutlinedInput-root': { fontFamily: 'monospace' } }}
-                />
-              </Grid>
-            )}
 
             <Grid item xs={12} md={6}>
               <FormControl fullWidth size="small">
@@ -802,6 +736,8 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
                 InputProps={{
                   endAdornment: <InputAdornment position="end">Val</InputAdornment>,
                 }}
+                error={!!validationErrors.critical_threshold}
+                helperText={validationErrors.critical_threshold}
                 sx={{ '& input': { colorScheme: theme.palette.mode } }}
               />
             </Grid>
@@ -915,72 +851,30 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
             </Grid>
 
             <Grid item xs={12} md={6}>
-              <Box>
-                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
-                  Quiet Hours Start (IST)
-                </Typography>
-                <Stack direction="row" spacing={1}>
-                  <FormControl fullWidth size="small">
-                    <Select
-                      value={form.quiet_hours_start ? form.quiet_hours_start.split(':')[0] : '00'}
-                      onChange={(e) => {
-                        const mm = form.quiet_hours_start ? form.quiet_hours_start.split(':')[1] : '00';
-                        setForm(prev => ({ ...prev, quiet_hours_start: `${e.target.value}:${mm}` }));
-                      }}
-                      MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
-                    >
-                      {HOURS.map(h => <MenuItem key={h} value={h}>{h}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                  <Typography sx={{ alignSelf: 'center' }}>:</Typography>
-                  <FormControl fullWidth size="small">
-                    <Select
-                      value={form.quiet_hours_start ? form.quiet_hours_start.split(':')[1] : '00'}
-                      onChange={(e) => {
-                        const hh = form.quiet_hours_start ? form.quiet_hours_start.split(':')[0] : '00';
-                        setForm(prev => ({ ...prev, quiet_hours_start: `${hh}:${e.target.value}` }));
-                      }}
-                      MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
-                    >
-                      {MINUTES.map(m => <MenuItem key={m} value={m}>{m}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                </Stack>
-              </Box>
+              <FormControl fullWidth size="small">
+                <InputLabel>Quiet Hours Start (IST)</InputLabel>
+                <Select
+                  label="Quiet Hours Start (IST)"
+                  value={form.quiet_hours_start ? form.quiet_hours_start.split(':')[0] : '00'}
+                  onChange={(e) => setForm(prev => ({ ...prev, quiet_hours_start: `${e.target.value}:00` }))}
+                  MenuProps={{ PaperProps: { sx: { maxHeight: 240 } } }}
+                >
+                  {HOURS.map(h => <MenuItem key={h} value={h}>{h}:00</MenuItem>)}
+                </Select>
+              </FormControl>
             </Grid>
             <Grid item xs={12} md={6}>
-              <Box>
-                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
-                  Quiet Hours End (IST)
-                </Typography>
-                <Stack direction="row" spacing={1}>
-                  <FormControl fullWidth size="small">
-                    <Select
-                      value={form.quiet_hours_end ? form.quiet_hours_end.split(':')[0] : '00'}
-                      onChange={(e) => {
-                        const mm = form.quiet_hours_end ? form.quiet_hours_end.split(':')[1] : '00';
-                        setForm(prev => ({ ...prev, quiet_hours_end: `${e.target.value}:${mm}` }));
-                      }}
-                      MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
-                    >
-                      {HOURS.map(h => <MenuItem key={h} value={h}>{h}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                  <Typography sx={{ alignSelf: 'center' }}>:</Typography>
-                  <FormControl fullWidth size="small">
-                    <Select
-                      value={form.quiet_hours_end ? form.quiet_hours_end.split(':')[1] : '00'}
-                      onChange={(e) => {
-                        const hh = form.quiet_hours_end ? form.quiet_hours_end.split(':')[0] : '00';
-                        setForm(prev => ({ ...prev, quiet_hours_end: `${hh}:${e.target.value}` }));
-                      }}
-                      MenuProps={{ PaperProps: { sx: { maxHeight: 200 } } }}
-                    >
-                      {MINUTES.map(m => <MenuItem key={m} value={m}>{m}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                </Stack>
-              </Box>
+              <FormControl fullWidth size="small">
+                <InputLabel>Quiet Hours End (IST)</InputLabel>
+                <Select
+                  label="Quiet Hours End (IST)"
+                  value={form.quiet_hours_end ? form.quiet_hours_end.split(':')[0] : '00'}
+                  onChange={(e) => setForm(prev => ({ ...prev, quiet_hours_end: `${e.target.value}:00` }))}
+                  MenuProps={{ PaperProps: { sx: { maxHeight: 240 } } }}
+                >
+                  {HOURS.map(h => <MenuItem key={h} value={h}>{h}:00</MenuItem>)}
+                </Select>
+              </FormControl>
             </Grid>
 
             {/* --- Delivery --- */}
@@ -1043,39 +937,39 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
               </Box>
             </Grid>
 
-            {/* --- Actions --- */}
+            {/* --- Enable --- */}
             <Grid item xs={12}>
               <Divider sx={{ my: 2 }} />
-              <Stack direction="row" justifyContent="flex-end" spacing={2} alignItems="center">
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={form.is_active}
-                      onChange={(event) => setForm((prev) => ({ ...prev, is_active: event.target.checked }))}
-                      color="success"
-                    />
-                  }
-                  label={
-                    <Typography variant="body2" fontWeight={600}>
-                      Enable Alert
-                    </Typography>
-                  }
-                />
-                <Button
-                  type="submit"
-                  variant="contained"
-                  size="large"
-                  disabled={saving}
-                  sx={{ px: 4 }}
-                >
-                  {form.id ? 'Save Changes' : 'Create Alert'}
-                </Button>
-              </Stack>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={form.is_active}
+                    onChange={(event) => setForm((prev) => ({ ...prev, is_active: event.target.checked }))}
+                    color="success"
+                  />
+                }
+                label={
+                  <Typography variant="body2" fontWeight={600}>
+                    Enable Alert
+                  </Typography>
+                }
+              />
             </Grid>
 
           </Grid>
-        </CardContent>
-      </Card>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={closeFormDialog}>Cancel</Button>
+          <Button
+            onClick={handleSubmit}
+            variant="contained"
+            disabled={saving}
+            sx={{ px: 4, bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
+          >
+            {form.id ? 'Save Changes' : 'Create Alert'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* List Section */}
       <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
@@ -1088,11 +982,26 @@ export default function AlertsAdmin({ brands = [], defaultBrandKey = '' }) {
           }
           titleTypographyProps={{ variant: 'h6', fontWeight: 700 }}
           action={
-            <Tooltip title="Refresh List">
-              <IconButton onClick={fetchAlerts} disabled={loading} size="small">
-                <RefreshIcon />
-              </IconButton>
-            </Tooltip>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Tooltip title="Refresh List">
+                <IconButton onClick={fetchAlerts} disabled={loading} size="small">
+                  <RefreshIcon />
+                </IconButton>
+              </Tooltip>
+              <Button
+                variant="contained"
+                startIcon={<AddCircleOutlineIcon />}
+                onClick={openCreateDialog}
+                sx={{
+                  borderRadius: '12px',
+                  textTransform: 'none',
+                  bgcolor: '#10b981',
+                  '&:hover': { bgcolor: '#059669' },
+                }}
+              >
+                Create Alert
+              </Button>
+            </Stack>
           }
         />
 
