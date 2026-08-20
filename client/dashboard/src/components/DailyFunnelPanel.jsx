@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dayjs from "dayjs";
 import {
   Accordion,
@@ -13,10 +13,12 @@ import {
   Collapse,
   FormControl,
   IconButton,
+  InputAdornment,
   InputLabel,
   List,
   ListItemButton,
   ListItemText,
+  ListSubheader,
   MenuItem,
   Popover,
   Select,
@@ -41,6 +43,7 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import DownloadIcon from "@mui/icons-material/Download";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import SearchIcon from "@mui/icons-material/Search";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import { DatePicker } from "@shopify/polaris";
@@ -710,6 +713,11 @@ export default function DailyFunnelPanel({
   }, [initialEnd]);
 
   useEffect(() => {
+    setUtmSourceFilter("");
+    setUtmPage(0);
+  }, [brandKey]);
+
+  useEffect(() => {
     let cancelled = false;
 
     if (!brandKey || !startDate || !endDate) {
@@ -845,6 +853,9 @@ export default function DailyFunnelPanel({
     };
   }, [brandKey, canAccessUtmFunnelTable, utmDate, compareUtmDate, utmSourceFilter]);
 
+  const [utmSourceSearch, setUtmSourceSearch] = useState("");
+  const utmSourceSearchInputRef = useRef(null);
+
   const utmSourceOptions = useMemo(
     () =>
       Array.from(
@@ -856,6 +867,14 @@ export default function DailyFunnelPanel({
       ).sort((left, right) => left.localeCompare(right)),
     [utmSourceRows],
   );
+
+  const filteredUtmSourceOptions = useMemo(() => {
+    if (!utmSourceSearch.trim()) return utmSourceOptions;
+    const query = utmSourceSearch.trim().toLowerCase();
+    return utmSourceOptions.filter((source) =>
+      source.toLowerCase().includes(query),
+    );
+  }, [utmSourceOptions, utmSourceSearch]);
 
   const normalizedRows = useMemo(
     () =>
@@ -1591,14 +1610,17 @@ export default function DailyFunnelPanel({
                     setUtmSourceFilter(event.target.value);
                     setUtmPage(0);
                   }}
+                  onClose={() => setUtmSourceSearch("")}
                   MenuProps={{
+                    autoFocus: false,
                     PaperProps: {
                       sx: {
                         width: 220,
                         maxWidth: 220,
-                        maxHeight: 360,
+                        maxHeight: 400,
                       },
                     },
+                    onAnimationEnd: () => utmSourceSearchInputRef.current?.focus(),
                   }}
                   sx={{
                     "& .MuiSelect-select": {
@@ -1608,20 +1630,60 @@ export default function DailyFunnelPanel({
                     },
                   }}
                 >
-                  <MenuItem value="">All Sources</MenuItem>
-                  {utmSourceOptions.map((source) => (
-                    <MenuItem
-                      key={source}
-                      value={source}
-                      sx={{
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
+                  <ListSubheader
+                    sx={{
+                      bgcolor: "background.paper",
+                      zIndex: 2,
+                      pt: 0,
+                      pb: 0.5,
+                      lineHeight: "initial",
+                    }}
+                  >
+                    <TextField
+                      size="small"
+                      autoFocus
+                      placeholder="Search sources…"
+                      fullWidth
+                      sx={{ mt: 1 }}
+                      inputRef={utmSourceSearchInputRef}
+                      value={utmSourceSearch}
+                      onChange={(event) => setUtmSourceSearch(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Escape") {
+                          event.stopPropagation();
+                        }
                       }}
-                    >
-                      {source}
-                    </MenuItem>
-                  ))}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <SearchIcon fontSize="small" color="action" />
+                          </InputAdornment>
+                        ),
+                      }}
+                    />
+                  </ListSubheader>
+                  <MenuItem value="">All Sources</MenuItem>
+                  {filteredUtmSourceOptions.length === 0 ? (
+                    <Box sx={{ px: 2, py: 1.5 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        No sources found
+                      </Typography>
+                    </Box>
+                  ) : (
+                    filteredUtmSourceOptions.map((source) => (
+                      <MenuItem
+                        key={source}
+                        value={source}
+                        sx={{
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {source}
+                      </MenuItem>
+                    ))
+                  )}
                 </Select>
               </FormControl>
               <Stack
@@ -1954,7 +2016,10 @@ export default function DailyFunnelPanel({
                         <TableCell
                           key={column.id}
                           align={column.align}
-                          sx={{ whiteSpace: "nowrap" }}
+                          sx={{
+                            whiteSpace: "nowrap",
+                            ...(column.id === "utm_source" ? { maxWidth: 220 } : {}),
+                          }}
                         >
                           <TableSortLabel
                             active={utmSortBy === column.id}
@@ -1976,10 +2041,22 @@ export default function DailyFunnelPanel({
                           sx={{
                             fontWeight: 700,
                             color: "primary.main",
-                            whiteSpace: "nowrap",
+                            maxWidth: 220,
                           }}
                         >
-                          {row.utm_source}
+                          <Tooltip title={row.utm_source} placement="top" arrow>
+                            <Box
+                              component="span"
+                              sx={{
+                                display: "block",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {row.utm_source}
+                            </Box>
+                          </Tooltip>
                         </TableCell>
                         {UTM_COLUMNS.filter((column) => column.id !== "utm_source").map((column) => {
                           const metric = getUtmDeltaMetricValue(row, column.id, displayMode);
