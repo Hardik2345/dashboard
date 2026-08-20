@@ -1263,6 +1263,7 @@ export async function getDailyFunnel(args = {}) {
       end: args.end,
       utm_date: args.utmDate,
       compare_utm_date: args.compareUtmDate,
+      utm_source: args.utmSource || undefined,
       include_utm:
         typeof args.includeUtm === "boolean" ? String(args.includeUtm) : undefined,
       include_daily:
@@ -1277,6 +1278,7 @@ export async function getDailyFunnel(args = {}) {
     rows: Array.isArray(json?.rows) ? json.rows : [],
     utmRows: Array.isArray(json?.utmRows) ? json.utmRows : [],
     utmDate: json?.utmDate || null,
+    utmSource: json?.utmSource || null,
     range: json?.range || null,
     timezone: json?.timezone || "Asia/Kolkata",
     error: json?.__error,

@@ -108,6 +108,18 @@ function buildNormalizedUtmSourceSql(column = "utm_source") {
   `;
 }
 
+function buildNormalizedUtmCampaignSql(column = "utm_campaign") {
+  return `
+    CASE
+      WHEN ${column} IS NULL
+        OR TRIM(${column}) = ''
+        OR LOWER(TRIM(${column})) IN ('(none)', 'none', 'null')
+      THEN '(none)'
+      ELSE TRIM(${column})
+    END
+  `;
+}
+
 async function queryCurrentRowTwoSessionTotals(
   conn,
   start,
@@ -605,6 +617,140 @@ async function queryDailyFunnelUtmRowsWithDelta(conn, date, compareDate) {
 
   return (Array.isArray(currentRows) ? currentRows : []).map((row) => {
     const previous = previousMap.get(String(row.utm_source || 'direct')) || {};
+    return {
+      ...row,
+      previous_date: previousDate,
+      previous: {
+        sales: Number(previous.sales || 0),
+        sessions: Number(previous.sessions || 0),
+        atc_sessions: Number(previous.atc_sessions || 0),
+        orders: Number(previous.orders || 0),
+        prepaid_orders: Number(previous.prepaid_orders || 0),
+        cod_orders: Number(previous.cod_orders || 0),
+        partially_paid_orders: Number(previous.partially_paid_orders || 0),
+      },
+      deltas: {
+        sales: buildDeltaMetric(row.sales, previous.sales),
+        sessions: buildDeltaMetric(row.sessions, previous.sessions),
+        atc_sessions: buildDeltaMetric(row.atc_sessions, previous.atc_sessions),
+        orders: buildDeltaMetric(row.orders, previous.orders),
+        prepaid_orders: buildDeltaMetric(row.prepaid_orders, previous.prepaid_orders),
+        cod_orders: buildDeltaMetric(row.cod_orders, previous.cod_orders),
+        partially_paid_orders: buildDeltaMetric(row.partially_paid_orders, previous.partially_paid_orders),
+      },
+    };
+  });
+}
+
+async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource) {
+  const normalizedSourceSql = buildNormalizedUtmSourceSql();
+  const normalizedCampaignSql = buildNormalizedUtmCampaignSql();
+  const [baseRows, orderRows] = await Promise.all([
+    conn.query(
+      `
+        SELECT
+          ${normalizedCampaignSql} AS utm_campaign,
+          COALESCE(SUM(sales), 0) AS sales,
+          COALESCE(SUM(sessions), 0) AS sessions,
+          COALESCE(SUM(atc_sessions), 0) AS atc_sessions,
+          COALESCE(SUM(orders), 0) AS orders
+        FROM utm_source_campaign_daily
+        WHERE metric_date = ? AND utm_source = ?
+        GROUP BY ${normalizedCampaignSql}
+      `,
+      {
+        type: QueryTypes.SELECT,
+        replacements: [date, utmSource],
+      },
+    ),
+    conn.query(
+      `
+        SELECT
+          utm_campaign,
+          COALESCE(SUM(CASE WHEN payment_type = 'Prepaid' THEN 1 ELSE 0 END), 0) AS prepaid_orders,
+          COALESCE(SUM(CASE WHEN payment_type = 'COD' THEN 1 ELSE 0 END), 0) AS cod_orders,
+          COALESCE(SUM(CASE WHEN payment_type = 'Partial' THEN 1 ELSE 0 END), 0) AS partially_paid_orders
+        FROM (
+          SELECT
+            ${normalizedCampaignSql} AS utm_campaign,
+            order_name,
+            CASE
+              WHEN payment_gateway_names LIKE '%Gokwik PPCOD%' THEN 'Partial'
+              WHEN (
+                payment_gateway_names IS NULL
+                OR payment_gateway_names = ''
+                OR payment_gateway_names LIKE '%Cash on Delivery (COD)%'
+                OR payment_gateway_names LIKE '%cash_on_delivery%'
+              ) AND (
+                payment_gateway_names NOT LIKE '%Gokwik PPCOD%'
+                OR payment_gateway_names IS NULL
+              ) THEN 'COD'
+              ELSE 'Prepaid'
+            END AS payment_type
+          FROM shopify_orders
+          WHERE created_date = ? AND ${normalizedSourceSql} = ?
+          GROUP BY ${normalizedCampaignSql}, payment_gateway_names, order_name
+        ) grouped_orders
+        GROUP BY utm_campaign
+      `,
+      {
+        type: QueryTypes.SELECT,
+        replacements: [date, utmSource],
+      },
+    ),
+  ]);
+
+  const byCampaign = new Map();
+
+  for (const row of Array.isArray(baseRows) ? baseRows : []) {
+    byCampaign.set(String(row.utm_campaign || "(none)"), {
+      utm_source: String(row.utm_campaign || "(none)"),
+      sales: Number(row.sales || 0),
+      sessions: Number(row.sessions || 0),
+      atc_sessions: Number(row.atc_sessions || 0),
+      orders: Number(row.orders || 0),
+      prepaid_orders: 0,
+      cod_orders: 0,
+      partially_paid_orders: 0,
+    });
+  }
+
+  for (const row of Array.isArray(orderRows) ? orderRows : []) {
+    const campaign = String(row.utm_campaign || "(none)");
+    const existing = byCampaign.get(campaign) || {
+      utm_source: campaign,
+      sales: 0,
+      sessions: 0,
+      atc_sessions: 0,
+      orders: 0,
+      prepaid_orders: 0,
+      cod_orders: 0,
+      partially_paid_orders: 0,
+    };
+    existing.prepaid_orders = Number(row.prepaid_orders || 0);
+    existing.cod_orders = Number(row.cod_orders || 0);
+    existing.partially_paid_orders = Number(row.partially_paid_orders || 0);
+    byCampaign.set(campaign, existing);
+  }
+
+  return Array.from(byCampaign.values()).sort((left, right) =>
+    String(left.utm_source || "").localeCompare(String(right.utm_source || "")),
+  );
+}
+
+async function queryDailyFunnelUtmCampaignRowsWithDelta(conn, date, compareDate, utmSource) {
+  const previousDate = compareDate || getPreviousIsoDate(date);
+  const [currentRows, previousRows] = await Promise.all([
+    queryDailyFunnelUtmCampaignRows(conn, date, utmSource),
+    queryDailyFunnelUtmCampaignRows(conn, previousDate, utmSource),
+  ]);
+
+  const previousMap = new Map(
+    (Array.isArray(previousRows) ? previousRows : []).map((row) => [String(row.utm_source || '(none)'), row]),
+  );
+
+  return (Array.isArray(currentRows) ? currentRows : []).map((row) => {
+    const previous = previousMap.get(String(row.utm_source || '(none)')) || {};
     return {
       ...row,
       previous_date: previousDate,
@@ -2468,7 +2614,14 @@ function buildMetricsSnapshotService(deps = {}) {
           )
         : Promise.resolve([]),
       includeUtm
-        ? queryDailyFunnelUtmRowsWithDelta(spec.conn, spec.utmDate || spec.end, spec.compareUtmDate)
+        ? (spec.utmSource
+            ? queryDailyFunnelUtmCampaignRowsWithDelta(
+                spec.conn,
+                spec.utmDate || spec.end,
+                spec.compareUtmDate,
+                spec.utmSource,
+              )
+            : queryDailyFunnelUtmRowsWithDelta(spec.conn, spec.utmDate || spec.end, spec.compareUtmDate))
         : Promise.resolve([]),
     ]);
 
@@ -2510,6 +2663,7 @@ function buildMetricsSnapshotService(deps = {}) {
       range: { start: spec.start, end: spec.end },
       rows,
       utmDate: includeUtm ? (spec.utmDate || spec.end) : null,
+      utmSource: includeUtm ? (spec.utmSource || null) : null,
       utmRows: includeUtm ? utmRows : [],
     };
   }

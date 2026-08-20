@@ -32,6 +32,7 @@ import {
   TextField,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
   useTheme,
 } from "@mui/material";
@@ -504,7 +505,7 @@ function FunnelDateRangePicker({ startDate, endDate, onApply }) {
   );
 }
 
-export function FunnelSingleDatePicker({ date, onApply }) {
+export function FunnelSingleDatePicker({ date, onApply, compact = false }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const [month, setMonth] = useState(dayjs(date || dayjs()).month());
   const [year, setYear] = useState(dayjs(date || dayjs()).year());
@@ -531,27 +532,28 @@ export function FunnelSingleDatePicker({ date, onApply }) {
 
   const displayLabel = useMemo(() => {
     const selectedDate = date ? dayjs(date) : null;
-    return selectedDate?.isValid()
-      ? selectedDate.format("MMM DD, YYYY")
-      : "Select date";
-  }, [date]);
+    if (!selectedDate?.isValid()) return "Select date";
+    return compact
+      ? selectedDate.format("DD MMM YY")
+      : selectedDate.format("MMM DD, YYYY");
+  }, [date, compact]);
 
   return (
     <>
       <Button
         onClick={handleOpen}
-        startIcon={<CalendarDays size={16} />}
-        endIcon={<ChevronDown size={14} />}
+        startIcon={<CalendarDays size={compact ? 14 : 16} />}
+        endIcon={<ChevronDown size={compact ? 12 : 14} />}
         sx={{
-          px: 2,
-          minWidth: 200,
-          height: 48,
+          px: compact ? 1.25 : 2,
+          minWidth: compact ? "fit-content" : 200,
+          height: compact ? 36 : 48,
           color: "text.primary",
           textTransform: "none",
           fontWeight: 500,
-          fontSize: "0.875rem",
+          fontSize: compact ? "0.75rem" : "0.875rem",
           justifyContent: "space-between",
-          borderRadius: "14px",
+          borderRadius: compact ? "10px" : "14px",
           border: "1px solid",
           borderColor: isDark
             ? "rgba(255,255,255,0.12)"
@@ -666,11 +668,18 @@ export default function DailyFunnelPanel({
   const [displayMode, setDisplayMode] = useState("count");
   const [dailyPercentBasis, setDailyPercentBasis] = useState("sessions");
   const [rows, setRows] = useState([]);
-  const [utmRows, setUtmRows] = useState([]);
+  const [utmSourceRows, setUtmSourceRows] = useState([]);
+  const [utmCampaignRows, setUtmCampaignRows] = useState([]);
+  const [utmSourceFilter, setUtmSourceFilter] = useState("");
   const [loading, setLoading] = useState(false);
-  const [utmLoading, setUtmLoading] = useState(false);
+  const [utmSourceLoading, setUtmSourceLoading] = useState(false);
+  const [utmCampaignLoading, setUtmCampaignLoading] = useState(false);
   const [error, setError] = useState("");
-  const [utmError, setUtmError] = useState("");
+  const [utmSourceError, setUtmSourceError] = useState("");
+  const [utmCampaignError, setUtmCampaignError] = useState("");
+  const utmLoading = utmSourceFilter ? utmCampaignLoading : utmSourceLoading;
+  const utmError = utmSourceFilter ? utmCampaignError : utmSourceError;
+  const utmRows = utmSourceFilter ? utmCampaignRows : utmSourceRows;
   const [dailySortBy, setDailySortBy] = useState("date");
   const [dailySortDir, setDailySortDir] = useState("desc");
   const [utmSortBy, setUtmSortBy] = useState("sessions");
@@ -747,15 +756,15 @@ export default function DailyFunnelPanel({
     let cancelled = false;
 
     if (!canAccessUtmFunnelTable || !brandKey || !utmDate) {
-      setUtmRows([]);
-      setUtmError("");
+      setUtmSourceRows([]);
+      setUtmSourceError("");
       return () => {
         cancelled = true;
       };
     }
 
-    setUtmLoading(true);
-    setUtmError("");
+    setUtmSourceLoading(true);
+    setUtmSourceError("");
 
     getDailyFunnel({
       brand_key: brandKey,
@@ -769,25 +778,84 @@ export default function DailyFunnelPanel({
       .then((result) => {
         if (cancelled) return;
         if (result?.error) {
-          setUtmRows([]);
-          setUtmError("Failed to load UTM source funnel rows.");
+          setUtmSourceRows([]);
+          setUtmSourceError("Failed to load UTM source funnel rows.");
           return;
         }
-        setUtmRows(Array.isArray(result?.utmRows) ? result.utmRows : []);
+        setUtmSourceRows(Array.isArray(result?.utmRows) ? result.utmRows : []);
       })
       .catch(() => {
         if (cancelled) return;
-        setUtmRows([]);
-        setUtmError("Failed to load UTM source funnel rows.");
+        setUtmSourceRows([]);
+        setUtmSourceError("Failed to load UTM source funnel rows.");
       })
       .finally(() => {
-        if (!cancelled) setUtmLoading(false);
+        if (!cancelled) setUtmSourceLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
   }, [brandKey, canAccessUtmFunnelTable, utmDate, compareUtmDate]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!canAccessUtmFunnelTable || !brandKey || !utmDate || !utmSourceFilter) {
+      setUtmCampaignRows([]);
+      setUtmCampaignError("");
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setUtmCampaignLoading(true);
+    setUtmCampaignError("");
+
+    getDailyFunnel({
+      brand_key: brandKey,
+      start: utmDate,
+      end: utmDate,
+      utmDate,
+      compareUtmDate,
+      utmSource: utmSourceFilter,
+      includeDaily: false,
+      includeUtm: true,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        if (result?.error) {
+          setUtmCampaignRows([]);
+          setUtmCampaignError("Failed to load UTM campaign rows.");
+          return;
+        }
+        setUtmCampaignRows(Array.isArray(result?.utmRows) ? result.utmRows : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setUtmCampaignRows([]);
+        setUtmCampaignError("Failed to load UTM campaign rows.");
+      })
+      .finally(() => {
+        if (!cancelled) setUtmCampaignLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [brandKey, canAccessUtmFunnelTable, utmDate, compareUtmDate, utmSourceFilter]);
+
+  const utmSourceOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (Array.isArray(utmSourceRows) ? utmSourceRows : []).map(
+            (row) => row?.utm_source || "direct",
+          ),
+        ),
+      ).sort((left, right) => left.localeCompare(right)),
+    [utmSourceRows],
+  );
 
   const normalizedRows = useMemo(
     () =>
@@ -1185,7 +1253,7 @@ export default function DailyFunnelPanel({
 
     const headers = [
       "Date",
-      "UTM Source",
+      utmSourceFilter ? "UTM Campaign" : "UTM Source",
       "Sessions",
       "ATC Sessions",
       "Orders",
@@ -1223,13 +1291,16 @@ export default function DailyFunnelPanel({
     });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
+    const sourceSuffix = utmSourceFilter
+      ? `-${utmSourceFilter.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`
+      : "";
     link.href = url;
-    link.download = `utm-source-funnel-${(brandKey || "brand").toLowerCase()}-${utmDate || dayjs().format("YYYY-MM-DD")}.csv`;
+    link.download = `utm-source-funnel-${(brandKey || "brand").toLowerCase()}${sourceSuffix}-${utmDate || dayjs().format("YYYY-MM-DD")}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  }, [brandKey, filteredUtmRows, utmDate]);
+  }, [brandKey, filteredUtmRows, utmDate, utmSourceFilter]);
 
   const hasRows = sortedDailyRows.length > 0;
   const hasUtmRows = filteredUtmRows.length > 0;
@@ -1507,10 +1578,57 @@ export default function DailyFunnelPanel({
               spacing={1.5}
               alignItems={{ xs: "stretch", sm: "center" }}
             >
-              <Typography variant="body2" color="text.secondary">
-                Current date: {formatPanelDate(utmDate)}
+              <FormControl size="small" sx={{ minWidth: 180 }}>
+                <InputLabel>UTM Source</InputLabel>
+                <Select
+                  label="UTM Source"
+                  value={utmSourceFilter}
+                  onChange={(event) => {
+                    setUtmSourceFilter(event.target.value);
+                    setUtmPage(0);
+                  }}
+                  MenuProps={{
+                    PaperProps: {
+                      sx: {
+                        width: 220,
+                        maxWidth: 220,
+                        maxHeight: 360,
+                      },
+                    },
+                  }}
+                  sx={{
+                    "& .MuiSelect-select": {
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    },
+                  }}
+                >
+                  <MenuItem value="">All Sources</MenuItem>
+                  {utmSourceOptions.map((source) => (
+                    <MenuItem
+                      key={source}
+                      value={source}
+                      sx={{
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {source}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ whiteSpace: "nowrap" }}
+              >
+                Date
               </Typography>
               <FunnelSingleDatePicker
+                compact
                 date={utmDate}
                 onApply={(nextDate) => {
                   const formatted = nextDate.format("YYYY-MM-DD");
@@ -1520,25 +1638,35 @@ export default function DailyFunnelPanel({
                   );
                 }}
               />
-              <Typography variant="body2" color="text.secondary">
-                Compare to: {formatPanelDate(compareUtmDate)}
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ whiteSpace: "nowrap" }}
+              >
+                vs
               </Typography>
               <FunnelSingleDatePicker
+                compact
                 date={compareUtmDate}
                 onApply={(nextDate) =>
                   setCompareUtmDate(nextDate.format("YYYY-MM-DD"))
                 }
               />
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<DownloadIcon />}
-                onClick={handleExportUtmCsv}
-                disabled={!hasUtmRows}
-                sx={{ minWidth: "fit-content" }}
-              >
-                Export CSV
-              </Button>
+              <Tooltip title="Export CSV">
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={handleExportUtmCsv}
+                    disabled={!hasUtmRows}
+                    sx={{
+                      border: "1px solid",
+                      borderColor: "divider",
+                    }}
+                  >
+                    <DownloadIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
             </Stack>
           </Stack>
           <Accordion
@@ -1821,7 +1949,9 @@ export default function DailyFunnelPanel({
                             direction={utmSortBy === column.id ? utmSortDir : "asc"}
                             onClick={() => handleUtmSort(column.id)}
                           >
-                            {column.label}
+                            {column.id === "utm_source"
+                              ? (utmSourceFilter ? "UTM Campaign" : "UTM Source")
+                              : column.label}
                           </TableSortLabel>
                         </TableCell>
                       ))}
@@ -1829,7 +1959,7 @@ export default function DailyFunnelPanel({
                   </TableHead>
                   <TableBody>
                     {pagedUtmRows.map((row) => (
-                      <TableRow key={`${row.utm_source}-${utmDate}`} hover>
+                      <TableRow key={`${utmSourceFilter}-${row.utm_source}-${utmDate}`} hover>
                         <TableCell
                           sx={{
                             fontWeight: 700,
