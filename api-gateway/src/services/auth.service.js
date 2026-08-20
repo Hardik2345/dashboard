@@ -12,6 +12,7 @@ const {
     normalizePrimaryBrand,
     normalizeRole,
 } = require('./rbac.service');
+const CustomRoleService = require('./customRole.service');
 
 const REFRESH_TOKEN_EXPIRY_DAYS = process.env.REFRESH_TOKEN_EXPIRY_DAYS || 7;
 
@@ -76,10 +77,20 @@ class AuthService {
             ? normalizedUser.primary_brand_id
             : filteredMemberships[0]?.brand_id || '';
 
+        // If a Custom Role is assigned, it is the SOLE source of effective
+        // permissions — substitute it in-memory here (never persisted) so
+        // every caller (JWT generation, /auth/me) reads it via the exact
+        // same brand_memberships[].permissions field as manual mode always
+        // has, with no other code needing to change.
+        const effectivePermissions = await CustomRoleService.resolveEffectivePermissions(normalizedUser);
+        const resolvedMemberships = effectivePermissions
+            ? filteredMemberships.map((membership) => ({ ...membership, permissions: effectivePermissions }))
+            : filteredMemberships;
+
         return {
             ...normalizedUser,
             primary_brand_id: nextPrimaryBrandId,
-            brand_memberships: filteredMemberships,
+            brand_memberships: resolvedMemberships,
         };
     }
 

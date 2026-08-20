@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/auth.controller');
+const customRoleController = require('../controllers/customRole.controller');
 
 const jwksController = require('../controllers/jwks.controller');
 
@@ -19,5 +20,11 @@ router.get('/admin/users', authController.adminListUsers);
 router.post('/admin/domain-rules', authController.adminUpsertDomainRule);
 router.get('/admin/domain-rules', authController.adminListDomainRules);
 router.delete('/admin/domain-rules/:domain', authController.adminDeleteDomainRule);
+
+router.get('/admin/custom-roles', customRoleController.listCustomRoles);
+router.get('/admin/custom-roles/:id', customRoleController.getCustomRole);
+router.post('/admin/custom-roles', customRoleController.createCustomRole);
+router.patch('/admin/custom-roles/:id', customRoleController.updateCustomRole);
+router.delete('/admin/custom-roles/:id', customRoleController.deleteCustomRole);
 
 module.exports = router;

@@ -2440,7 +2440,7 @@ export default function App() {
                           utm: hasPermission("utm_filter"),
                           salesChannel: hasPermission("sales_channel_filter"),
                           deviceType: hasPermission("device_type_filter"),
-                          city: true,
+                          city: hasPermission("city_filter"),
                           discount: hasPermission("discount_filter"),
                           productType: hasPermission("product_type_filter"),
                         }}
@@ -2545,7 +2545,7 @@ export default function App() {
                         discountDisabled={discountDisabled}
                       showUtmFilter={hasPermission("utm_filter")}
                       showSalesChannel={hasPermission("sales_channel_filter")}
-                      showCityFilter
+                      showCityFilter={hasPermission("city_filter")}
                       showDiscountFilter={hasPermission("discount_filter")}
                       utmOptions={utmOptions}
                       isAuthor={isAuthor}
@@ -2557,7 +2557,7 @@ export default function App() {
                   showProductFilter={hasPermission("product_filter")}
                   showUtmFilter={hasPermission("utm_filter")}
                   showSalesChannel={hasPermission("sales_channel_filter")}
-                  showCityFilter
+                  showCityFilter={hasPermission("city_filter")}
                   showDeviceType={hasPermission("device_type_filter")}
                   open={mobileFilterOpen}
                   onClose={() => setMobileFilterOpen(false)}

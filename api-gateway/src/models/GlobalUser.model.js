@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { randomUUID } = require('crypto');
 const { AUTH_ROLES } = require('../services/rbac.service');
+const { ALL_PERMISSIONS } = require('../constants/permissions');
 
 const BrandMembershipSchema = new mongoose.Schema({
   brand_id: {
@@ -16,52 +17,7 @@ const BrandMembershipSchema = new mongoose.Schema({
   permissions: {
     type: [String],
     default: ["all"],
-    enum: [
-      "all",
-      "overall_snapshot",
-      "requests_panel",
-      "requests_timeline",
-      "bundles_panel",
-      "inventory_panel",
-      "daily_funnel_panel",
-      "utm_funnel_table",
-      "product_filter",
-      "utm_filter",
-      "product_utm_filter_sync",
-      "discount_filter",
-      "intent_metrics",
-      "dashboard_layout_customize",
-      "session_analytics",
-      "web_vitals",
-      "payment_split_order",
-      "payment_split_sales",
-      "traffic_split",
-      "sales_channel_filter",
-      "device_type_filter",
-      "product_type_filter",
-      "ci_events",
-      "rto_kpi",
-      "sessions_drop_off_funnel",
-      "product_conversion",
-      "compare_mode",
-      "multiselectable_kpi_cards",
-      "product_conversion:landing_page_path",
-      "product_conversion:sessions",
-      "product_conversion:atc",
-      "product_conversion:atc_rate",
-      "product_conversion:orders",
-      "product_conversion:sales",
-      "product_conversion:cvr",
-      "product_conversion:drr",
-      "product_conversion:doh",
-      "product_table_filters",
-      "product_table_filters:inventory",
-      "product_table_filters:page_type",
-      "product_table_filters:product_types",
-      "product_table_filters:sort_filter",
-      "daily_insight_view",
-      "health_monitor_panel",
-    ],
+    enum: ALL_PERMISSIONS,
   }
 }, { _id: false });
 
@@ -100,6 +56,14 @@ const GlobalUserSchema = new mongoose.Schema({
     enum: AUTH_ROLES,
     default: 'viewer'
   },
+  // Reusable permission bundle. When set, this is the SOLE source of the
+  // user's effective permissions (resolved dynamically at auth time in
+  // AuthService.filterUserToActiveTenants) — brand_memberships[].permissions
+  // is left untouched/historical so switching back to manual restores it.
+  custom_role_id: {
+    type: String,
+    default: null
+  },
   brand_memberships: {
     type: [BrandMembershipSchema],
     default: []
@@ -117,5 +81,6 @@ const GlobalUserSchema = new mongoose.Schema({
 GlobalUserSchema.index({ email: 1 }, { unique: true });
 GlobalUserSchema.index({ primary_brand_id: 1 });
 GlobalUserSchema.index({ role: 1 });
+GlobalUserSchema.index({ custom_role_id: 1 });
 
 module.exports = mongoose.model('GlobalUser', GlobalUserSchema);

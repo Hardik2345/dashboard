@@ -498,6 +498,27 @@ export async function adminDeleteUser(email) {
   return doDelete(`/auth/admin/users/${encodeURIComponent(email)}`);
 }
 
+// ---- Admin custom roles (Access Control) -----------------------------------
+export async function listCustomRoles() {
+  return doGet("/auth/admin/custom-roles");
+}
+
+export async function getCustomRole(id) {
+  return doGet(`/auth/admin/custom-roles/${encodeURIComponent(id)}`);
+}
+
+export async function createCustomRole(payload) {
+  return doPost("/auth/admin/custom-roles", payload);
+}
+
+export async function updateCustomRole(id, payload) {
+  return doPatch(`/auth/admin/custom-roles/${encodeURIComponent(id)}`, payload);
+}
+
+export async function deleteCustomRole(id) {
+  return doDelete(`/auth/admin/custom-roles/${encodeURIComponent(id)}`);
+}
+
 // ---- Admin domain rules ---------------------------------------------------
 export async function listDomainRules() {
   return doGet("/auth/admin/domain-rules");
