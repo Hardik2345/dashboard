@@ -1279,6 +1279,7 @@ export async function getDailyFunnel(args = {}) {
     utmRows: Array.isArray(json?.utmRows) ? json.utmRows : [],
     utmDate: json?.utmDate || null,
     utmSource: json?.utmSource || null,
+    utmCutoffHour: Number.isInteger(json?.utmCutoffHour) ? json.utmCutoffHour : null,
     range: json?.range || null,
     timezone: json?.timezone || "Asia/Kolkata",
     error: json?.__error,
