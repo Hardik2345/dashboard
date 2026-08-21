@@ -7,6 +7,7 @@ export default function DailyFunnelRouteContainer({
   hasBrand,
   activeBrandKey,
   canAccessUtmFunnelTable,
+  canAccessUtmCampaignGrain,
   canAccessPercentBasisToggle,
 }) {
   if (!hasBrand) {
@@ -20,6 +21,7 @@ export default function DailyFunnelRouteContainer({
       <DailyFunnelPanel
         brandKey={activeBrandKey}
         canAccessUtmFunnelTable={canAccessUtmFunnelTable}
+        canAccessUtmCampaignGrain={canAccessUtmCampaignGrain}
         canAccessPercentBasisToggle={canAccessPercentBasisToggle}
       />
     </Suspense>

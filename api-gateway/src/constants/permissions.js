@@ -10,6 +10,7 @@ const ALL_PERMISSIONS = Object.freeze([
   "inventory_panel",
   "daily_funnel_panel",
   "utm_funnel_table",
+  "utm_funnel_table:utm_campaign_grain",
   "product_filter",
   "utm_filter",
   "product_utm_filter_sync",
