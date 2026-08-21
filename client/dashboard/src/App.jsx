@@ -594,6 +594,11 @@ export default function App() {
     return hasPermission("utm_funnel_table");
   }, [hasPermission, isAuthor]);
 
+  const canAccessUtmCampaignGrain = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("utm_funnel_table:utm_campaign_grain");
+  }, [hasPermission, isAuthor]);
+
   const canAccessRequestsPanel = useMemo(() => {
     if (isAuthor) return true;
     return hasPermission("requests_panel");
@@ -2149,6 +2154,7 @@ export default function App() {
             hasBrand={hasBrand}
             activeBrandKey={activeBrandKey}
             canAccessUtmFunnelTable={canAccessUtmFunnelTable}
+            canAccessUtmCampaignGrain={canAccessUtmCampaignGrain}
             canAccessPercentBasisToggle={isAuthor}
           />
         );

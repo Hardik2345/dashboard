@@ -652,6 +652,7 @@ export default function DailyFunnelPanel({
   initialStartDate,
   initialEndDate,
   canAccessUtmFunnelTable = true,
+  canAccessUtmCampaignGrain = true,
   canAccessPercentBasisToggle = false,
 }) {
   const initialStart = useMemo(
@@ -809,7 +810,13 @@ export default function DailyFunnelPanel({
   useEffect(() => {
     let cancelled = false;
 
-    if (!canAccessUtmFunnelTable || !brandKey || !utmDate || !utmSourceFilter) {
+    if (
+      !canAccessUtmFunnelTable ||
+      !canAccessUtmCampaignGrain ||
+      !brandKey ||
+      !utmDate ||
+      !utmSourceFilter
+    ) {
       setUtmCampaignRows([]);
       setUtmCampaignError("");
       return () => {
@@ -851,7 +858,14 @@ export default function DailyFunnelPanel({
     return () => {
       cancelled = true;
     };
-  }, [brandKey, canAccessUtmFunnelTable, utmDate, compareUtmDate, utmSourceFilter]);
+  }, [
+    brandKey,
+    canAccessUtmFunnelTable,
+    canAccessUtmCampaignGrain,
+    utmDate,
+    compareUtmDate,
+    utmSourceFilter,
+  ]);
 
   const [utmSourceSearch, setUtmSourceSearch] = useState("");
   const utmSourceSearchInputRef = useRef(null);
@@ -1598,94 +1612,96 @@ export default function DailyFunnelPanel({
               alignItems={{ xs: "stretch", sm: "center" }}
               sx={{ width: { xs: "100%", sm: "auto" } }}
             >
-              <FormControl
-                size="small"
-                sx={{ minWidth: { xs: "100%", sm: 180 } }}
-              >
-                <InputLabel>UTM Source</InputLabel>
-                <Select
-                  label="UTM Source"
-                  value={utmSourceFilter}
-                  onChange={(event) => {
-                    setUtmSourceFilter(event.target.value);
-                    setUtmPage(0);
-                  }}
-                  onClose={() => setUtmSourceSearch("")}
-                  MenuProps={{
-                    autoFocus: false,
-                    PaperProps: {
-                      sx: {
-                        width: 220,
-                        maxWidth: 220,
-                        maxHeight: 400,
-                      },
-                    },
-                    onAnimationEnd: () => utmSourceSearchInputRef.current?.focus(),
-                  }}
-                  sx={{
-                    "& .MuiSelect-select": {
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    },
-                  }}
+              {canAccessUtmCampaignGrain ? (
+                <FormControl
+                  size="small"
+                  sx={{ minWidth: { xs: "100%", sm: 180 } }}
                 >
-                  <ListSubheader
+                  <InputLabel>UTM Source</InputLabel>
+                  <Select
+                    label="UTM Source"
+                    value={utmSourceFilter}
+                    onChange={(event) => {
+                      setUtmSourceFilter(event.target.value);
+                      setUtmPage(0);
+                    }}
+                    onClose={() => setUtmSourceSearch("")}
+                    MenuProps={{
+                      autoFocus: false,
+                      PaperProps: {
+                        sx: {
+                          width: 220,
+                          maxWidth: 220,
+                          maxHeight: 400,
+                        },
+                      },
+                      onAnimationEnd: () => utmSourceSearchInputRef.current?.focus(),
+                    }}
                     sx={{
-                      bgcolor: "background.paper",
-                      zIndex: 2,
-                      pt: 0,
-                      pb: 0.5,
-                      lineHeight: "initial",
+                      "& .MuiSelect-select": {
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      },
                     }}
                   >
-                    <TextField
-                      size="small"
-                      autoFocus
-                      placeholder="Search sources…"
-                      fullWidth
-                      sx={{ mt: 1 }}
-                      inputRef={utmSourceSearchInputRef}
-                      value={utmSourceSearch}
-                      onChange={(event) => setUtmSourceSearch(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Escape") {
-                          event.stopPropagation();
-                        }
+                    <ListSubheader
+                      sx={{
+                        bgcolor: "background.paper",
+                        zIndex: 2,
+                        pt: 0,
+                        pb: 0.5,
+                        lineHeight: "initial",
                       }}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <SearchIcon fontSize="small" color="action" />
-                          </InputAdornment>
-                        ),
-                      }}
-                    />
-                  </ListSubheader>
-                  <MenuItem value="">All Sources</MenuItem>
-                  {filteredUtmSourceOptions.length === 0 ? (
-                    <Box sx={{ px: 2, py: 1.5 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        No sources found
-                      </Typography>
-                    </Box>
-                  ) : (
-                    filteredUtmSourceOptions.map((source) => (
-                      <MenuItem
-                        key={source}
-                        value={source}
-                        sx={{
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
+                    >
+                      <TextField
+                        size="small"
+                        autoFocus
+                        placeholder="Search sources…"
+                        fullWidth
+                        sx={{ mt: 1 }}
+                        inputRef={utmSourceSearchInputRef}
+                        value={utmSourceSearch}
+                        onChange={(event) => setUtmSourceSearch(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Escape") {
+                            event.stopPropagation();
+                          }
                         }}
-                      >
-                        {source}
-                      </MenuItem>
-                    ))
-                  )}
-                </Select>
-              </FormControl>
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <SearchIcon fontSize="small" color="action" />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </ListSubheader>
+                    <MenuItem value="">All Sources</MenuItem>
+                    {filteredUtmSourceOptions.length === 0 ? (
+                      <Box sx={{ px: 2, py: 1.5 }}>
+                        <Typography variant="body2" color="text.secondary">
+                          No sources found
+                        </Typography>
+                      </Box>
+                    ) : (
+                      filteredUtmSourceOptions.map((source) => (
+                        <MenuItem
+                          key={source}
+                          value={source}
+                          sx={{
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
+                          {source}
+                        </MenuItem>
+                      ))
+                    )}
+                  </Select>
+                </FormControl>
+              ) : null}
               <Stack
                 direction="row"
                 spacing={1}
@@ -2044,19 +2060,21 @@ export default function DailyFunnelPanel({
                             maxWidth: 220,
                           }}
                         >
-                          <Tooltip title={row.utm_source} placement="top" arrow>
-                            <Box
-                              component="span"
-                              sx={{
-                                display: "block",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {row.utm_source}
-                            </Box>
-                          </Tooltip>
+                          <Box sx={{ width: "100%" }}>
+                            <Tooltip title={row.utm_source} arrow>
+                              <span
+                                style={{
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  display: "block",
+                                  width: "100%",
+                                }}
+                              >
+                                {row.utm_source}
+                              </span>
+                            </Tooltip>
+                          </Box>
                         </TableCell>
                         {UTM_COLUMNS.filter((column) => column.id !== "utm_source").map((column) => {
                           const metric = getUtmDeltaMetricValue(row, column.id, displayMode);

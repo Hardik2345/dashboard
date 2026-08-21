@@ -68,6 +68,10 @@ function buildTrendController({ metricsService }) {
           !!req.user?.isAuthor ||
           permissions.includes('all') ||
           permissions.includes('utm_funnel_table');
+        const canAccessUtmCampaignGrain =
+          !!req.user?.isAuthor ||
+          permissions.includes('all') ||
+          permissions.includes('utm_funnel_table:utm_campaign_grain');
         const includeDaily = parseBooleanQuery(req.query.include_daily, true);
         const includeUtm = canAccessUtmFunnel
           ? parseBooleanQuery(req.query.include_utm, true)
@@ -78,7 +82,10 @@ function buildTrendController({ metricsService }) {
             ...normalized.spec,
             utmDate: req.query.utm_date ? String(req.query.utm_date) : normalized.spec.end,
             compareUtmDate: req.query.compare_utm_date ? String(req.query.compare_utm_date) : null,
-            utmSource: req.query.utm_source ? String(req.query.utm_source) : null,
+            utmSource:
+              canAccessUtmCampaignGrain && req.query.utm_source
+                ? String(req.query.utm_source)
+                : null,
             includeDaily,
             includeUtm,
           }),
