@@ -481,8 +481,19 @@ async function queryCheckoutInitiatedRows(
   return Array.isArray(rows) ? rows : [];
 }
 
-async function queryDailyFunnelUtmRows(conn, date) {
+async function queryDailyFunnelUtmRows(conn, date, cutoffHour = null) {
   const normalizedSourceSql = buildNormalizedUtmSourceSql();
+  const hasCutoff = Number.isInteger(cutoffHour);
+  const baseTable = hasCutoff ? "utm_source_hourly" : "utm_source_daily";
+  const baseWhere = hasCutoff
+    ? "WHERE metric_date = ? AND metric_hour <= ?"
+    : "WHERE metric_date = ?";
+  const baseReplacements = hasCutoff ? [date, cutoffHour] : [date];
+  const orderWhere = hasCutoff
+    ? "WHERE created_date = ? AND HOUR(created_time) <= ?"
+    : "WHERE created_date = ?";
+  const orderReplacements = hasCutoff ? [date, cutoffHour] : [date];
+
   const [baseRows, orderRows] = await Promise.all([
     conn.query(
       `
@@ -492,13 +503,13 @@ async function queryDailyFunnelUtmRows(conn, date) {
           COALESCE(SUM(sessions), 0) AS sessions,
           COALESCE(SUM(atc_sessions), 0) AS atc_sessions,
           COALESCE(SUM(orders), 0) AS orders
-        FROM utm_source_daily
-        WHERE metric_date = ?
+        FROM ${baseTable}
+        ${baseWhere}
         GROUP BY ${normalizedSourceSql}
       `,
       {
         type: QueryTypes.SELECT,
-        replacements: [date],
+        replacements: baseReplacements,
       },
     ),
     conn.query(
@@ -526,14 +537,14 @@ async function queryDailyFunnelUtmRows(conn, date) {
               ELSE 'Prepaid'
             END AS payment_type
           FROM shopify_orders
-          WHERE created_date = ?
+          ${orderWhere}
           GROUP BY ${normalizedSourceSql}, payment_gateway_names, order_name
         ) grouped_orders
         GROUP BY utm_source
       `,
       {
         type: QueryTypes.SELECT,
-        replacements: [date],
+        replacements: orderReplacements,
       },
     ),
   ]);
@@ -604,11 +615,16 @@ function getPreviousIsoDate(value) {
   return utcDate.toISOString().slice(0, 10);
 }
 
-async function queryDailyFunnelUtmRowsWithDelta(conn, date, compareDate) {
+async function queryDailyFunnelUtmRowsWithDelta(conn, date, compareDate, cutoffCtx = null) {
   const previousDate = compareDate || getPreviousIsoDate(date);
+  const today = cutoffCtx?.today;
+  const previousCutoffHour =
+    today && date === today && Number.isInteger(cutoffCtx?.cutoffHour)
+      ? cutoffCtx.cutoffHour
+      : null;
   const [currentRows, previousRows] = await Promise.all([
-    queryDailyFunnelUtmRows(conn, date),
-    queryDailyFunnelUtmRows(conn, previousDate),
+    queryDailyFunnelUtmRows(conn, date, null),
+    queryDailyFunnelUtmRows(conn, previousDate, previousCutoffHour),
   ]);
 
   const previousMap = new Map(
@@ -642,9 +658,20 @@ async function queryDailyFunnelUtmRowsWithDelta(conn, date, compareDate) {
   });
 }
 
-async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource) {
+async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource, cutoffHour = null) {
   const normalizedSourceSql = buildNormalizedUtmSourceSql();
   const normalizedCampaignSql = buildNormalizedUtmCampaignSql();
+  const hasCutoff = Number.isInteger(cutoffHour);
+  const baseTable = hasCutoff ? "utm_source_campaign_hourly" : "utm_source_campaign_daily";
+  const baseWhere = hasCutoff
+    ? "WHERE metric_date = ? AND utm_source = ? AND metric_hour <= ?"
+    : "WHERE metric_date = ? AND utm_source = ?";
+  const baseReplacements = hasCutoff ? [date, utmSource, cutoffHour] : [date, utmSource];
+  const orderWhere = hasCutoff
+    ? "WHERE created_date = ? AND HOUR(created_time) <= ?"
+    : "WHERE created_date = ?";
+  const orderReplacements = hasCutoff ? [date, cutoffHour, utmSource] : [date, utmSource];
+
   const [baseRows, orderRows] = await Promise.all([
     conn.query(
       `
@@ -654,13 +681,13 @@ async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource) {
           COALESCE(SUM(sessions), 0) AS sessions,
           COALESCE(SUM(atc_sessions), 0) AS atc_sessions,
           COALESCE(SUM(orders), 0) AS orders
-        FROM utm_source_campaign_daily
-        WHERE metric_date = ? AND utm_source = ?
+        FROM ${baseTable}
+        ${baseWhere}
         GROUP BY ${normalizedCampaignSql}
       `,
       {
         type: QueryTypes.SELECT,
-        replacements: [date, utmSource],
+        replacements: baseReplacements,
       },
     ),
     conn.query(
@@ -688,14 +715,14 @@ async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource) {
               ELSE 'Prepaid'
             END AS payment_type
           FROM shopify_orders
-          WHERE created_date = ? AND ${normalizedSourceSql} = ?
+          ${orderWhere} AND ${normalizedSourceSql} = ?
           GROUP BY ${normalizedCampaignSql}, payment_gateway_names, order_name
         ) grouped_orders
         GROUP BY utm_campaign
       `,
       {
         type: QueryTypes.SELECT,
-        replacements: [date, utmSource],
+        replacements: orderReplacements,
       },
     ),
   ]);
@@ -738,11 +765,22 @@ async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource) {
   );
 }
 
-async function queryDailyFunnelUtmCampaignRowsWithDelta(conn, date, compareDate, utmSource) {
+async function queryDailyFunnelUtmCampaignRowsWithDelta(
+  conn,
+  date,
+  compareDate,
+  utmSource,
+  cutoffCtx = null,
+) {
   const previousDate = compareDate || getPreviousIsoDate(date);
+  const today = cutoffCtx?.today;
+  const previousCutoffHour =
+    today && date === today && Number.isInteger(cutoffCtx?.cutoffHour)
+      ? cutoffCtx.cutoffHour
+      : null;
   const [currentRows, previousRows] = await Promise.all([
-    queryDailyFunnelUtmCampaignRows(conn, date, utmSource),
-    queryDailyFunnelUtmCampaignRows(conn, previousDate, utmSource),
+    queryDailyFunnelUtmCampaignRows(conn, date, utmSource, null),
+    queryDailyFunnelUtmCampaignRows(conn, previousDate, utmSource, previousCutoffHour),
   ]);
 
   const previousMap = new Map(
@@ -2573,6 +2611,14 @@ function buildMetricsSnapshotService(deps = {}) {
     const timezone = normalizeTimezone(spec.timezone);
     const includeDaily = spec.includeDaily !== false;
     const includeUtm = spec.includeUtm === true;
+    const utmCutoffCtx = includeUtm
+      ? buildCompletedHourCutoffContext(
+          spec.utmDate || spec.end,
+          spec.utmDate || spec.end,
+          now(),
+          timezone,
+        )
+      : null;
     const [baseRows, paymentRows, discountRows, utmRows] = await Promise.all([
       includeDaily
         ? fetchDailyRows(spec.conn, spec.start, spec.end, {})
@@ -2620,8 +2666,14 @@ function buildMetricsSnapshotService(deps = {}) {
                 spec.utmDate || spec.end,
                 spec.compareUtmDate,
                 spec.utmSource,
+                utmCutoffCtx,
               )
-            : queryDailyFunnelUtmRowsWithDelta(spec.conn, spec.utmDate || spec.end, spec.compareUtmDate))
+            : queryDailyFunnelUtmRowsWithDelta(
+                spec.conn,
+                spec.utmDate || spec.end,
+                spec.compareUtmDate,
+                utmCutoffCtx,
+              ))
         : Promise.resolve([]),
     ]);
 
@@ -2658,12 +2710,20 @@ function buildMetricsSnapshotService(deps = {}) {
           .sort((left, right) => right.date.localeCompare(left.date))
       : [];
 
+    const utmDateResolved = spec.utmDate || spec.end;
+    const utmCutoffApplied =
+      includeUtm &&
+      !!utmCutoffCtx?.today &&
+      utmDateResolved === utmCutoffCtx.today &&
+      Number.isInteger(utmCutoffCtx?.cutoffHour);
+
     return {
       timezone,
       range: { start: spec.start, end: spec.end },
       rows,
-      utmDate: includeUtm ? (spec.utmDate || spec.end) : null,
+      utmDate: includeUtm ? utmDateResolved : null,
       utmSource: includeUtm ? (spec.utmSource || null) : null,
+      utmCutoffHour: utmCutoffApplied ? utmCutoffCtx.cutoffHour : null,
       utmRows: includeUtm ? utmRows : [],
     };
   }
