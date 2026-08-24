@@ -10,7 +10,9 @@ import {
   MenuItem,
   Stack,
   useMediaQuery,
+  Tooltip as MuiTooltip,
 } from "@mui/material";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { useTheme, alpha } from "@mui/material/styles";
 import {
   Bar,
@@ -1575,7 +1577,7 @@ export default memo(function HourlySalesCompare({
             )}
           </Stack>
 
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1} alignItems="center">
             <FormControl size="small" sx={{ minWidth: 110 }}>
               <Select
                 value={viewMode}
@@ -1606,6 +1608,14 @@ export default memo(function HourlySalesCompare({
                 {daysInRange >= 30 && <MenuItem value="monthly">Monthly</MenuItem>}
               </Select>
             </FormControl>
+            {hasActiveProductTypeFilter ? (
+              <MuiTooltip title="Product Type filtered data is only available at full-day granularity, not hourly — Hourly view is disabled while this filter is active.">
+                <InfoOutlinedIcon
+                  fontSize="small"
+                  sx={{ color: "text.secondary", cursor: "help" }}
+                />
+              </MuiTooltip>
+            ) : null}
             <FormControl size="small" sx={{ minWidth: 100 }}>
               <Select
                 value={chartMode}
