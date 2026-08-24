@@ -20,8 +20,10 @@ import {
   Stack,
   IconButton,
   Tooltip,
+  Typography,
   useMediaQuery,
 } from "@mui/material";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import Header from "./components/Header.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import LayoutPanelsIcon from "./components/ui/LayoutPanelsIcon.jsx";
@@ -2641,6 +2643,47 @@ export default function App() {
                       onSaved={() => setDailyInsightRefreshToken((t) => t + 1)}
                     />
                   )}
+                </Box>
+              )}
+
+              {authorTab === "dashboard" &&
+                hasBrand &&
+                hasActiveProductTypeFilter && (
+                <Box
+                  sx={{
+                    width: "100%",
+                    maxWidth: 1200,
+                    mx: "auto",
+                    px: { xs: 1.5, sm: 2.5, md: 4 },
+                    pt: { xs: 1, md: 1.5 },
+                  }}
+                >
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    spacing={1}
+                    sx={{
+                      px: 1.5,
+                      py: 0.75,
+                      borderRadius: "10px",
+                      border: "1px solid",
+                      borderColor: darkMode === "dark"
+                        ? "rgba(255,255,255,0.12)"
+                        : "rgba(0,0,0,0.1)",
+                      bgcolor: darkMode === "dark"
+                        ? "rgba(255,255,255,0.04)"
+                        : "rgba(0,0,0,0.03)",
+                    }}
+                  >
+                    <InfoOutlinedIcon
+                      fontSize="small"
+                      sx={{ color: "text.secondary", flexShrink: 0 }}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      Product Type filter is active — data shown is full-day
+                      only, not hourly-grained.
+                    </Typography>
+                  </Stack>
                 </Box>
               )}
 
