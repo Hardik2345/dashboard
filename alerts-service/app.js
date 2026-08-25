@@ -573,16 +573,6 @@ app.post("/push/receive", async (req, res) => {
 
     const evt = payload.event || {};
 
-    // --- Performance Alert Guard (Comment out to restore) ---
-    if (evt.metric === "performance") {
-      logger.info("[push/receive] Skipping performance alert as requested.");
-      return res.json({
-        message: "Performance alert skipped",
-        data: payload,
-      });
-    }
-    // --------------------------------------------------------
-
     // Store in pushnotifications collection
     await mongoose.connection.collection("pushnotifications").insertOne({
       ...payload,
