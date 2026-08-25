@@ -10,7 +10,7 @@ function KpiCard({ metricId, current, previous, loading }) {
   const def = METRIC_DEFS[metricId];
   const value = current?.value ?? null;
   const previousValue = previous?.value ?? null;
-  const statusMeta = getStatusMeta(current?.status);
+  const statusMeta = getStatusMeta(current?.status, metricId);
 
   const hasDelta = value !== null && previousValue !== null;
   const diff = hasDelta ? value - previousValue : null;

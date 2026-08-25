@@ -2534,6 +2534,7 @@ export default function App() {
                     authorTab !== "notifications-log" &&
                     authorTab !== "tenant-setup" &&
                     authorTab !== "requests" &&
+                    authorTab !== "web-vitals" &&
                     (isAuthor || showMultipleBrands) && (
                       <Box sx={{ mb: 1 }}>
                         <AuthorBrandSelector

@@ -25,6 +25,15 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
   const [trendEnd, setTrendEnd] = useState(today);
   const [granularity, setGranularity] = useState("daily");
 
+  // Admins pick which brand's Summary/Trend/Page table show by clicking a
+  // card in the Overall Snapshot grid — decoupled from the global brand
+  // selector, mirroring the dashboard's KPI-card <-> trend-chart pattern.
+  // Non-admins never see that grid, so this just tracks the global brandKey.
+  const [selectedBrandKey, setSelectedBrandKey] = useState(brandKey);
+  useEffect(() => {
+    setSelectedBrandKey(brandKey);
+  }, [brandKey]);
+
   const [snapshot, setSnapshot] = useState(null);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [snapshotError, setSnapshotError] = useState("");
@@ -39,11 +48,11 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
   const [pagesLoading, setPagesLoading] = useState(false);
 
   useEffect(() => {
-    if (!brandKey) return;
+    if (!selectedBrandKey) return;
     let cancelled = false;
     setSnapshotLoading(true);
     setSnapshotError("");
-    getWebVitalsSnapshot({ brand_key: brandKey, date: snapshotDate })
+    getWebVitalsSnapshot({ brand_key: selectedBrandKey, date: snapshotDate })
       .then((result) => {
         if (cancelled) return;
         if (result?.error) {
@@ -64,7 +73,7 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
     return () => {
       cancelled = true;
     };
-  }, [brandKey, snapshotDate]);
+  }, [selectedBrandKey, snapshotDate]);
 
   useEffect(() => {
     if (!canViewAllBrandsSnapshot) {
@@ -91,12 +100,12 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
   }, [snapshotDate, canViewAllBrandsSnapshot]);
 
   useEffect(() => {
-    if (!brandKey) return;
+    if (!selectedBrandKey) return;
     let cancelled = false;
     const effectiveGranularity = trendStart === trendEnd ? granularity : "daily";
     setTrendLoading(true);
     getWebVitalsTrend({
-      brand_key: brandKey,
+      brand_key: selectedBrandKey,
       start: trendStart,
       end: trendEnd,
       granularity: effectiveGranularity,
@@ -115,13 +124,13 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
     return () => {
       cancelled = true;
     };
-  }, [brandKey, trendStart, trendEnd, granularity]);
+  }, [selectedBrandKey, trendStart, trendEnd, granularity]);
 
   useEffect(() => {
-    if (!brandKey) return;
+    if (!selectedBrandKey) return;
     let cancelled = false;
     setPagesLoading(true);
-    getWebVitalsPages({ brand_key: brandKey, date: snapshotDate })
+    getWebVitalsPages({ brand_key: selectedBrandKey, date: snapshotDate })
       .then((result) => {
         if (cancelled) return;
         setPageRows(result?.error ? [] : result.rows);
@@ -136,7 +145,7 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
     return () => {
       cancelled = true;
     };
-  }, [brandKey, snapshotDate]);
+  }, [selectedBrandKey, snapshotDate]);
 
   const handleTrendRangeChange = useCallback((nextStart, nextEnd) => {
     setTrendStart(nextStart);
@@ -172,7 +181,12 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
           <Typography variant="subtitle2" color="text.secondary">
             Overall Snapshot
           </Typography>
-          <WebVitalsAllBrandsSnapshot brands={allBrandsSnapshot} loading={allBrandsLoading} />
+          <WebVitalsAllBrandsSnapshot
+            brands={allBrandsSnapshot}
+            loading={allBrandsLoading}
+            selectedBrandKey={selectedBrandKey}
+            onSelectBrand={setSelectedBrandKey}
+          />
         </Stack>
       ) : null}
 
@@ -196,7 +210,7 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
       <WebVitalsPageTable
         rows={pageRows}
         loading={pagesLoading}
-        brandKey={brandKey}
+        brandKey={selectedBrandKey}
         date={snapshotDate}
       />
     </Stack>
