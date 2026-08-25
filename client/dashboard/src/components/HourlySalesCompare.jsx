@@ -565,6 +565,7 @@ function CustomTooltip({
   currentValue,
   metricValues = {},
   hiddenMetricIds = [],
+  visibleRangeLines = ["primary"],
 }) {
   if (!active) return null;
 
@@ -589,40 +590,44 @@ function CustomTooltip({
       </Typography>
       {compareMode ? (
         <>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.75 }}>
-            <Box
-              sx={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                bgcolor: "#10b981",
-              }}
-            />
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              {rangeLabels.current || "Current"}
-            </Typography>
-            <Typography variant="body2" sx={{ fontWeight: 600, ml: "auto" }}>
-              {compareFormatter(currentValue)}
-            </Typography>
-          </Box>
-          {rangeLabels.previous && compareValue != null && (
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          {visibleRangeLines.includes("primary") && (
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.75 }}>
               <Box
                 sx={{
                   width: 8,
                   height: 8,
                   borderRadius: "50%",
-                  bgcolor: alpha("#10b981", 0.5),
+                  bgcolor: "#10b981",
                 }}
               />
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                {rangeLabels.previous}
+                {rangeLabels.current || "Current"}
               </Typography>
               <Typography variant="body2" sx={{ fontWeight: 600, ml: "auto" }}>
-                {compareFormatter(compareValue)}
+                {compareFormatter(currentValue)}
               </Typography>
             </Box>
           )}
+          {visibleRangeLines.includes("comparison") &&
+            rangeLabels.previous &&
+            compareValue != null && (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <Box
+                  sx={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    bgcolor: alpha("#10b981", 0.5),
+                  }}
+                />
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {rangeLabels.previous}
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600, ml: "auto" }}>
+                  {compareFormatter(compareValue)}
+                </Typography>
+              </Box>
+            )}
         </>
       ) : (
         selectedDefs
@@ -1793,6 +1798,7 @@ export default memo(function HourlySalesCompare({
                           currentValue={point.currentValue}
                           metricValues={point}
                           hiddenMetricIds={hiddenMetricIds}
+                          visibleRangeLines={visibleRangeLines}
                         />
                       );
                     }}

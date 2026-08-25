@@ -23,7 +23,7 @@ import {
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import ViewColumnIcon from "@mui/icons-material/ViewColumn";
-import { METRIC_DEFS, getStatusMeta } from "../webVitalsFormat.js";
+import { METRIC_DEFS, getStatusMeta, normalizeWebVitalsUrl } from "../webVitalsFormat.js";
 
 const ALL_COLUMNS = [
   { id: "page_name", label: "Page Name" },
@@ -50,7 +50,7 @@ function escapeCsvValue(value) {
 
 function formatCellValue(columnId, row) {
   if (columnId === "page_name") return row.page_name || "—";
-  if (columnId === "url") return row.url || "—";
+  if (columnId === "url") return normalizeWebVitalsUrl(row.url) || "—";
   if (columnId === "sessions") return Number(row.sessions || 0).toLocaleString();
   const def = METRIC_DEFS[columnId];
   return def ? def.format(row[columnId]) : row[columnId] ?? "—";
@@ -200,7 +200,7 @@ export default function WebVitalsPageTable({ rows, loading, brandKey, date }) {
                       {visibleColumns.map((column) => {
                         const isPerformance = column.id === "performance";
                         const statusMeta = isPerformance
-                          ? getStatusMeta(row.performance_status)
+                          ? getStatusMeta(row.performance_status, "performance")
                           : null;
                         const cellValue = formatCellValue(column.id, row);
                         return (

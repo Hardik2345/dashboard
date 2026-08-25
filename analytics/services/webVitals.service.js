@@ -3,10 +3,8 @@ const { connectWebVitalsMongo } = require("../db/webVitals.mongo");
 const METRICS = ["performance", "fcp", "lcp", "ttfb", "inp", "cls"];
 
 // Standard Core Web Vitals thresholds for fcp/lcp/ttfb/inp/cls. The
-// `performance` score uses a custom (non-Lighthouse) scale: good >=50,
-// needs improvement 45-49, poor <45.
+// `performance` score uses its own 4-tier scale — see getPerformanceStatus.
 const THRESHOLDS = {
-  performance: { good: 50, needsImprovement: 45, direction: "higher" },
   fcp: { good: 1.8, needsImprovement: 3, direction: "lower" },
   lcp: { good: 2.5, needsImprovement: 4, direction: "lower" },
   ttfb: { good: 0.8, needsImprovement: 1.8, direction: "lower" },
@@ -19,7 +17,18 @@ function numberOrNull(value) {
   return Number.isFinite(num) ? num : null;
 }
 
+// Custom (non-Lighthouse) scale for the Performance score: good >59,
+// needs attention 47-59, poor 40-46, critical <=39.
+function getPerformanceStatus(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+  if (value > 59) return "good";
+  if (value >= 47) return "needs_attention";
+  if (value >= 40) return "poor";
+  return "critical";
+}
+
 function getStatus(metric, value) {
+  if (metric === "performance") return getPerformanceStatus(value);
   if (value === null || value === undefined || !Number.isFinite(value)) return null;
   const t = THRESHOLDS[metric];
   if (!t) return null;

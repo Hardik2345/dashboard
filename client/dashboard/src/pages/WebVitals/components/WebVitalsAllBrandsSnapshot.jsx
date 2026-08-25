@@ -1,25 +1,57 @@
 import { useEffect, useMemo, useState } from "react";
 import { Box, Card, IconButton, Skeleton, Stack, Typography } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import { METRIC_DEFS, getStatusMeta } from "../webVitalsFormat.js";
 
 const PERFORMANCE_DEF = METRIC_DEFS.performance;
 const PAGE_SLOT_COUNT = 8;
+const SELECTED_CARD_COLOR = "#10b981";
 
-function BrandCard({ brand }) {
+function BrandCard({ brand, selected, onSelect }) {
   const value = brand.metrics?.performance?.value ?? null;
-  const statusMeta = getStatusMeta(brand.metrics?.performance?.status);
+  const statusMeta = getStatusMeta(brand.metrics?.performance?.status, "performance");
+  const clickable = typeof onSelect === "function";
 
   return (
     <Card
       variant="outlined"
+      onClick={clickable ? onSelect : undefined}
+      onKeyDown={
+        clickable
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect();
+              }
+            }
+          : undefined
+      }
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      aria-pressed={clickable ? Boolean(selected) : undefined}
       sx={{
         p: 2,
         height: "100%",
         display: "flex",
         flexDirection: "column",
         gap: 0.75,
+        cursor: clickable ? "pointer" : "default",
+        transition: "all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+        borderColor: selected ? SELECTED_CARD_COLOR : "divider",
+        boxShadow: selected
+          ? `0 0 0 1px ${SELECTED_CARD_COLOR}, 0 10px 20px ${alpha(SELECTED_CARD_COLOR, 0.2)}, 0 6px 6px ${alpha(SELECTED_CARD_COLOR, 0.1)}`
+          : "none",
+        "&:hover": clickable
+          ? {
+              borderColor: selected ? SELECTED_CARD_COLOR : "divider",
+              boxShadow: selected
+                ? `0 0 0 1.5px ${SELECTED_CARD_COLOR}, 0 14px 28px ${alpha(SELECTED_CARD_COLOR, 0.25)}, 0 10px 10px ${alpha(SELECTED_CARD_COLOR, 0.15)}`
+                : "0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23)",
+              transform: "translateY(-4px)",
+            }
+          : {},
       }}
     >
       <Typography
@@ -63,7 +95,12 @@ function BrandCard({ brand }) {
   );
 }
 
-export default function WebVitalsAllBrandsSnapshot({ brands, loading }) {
+export default function WebVitalsAllBrandsSnapshot({
+  brands,
+  loading,
+  selectedBrandKey,
+  onSelectBrand,
+}) {
   const [pageIndex, setPageIndex] = useState(0);
 
   const pages = useMemo(() => {
@@ -131,7 +168,21 @@ export default function WebVitalsAllBrandsSnapshot({ brands, loading }) {
             </Typography>
           </Box>
         ) : (
-          currentPage.map((brand) => <BrandCard key={brand.brand_key} brand={brand} />)
+          currentPage.map((brand) => (
+            <BrandCard
+              key={brand.brand_key}
+              brand={brand}
+              selected={
+                typeof onSelectBrand === "function" &&
+                brand.brand_key === selectedBrandKey
+              }
+              onSelect={
+                typeof onSelectBrand === "function"
+                  ? () => onSelectBrand(brand.brand_key)
+                  : undefined
+              }
+            />
+          ))
         )}
       </Box>
     </Box>

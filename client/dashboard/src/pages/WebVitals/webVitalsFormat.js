@@ -1,6 +1,26 @@
 // Shared metric metadata/formatting for the Web Vitals panel — kept in one
 // place so the KPI row, trend chart, and page table stay in sync.
 
+// The source test_results collection stores some urls with the host
+// duplicated as the first path segment, e.g.
+// "https://shop.myshopify.com/shop.myshopify.com/products/x" — strip that
+// duplicate segment for display.
+export function normalizeWebVitalsUrl(rawUrl) {
+  if (!rawUrl) return rawUrl;
+  try {
+    const parsed = new URL(rawUrl);
+    const duplicatePrefix = `/${parsed.host}`;
+    if (parsed.pathname === duplicatePrefix) {
+      parsed.pathname = "/";
+    } else if (parsed.pathname.startsWith(`${duplicatePrefix}/`)) {
+      parsed.pathname = parsed.pathname.slice(duplicatePrefix.length);
+    }
+    return parsed.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
 export const METRIC_DEFS = {
   performance: {
     id: "performance",
@@ -72,6 +92,16 @@ export const STATUS_META = {
   poor: { label: "Poor", color: "#ef4444" },
 };
 
-export function getStatusMeta(status) {
+// Performance uses its own 4-tier scale/palette — see
+// getPerformanceStatus in analytics/services/webVitals.service.js.
+export const PERFORMANCE_STATUS_META = {
+  good: { label: "Good", color: "#10b981" },
+  needs_attention: { label: "Needs Attention", color: "#38bdf8" },
+  poor: { label: "Poor", color: "#eab308" },
+  critical: { label: "Critical", color: "#dc2626" },
+};
+
+export function getStatusMeta(status, metricId) {
+  if (metricId === "performance") return PERFORMANCE_STATUS_META[status] || null;
   return STATUS_META[status] || null;
 }
