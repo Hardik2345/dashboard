@@ -48,6 +48,7 @@ const ALL_PERMISSIONS = Object.freeze([
   "product_table_filters:sort_filter",
   "daily_insight_view",
   "health_monitor_panel",
+  "web_vitals_panel",
 ]);
 
 module.exports = { ALL_PERMISSIONS };

@@ -1178,6 +1178,48 @@ async function queryIntentSummaryPair(conn, currentRange, previousRange) {
   }
 }
 
+async function queryDailyIntentRows(conn, start, end) {
+  try {
+    const rows = await conn.query(
+      `
+        SELECT
+          DATE_FORMAT(date, '%Y-%m-%d') AS date,
+          COALESCE(SUM(high_intent_pct * total_sessions), 0) AS high_pct_weighted,
+          COALESCE(SUM(medium_intent_pct * total_sessions), 0) AS medium_pct_weighted,
+          COALESCE(SUM(low_intent_pct * total_sessions), 0) AS low_pct_weighted,
+          COALESCE(SUM(total_sessions), 0) AS total_sessions
+        FROM daily_user_intent_summary
+        WHERE date >= ? AND date <= ?
+        GROUP BY date
+        ORDER BY date ASC
+      `,
+      {
+        type: QueryTypes.SELECT,
+        replacements: [start, end],
+      },
+    );
+    return (Array.isArray(rows) ? rows : []).map((row) => {
+      const totalSessions = Number(row.total_sessions || 0);
+      return {
+        date: String(row.date),
+        high_intent_pct:
+          totalSessions > 0 ? Number(row.high_pct_weighted || 0) / totalSessions : 0,
+        medium_intent_pct:
+          totalSessions > 0 ? Number(row.medium_pct_weighted || 0) / totalSessions : 0,
+        low_intent_pct:
+          totalSessions > 0 ? Number(row.low_pct_weighted || 0) / totalSessions : 0,
+      };
+    });
+  } catch (error) {
+    console.error("[metrics-summary] daily intent rows query failed", {
+      start,
+      end,
+      message: error?.message || error,
+    });
+    return [];
+  }
+}
+
 function buildSummaryMetric(currentValue, previousValue, deltaCurrent = currentValue, deltaPrevious = previousValue) {
   const diff = Number(deltaCurrent || 0) - Number(deltaPrevious || 0);
   const pct = computePercentDelta(Number(deltaCurrent || 0), Number(deltaPrevious || 0));
@@ -1433,6 +1475,9 @@ function buildMetricShape(metrics) {
     ci_events: ciEvents,
     cvr_ratio: cvrRatio,
     cvr_percent: cvrRatio * 100,
+    high_intent_pct: Number(metrics.high_intent_pct || 0),
+    medium_intent_pct: Number(metrics.medium_intent_pct || 0),
+    low_intent_pct: Number(metrics.low_intent_pct || 0),
   };
 }
 
@@ -1662,7 +1707,7 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
       GROUP BY date
       ORDER BY date ASC
     `;
-    const [salesRows, sessionRows, ciRows] = await Promise.all([
+    const [salesRows, sessionRows, ciRows, intentRows] = await Promise.all([
       conn.query(salesSql, {
         type: QueryTypes.SELECT,
         replacements: [start, end],
@@ -1672,26 +1717,31 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
         replacements: [start, end],
       }),
       queryCheckoutInitiatedRows(conn, start, end, "daily"),
+      queryDailyIntentRows(conn, start, end),
     ]);
     const byDate = new Map();
+    const emptyRow = () => ({
+      sales: 0,
+      orders: 0,
+      sessions: 0,
+      atc: 0,
+      ci_events: 0,
+      high_intent_pct: 0,
+      medium_intent_pct: 0,
+      low_intent_pct: 0,
+    });
     for (const row of salesRows) {
       byDate.set(String(row.date), {
         date: String(row.date),
+        ...emptyRow(),
         sales: Number(row.sales || 0),
         orders: Number(row.orders || 0),
-        sessions: 0,
-        atc: 0,
-        ci_events: 0,
       });
     }
     for (const row of sessionRows) {
       const existing = byDate.get(String(row.date)) || {
         date: String(row.date),
-        sales: 0,
-        orders: 0,
-        sessions: 0,
-        atc: 0,
-        ci_events: 0,
+        ...emptyRow(),
       };
       existing.sessions += Number(row.sessions || 0);
       existing.atc += Number(row.atc || 0);
@@ -1700,13 +1750,19 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
     for (const row of ciRows) {
       const existing = byDate.get(String(row.date)) || {
         date: String(row.date),
-        sales: 0,
-        orders: 0,
-        sessions: 0,
-        atc: 0,
-        ci_events: 0,
+        ...emptyRow(),
       };
       existing.ci_events += Number(row.ci_events || 0);
+      byDate.set(String(row.date), existing);
+    }
+    for (const row of intentRows) {
+      const existing = byDate.get(String(row.date)) || {
+        date: String(row.date),
+        ...emptyRow(),
+      };
+      existing.high_intent_pct = row.high_intent_pct;
+      existing.medium_intent_pct = row.medium_intent_pct;
+      existing.low_intent_pct = row.low_intent_pct;
       byDate.set(String(row.date), existing);
     }
     return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));

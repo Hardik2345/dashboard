@@ -1286,6 +1286,56 @@ export async function getDailyFunnel(args = {}) {
   };
 }
 
+export async function getWebVitalsSnapshot(args = {}) {
+  const params = appendBrandKey({ date: args.date }, args);
+  const json = await getJSON("/web-vitals/snapshot", params);
+  return {
+    date: json?.date || null,
+    previousDate: json?.previousDate || null,
+    sampleCount: Number(json?.sampleCount || 0),
+    previousSampleCount: Number(json?.previousSampleCount || 0),
+    metrics: json?.metrics || {},
+    previousMetrics: json?.previousMetrics || {},
+    error: json?.__error,
+  };
+}
+
+export async function getWebVitalsAllBrandsSnapshot(args = {}) {
+  const json = await getJSON("/web-vitals/all-brands-snapshot", { date: args.date });
+  return {
+    date: json?.date || null,
+    brands: Array.isArray(json?.brands) ? json.brands : [],
+    error: json?.__error,
+  };
+}
+
+export async function getWebVitalsTrend(args = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+      granularity: args.granularity || "daily",
+    },
+    args,
+  );
+  const json = await getJSON("/web-vitals/trend", params);
+  return {
+    granularity: json?.granularity || "daily",
+    points: Array.isArray(json?.points) ? json.points : [],
+    error: json?.__error,
+  };
+}
+
+export async function getWebVitalsPages(args = {}) {
+  const params = appendBrandKey({ date: args.date }, args);
+  const json = await getJSON("/web-vitals/pages", params);
+  return {
+    date: json?.date || null,
+    rows: Array.isArray(json?.rows) ? json.rows : [],
+    error: json?.__error,
+  };
+}
+
 export async function getMonthlyTrend(args) {
   const base = { start: args.start, end: args.end };
   if (args.compare_start) base.compare_start = args.compare_start;
