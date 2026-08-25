@@ -43,6 +43,7 @@ import {
   Filter,
   Package,
   ClipboardList,
+  Gauge,
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
@@ -53,6 +54,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "daily-funnel", label: "Conversion Funnel", icon: Table2 },
   { id: "bundles", label: "Bundles", icon: Table2 },
   { id: "inventory", label: "Inventory", icon: Package },
+  { id: "web-vitals", label: "Web Vitals", icon: Gauge },
   { id: "health-monitor", label: "Health Monitor", icon: HeartPulse },
   { id: "alerts", label: "Alerts", icon: Bell },
   { id: "requests", label: "Requests", icon: ClipboardList },
@@ -71,6 +73,7 @@ const TAB_ROUTE_MAP = {
   "daily-funnel": "/daily-funnel",
   bundles: "/bundles",
   inventory: "/inventory",
+  "web-vitals": "/web-vitals",
   "health-monitor": "/health-monitor",
   alerts: "/alerts",
   requests: "/requests",
@@ -173,6 +176,7 @@ import OverallSnapshotRouteContainer from "./routes/OverallSnapshotRouteContaine
 import ProductConversionRouteContainer from "./routes/ProductConversionRouteContainer.jsx";
 import SessionAnalyticsRouteContainer from "./routes/SessionAnalyticsRouteContainer.jsx";
 import HealthMonitorRouteContainer from "./routes/HealthMonitorRouteContainer.jsx";
+import WebVitalsRouteContainer from "./routes/WebVitalsRouteContainer.jsx";
 const MobileFilterDrawer = lazy(
   () => import("./components/MobileFilterDrawer.jsx"),
 );
@@ -621,6 +625,11 @@ export default function App() {
     return hasPermission("health_monitor_panel");
   }, [hasPermission, isAuthor]);
 
+  const canAccessWebVitalsPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("web_vitals_panel");
+  }, [hasPermission, isAuthor]);
+
   const defaultLandingTab = useMemo(() => {
     if (isAuthor) return "overall-snapshot";
     return canAccessOverallSnapshotPanel ? "overall-snapshot" : "dashboard";
@@ -635,6 +644,7 @@ export default function App() {
     if (canAccessRequestsPanel) tabs.push("requests");
     if (canAccessBundlesPanel) tabs.push("bundles");
     if (canAccessInventoryPanel) tabs.push("inventory");
+    if (canAccessWebVitalsPanel) tabs.push("web-vitals");
     if (canAccessHealthMonitorPanel) tabs.push("health-monitor");
     return tabs;
   }, [
@@ -644,6 +654,7 @@ export default function App() {
     canAccessInventoryPanel,
     canAccessRequestsPanel,
     canAccessSessionAnalyticsPanel,
+    canAccessWebVitalsPanel,
     canAccessHealthMonitorPanel,
     isAuthor,
   ]);
@@ -710,6 +721,16 @@ export default function App() {
       );
       return;
     }
+    if (authorTab === "web-vitals" && !canAccessWebVitalsPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
     if (authorTab === "health-monitor" && !canAccessHealthMonitorPanel) {
       navigate(
         {
@@ -728,6 +749,7 @@ export default function App() {
     canAccessInventoryPanel,
     canAccessRequestsPanel,
     canAccessSessionAnalyticsPanel,
+    canAccessWebVitalsPanel,
     canAccessHealthMonitorPanel,
     initialized,
     location.search,
@@ -1216,6 +1238,15 @@ export default function App() {
   ]);
 
   useEffect(() => {
+    // Product filter options are only used by tabs with a filter bar; skip
+    // the fetch entirely on brand-agnostic-UI tabs like Web Vitals/Health Monitor.
+    if (authorTab === "web-vitals" || authorTab === "health-monitor") {
+      setProductOptions([DEFAULT_PRODUCT_OPTION]);
+      setProductSelection(DEFAULT_PRODUCT_OPTION);
+      setProductOptionsLoading(false);
+      return;
+    }
+
     // Only authors or users with product_filter permission should see/use product filters; reset for everyone else.
     if (!isAuthor && !hasPermission("product_filter")) {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
@@ -1341,6 +1372,7 @@ export default function App() {
     user,
     isAuthor,
     hasPermission,
+    authorTab,
   ]);
 
   const handleSelectMetric = useCallback(
@@ -1865,6 +1897,9 @@ export default function App() {
 
   useEffect(() => {
     if (!activeBrandKey) return;
+    // UTM filter options are only used by tabs with a filter bar; skip the
+    // fetch entirely on brand-agnostic-UI tabs like Web Vitals/Health Monitor.
+    if (authorTab === "web-vitals" || authorTab === "health-monitor") return;
     if (isLongRangeDashboard) {
       setUtmOptions({ brand_key: activeBrandKey });
       return;
@@ -1890,6 +1925,7 @@ export default function App() {
     isLongRangeDashboard,
     selectedProductIds,
     canSyncProductUtmFilters,
+    authorTab,
   ]);
 
   // Sync funnel data with product table's Curr date when on Funnels tab
@@ -2167,6 +2203,14 @@ export default function App() {
             activeBrandKey={activeBrandKey}
             productTableStart={productTableStart}
             productTableEnd={productTableEnd}
+          />
+        );
+      case "web-vitals":
+        return (
+          <WebVitalsRouteContainer
+            hasBrand={hasBrand}
+            activeBrandKey={activeBrandKey}
+            canViewAllBrandsSnapshot={isAuthor || hasPermission("all")}
           />
         );
       case "session-analytics":

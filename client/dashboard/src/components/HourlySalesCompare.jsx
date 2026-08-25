@@ -301,6 +301,39 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
       formatter: (value) => nfPercent1.format(value || 0),
       compactFormatter: (value) => nfPercent1.format(value || 0),
     },
+    high_intent: {
+      id: "high_intent",
+      label: "High Intent",
+      unitKind: "percent",
+      axisGroup: "percent",
+      color: "#22c55e",
+      strokeDasharray: "2 0",
+      accessor: (metrics) => Number(metrics?.high_intent_pct || 0),
+      formatter: (value) => nfPercent1.format(value || 0),
+      compactFormatter: (value) => nfPercent1.format(value || 0),
+    },
+    medium_intent: {
+      id: "medium_intent",
+      label: "Medium Intent",
+      unitKind: "percent",
+      axisGroup: "percent",
+      color: "#f59e0b",
+      strokeDasharray: "6 2",
+      accessor: (metrics) => Number(metrics?.medium_intent_pct || 0),
+      formatter: (value) => nfPercent1.format(value || 0),
+      compactFormatter: (value) => nfPercent1.format(value || 0),
+    },
+    low_intent: {
+      id: "low_intent",
+      label: "Low Intent",
+      unitKind: "percent",
+      axisGroup: "percent",
+      color: "#ef4444",
+      strokeDasharray: "1 3",
+      accessor: (metrics) => Number(metrics?.low_intent_pct || 0),
+      formatter: (value) => nfPercent1.format(value || 0),
+      compactFormatter: (value) => nfPercent1.format(value || 0),
+    },
     performance: {
       id: "performance",
       label: "Web Performance(Avg)",
@@ -696,6 +729,11 @@ export default memo(function HourlySalesCompare({
   const hasPaymentCompositeSelected = effectiveMetricIds.some((metricId) =>
     ["payment_orders", "payment_sales"].includes(metricId),
   );
+  // high_intent_pct/medium_intent_pct/low_intent_pct come from
+  // daily_user_intent_summary, a daily-only table — no hourly grain exists.
+  const hasIntentSelected = effectiveMetricIds.some((metricId) =>
+    ["high_intent", "medium_intent", "low_intent"].includes(metricId),
+  );
 
   const daysInRange = useMemo(() => {
     if (!start || !end) return 0;
@@ -728,6 +766,7 @@ export default memo(function HourlySalesCompare({
       (isLongRange ||
         hasPerformanceSelected ||
         hasActiveProductTypeFilter ||
+        hasIntentSelected ||
         (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend)) &&
       viewMode === "hourly"
     ) {
@@ -736,6 +775,7 @@ export default memo(function HourlySalesCompare({
   }, [
     canUseHourlyPaymentTrend,
     hasActiveProductTypeFilter,
+    hasIntentSelected,
     hasPaymentCompositeSelected,
     hasPerformanceSelected,
     isLongRange,
@@ -1597,6 +1637,7 @@ export default memo(function HourlySalesCompare({
                     isLongRange ||
                     hasPerformanceSelected ||
                     hasActiveProductTypeFilter ||
+                    hasIntentSelected ||
                     (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend)
                   }
                 >

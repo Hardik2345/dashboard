@@ -647,6 +647,150 @@ export function FunnelSingleDatePicker({ date, onApply, compact = false }) {
   );
 }
 
+export function FunnelRangeOrDatePicker({ startDate, endDate, onApply, compact = false }) {
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [month, setMonth] = useState(dayjs(startDate || dayjs()).month());
+  const [year, setYear] = useState(dayjs(startDate || dayjs()).year());
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+
+  const handleOpen = useCallback((event) => {
+    setAnchorEl(event.currentTarget);
+  }, []);
+
+  const handleClose = useCallback(() => setAnchorEl(null), []);
+  const handleMonthChange = useCallback((nextMonth, nextYear) => {
+    setMonth(nextMonth);
+    setYear(nextYear);
+  }, []);
+
+  const selected = useMemo(() => {
+    const s = startDate ? dayjs(startDate) : dayjs();
+    const e = endDate ? dayjs(endDate) : s;
+    return {
+      start: s.startOf("day").toDate(),
+      end: e.startOf("day").toDate(),
+    };
+  }, [startDate, endDate]);
+
+  const displayLabel = useMemo(() => {
+    const s = startDate ? dayjs(startDate) : null;
+    const e = endDate ? dayjs(endDate) : null;
+    if (!s?.isValid()) return "Select date";
+    const fmt = compact ? "DD MMM YY" : "MMM DD, YYYY";
+    if (!e?.isValid() || s.isSame(e, "day")) return s.format(fmt);
+    return `${s.format(fmt)} – ${e.format(fmt)}`;
+  }, [startDate, endDate, compact]);
+
+  return (
+    <>
+      <Button
+        onClick={handleOpen}
+        startIcon={<CalendarDays size={compact ? 14 : 16} />}
+        endIcon={<ChevronDown size={compact ? 12 : 14} />}
+        sx={{
+          px: compact ? 1.25 : 2,
+          minWidth: compact ? "fit-content" : 200,
+          height: compact ? 36 : 48,
+          color: "text.primary",
+          textTransform: "none",
+          fontWeight: 500,
+          fontSize: compact ? "0.75rem" : "0.875rem",
+          justifyContent: "space-between",
+          borderRadius: compact ? "10px" : "14px",
+          border: "1px solid",
+          borderColor: isDark
+            ? "rgba(255,255,255,0.12)"
+            : "rgba(0,0,0,0.1)",
+          bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.9)",
+          whiteSpace: "nowrap",
+          "&:hover": {
+            bgcolor: isDark
+              ? "rgba(255,255,255,0.08)"
+              : "rgba(0,0,0,0.03)",
+          },
+        }}
+      >
+        {displayLabel}
+      </Button>
+
+      <Popover
+        open={Boolean(anchorEl)}
+        anchorEl={anchorEl}
+        onClose={handleClose}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        transformOrigin={{ vertical: "top", horizontal: "left" }}
+        PaperProps={{
+          sx: {
+            mt: 1,
+            borderRadius: 2,
+            overflow: "hidden",
+            maxWidth: "fit-content",
+            backdropFilter: "blur(12px)",
+            backgroundColor: isDark
+              ? "rgba(30, 30, 30, 0.6)"
+              : "rgba(255, 255, 255, 0.8)",
+            border: "1px solid",
+            borderColor: isDark
+              ? "rgba(255, 255, 255, 0.1)"
+              : "rgba(0, 0, 0, 0.05)",
+            boxShadow: isDark
+              ? "0 8px 32px rgba(0, 0, 0, 0.5)"
+              : "0 8px 32px rgba(0, 0, 0, 0.1)",
+          },
+        }}
+      >
+        <Box
+          sx={{
+            p: 2,
+            maxWidth: 350,
+            "& .Polaris-DatePicker": {
+              background: "transparent !important",
+            },
+            "& .Polaris-DatePicker__Month": {
+              background: "transparent !important",
+            },
+            "& .Polaris-DatePicker__Title": {
+              color: isDark ? "#fff" : "inherit",
+            },
+            "& .Polaris-DatePicker__Day": {
+              color: isDark ? "#ddd" : "inherit",
+            },
+            "& .Polaris-DatePicker__Day--today": {
+              color: isDark ? "#fff" : "inherit",
+              fontWeight: "bold",
+            },
+            "& .Polaris-DatePicker__Day--selected": {
+              bgcolor: "primary.main",
+              color: "#fff",
+            },
+            "& .Polaris-DatePicker__Day--inRange": {
+              bgcolor: isDark
+                ? "rgba(91, 163, 224, 0.3)"
+                : "rgba(11, 107, 203, 0.1)",
+            },
+          }}
+        >
+          <DatePicker
+            month={month}
+            year={year}
+            onMonthChange={handleMonthChange}
+            selected={selected}
+            disableDatesAfter={dayjs().endOf("day").toDate()}
+            allowRange
+            onChange={({ start: rawStart, end: rawEnd }) => {
+              if (!rawStart) return;
+              const nextStart = dayjs(rawStart).startOf("day");
+              const nextEnd = dayjs(rawEnd || rawStart).startOf("day");
+              onApply(nextStart.format("YYYY-MM-DD"), nextEnd.format("YYYY-MM-DD"));
+            }}
+          />
+        </Box>
+      </Popover>
+    </>
+  );
+}
+
 export default function DailyFunnelPanel({
   brandKey,
   initialStartDate,

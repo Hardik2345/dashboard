@@ -778,6 +778,7 @@ function buildDesktopMetrics({
     prevPercent,
     activeColor,
     hidden = false,
+    metricKey,
   }) => ({
     id,
     label,
@@ -805,9 +806,7 @@ function buildDesktopMetrics({
       mode === "S" ? (value) => nfInt.format(value) : (value) => nfPct.format(value),
     activeColor,
     hidden,
-    selected: false,
-    selectionIndicatorSelected: false,
-    showSelectionIndicator: false,
+    ...createSelectionProps(id, metricKey),
   });
 
   const cards = [
@@ -1069,6 +1068,7 @@ function buildDesktopMetrics({
       prevPercent: data.intentMetrics?.high?.prevPercent,
       activeColor: "#22c55e",
       hidden: !showIntentMetrics,
+      metricKey: "high_intent",
     }),
     createIntentCard({
       id: "medium_intent",
@@ -1083,6 +1083,7 @@ function buildDesktopMetrics({
       prevPercent: data.intentMetrics?.medium?.prevPercent,
       activeColor: "#f59e0b",
       hidden: !showIntentMetrics,
+      metricKey: "medium_intent",
     }),
     createIntentCard({
       id: "low_intent",
@@ -1097,6 +1098,7 @@ function buildDesktopMetrics({
       prevPercent: data.intentMetrics?.low?.prevPercent,
       activeColor: "#ef4444",
       hidden: !showIntentMetrics,
+      metricKey: "low_intent",
     }),
   ];
 
@@ -1488,7 +1490,7 @@ function KPIs({
   const [atcMode, setAtcMode] = useState("R");
   const [checkoutMode, setCheckoutMode] = useState("C");
   const [cancellationMode, setCancellationMode] = useState("C");
-  const [rtoMode, setRtoMode] = useState("O");
+  const [rtoMode, setRtoMode] = useState("%");
   const [highIntentMode, setHighIntentMode] = useState("%");
   const [mediumIntentMode, setMediumIntentMode] = useState("%");
   const [lowIntentMode, setLowIntentMode] = useState("%");

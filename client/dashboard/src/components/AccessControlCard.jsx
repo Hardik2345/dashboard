@@ -121,6 +121,7 @@ const PERMISSION_OPTIONS = [
   "product_table_filters:sort_filter",
   "daily_insight_view",
   "health_monitor_panel",
+  "web_vitals_panel",
 ];
 
 const COLUMN_PERMISSIONS = [
@@ -162,6 +163,7 @@ const PERMISSION_CATEGORIES = [
       "rto_kpi",
       "web_vitals",
       "health_monitor_panel",
+      "web_vitals_panel",
       "daily_insight_view",
       "compare_mode",
       "multiselectable_kpi_cards",

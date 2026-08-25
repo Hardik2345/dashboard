@@ -23,6 +23,7 @@ const { buildShopifyRouter } = require("./modules/shopify");
 const { buildNotificationsRouter } = require("./modules/notifications");
 const { buildDashboardRouter } = require("./modules/dashboard");
 const { buildSessionAnalyticsRouter } = require("./routes/sessionAnalytics.routes");
+const { buildWebVitalsRouter } = require("./routes/webVitals.routes");
 const {
   collectRoutes,
   createHealthMonitorReporter,
@@ -72,6 +73,7 @@ const productConversionRouter = buildProductConversionRouter();
 const bundlesRouter = buildBundlesRouter();
 const dashboardRouter = buildDashboardRouter();
 const sessionAnalyticsRouter = buildSessionAnalyticsRouter();
+const webVitalsRouter = buildWebVitalsRouter();
 const externalRouter = buildExternalRouter();
 const uploadsRouter = buildUploadsRouter();
 const apiKeysRouter = buildApiKeysRouter(sequelize);
@@ -84,6 +86,7 @@ app.use("/metrics", productConversionRouter);
 app.use("/metrics", bundlesRouter);
 app.use("/dashboard", dashboardRouter);
 app.use("/session-analytics", sessionAnalyticsRouter);
+app.use("/web-vitals", webVitalsRouter);
 app.use("/external", externalRouter);
 app.use("/", uploadsRouter);
 app.use("/", apiKeysRouter);
@@ -134,6 +137,7 @@ async function init() {
         ...collectRoutes(bundlesRouter, { mountPath: "/metrics", sourceModule: "modules/bundles/index.js" }),
         ...collectRoutes(dashboardRouter, { mountPath: "/dashboard", sourceModule: "modules/dashboard/index.js" }),
         ...collectRoutes(sessionAnalyticsRouter, { mountPath: "/session-analytics", sourceModule: "routes/sessionAnalytics.routes.js" }),
+        ...collectRoutes(webVitalsRouter, { mountPath: "/web-vitals", sourceModule: "routes/webVitals.routes.js" }),
         ...collectRoutes(externalRouter, { mountPath: "/external", sourceModule: "modules/external/index.js" }),
         ...collectRoutes(uploadsRouter, { mountPath: "/", sourceModule: "modules/uploads/index.js" }),
         ...collectRoutes(apiKeysRouter, { mountPath: "/", sourceModule: "modules/api-keys/index.js" }),
