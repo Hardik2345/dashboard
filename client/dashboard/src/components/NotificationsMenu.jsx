@@ -96,12 +96,8 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
 
   const open = Boolean(anchorEl);
   const id = open ? "notifications-popover" : undefined;
-  const filteredNotifications = notifications.filter((notif) => {
-    // Hide performance alerts from the bell icon window
-    return notif.event?.metric !== "performance";
-  });
-  const visibleNotifications = filteredNotifications.slice(0, visibleCount);
-  const hasMoreNotifications = filteredNotifications.length > visibleCount;
+  const visibleNotifications = notifications.slice(0, visibleCount);
+  const hasMoreNotifications = notifications.length > visibleCount;
 
   return (
     <>
