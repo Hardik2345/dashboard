@@ -257,12 +257,30 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                 bgColor = darkMode
                   ? "rgba(245, 158, 11, 0.1)"
                   : "rgba(245, 158, 11, 0.05)";
+              } else if (state === "NEEDS ATTENTION") {
+                StatusIcon = AlertCircle;
+                iconColor = "#fb923c"; // Light orange
+                bgColor = darkMode
+                  ? "rgba(251, 146, 60, 0.1)"
+                  : "rgba(251, 146, 60, 0.05)";
+              } else if (state === "ALMOST CRITICAL") {
+                StatusIcon = AlertCircle;
+                iconColor = "#f87171"; // Light red
+                bgColor = darkMode
+                  ? "rgba(248, 113, 113, 0.1)"
+                  : "rgba(248, 113, 113, 0.05)";
+              } else if (state === "NEEDS IMMEDIATE ATTENTION") {
+                StatusIcon = AlertCircle;
+                iconColor = "#c2410c"; // Dark orange
+                bgColor = darkMode
+                  ? "rgba(194, 65, 12, 0.1)"
+                  : "rgba(194, 65, 12, 0.05)";
               } else if (state === "CRITICAL") {
                 StatusIcon = XCircle;
-                iconColor = "#ef4444"; // Red
+                iconColor = "#dc2626"; // Alarming red
                 bgColor = darkMode
-                  ? "rgba(239, 68, 68, 0.1)"
-                  : "rgba(239, 68, 68, 0.05)";
+                  ? "rgba(220, 38, 38, 0.1)"
+                  : "rgba(220, 38, 38, 0.05)";
               }
 
               const handleItemClick = () => {
