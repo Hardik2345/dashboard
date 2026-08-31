@@ -124,6 +124,76 @@ function buildSplitController({ reportService }) {
       }
     },
 
+    paymentSplitSummary: async (req, res) => {
+      try {
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
+        if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
+        const { start, end } = parsed.data;
+        if (isRangeOverDataRestrictionPeriod(start, end)) {
+          return res.json(
+            buildLongRangeUnavailablePayload({
+              current: { orders: null, sales: null },
+              previous: { orders: null, sales: null },
+            }),
+          );
+        }
+        const brandConn = ensureBrandSequelize(req);
+        if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
+        const { hourLte } = parseHourLte(req.query.hour_lte);
+        return res.json(
+          await reportService.getPaymentSplitSummary({
+            conn: brandConn.conn,
+            start,
+            end,
+            compareStart: (req.query.compare_start || '').toString().trim() || null,
+            compareEnd: (req.query.compare_end || '').toString().trim() || null,
+            hourLte,
+            productId: (req.query.product_id || '').toString().trim(),
+            filters: extractFilters(req),
+            includeSql: process.env.NODE_ENV !== 'production',
+            timezone: req.tenantRoute?.timezone,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'payment-split-summary failed');
+      }
+    },
+
+    paymentSplitTrend: async (req, res) => {
+      try {
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
+        if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
+        const { start, end } = parsed.data;
+        if (isRangeOverDataRestrictionPeriod(start, end)) {
+          return res.json(
+            buildLongRangeUnavailablePayload({
+              granularity: (req.query.granularity || 'daily').toString(),
+              points: [],
+            }),
+          );
+        }
+        const brandConn = ensureBrandSequelize(req);
+        if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
+        const { hourLte } = parseHourLte(req.query.hour_lte);
+        const granularity = req.query.granularity === 'hourly' ? 'hourly' : 'daily';
+        return res.json(
+          await reportService.getPaymentSplitTrend({
+            conn: brandConn.conn,
+            start,
+            end,
+            granularity,
+            hourLte,
+            productId: (req.query.product_id || '').toString().trim(),
+            filters: extractFilters(req),
+            includeSql: process.env.NODE_ENV !== 'production',
+            timezone: req.tenantRoute?.timezone,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'payment-split-trend failed');
+      }
+    },
+
     hourlySalesCompare: async (req, res) => {
       try {
         const brandKey = (req.query.brand_key || req.query.brand || '')

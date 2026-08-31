@@ -2,6 +2,7 @@ const { QueryTypes } = require("sequelize");
 const {
   computePercentDelta,
   computeReturnCounts,
+  computeReturnCountsPair,
   appendProductFilter,
 } = require("../shared/utils/metricsUtils");
 const {
@@ -875,7 +876,7 @@ async function getReturnsSnapshotPair(conn, currentRange, previousRange, filters
     };
   }
   if (getUtmAggregateSource(filters, "daily")) {
-    const [pair, currentRto, previousRto] = await Promise.all([
+    const [pair, rtoPair] = await Promise.all([
       queryUtmAggregatePair(
         conn,
         currentRange,
@@ -883,29 +884,18 @@ async function getReturnsSnapshotPair(conn, currentRange, previousRange, filters
         filters,
         { granularity: "daily" },
       ),
-      computeReturnCounts({
-        start: currentRange.start,
-        end: currentRange.end,
-        conn,
-        filters,
-      }),
-      computeReturnCounts({
-        start: previousRange.start,
-        end: previousRange.end,
-        conn,
-        filters,
-      }),
+      computeReturnCountsPair(currentRange, previousRange, conn, filters),
     ]);
     return {
       current: {
         cancelled_orders: Number(pair?.current?.cancelled_orders || 0),
         refunded_orders: Number(pair?.current?.refunded_orders || 0),
-        rto_orders: Number(currentRto?.rto_orders || 0),
+        rto_orders: Number(rtoPair?.current?.rto_orders || 0),
       },
       previous: {
         cancelled_orders: Number(pair?.previous?.cancelled_orders || 0),
         refunded_orders: Number(pair?.previous?.refunded_orders || 0),
-        rto_orders: Number(previousRto?.rto_orders || 0),
+        rto_orders: Number(rtoPair?.previous?.rto_orders || 0),
       },
     };
   }

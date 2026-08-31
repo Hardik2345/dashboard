@@ -1456,13 +1456,17 @@ const MemoizedTable = memo(
                   },
                 }}
               >
-                <TableSortLabel
-                  active={sortBy === col.id}
-                  direction={sortBy === col.id ? sortDir : "asc"}
-                  onClick={() => handleSort(col.id)}
-                >
-                  {col.label}
-                </TableSortLabel>
+                {col.sortable === false ? (
+                  col.label
+                ) : (
+                  <TableSortLabel
+                    active={sortBy === col.id}
+                    direction={sortBy === col.id ? sortDir : "asc"}
+                    onClick={() => handleSort(col.id)}
+                  >
+                    {col.label}
+                  </TableSortLabel>
+                )}
                 <Box
                   className="resize-handle"
                   onMouseDown={(e) => handleMouseDown(e, col.id)}
@@ -1707,12 +1711,14 @@ export default function ProductConversionTable({
         label: `DRR (${productState.inventoryPeriod || "7d"})`,
         align: "right",
         format: (val) => (val !== null ? formatNumber(val) : "-"),
+        sortable: false,
       },
       {
         id: "doh",
         label: `DOH (${productState.inventoryPeriod || "7d"})`,
         align: "right",
         format: (val) => (val !== null ? formatNumber(val) : "-"),
+        sortable: false,
       },
     ],
     [productState.inventoryPeriod, convertAmount],

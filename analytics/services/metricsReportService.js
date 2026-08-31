@@ -788,10 +788,197 @@ function buildMetricsReportService() {
     };
   }
 
+  // Payment Split Trend — returns one bucketed (hourly or daily) series in a
+  // single query instead of the frontend looping one single-total request
+  // per hour/day (previously up to ~360 requests for a 90-day view). This is
+  // a live aggregation over shopify_orders, same as getOrderSplit/
+  // getPaymentSalesSplit's default path — no rollup table involved.
+  async function getPaymentSplitTrend({
+    conn,
+    start,
+    end,
+    granularity = "daily",
+    hourLte = null,
+    productId = "",
+    filters = {},
+    includeSql = false,
+    timezone = DEFAULT_TIMEZONE,
+  }) {
+    const resolvedTimezone = normalizeTimezone(timezone);
+    const isHourly = granularity === "hourly";
+    const useHourlyCutoff = isHourly && Number.isInteger(hourLte);
+
+    if (!start || !end) {
+      return {
+        metric: "PAYMENT_SPLIT_TREND",
+        timezone: resolvedTimezone,
+        granularity,
+        range: { start: null, end: null },
+        points: [],
+      };
+    }
+
+    let whereSql = `WHERE created_date >= ? AND created_date <= ?`;
+    const replacements = [start, end];
+
+    if (productId) {
+      whereSql += ` AND product_id = ?`;
+      replacements.push(productId);
+    }
+    if (useHourlyCutoff) {
+      whereSql += ` AND (created_date < ? OR HOUR(created_time) <= ?)`;
+      replacements.push(end, hourLte);
+    }
+    whereSql = appendUtmWhere(whereSql, replacements, filters, true);
+    whereSql = appendCityOrderWhere(whereSql, replacements, filters.city);
+
+    const bucketExpr = isHourly
+      ? "created_date, HOUR(created_time)"
+      : "created_date";
+    const bucketSelect = isHourly
+      ? "created_date AS date, HOUR(created_time) AS hour"
+      : "created_date AS date";
+
+    const sql = `
+      SELECT
+        date,
+        ${isHourly ? "hour," : ""}
+        payment_type,
+        COUNT(order_name) AS order_count,
+        SUM(max_price) AS sales
+      FROM (
+        SELECT
+          ${bucketSelect},
+          ${PAYMENT_TYPE_CASE_SQL} AS payment_type,
+          order_name,
+          MAX(total_price) AS max_price
+        FROM shopify_orders
+        ${whereSql}
+        GROUP BY ${bucketExpr}, payment_gateway_names, order_name
+      ) sub
+      GROUP BY date${isHourly ? ", hour" : ""}, payment_type
+      ORDER BY date ASC${isHourly ? ", hour ASC" : ""}
+    `;
+
+    const rows = await conn.query(sql, {
+      type: QueryTypes.SELECT,
+      replacements,
+    });
+
+    const byBucket = new Map();
+    for (const row of rows) {
+      const key = isHourly ? `${row.date}#${row.hour}` : String(row.date);
+      const existing = byBucket.get(key) || {
+        date: String(row.date),
+        hour: isHourly ? Number(row.hour) : null,
+        cod_orders: 0,
+        prepaid_orders: 0,
+        partially_paid_orders: 0,
+        cod_sales: 0,
+        prepaid_sales: 0,
+        partial_sales: 0,
+      };
+      const orders = Number(row.order_count || 0);
+      const sales = Number(row.sales || 0);
+      if (row.payment_type === "COD") {
+        existing.cod_orders = orders;
+        existing.cod_sales = sales;
+      } else if (row.payment_type === "Prepaid") {
+        existing.prepaid_orders = orders;
+        existing.prepaid_sales = sales;
+      } else if (row.payment_type === "Partial") {
+        existing.partially_paid_orders = orders;
+        existing.partial_sales = sales;
+      }
+      byBucket.set(key, existing);
+    }
+
+    const points = Array.from(byBucket.values())
+      .sort((a, b) => {
+        if (a.date === b.date) return (a.hour || 0) - (b.hour || 0);
+        return a.date.localeCompare(b.date);
+      })
+      .map((point) => {
+        const total_orders =
+          point.cod_orders + point.prepaid_orders + point.partially_paid_orders;
+        const total_sales =
+          point.cod_sales + point.prepaid_sales + point.partial_sales;
+        return { ...point, total_orders, total_sales };
+      });
+
+    return {
+      metric: "PAYMENT_SPLIT_TREND",
+      timezone: resolvedTimezone,
+      granularity,
+      range: { start, end, hour_lte: useHourlyCutoff ? hourLte : null },
+      points,
+      sql_used: includeSql ? sql : undefined,
+    };
+  }
+
+  // Combines the 4 separate requests the Mode of Payment widget used to make
+  // (order-count split + sales split, each for current and previous period)
+  // into one round trip. Reuses getOrderSplit/getPaymentSalesSplit verbatim —
+  // same branch logic (discount/product-type/UTM rollups, live fallback) —
+  // just run in parallel behind a single endpoint instead of 4 separate ones.
+  async function getPaymentSplitSummary({
+    conn,
+    start,
+    end,
+    compareStart = null,
+    compareEnd = null,
+    hourLte = null,
+    productId = "",
+    filters = {},
+    includeSql = false,
+    timezone = DEFAULT_TIMEZONE,
+  }) {
+    const hasPrevious = !!(compareStart && compareEnd);
+
+    const [currentOrders, currentSales, previousOrders, previousSales] =
+      await Promise.all([
+        getOrderSplit({ conn, start, end, hourLte, productId, filters, includeSql, timezone }),
+        getPaymentSalesSplit({ conn, start, end, hourLte, productId, filters, includeSql, timezone }),
+        hasPrevious
+          ? getOrderSplit({
+              conn,
+              start: compareStart,
+              end: compareEnd,
+              hourLte,
+              productId,
+              filters,
+              includeSql,
+              timezone,
+            })
+          : Promise.resolve(null),
+        hasPrevious
+          ? getPaymentSalesSplit({
+              conn,
+              start: compareStart,
+              end: compareEnd,
+              hourLte,
+              productId,
+              filters,
+              includeSql,
+              timezone,
+            })
+          : Promise.resolve(null),
+      ]);
+
+    return {
+      current: { orders: currentOrders, sales: currentSales },
+      previous: hasPrevious
+        ? { orders: previousOrders, sales: previousSales }
+        : { orders: null, sales: null },
+    };
+  }
+
   return {
     getTrafficSourceSplit,
     getPaymentSalesSplit,
     getOrderSplit,
+    getPaymentSplitSummary,
+    getPaymentSplitTrend,
     getHourlySalesCompare,
   };
 }

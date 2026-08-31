@@ -13,6 +13,8 @@ import {
   getTrafficSourceSplit as apiGetTrafficSourceSplit,
   getOrderSplit as apiGetOrderSplit,
   getPaymentSalesSplit as apiGetPaymentSalesSplit,
+  getPaymentSplitSummary as apiGetPaymentSplitSummary,
+  getPaymentSplitTrend as apiGetPaymentSplitTrend,
   getHourlyTrend as apiGetHourlyTrend,
   getDailyTrend as apiGetDailyTrend,
   getMonthlyTrend as apiGetMonthlyTrend,
@@ -96,6 +98,16 @@ export function DashboardDataProvider({ children }) {
       requestResource("payment-sales-split", params, apiGetPaymentSalesSplit),
     [requestResource],
   );
+  const getPaymentSplitSummary = useCallback(
+    (params) =>
+      requestResource("payment-split-summary", params, apiGetPaymentSplitSummary),
+    [requestResource],
+  );
+  const getPaymentSplitTrend = useCallback(
+    (params) =>
+      requestResource("payment-split-trend", params, apiGetPaymentSplitTrend),
+    [requestResource],
+  );
   const getHourlyTrend = useCallback(
     (params) => requestResource("hourly-trend", params, apiGetHourlyTrend),
     [requestResource],
@@ -125,6 +137,8 @@ export function DashboardDataProvider({ children }) {
       getTrafficSourceSplit,
       getOrderSplit,
       getPaymentSalesSplit,
+      getPaymentSplitSummary,
+      getPaymentSplitTrend,
       getHourlyTrend,
       getDailyTrend,
       getMonthlyTrend,
@@ -141,6 +155,8 @@ export function DashboardDataProvider({ children }) {
       getMonthlyTrend,
       getOrderSplit,
       getPaymentSalesSplit,
+      getPaymentSplitSummary,
+      getPaymentSplitTrend,
       getProductKpis,
       getTrafficSourceSplit,
       getWebPerformanceSummary,

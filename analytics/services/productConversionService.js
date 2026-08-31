@@ -5,6 +5,16 @@ const {
   buildCompletedHourOrderCutoffTime,
 } = require("./metricsFoundation");
 
+// Defensive ceiling for query paths where sorting/filtering happens in JS
+// after the SQL fetch (inventory drr/doh sort, CSV export). These paths
+// cannot use a real SQL LIMIT because the sort key isn't known to SQL, so
+// this caps worst-case row count/memory instead of truncating results for
+// any realistic catalog size. Live-measured product_id+landing_page_path
+// pair counts (60-day window, no product-type filter) across 8 brands
+// ranged up to ~96,466 (BBB) — this cap keeps >5x headroom above that
+// observed max rather than truncating real data.
+const UNBOUNDED_ROW_SAFETY_CAP = 500000;
+
 const ALLOWED_SORT = new Map([
   ["sessions", "sessions"],
   ["atc", "atc"],
@@ -15,8 +25,6 @@ const ALLOWED_SORT = new Map([
   ["sales", "sales"],
   ["cvr", "cvr"],
   ["landing_page_path", "landing_page_path"],
-  ["drr", "drr"],
-  ["doh", "doh"],
 ]);
 
 const VALID_FILTER_FIELDS = new Set([
@@ -134,9 +142,12 @@ function normalizeProductConversionRequest(query, options = {}) {
     String(query.inventory_only || query.inventoryOnly || "")
       .toLowerCase()
       .trim() === "true";
-  const sortBy = (query.sort_by || (inventoryOnly ? "sales" : "sessions"))
-    .toString()
-    .toLowerCase();
+  const defaultSortBy = inventoryOnly ? "sales" : "sessions";
+  let sortBy = (query.sort_by || defaultSortBy).toString().toLowerCase();
+  // Sorting by drr/doh is no longer supported (they're Redis-derived, not SQL
+  // columns) — fall back to the default rather than triggering the unbounded
+  // JS-side sort path.
+  if (sortBy === "drr" || sortBy === "doh") sortBy = defaultSortBy;
   const sortDir = (query.sort_dir || "desc").toString().toLowerCase();
   let visibleColumns = query.visible_columns;
   if (typeof visibleColumns === "string") {
@@ -387,7 +398,15 @@ function buildBaseCte(spec, includeCompare = false) {
   };
 }
 
-function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pagination) {
+function buildSelectSql(
+  spec,
+  useMappingBase,
+  whereClause,
+  sortCol,
+  sortDir,
+  pagination,
+  includeTotalCount = false,
+) {
   const includeCompare = hasCompareRange(spec);
   const base = buildBaseCte(spec, includeCompare);
   const previousSelect = includeCompare
@@ -414,6 +433,10 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
     NULL AS variant_id,
     NULL AS updated_at
   `;
+  // Folds the pagination count into this query via a window function (MySQL
+  // 8.0+) instead of running buildCountSql as a separate round trip that
+  // redundantly re-derives the same CTEs.
+  const totalCountCol = includeTotalCount ? `, COUNT(*) OVER() AS total_count` : "";
 
   const selectPrefix = useMappingBase
     ? `
@@ -430,6 +453,7 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr,
         ${inventoryCol}
         ${previousSelect}
+        ${totalCountCol}
       FROM product_landing_mapping m
       LEFT JOIN sessions_60d s ON m.landing_page_path = s.landing_page_path
       LEFT JOIN ci_60d c ON m.product_id = c.product_id
@@ -450,6 +474,7 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
         CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr,
         ${inventoryCol}
         ${previousSelect}
+        ${totalCountCol}
       FROM sessions_60d s
       LEFT JOIN ci_60d c ON s.product_id = c.product_id
       LEFT JOIN orders_60d o ON s.product_id = o.product_id
@@ -465,34 +490,6 @@ function buildSelectSql(spec, useMappingBase, whereClause, sortCol, sortDir, pag
       ${whereClause}
       ORDER BY ${sortCol} ${sortDir}
       ${limitClause}
-    `,
-    replacements: [...base.replacements],
-  };
-}
-
-function buildCountSql(spec, useMappingBase, whereClause) {
-  const base = buildBaseCte(spec, false);
-  const fromSql = useMappingBase
-    ? `
-      FROM product_landing_mapping m
-      LEFT JOIN sessions_60d s ON m.landing_page_path = s.landing_page_path
-      LEFT JOIN ci_60d c ON m.product_id = c.product_id
-      LEFT JOIN orders_60d o ON m.product_id = o.product_id
-    `
-    : `
-      FROM sessions_60d s
-      LEFT JOIN ci_60d c ON s.product_id = c.product_id
-      LEFT JOIN orders_60d o ON s.product_id = o.product_id
-    `;
-  return {
-    sql: `
-      ${base.sql}
-      SELECT COUNT(*) AS total_count
-      FROM (
-        SELECT 1
-        ${fromSql}
-        ${whereClause}
-      ) AS filtered
     `,
     replacements: [...base.replacements],
   };
@@ -962,19 +959,9 @@ function buildProductConversionService() {
       Array.isArray(spec.productTypes) && spec.productTypes.length > 0;
     const baseAlias = useMappingBase ? "m" : "s";
     const built = buildProductConditions(spec, baseAlias);
-    const needsInventoryPostProcessing =
-      spec.sortBy === "drr" ||
-      spec.sortBy === "doh" ||
-      hasInventoryDerivedFilter(spec.filters);
+    const needsInventoryPostProcessing = hasInventoryDerivedFilter(spec.filters);
 
     if (!needsInventoryPostProcessing) {
-      const countBuilt = buildCountSql(spec, useMappingBase, built.whereClause);
-      const countRows = await spec.conn.query(countBuilt.sql, {
-        type: QueryTypes.SELECT,
-        replacements: [...countBuilt.replacements, ...built.replacements],
-      });
-      const totalCount = Number(countRows?.[0]?.total_count || 0);
-
       const selectBuilt = buildSelectSql(
         spec,
         useMappingBase,
@@ -982,11 +969,13 @@ function buildProductConversionService() {
         spec.sortCol,
         spec.sortDir,
         { page: spec.page, pageSize: spec.pageSize },
+        true,
       );
       const rowsRaw = await spec.conn.query(selectBuilt.sql, {
         type: QueryTypes.SELECT,
         replacements: [...selectBuilt.replacements, ...built.replacements],
       });
+      const totalCount = rowsRaw.length > 0 ? Number(rowsRaw[0].total_count || 0) : 0;
 
       const rows = normalizeRows(rowsRaw, hasCompareRange(spec));
       const enriched = await enrichWithRedis(rows, spec, spec.resolveShopSubdomain);
@@ -1008,6 +997,7 @@ function buildProductConversionService() {
       built.whereClause,
       spec.sortCol,
       spec.sortDir,
+      { page: 1, pageSize: UNBOUNDED_ROW_SAFETY_CAP },
     );
     const rowsRaw = await spec.conn.query(selectBuilt.sql, {
       type: QueryTypes.SELECT,
@@ -1061,6 +1051,7 @@ function buildProductConversionService() {
       built.whereClause,
       spec.sortCol,
       spec.sortDir,
+      { page: 1, pageSize: UNBOUNDED_ROW_SAFETY_CAP },
     );
     const rowsRaw = await spec.conn.query(selectBuilt.sql, {
       type: QueryTypes.SELECT,

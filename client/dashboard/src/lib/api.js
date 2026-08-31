@@ -889,17 +889,7 @@ export async function exportBundleProductsCsv(args) {
   }
 }
 
-export async function getOrderSplit(args) {
-  const params = appendBrandKey(
-    {
-      start: args.start,
-      end: args.end,
-      product_id: args.product_id,
-      hour_lte: args.hour_lte,
-    },
-    args,
-  );
-  const json = await getJSON("/metrics/order-split", params);
+function shapeOrderSplitJson(json) {
   const unavailable = !!json?.payment_mode_unavailable;
   const cod_orders = unavailable ? null : Number(json?.cod_orders || 0);
   const prepaid_orders = unavailable ? null : Number(json?.prepaid_orders || 0);
@@ -932,17 +922,7 @@ export async function getOrderSplit(args) {
   };
 }
 
-export async function getPaymentSalesSplit(args) {
-  const params = appendBrandKey(
-    {
-      start: args.start,
-      end: args.end,
-      product_id: args.product_id,
-      hour_lte: args.hour_lte,
-    },
-    args,
-  );
-  const json = await getJSON("/metrics/payment-sales-split", params);
+function shapePaymentSalesSplitJson(json) {
   const unavailable = !!json?.payment_mode_unavailable;
   const cod_sales = unavailable ? null : Number(json?.cod_sales || 0);
   const prepaid_sales = unavailable ? null : Number(json?.prepaid_sales || 0);
@@ -956,7 +936,6 @@ export async function getPaymentSalesSplit(args) {
   const partial_percent = unavailable
     ? null
     : Number(json?.partial_percent || (total > 0 ? (partial_sales / total) * 100 : 0));
-  // Backward-compatible return shape with new fields appended
   return {
     timezone: json?.timezone || "Asia/Kolkata",
     cod_sales,
@@ -967,6 +946,87 @@ export async function getPaymentSalesSplit(args) {
     prepaid_percent,
     partial_percent,
     unavailable,
+    error: json?.__error,
+  };
+}
+
+export async function getOrderSplit(args) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+      product_id: args.product_id,
+      hour_lte: args.hour_lte,
+    },
+    args,
+  );
+  const json = await getJSON("/metrics/order-split", params);
+  return shapeOrderSplitJson(json);
+}
+
+export async function getPaymentSalesSplit(args) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+      product_id: args.product_id,
+      hour_lte: args.hour_lte,
+    },
+    args,
+  );
+  const json = await getJSON("/metrics/payment-sales-split", params);
+  return shapePaymentSalesSplitJson(json);
+}
+
+// Combines the 4 calls (order-count split + sales split, current + previous
+// period) Mode of Payment used to make into 1 request. The backend runs the
+// same 4 underlying queries in parallel; this just avoids 3 extra HTTP round
+// trips per dashboard load.
+export async function getPaymentSplitSummary(args) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+      compare_start: args.compare_start,
+      compare_end: args.compare_end,
+      product_id: args.product_id,
+      hour_lte: args.hour_lte,
+    },
+    args,
+  );
+  const json = await getJSON("/metrics/payment-split-summary", params);
+  return {
+    current: {
+      orders: shapeOrderSplitJson(json?.current?.orders || {}),
+      sales: shapePaymentSalesSplitJson(json?.current?.sales || {}),
+    },
+    previous: {
+      orders: json?.previous?.orders ? shapeOrderSplitJson(json.previous.orders) : null,
+      sales: json?.previous?.sales ? shapePaymentSalesSplitJson(json.previous.sales) : null,
+    },
+    error: json?.__error,
+  };
+}
+
+// One bucketed (hourly|daily) request instead of the old per-hour/per-day
+// loop of getOrderSplit + getPaymentSalesSplit calls.
+export async function getPaymentSplitTrend(args) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+      granularity: args.granularity || "daily",
+      product_id: args.product_id,
+      hour_lte: args.hour_lte,
+    },
+    args,
+  );
+  const json = await getJSON("/metrics/payment-split-trend", params);
+  return {
+    timezone: json?.timezone || "Asia/Kolkata",
+    granularity: json?.granularity || params.granularity,
+    range: json?.range || { start: args.start, end: args.end },
+    points: Array.isArray(json?.points) ? json.points : [],
     error: json?.__error,
   };
 }
