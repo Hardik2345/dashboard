@@ -1,0 +1,606 @@
+<title>DATUM Performance Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --surface-sunken: #eef0f3;
+    --border: #dde1e7;
+    --ink: #171a21;
+    --ink-soft: #565d6b;
+    --ink-faint: #8891a0;
+    --accent: #0e7490;
+    --accent-soft: #e0f2f6;
+    --code-bg: #f1f3f6;
+    --code-ink: #2b303b;
+    --shadow: 0 1px 2px rgba(20,22,28,0.04), 0 6px 20px rgba(20,22,28,0.05);
+
+    --p0: #dc2626; --p0-soft: #fde8e8;
+    --p1: #ea580c; --p1-soft: #fdead9;
+    --p2: #b45309; --p2-soft: #fbedd3;
+    --p3: #64748b; --p3-soft: #eaedf1;
+    --good: #0f8b5f; --good-soft: #e2f5ec;
+
+    --font-display: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-body: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12141a;
+      --surface: #191c24;
+      --surface-sunken: #14161c;
+      --border: #2b2f3a;
+      --ink: #eceef2;
+      --ink-soft: #a8afbd;
+      --ink-faint: #6b7280;
+      --accent: #22b8d8;
+      --accent-soft: #123640;
+      --code-bg: #14161c;
+      --code-ink: #d7dbe3;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 28px rgba(0,0,0,0.35);
+      --p0: #f87171; --p0-soft: #3a1a1a;
+      --p1: #fb923c; --p1-soft: #3a2410;
+      --p2: #fbbf24; --p2-soft: #362a0d;
+      --p3: #94a3b8; --p3-soft: #262a33;
+      --good: #34d399; --good-soft: #10241c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12141a;
+    --surface: #191c24;
+    --surface-sunken: #14161c;
+    --border: #2b2f3a;
+    --ink: #eceef2;
+    --ink-soft: #a8afbd;
+    --ink-faint: #6b7280;
+    --accent: #22b8d8;
+    --accent-soft: #123640;
+    --code-bg: #14161c;
+    --code-ink: #d7dbe3;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 28px rgba(0,0,0,0.35);
+    --p0: #f87171; --p0-soft: #3a1a1a;
+    --p1: #fb923c; --p1-soft: #3a2410;
+    --p2: #fbbf24; --p2-soft: #362a0d;
+    --p3: #94a3b8; --p3-soft: #262a33;
+    --good: #34d399; --good-soft: #10241c;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell { max-width: 1120px; margin: 0 auto; padding: 0 24px 100px; }
+
+  /* ---------- Header / masthead ---------- */
+  header.masthead {
+    padding: 56px 0 32px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 36px;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(28px, 4vw, 40px);
+    line-height: 1.12;
+    margin: 0 0 10px;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+  .subhead {
+    color: var(--ink-soft);
+    font-size: 17px;
+    max-width: 68ch;
+    margin: 0 0 22px;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--ink-faint);
+  }
+  .meta-row b { color: var(--ink-soft); font-weight: 500; }
+
+  /* ---------- Layout: content + toc ---------- */
+  .layout { display: grid; grid-template-columns: 200px 1fr; gap: 56px; align-items: start; }
+  @media (max-width: 880px) { .layout { grid-template-columns: 1fr; } .toc { display: none; } }
+
+  .toc {
+    position: sticky;
+    top: 24px;
+    font-size: 13px;
+    border-left: 1px solid var(--border);
+    padding-left: 16px;
+  }
+  .toc .toc-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 10px;
+  }
+  .toc a {
+    display: block;
+    color: var(--ink-soft);
+    text-decoration: none;
+    padding: 5px 0;
+    border-bottom: 1px solid transparent;
+  }
+  .toc a:hover { color: var(--accent); }
+
+  main { min-width: 0; }
+
+  section { margin-bottom: 52px; scroll-margin-top: 20px; }
+  h2 {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0 0 6px;
+    letter-spacing: -0.005em;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  h2 .num { font-family: var(--font-mono); color: var(--ink-faint); font-size: 15px; font-weight: 500; }
+  .section-intro { color: var(--ink-soft); font-size: 15px; margin: 0 0 22px; max-width: 74ch; }
+  h3 {
+    font-family: var(--font-display);
+    font-size: 16.5px;
+    font-weight: 600;
+    margin: 26px 0 10px;
+  }
+  p { margin: 0 0 14px; max-width: 74ch; }
+  a { color: var(--accent); }
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 1.5px 5px;
+    border-radius: 4px;
+  }
+  pre {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 14px 16px;
+    border-radius: 10px;
+    overflow-x: auto;
+    line-height: 1.55;
+    margin: 0 0 16px;
+    border: 1px solid var(--border);
+  }
+  ul, ol { margin: 0 0 14px; padding-left: 22px; max-width: 74ch; }
+  li { margin-bottom: 6px; }
+
+  /* ---------- Exec summary panel ---------- */
+  .exec-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 26px 28px;
+    box-shadow: var(--shadow);
+    margin-bottom: 16px;
+  }
+  .exec-panel p:last-child { margin-bottom: 0; }
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 14px 18px;
+    border-radius: 0 10px 10px 0;
+    font-size: 14.5px;
+    margin: 0 0 16px;
+  }
+
+  /* ---------- Severity badge ---------- */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    padding: 3px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .badge.p0 { background: var(--p0-soft); color: var(--p0); }
+  .badge.p1 { background: var(--p1-soft); color: var(--p1); }
+  .badge.p2 { background: var(--p2-soft); color: var(--p2); }
+  .badge.p3 { background: var(--p3-soft); color: var(--p3); }
+  .badge.good { background: var(--good-soft); color: var(--good); }
+
+  /* ---------- Finding cards ---------- */
+  .finding {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
+  }
+  .finding-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .finding-head h4 {
+    font-family: var(--font-display);
+    font-size: 15.5px;
+    font-weight: 600;
+    margin: 0;
+    flex: 1;
+    min-width: 200px;
+  }
+  .finding dl { display: grid; grid-template-columns: 130px 1fr; gap: 6px 14px; margin: 0; font-size: 14px; }
+  .finding dt { font-family: var(--font-mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint); padding-top: 2px; }
+  .finding dd { margin: 0; color: var(--ink); }
+  .finding dd.muted { color: var(--ink-soft); }
+
+  /* ---------- Tables ---------- */
+  .table-wrap { overflow-x: auto; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; background: var(--surface); }
+  thead th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    background: var(--surface-sunken);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    font-variant-numeric: tabular-nums;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; }
+  td.mono { font-family: var(--font-mono); font-size: 12.5px; }
+
+  .measured { color: var(--good); font-weight: 600; }
+  .not-measured { color: var(--ink-faint); font-style: italic; }
+
+  footer {
+    margin-top: 60px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    font-size: 12.5px;
+    color: var(--ink-faint);
+    font-family: var(--font-mono);
+  }
+</style>
+
+<div class="shell">
+
+  <header class="masthead">
+    <div class="eyebrow">Backend Performance Audit</div>
+    <h1>Why DATUM Slows Down for Large Brands</h1>
+    <p class="subhead">Architecture trace, live query measurements, and a prioritized, evidence-only bottleneck report — no fixes applied in this pass.</p>
+    <div class="meta-row">
+      <span><b>Services in scope</b> analytics · alerts-service · api-gateway · tenant-router · client/dashboard</span>
+      <span><b>Method</b> code audit + live query timing (8 tenant DBs) + EXPLAIN plan</span>
+      <span><b>Fixes applied</b> none</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="toc">
+      <div class="toc-label">Contents</div>
+      <a href="#exec">Executive Summary</a>
+      <a href="#evidence">Live Evidence</a>
+      <a href="#bottlenecks">Top Bottlenecks</a>
+      <a href="#queries">Slow Query Report</a>
+      <a href="#n1">N+1 &amp; Sequential Findings</a>
+      <a href="#backend">Backend Processing</a>
+      <a href="#frontend">Frontend Requests</a>
+      <a href="#infra">Infrastructure</a>
+      <a href="#scaling">Scaling Risks</a>
+      <a href="#matrix">Severity Matrix</a>
+      <a href="#roadmap">Roadmap</a>
+    </aside>
+
+    <main>
+
+      <section id="exec">
+        <h2><span class="num">01</span> Executive Summary</h2>
+        <div class="exec-panel">
+          <p><b>The primary bottleneck is the database layer — specifically query shape, not raw data volume or the database engine itself.</b> The same 30-day daily-funnel query ran in <b>654ms</b> on a small brand and <b>109.6 seconds</b> on a large brand against the same MySQL cluster, same schema, same code. The live <code>EXPLAIN</code> plan proves why: the query does <code>COUNT(DISTINCT order_name)</code>, but every date-prefixed index on <code>shopify_orders</code> was built around <code>order_id</code>, <code>total_price</code>, or UTM columns — none index <code>order_name</code> — so MySQL falls back to scanning the table's entire index (1.88M rows) in date order instead of seeking to a 30-day range.</p>
+          <p>This is compounded by an application-layer pattern found across nearly every KPI/trend/funnel endpoint in <code>analytics</code>: independent sub-queries (returns, checkout-initiated, intent, row-two comparisons, current vs. previous period) are <code>await</code>ed one after another instead of run concurrently, and several endpoints re-run the <em>same</em> expensive scan twice per request (once for a `COUNT`, once for the `SELECT`, or once per comparison period) instead of once. Neither of these is data-volume-proportional in a way indexing alone fixes — they multiply whatever the single-query cost already is.</p>
+          <p>The frontend is a secondary but real contributor: one chart view (hourly/daily Payment Split Trend, in both <code>widgetDataHooks.js</code> and <code>HourlySalesCompare.jsx</code>) generates <b>up to ~97 backend requests</b> for a single hourly render and <b>~360</b> for a 90-day daily range, by looping one HTTP call per hour/day client-side instead of requesting a range the backend already knows how to aggregate. The gateway itself is not a factor — JWT verification is O(1) and cached, with no per-request database or tenant-router round trip in the common case.</p>
+          <p><b>Bottlenecks that specifically worsen with brand size:</b> the <code>COUNT(DISTINCT order_name)</code> query shape (scales with total <code>shopify_orders</code> row count — line-item grain, so multiplies with average items-per-order too); the Product Conversion Table's unbounded, unpaginated CTEs (scale with total product/date-range row count, and run twice per page load); the serial sub-query fan-out in <code>getDashboardSummary</code> (scales with the number of independent branches taken, each against a large table). Bottlenecks that do <em>not</em> depend on brand size: the frontend N+1 chart loops (fixed at ~24 or ~90 iterations regardless of brand), and <code>alerts-service</code>'s full-<code>fcm_tokens</code>-scan-per-notification (scales with total registered devices across the whole org, not per-brand).</p>
+        </div>
+      </section>
+
+      <section id="evidence">
+        <h2><span class="num">02</span> Live Evidence</h2>
+        <p class="section-intro">Measured by connecting directly to each brand's tenant MySQL database from inside the running <code>analytics-service</code> container (bypassing the gateway/auth layer, which the gateway audit below shows is not itself a bottleneck) and timing the actual query used by <code>fetchDailyRows</code>'s filtered branch (<code>metricsSnapshotService.js:1853-1897</code>) for a 30-day window.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Brand</th>
+                <th class="num">shopify_orders COUNT(*)</th>
+                <th class="num">30-day order count</th>
+                <th class="num">Daily-funnel query (30d)</th>
+                <th>Bottleneck</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>TMC</td><td class="num mono">2,762 ms</td><td class="num mono">4,621 ms</td><td class="num mono" style="color:var(--p0); font-weight:700;">109,643 ms</td><td><span class="badge p0">P0</span> full index scan</td></tr>
+              <tr><td>PTS</td><td class="num mono">1,955 ms</td><td class="num mono">391 ms</td><td class="num mono" style="color:var(--p0); font-weight:700;">34,984 ms</td><td><span class="badge p0">P0</span> full index scan</td></tr>
+              <tr><td>BBB</td><td class="num mono">1,307 ms</td><td class="num mono">2,501 ms</td><td class="num mono" style="color:var(--p1); font-weight:700;">21,577 ms</td><td><span class="badge p1">P1</span> full index scan</td></tr>
+              <tr><td>AJMAL</td><td class="num mono">1,223 ms</td><td class="num mono">1,717 ms</td><td class="num mono" style="color:var(--p1); font-weight:700;">20,194 ms</td><td><span class="badge p1">P1</span> full index scan</td></tr>
+              <tr><td>VAMA</td><td class="num mono">785 ms</td><td class="num mono">1,154 ms</td><td class="num mono" style="color:var(--p2); font-weight:700;">7,793 ms</td><td><span class="badge p2">P2</span> full index scan</td></tr>
+              <tr><td>URBAN HINDU</td><td class="num mono">377 ms</td><td class="num mono">197 ms</td><td class="num mono">1,341 ms</td><td><span class="badge p3">P3</span></td></tr>
+              <tr><td>3TENX</td><td class="num mono">200 ms</td><td class="num mono">225 ms</td><td class="num mono">654 ms</td><td><span class="badge good">baseline</span></td></tr>
+              <tr><td>SHYLENEW</td><td class="num mono">194 ms</td><td class="num mono">171 ms</td><td class="num mono">603 ms</td><td><span class="badge good">baseline</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="font-size:13px; color:var(--ink-faint);">Same code, same query, same MySQL cluster, same 30-day window. A plain <code>COUNT(*)</code> on the same table stays under 5s even for the worst brand — the 20-110&times; blowup is specific to the daily-funnel query's <code>GROUP BY</code> + <code>COUNT(DISTINCT)</code> shape, not to the table or brand generally.</p>
+
+        <h3>EXPLAIN plan — TMC (worst case, 1.88M rows)</h3>
+        <pre>id: 1  select_type: SIMPLE  table: shopify_orders
+type: index          &lt;-- full index scan, not "range"
+possible_keys: idx_so_created_date_totalprice, idx_so_created_date_order
+key: idx_so_created_date_totalprice
+rows: 1,881,980      &lt;-- entire table's index, not just the 30-day slice
+filtered: 11.11%
+Extra: Using where</pre>
+        <p><b>Root cause:</b> the query selects <code>COUNT(DISTINCT order_name)</code>, but neither candidate index (<code>(created_date, total_price)</code> or <code>(created_date, order_id)</code>) contains <code>order_name</code>. MySQL can use <code>created_date</code> to satisfy the <code>GROUP BY</code> ordering by walking the whole index, but can't use it to seek a 30-day range while also resolving <code>order_name</code> without a full scan — so it reads all 1.88M index entries and does a lookup per row.</p>
+        <p><code>shopify_orders</code> is line-item grain (unique key <code>order_id + line_item_id</code>), confirmed via <code>SHOW INDEX</code> — every order with N line items contributes N rows, which is exactly why the query needs <code>DISTINCT</code> in the first place, and why row count (and therefore scan cost) grows faster than order count as a brand's catalog/basket size grows.</p>
+      </section>
+
+      <section id="bottlenecks">
+        <h2><span class="num">03</span> Top Bottlenecks</h2>
+
+        <div class="finding">
+          <div class="finding-head"><span class="badge p0">P0</span><h4>Daily-funnel / trend queries do COUNT(DISTINCT) with no covering index</h4></div>
+          <dl>
+            <dt>Endpoints</dt><dd>Conversion Funnel panel, hourly/daily trend chart — any view with a product/device/UTM/discount/sales-channel filter active (<code>fetchDailyRows</code>/<code>fetchHourlyRows</code>, <code>metricsSnapshotService.js:1715-1897</code>)</dd>
+            <dt>Evidence</dt><dd>Live-measured 654ms → 109,643ms across 8 brands; <code>EXPLAIN</code> shows <code>type: index</code> over all 1.88M rows instead of a range seek (Section 2)</dd>
+            <dt>Root cause</dt><dd>No index on <code>shopify_orders</code> covers <code>(created_date, order_name)</code>; the query needs <code>order_name</code> for <code>DISTINCT</code> but every date-prefixed index was built around a different column</dd>
+            <dt>Worse for large brands</dt><dd>Scales with total line-item row count (orders &times; avg. items/order) in the queried date range — a full-index scan, so cost is roughly linear in table size for any brand whose orders fall inside the requested window</dd>
+            <dt>Recommended fix</dt><dd>Add a covering index <code>(created_date, order_name, total_price)</code> — turns the scan into a range seek + covered read; tied to this exact query, not a blanket "add indexes" recommendation</dd>
+            <dt>Expected improvement</dt><dd>Order-of-magnitude — comparable small-brand queries hitting an equivalent covering index (<code>idx_so_created_date_totalprice</code> on other query shapes) run in the hundreds-of-ms range even on TMC's dataset</dd>
+          </dl>
+        </div>
+
+        <div class="finding">
+          <div class="finding-head"><span class="badge p0">P0</span><h4>Product Conversion Table scans the full catalog twice per page load, unpaginated</h4></div>
+          <dl>
+            <dt>Endpoints</dt><dd>Product Conversion Table (initial load, every sort/filter change, CSV export) — <code>productConversionService.js:241-348, 970-1082</code></dd>
+            <dt>Evidence</dt><dd>Code-audited: <code>buildBaseCte</code>'s <code>orders_60d</code> CTE scans all of <code>shopify_orders</code> for the date range across every product with no per-product narrowing pushed in; doubles when a compare range is requested (separate <code>previous_orders</code> CTE)</dd>
+            <dt>Root cause</dt><dd><code>getProductConversion</code> runs a COUNT query and a SELECT query independently, each re-materializing the same expensive CTEs from scratch — full scan runs twice (or 3-4&times; with a compare range) per page view; CSV export always runs unpaginated</dd>
+            <dt>Worse for large brands</dt><dd>Scales with total order/line-item rows in range &times; number of distinct products — the two dimensions that grow fastest for a large, established brand</dd>
+            <dt>Recommended fix</dt><dd>Compute the CTE result set once and reuse it for both the count and the page slice (e.g. a single query with a window function, or cache the materialized CTE result across the two calls within one request)</dd>
+            <dt>Expected improvement</dt><dd>~50% reduction in this endpoint's DB time from removing the duplicate scan alone, before any indexing work</dd>
+          </dl>
+        </div>
+
+        <div class="finding">
+          <div class="finding-head"><span class="badge p1">P1</span><h4>getDashboardSummary serializes 5-8 independent query branches</h4></div>
+          <dl>
+            <dt>Endpoints</dt><dd>Main dashboard KPI row — every load (<code>getDashboardSummary</code>, <code>metricsSnapshotService.js:2296-2424</code>)</dd>
+            <dt>Evidence</dt><dd>Code-audited: <code>totalPair</code>, <code>deltaPair</code>, sales-channel pair, <code>rowTwoComparison</code>, its delta variant, <code>intentPair</code>, and two <code>checkoutInitiatedPair</code> calls are each independently <code>await</code>ed with no data dependency between them, instead of <code>Promise.all</code>'d</dd>
+            <dt>Root cause</dt><dd>Sequential coding style, not a data dependency — none of these branches' results feed into another's query</dd>
+            <dt>Worse for large brands</dt><dd>Each branch queries a large table (<code>shopify_orders</code>, <code>hourly_sessions_summary_shopify</code>, <code>daily_user_intent_summary</code>); serial execution multiplies per-branch latency by the number of branches taken instead of being bounded by the single slowest one</dd>
+            <dt>Recommended fix</dt><dd>Wrap the independent branches in <code>Promise.all</code> — no query rewrite needed, purely a control-flow change</dd>
+            <dt>Expected improvement</dt><dd>Wall-clock time drops from "sum of all branch latencies" to "slowest single branch latency" — for a dashboard load hitting 5+ branches, potentially 3-5&times;</dd>
+          </dl>
+        </div>
+
+        <div class="finding">
+          <div class="finding-head"><span class="badge p1">P1</span><h4>Payment Split Trend generates up to ~360 backend requests for one chart</h4></div>
+          <dl>
+            <dt>Endpoints</dt><dd>Payment Split Trend chart, hourly and daily views (<code>widgetDataHooks.js:1308-1552</code>); the same pattern is duplicated for the Payment Composite metric in <code>HourlySalesCompare.jsx:974-1033</code></dd>
+            <dt>Evidence</dt><dd>Code-audited: hourly view loops 24 hours &times; 2 endpoints &times; (1 or 2 for compare) = up to ~97 requests; daily view loops once per calendar day in the selected range &times; 2 endpoints &times; (1 or 2 for compare) — a 90-day range produces ~360 requests</dd>
+            <dt>Root cause</dt><dd>Client-side loop issuing one HTTP call per hour/day instead of one ranged call — the backend's <code>getOrderSplit</code>/<code>getPaymentSalesSplit</code> already accept <code>start</code>/<code>end</code> ranges elsewhere (<code>useDashboardModeOfPaymentData</code> uses this correctly)</dd>
+            <dt>Worse for large brands</dt><dd>Not brand-size dependent — this is a fixed multiplier (24 or N-days) regardless of data volume, but each of those N requests still pays the full per-request cost against a large brand's tables, so the two problems compound multiplicatively</dd>
+            <dt>Recommended fix</dt><dd>Replace the per-hour/per-day loop with a single ranged request per series (current, comparison), matching the pattern already used by <code>useDashboardModeOfPaymentData</code></dd>
+            <dt>Expected improvement</dt><dd>Request count drops from ~97-360 to 2-4 for the same chart — the single largest reduction in raw request volume found in this audit</dd>
+          </dl>
+        </div>
+
+        <div class="finding">
+          <div class="finding-head"><span class="badge p2">P2</span><h4>alerts-service re-fetches the entire fcm_tokens collection on every notification</h4></div>
+          <dl>
+            <dt>Endpoints</dt><dd><code>sendToAll</code> (<code>alerts-service/utils/fcm.js:45-145</code>), called from every inventory alert, item-qty alert, and generic push event</dd>
+            <dt>Evidence</dt><dd>Code-audited: <code>fcmTokensCollection.find({}).toArray()</code> — no filter, no <code>.limit()</code>, no caching between calls; a single webhook payload with N breached thresholds triggers N full re-fetches (<code>app.js:511-548</code>)</dd>
+            <dt>Root cause</dt><dd>No token-list caching, and no TTL/last-seen cleanup for stale tokens — cleanup only happens reactively when FCM rejects a token as invalid</dd>
+            <dt>Worse for large brands</dt><dd>Not per-brand — scales with total registered devices org-wide, and with notification frequency (multiplied again by the N-alerts-per-webhook pattern)</dd>
+            <dt>Recommended fix</dt><dd>Cache the token list in-process with a short TTL, or push a `last_used`/TTL-based cleanup so the collection doesn't grow unbounded</dd>
+            <dt>Expected improvement</dt><dd>Not measurable without the collection's current size — flagged as a scaling risk more than a proven current bottleneck (see Section 9)</dd>
+          </dl>
+        </div>
+      </section>
+
+      <section id="queries">
+        <h2><span class="num">04</span> Slow Query Report</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Query purpose</th><th>Table(s)</th><th class="num">Exec. time (TMC)</th><th>Index used</th><th>Problem</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Daily-funnel filtered branch — orders+sales by date</td>
+                <td class="mono">shopify_orders</td>
+                <td class="num mono" style="color:var(--p0);">109,643 ms</td>
+                <td class="mono">idx_so_created_date_totalprice (full scan)</td>
+                <td>No index covers <code>order_name</code>; <code>COUNT(DISTINCT)</code> forces full scan</td>
+              </tr>
+              <tr>
+                <td>Product Conversion — orders_60d CTE</td>
+                <td class="mono">shopify_orders</td>
+                <td class="not-measured">not measured live</td>
+                <td class="not-measured">not inspected live</td>
+                <td>No per-product narrowing; runs twice per request (COUNT + SELECT)</td>
+              </tr>
+              <tr>
+                <td>Plain row count (control)</td>
+                <td class="mono">shopify_orders</td>
+                <td class="num mono measured">2,762 ms</td>
+                <td class="mono">n/a (COUNT(*))</td>
+                <td>None — included as a baseline to isolate the GROUP BY/DISTINCT cost above</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="font-size:13px;color:var(--ink-faint);">Only the daily-funnel query and its control were run against a live database this pass. The Product Conversion CTE is a code-level finding (confirmed query shape and lack of pagination) but was not independently timed or EXPLAIN'd live — noted honestly rather than assigning a fabricated number.</p>
+      </section>
+
+      <section id="n1">
+        <h2><span class="num">05</span> N+1 &amp; Sequential-Operation Findings</h2>
+
+        <h3>Confirmed N+1 / per-item patterns</h3>
+        <ul>
+          <li><b>Multi-brand overview</b> (<code>overallSnapshotService.js:164-166</code>) — one full <code>getDashboardSummary()</code> per accessible brand, parallelized across brands but ~8-10 serial round trips <em>within</em> each brand's call.</li>
+          <li><b>Inventory alert fan-out</b> (<code>alerts-service/app.js:511-548</code>) — N breached thresholds in one webhook payload trigger N separate <code>insertOne</code> + N full <code>fcm_tokens</code> re-fetches + N FCM broadcasts.</li>
+          <li><b>Redis inventory cache refresh</b> (<code>alerts-service/app.js:175-207</code>) — sequential <code>for</code> loop, one Redis <code>SET</code> per row, and sequential (not parallel) per-brand SQL queries in the all-brands refresh job. Background job, not request-path, but scales O(brands &times; rows/brand).</li>
+        </ul>
+
+        <h3>Sequential awaits with no data dependency (should be Promise.all)</h3>
+        <ul>
+          <li><code>getDashboardSummary</code> — up to 8 independent branches, detailed in Section 3.</li>
+          <li><code>queryProductKpiTotals</code> (<code>metricsAggregateService.js:349-394</code>) — orders, sessions, RTO queries awaited one at a time, no dependency between them.</li>
+          <li><code>getProductConversion</code>'s count vs. select queries (<code>productConversionService.js:970-989</code>) — independent, awaited sequentially, and each separately re-materializes the same CTEs (double cost, not just sequential cost).</li>
+          <li>Payment Split Trend's current-vs-comparison series (<code>widgetDataHooks.js:1535-1552</code>, <code>HourlySalesCompare.jsx:997-1033</code>) — frontend-side waterfall, comparison series only starts after current series fully resolves.</li>
+        </ul>
+
+        <h3>Current/previous period pairs done as two full executions instead of one conditional-SUM query</h3>
+        <p>Most pair functions already use the efficient single-query pattern (<code>WHERE (range1) OR (range2)</code> + <code>CASE</code>/conditional <code>SUM</code>) — confirmed for <code>queryOverallSummaryPair</code>, <code>queryUtmAggregatePair</code>, <code>queryDiscountAggregatePair</code>, <code>queryProductTypeAggregatePair</code>, <code>queryIntentSummaryPair</code>. Three do not:</p>
+        <ul>
+          <li><code>getReturnsSnapshotPair</code>'s UTM-filtered branch (<code>metricsSnapshotService.js:877-898</code>) calls <code>computeReturnCounts</code> twice — the non-UTM branch just below it (line 921) does it correctly in one query. An inconsistency between two paths for the same metric.</li>
+          <li><code>getSnapshotPair</code>'s generic fallback (product/device/snapshot filters active, <code>metricsSnapshotService.js:2276-2291</code>) calls <code>getSnapshot()</code> twice, each re-triggering its own full internal sub-query fan-out — the least efficient current/previous path in the codebase.</li>
+          <li><code>getDashboardSummary</code>'s cutoff-hour <code>deltaPair</code> and sales-channel <code>pair</code> (lines 2330-2367) re-run the entire pair machinery a second/third time instead of folding the extra condition into the already-computed <code>totalPair</code>.</li>
+        </ul>
+      </section>
+
+      <section id="backend">
+        <h2><span class="num">06</span> Backend Processing Issues</h2>
+        <ul>
+          <li><b>Result-merging via in-memory Map instead of SQL JOIN</b> — <code>fetchDailyRows</code> (3-4 queries merged via a <code>byDate</code> Map), <code>fetchHourlyRows</code> (3 queries via <code>byKey</code>), <code>getDailyFunnel</code> (up to 8-9 queries across 3 more Maps). None of the underlying tables are joined in SQL even though they share <code>date</code>/<code>utm_source</code> keys.</li>
+          <li><b>Over-fetch-then-filter-in-JS</b> — Product Conversion's inventory-post-processing path (<code>productConversionService.js:1005-1024</code>) pulls every matching row with no <code>LIMIT</code>, then sorts/filters/paginates in Node; CSV export does the same unconditionally. <code>getInventoryOnlyRowsFromRedis</code> pulls the entire Redis inventory + sales cache into memory before filtering.</li>
+          <li><b>Scalar subquery per outer row</b> — <code>queryOverallSummaryTotals</code>/<code>Pair</code> embeds a correlated subquery against <code>hourly_sessions_summary_shopify</code> inside the main query rather than a join; not unbounded, but a repeated-scan risk on wide date ranges.</li>
+        </ul>
+      </section>
+
+      <section id="frontend">
+        <h2><span class="num">07</span> Frontend Request Issues</h2>
+        <p class="section-intro">Structural context worth stating plainly: <code>App.jsx</code> renders exactly one route/tab at a time via a single <code>switch</code>, and <code>DashboardDataProvider</code> already dedupes identical in-flight requests across sibling widgets on the Dashboard tab — both are good existing patterns, not findings.</p>
+        <ul>
+          <li><b>Unthrottled global polling</b> — <code>NotificationsMenu.jsx</code> polls <code>/push/notifications</code> every 15s for the entire session on every tab, with no <code>document.visibilityState</code> guard (unlike <code>MerchantRequestsPanel</code>, which does gate on visibility).</li>
+          <li><b>N+1 chart loops</b> — Payment Split Trend, detailed in Section 3 (~97 requests hourly, ~360 requests for a 90-day daily range).</li>
+          <li><b>Duplicate pagespeed fetch path</b> — <code>DashboardRouteContainer.jsx</code>'s CSV snapshot download and <code>widgetDataHooks.js</code>'s Web Performance widget independently call the same pagespeed endpoint outside <code>DashboardDataProvider</code>'s cache, so clicking "Download Snapshot" while the panel is already showing refetches the same data.</li>
+          <li><b>Fetched-but-discarded rows</b> — <code>useDashboardWebVitalsData</code> fetches full page-level pagespeed rows for the whole date range, then only uses the top 5 (and only when a single date is selected — otherwise the page-level fetch is thrown away entirely).</li>
+        </ul>
+      </section>
+
+      <section id="infra">
+        <h2><span class="num">08</span> Database &amp; Infrastructure Observations</h2>
+        <ul>
+          <li><b>Gateway auth is not a bottleneck.</b> <code>auth.authenticate()</code> in the Lua layer does local JWT verification against a two-tier in-memory cache (verified-claims cache, ~300s TTL; JWKS/public-key cache, ~3600s TTL) — O(1) per request, no database or tenant-router call in the common case. The one exception is the <code>/analytics/metrics/top-pdps</code> "speed key" path, which always calls tenant-router.</li>
+          <li><b>tenant-router caches brand→DB-host resolution</b> for 10 minutes per brand, LRU-capped at 500 distinct brands. Cost is amortized per brand, not per request — but if the org exceeds 500 concurrently-active brands, cache thrashing would reintroduce a resolution round-trip more often.</li>
+          <li><b>MySQL topology</b>: tenant DBs are separate schemas on a shared RDS host/read-replica (<code>read-replica-5...rds.amazonaws.com</code>), one schema per brand, confirmed via live <code>resolveTenantRoute</code> calls — a single noisy/large brand's query load shares the same instance's CPU/IO with every other brand.</li>
+          <li><b>Not measurable in this environment</b>: real production concurrent-request volume, database server CPU/memory/disk-IO graphs, network latency from EC2 to RDS under load, and event-loop-blocking behavior under concurrent traffic. This pass measured single-request, low-concurrency timings only.</li>
+        </ul>
+      </section>
+
+      <section id="scaling">
+        <h2><span class="num">09</span> Scaling Risks</h2>
+        <p><b>Observed, not projected:</b> the daily-funnel query's cost tracks <code>shopify_orders</code> row count closely enough that the 8-brand sample already shows the shape — smallest two brands (194-200ms COUNT(*), ~600ms funnel query) vs. largest (2.7s COUNT(*), 109.6s funnel query) is roughly a 14&times; row-count-proxy difference producing a ~170&times; query-time difference, consistent with a full index scan (cost grows with total table size, not with the 30-day window requested) rather than a range seek (cost would grow with window size only, roughly flat across brands for the same 30-day request).</p>
+        <p>This means the funnel/trend query's cost will keep climbing for TMC/PTS specifically as more orders accumulate, independent of anything the user does with date-range selection — a brand that's already large today is on the steep part of this curve, and the gap between it and small brands widens with every additional order, not just every additional feature.</p>
+        <p><b>Not independently measurable</b>: Product Conversion Table's CTE cost at scale (flagged by code shape, not timed), <code>fcm_tokens</code> collection's actual current size, and whether the multi-brand overview endpoint's ~8-10-query-per-brand fan-out becomes the dominant cost once an org has many brands rather than one large one.</p>
+      </section>
+
+      <section id="matrix">
+        <h2><span class="num">10</span> Severity Matrix</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Issue</th><th>Severity</th><th>Affected endpoints</th><th>Current impact</th><th>Expected gain</th><th>Complexity</th><th>Risk</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>COUNT(DISTINCT order_name) full index scan</td><td><span class="badge p0">P0</span></td><td>Funnel + trend chart (any filter)</td><td>Measured: up to 110s/request on largest brand</td><td>Order-of-magnitude</td><td>Low — one composite index</td><td>Low (read-only index)</td></tr>
+              <tr><td>Product Conversion double CTE scan, unpaginated</td><td><span class="badge p0">P0</span></td><td>Product Conversion Table + CSV export</td><td>Full-catalog scan &times;2-4 per view</td><td>~50%+ per request</td><td>Medium — query restructure</td><td>Medium (shared CTE logic)</td></tr>
+              <tr><td>getDashboardSummary serial branch fan-out</td><td><span class="badge p1">P1</span></td><td>Main dashboard KPI row</td><td>Sum-of-branches instead of max-of-branches latency</td><td>3-5&times; on multi-branch loads</td><td>Low — Promise.all wrap</td><td>Low (no query change)</td></tr>
+              <tr><td>Payment Split Trend N+1 client loop</td><td><span class="badge p1">P1</span></td><td>Payment Split Trend chart</td><td>Up to ~360 requests/render</td><td>~99% request-count reduction</td><td>Medium — needs a ranged/bucketed endpoint</td><td>Medium (response shape changes)</td></tr>
+              <tr><td>getSnapshotPair / getReturnsSnapshotPair inefficient fallbacks</td><td><span class="badge p1">P1</span></td><td>Dashboard KPIs w/ product or device filter</td><td>Doubles full sub-query fan-out</td><td>~2&times; on filtered dashboard loads</td><td>Medium</td><td>Medium</td></tr>
+              <tr><td>fcm_tokens full-collection fetch per notification</td><td><span class="badge p2">P2</span></td><td>All push notifications</td><td>Not sized; scales with org-wide device count</td><td>Unknown until collection size measured</td><td>Low — add caching</td><td>Low</td></tr>
+              <tr><td>NotificationsMenu unthrottled 15s poll</td><td><span class="badge p2">P2</span></td><td>Bell icon, every tab, whole session</td><td>Fixed background load, not brand-dependent</td><td>Reduces idle-tab load</td><td>Low — visibility check</td><td>Low</td></tr>
+              <tr><td>Duplicate pagespeed fetch path</td><td><span class="badge p3">P3</span></td><td>Web Performance widget + CSV snapshot</td><td>1 extra request on a specific user action</td><td>Minor</td><td>Low — route through existing cache</td><td>Low</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="roadmap">
+        <h2><span class="num">11</span> Optimization Roadmap</h2>
+        <p class="section-intro">Sequenced by evidence strength and blast radius — nothing in this section has been implemented.</p>
+
+        <h3>Phase A — Quick Wins</h3>
+        <ul>
+          <li>Add a covering index <code>(created_date, order_name, total_price)</code> on <code>shopify_orders</code> for the daily-funnel/trend query shape — directly tied to the measured 654ms→109.6s finding.</li>
+          <li>Wrap <code>getDashboardSummary</code>'s independent branches (<code>totalPair</code>, <code>deltaPair</code>, sales-channel pair, row-two comparisons, <code>intentPair</code>, <code>checkoutInitiatedPair</code> &times;2) in <code>Promise.all</code> — pure control-flow, no query changes.</li>
+          <li>Parallelize Payment Split Trend's current vs. comparison series with <code>Promise.all</code> (mechanical, halves wall-clock even before the loop itself is fixed).</li>
+          <li>Add a <code>document.visibilityState</code> guard to <code>NotificationsMenu</code>'s 15s poll, matching the existing <code>MerchantRequestsPanel</code> pattern.</li>
+        </ul>
+
+        <h3>Phase B — Query &amp; API Optimization</h3>
+        <ul>
+          <li>Replace Payment Split Trend's per-hour/per-day client loop with a single ranged or hourly-bucketed backend endpoint (the backend already supports ranged calls elsewhere — this is a frontend call-site change, not a new backend capability).</li>
+          <li>Restructure <code>getProductConversion</code> to materialize its CTEs once and reuse the result for both the count and the page slice, instead of two independent executions.</li>
+          <li>Fix the three current/previous "two full executions" cases (<code>getReturnsSnapshotPair</code>'s UTM branch, <code>getSnapshotPair</code>'s generic fallback, <code>getDashboardSummary</code>'s cutoff/channel re-runs) to use the single conditional-SUM pattern already proven elsewhere in the same file.</li>
+          <li>Route the CSV snapshot's pagespeed fetch through the same <code>DashboardDataProvider</code> cache the on-screen widget uses.</li>
+        </ul>
+
+        <h3>Phase C — Architectural Optimization</h3>
+        <ul>
+          <li>Cache <code>fcm_tokens</code> in-process with a short TTL (or a Mongo change-stream–backed cache) instead of re-fetching the full collection per notification; add TTL/last-seen-based cleanup.</li>
+          <li>Evaluate replacing the <code>fetchDailyRows</code>/<code>fetchHourlyRows</code> multi-query-then-JS-Map-merge pattern with pre-aggregated tables or SQL-side joins where the same date/UTM key is already shared across the merged sources.</li>
+          <li>If the multi-brand overview endpoint becomes a bottleneck as brand count grows (not yet proven — see Section 9), consider a pre-aggregated per-brand summary refreshed on a schedule rather than computing all ~8-10 sub-queries live per brand per request.</li>
+        </ul>
+      </section>
+
+    </main>
+  </div>
+
+  <footer>
+    Measured via direct MySQL connections from inside the running analytics-service container against 8 live tenant databases, plus static code audit across analytics, alerts-service, api-gateway, tenant-router, and client/dashboard. No indexes, caches, or code changes were applied during this audit.
+  </footer>
+
+</div>

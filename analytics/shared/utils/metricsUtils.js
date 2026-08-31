@@ -69,6 +69,84 @@ async function computeReturnCounts({ start, end, conn, filters }) {
   };
 }
 
+async function computeReturnCountsPair(currentRange, previousRange, conn, filters) {
+  const combinedStart =
+    currentRange.start <= previousRange.start ? currentRange.start : previousRange.start;
+  const combinedEnd =
+    currentRange.end >= previousRange.end ? currentRange.end : previousRange.end;
+
+  const isUtm = hasUtmFilters(filters);
+  const eventTypeCol = isUtm ? "rf.event_type" : "event_type";
+  const dateCol = isUtm ? "rf.order_created_date" : "order_created_date";
+
+  const caseSum = (label, alias) =>
+    `COALESCE(SUM(CASE WHEN ${eventTypeCol} = '${label}' AND ${dateCol} >= ? AND ${dateCol} <= ? THEN 1 ELSE 0 END), 0) AS ${alias}`;
+
+  const selectSql = [
+    caseSum("CANCEL", "current_cancelled_orders"),
+    caseSum("REFUND", "current_refunded_orders"),
+    caseSum("CANCEL (RTO)", "current_rto_orders"),
+    caseSum("CANCEL", "previous_cancelled_orders"),
+    caseSum("REFUND", "previous_refunded_orders"),
+    caseSum("CANCEL (RTO)", "previous_rto_orders"),
+  ].join(",\n        ");
+  const caseParams = [
+    currentRange.start, currentRange.end,
+    currentRange.start, currentRange.end,
+    currentRange.start, currentRange.end,
+    previousRange.start, previousRange.end,
+    previousRange.start, previousRange.end,
+    previousRange.start, previousRange.end,
+  ];
+
+  const whereParts = [];
+  const whereParams = [];
+  let sql;
+
+  if (isUtm) {
+    sql = `
+      SELECT
+        ${selectSql}
+      FROM returns_fact rf
+      JOIN shopify_orders so ON rf.order_id = so.order_id
+    `;
+    whereParts.push("rf.order_created_date >= ?", "rf.order_created_date <= ?");
+    whereParams.push(combinedStart, combinedEnd);
+    const built = buildUtmWhereClause(filters, {
+      mapDirectToNull: true,
+      deviceColumn: "so.user_agent",
+    });
+    if (built.clause) { whereParts.push(built.clause); whereParams.push(...built.params); }
+  } else {
+    sql = `
+      SELECT
+        ${selectSql}
+      FROM returns_fact
+    `;
+    whereParts.push("order_created_date >= ?", "order_created_date <= ?");
+    whereParams.push(combinedStart, combinedEnd);
+  }
+
+  sql += whereParts.length ? ` WHERE ${whereParts.join(" AND ")}` : "";
+  const rows = await conn.query(sql, {
+    type: QueryTypes.SELECT,
+    replacements: [...caseParams, ...whereParams],
+  });
+  const row = rows[0] || {};
+  return {
+    current: {
+      cancelled_orders: Number(row.current_cancelled_orders || 0),
+      refunded_orders: Number(row.current_refunded_orders || 0),
+      rto_orders: Number(row.current_rto_orders || 0),
+    },
+    previous: {
+      cancelled_orders: Number(row.previous_cancelled_orders || 0),
+      refunded_orders: Number(row.previous_refunded_orders || 0),
+      rto_orders: Number(row.previous_rto_orders || 0),
+    },
+  };
+}
+
 function computePercentDelta(currentValue, previousValue) {
   const curr = Number(currentValue || 0);
   const prev = Number(previousValue || 0);
@@ -95,6 +173,7 @@ function appendProductFilter(sql, replacements, productId, column = "product_id"
 module.exports = {
   rawSum,
   computeReturnCounts,
+  computeReturnCountsPair,
   computePercentDelta,
   appendProductFilter,
 };

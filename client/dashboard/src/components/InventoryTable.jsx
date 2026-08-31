@@ -194,8 +194,8 @@ function InventoryTable({ brandKey, startDate, endDate }) {
       { id: "product", label: "Product", align: "left" },
       { id: "sku", label: "SKU", align: "left" },
       { id: "sales", label: "Total Sales", align: "right" },
-      { id: "drr", label: `DRR (${INVENTORY_PERIOD})`, align: "right" },
-      { id: "doh", label: `DOH (${INVENTORY_PERIOD})`, align: "right" },
+      { id: "drr", label: `DRR (${INVENTORY_PERIOD})`, align: "right", sortable: false },
+      { id: "doh", label: `DOH (${INVENTORY_PERIOD})`, align: "right", sortable: false },
     ],
     [],
   );
@@ -206,8 +206,6 @@ function InventoryTable({ brandKey, startDate, endDate }) {
         product: "landing_page_path",
         sku: "sku",
         sales: "sales",
-        drr: "drr",
-        doh: "doh",
       };
       const nextSortBy = map[columnId] || "landing_page_path";
       const isAsc = activeColumn === columnId && sortDir === "asc";
@@ -403,13 +401,17 @@ function InventoryTable({ brandKey, startDate, endDate }) {
                         },
                       }}
                     >
-                      <TableSortLabel
-                        active={activeColumn === col.id}
-                        direction={activeColumn === col.id ? sortDir : "asc"}
-                        onClick={() => handleSort(col.id)}
-                      >
-                        {col.label}
-                      </TableSortLabel>
+                      {col.sortable === false ? (
+                        col.label
+                      ) : (
+                        <TableSortLabel
+                          active={activeColumn === col.id}
+                          direction={activeColumn === col.id ? sortDir : "asc"}
+                          onClick={() => handleSort(col.id)}
+                        >
+                          {col.label}
+                        </TableSortLabel>
+                      )}
                       <Box
                         className="resize-handle"
                         onMouseDown={(e) => handleMouseDown(e, col.id)}

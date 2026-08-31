@@ -22,12 +22,7 @@ describe("productConversionService", () => {
 
     const conn = {
       query: jest.fn().mockImplementation((sql) => {
-        if (sql.includes("COUNT(*) AS total_count")) {
-          return Promise.resolve([{ total_count: 1 }]);
-        }
-        if (
-          sql.includes("FROM product_landing_mapping m")
-        ) {
+        if (sql.includes("FROM product_landing_mapping m")) {
           return Promise.resolve([
             {
               product_id: "sku-1",
@@ -48,6 +43,7 @@ describe("productConversionService", () => {
               prev_orders: 6,
               prev_sales: 480,
               prev_cvr: 7.5,
+              total_count: 1,
             },
           ]);
         }
@@ -77,11 +73,11 @@ describe("productConversionService", () => {
       conn,
     });
 
-    expect(conn.query.mock.calls[0][0]).toContain("COUNT(*) AS total_count");
-    expect(conn.query.mock.calls[1][0]).toContain("FROM product_landing_mapping m");
-    expect(conn.query.mock.calls[1][0]).toContain("m.product_type IN (?)");
-    expect(conn.query.mock.calls[1][0]).toContain("LIMIT 5 OFFSET 0");
-    expect(conn.query).toHaveBeenCalledTimes(2);
+    expect(conn.query.mock.calls[0][0]).toContain("COUNT(*) OVER() AS total_count");
+    expect(conn.query.mock.calls[0][0]).toContain("FROM product_landing_mapping m");
+    expect(conn.query.mock.calls[0][0]).toContain("m.product_type IN (?)");
+    expect(conn.query.mock.calls[0][0]).toContain("LIMIT 5 OFFSET 0");
+    expect(conn.query).toHaveBeenCalledTimes(1);
     expect(response.total_count).toBe(1);
     expect(response.rows[0]).toEqual(expect.objectContaining({
       product_id: "sku-1",
@@ -180,9 +176,6 @@ describe("productConversionService", () => {
     const conn = {
       query: jest.fn().mockImplementation((sql, options = {}) => {
         calls.push({ sql, replacements: options.replacements || [] });
-        if (sql.includes("COUNT(*) AS total_count")) {
-          return Promise.resolve([{ total_count: 0 }]);
-        }
         return Promise.resolve([]);
       }),
     };
@@ -200,12 +193,13 @@ describe("productConversionService", () => {
       conn,
     });
 
-    expect(calls[0].sql).toContain("COUNT(*) AS total_count");
-    expect(calls[1].sql).toContain("FROM hourly_product_sessions");
-    expect(calls[1].sql).toContain("AND (created_date < ? OR created_time < ?)");
-    expect(calls[1].sql).toContain("AND (date < ? OR hour <= ?)");
-    expect(calls[1].sql).toContain("LIMIT 10 OFFSET 0");
-    expect(calls[1].replacements).toEqual(
+    expect(calls[0].sql).toContain("COUNT(*) OVER() AS total_count");
+    expect(calls[0].sql).toContain("FROM hourly_product_sessions");
+    expect(calls[0].sql).toContain("AND (created_date < ? OR created_time < ?)");
+    expect(calls[0].sql).toContain("AND (date < ? OR hour <= ?)");
+    expect(calls[0].sql).toContain("LIMIT 10 OFFSET 0");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].replacements).toEqual(
       expect.arrayContaining([
         "2026-04-03",
         "2026-04-03",
@@ -217,7 +211,7 @@ describe("productConversionService", () => {
         9,
       ]),
     );
-    expect(calls[1].replacements).not.toContain("10:50:00");
+    expect(calls[0].replacements).not.toContain("10:50:00");
   });
 
   test("keeps full post-processing path for inventory-derived sorting and filtering", async () => {
