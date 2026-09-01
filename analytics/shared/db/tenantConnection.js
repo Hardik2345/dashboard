@@ -6,7 +6,7 @@ const mysqlCore = require('mysql2');
 const { QueryTypes } = require('sequelize');
 const { recordMysqlConnectionError, captureError } = require('../../observability');
 
-const POOL_MAX = Number(process.env.BRAND_POOL_MAX || 5);
+const POOL_MAX = Number(process.env.BRAND_POOL_MAX || 15);
 const POOL_IDLE = Number(process.env.BRAND_POOL_IDLE || 600_000);
 const POOL_MIN = Number(process.env.BRAND_POOL_MIN || 1);
 
