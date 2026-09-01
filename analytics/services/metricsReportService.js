@@ -1,7 +1,7 @@
 const { QueryTypes } = require("sequelize");
 const { shiftDays } = require("../shared/utils/date");
 const { buildWhereClause } = require("../shared/utils/sql");
-const { appendUtmWhere } = require("../shared/utils/filters");
+const { appendUtmWhere, hasUtmFilters } = require("../shared/utils/filters");
 const {
   resolveUtmAggregateSource,
   resolveDiscountAggregateSource,
@@ -74,6 +74,24 @@ function buildClosedOpenTimestampRange(start, end, hourLte = null) {
 
 function hasCityFilter(filters = {}) {
   return Array.isArray(filters.city) ? filters.city.length > 0 : !!filters.city;
+}
+
+// True only when NO filter of any kind is active (product, city, UTM/sales
+// channel/device — hasUtmFilters covers those three plus city, discount,
+// product type). Explicit and independent of branch ordering elsewhere in
+// this file, so it never silently reads the unfiltered rollup for a request
+// that actually has a filter applied.
+function isUnfilteredPaymentRequest(filters = {}, productId = "") {
+  const hasProductType = Array.isArray(filters.product_type)
+    ? filters.product_type.length > 0
+    : !!filters.product_type;
+  return !(
+    productId ||
+    hasCityFilter(filters) ||
+    hasUtmFilters(filters) ||
+    filters.discount_code ||
+    hasProductType
+  );
 }
 
 function appendCityOrderWhere(whereSql, replacements, city) {
@@ -363,6 +381,63 @@ function buildMetricsReportService() {
       };
     }
 
+    // Unfiltered fast path — the pipeline now maintains cod_sales/
+    // prepaid_sales/partially_prepaid_sales on the daily and hourly rollup
+    // tables, so this no longer needs to scan shopify_orders at all when no
+    // filter is active. Any filter falls through to the raw-table path below.
+    if (isUnfilteredPaymentRequest(filters, productId)) {
+      let sql;
+      const replacements = [effectiveStart, effectiveEnd];
+      if (useHourlyCutoff) {
+        sql = `
+          SELECT
+            COALESCE(SUM(cod_sales), 0) AS cod_sales,
+            COALESCE(SUM(prepaid_sales), 0) AS prepaid_sales,
+            COALESCE(SUM(partially_prepaid_sales), 0) AS partial_sales
+          FROM hour_wise_sales
+          WHERE date >= ? AND date <= ? AND hour <= ?
+        `;
+        replacements.push(hourLte);
+      } else {
+        sql = `
+          SELECT
+            COALESCE(SUM(cod_sales), 0) AS cod_sales,
+            COALESCE(SUM(prepaid_sales), 0) AS prepaid_sales,
+            COALESCE(SUM(partially_prepaid_sales), 0) AS partial_sales
+          FROM overall_summary
+          WHERE date >= ? AND date <= ?
+        `;
+      }
+
+      const rows = await conn.query(sql, {
+        type: QueryTypes.SELECT,
+        replacements,
+      });
+      const row = rows?.[0] || {};
+      const codSales = Number(row.cod_sales || 0);
+      const prepaidSales = Number(row.prepaid_sales || 0);
+      const partialSales = Number(row.partial_sales || 0);
+      const total = codSales + prepaidSales + partialSales;
+
+      return {
+        metric: "PAYMENT_SPLIT_SALES",
+        timezone: resolvedTimezone,
+        range: {
+          start: effectiveStart,
+          end: effectiveEnd,
+          hour_lte: useHourlyCutoff ? hourLte : null,
+        },
+        cod_sales: codSales,
+        prepaid_sales: prepaidSales,
+        partial_sales: partialSales,
+        total_sales_from_split: total,
+        cod_percent: total > 0 ? (codSales / total) * 100 : 0,
+        prepaid_percent: total > 0 ? (prepaidSales / total) * 100 : 0,
+        partial_percent: total > 0 ? (partialSales / total) * 100 : 0,
+        sql_used: includeSql ? sql : undefined,
+      };
+    }
+
     let whereSql = isSingleDay
       ? `WHERE created_date = ?`
       : `WHERE created_date >= ? AND created_date <= ?`;
@@ -388,7 +463,7 @@ function buildMetricsReportService() {
     const sql = `
       SELECT payment_type, SUM(max_price) AS sales
       FROM (
-        SELECT 
+        SELECT
           ${PAYMENT_TYPE_CASE_SQL} AS payment_type,
           order_name,
           MAX(total_price) AS max_price
@@ -654,6 +729,36 @@ function buildMetricsReportService() {
     }
 
     if (useHourlyCutoff) {
+      // Unfiltered fast path — hour_wise_sales now carries per-hour cod/
+      // prepaid/ppcod order counts from the pipeline. Any filter falls
+      // through to the raw-table path below.
+      if (isUnfilteredPaymentRequest(filters, productId)) {
+        const sql = `
+          SELECT
+            COALESCE(SUM(number_of_cod_orders), 0) AS cod_orders,
+            COALESCE(SUM(number_of_prepaid_orders), 0) AS prepaid_orders,
+            COALESCE(SUM(number_of_ppcod_orders), 0) AS partially_paid_orders
+          FROM hour_wise_sales
+          WHERE date >= ? AND date <= ? AND hour <= ?
+        `;
+        const [row] = await conn.query(sql, {
+          type: QueryTypes.SELECT,
+          replacements: [effectiveStart, effectiveEnd, hourLte],
+        });
+
+        return computeOrderSplitPayload({
+          start: effectiveStart,
+          end: effectiveEnd,
+          timezone: resolvedTimezone,
+          hourLte,
+          codOrders: Number(row?.cod_orders || 0),
+          prepaidOrders: Number(row?.prepaid_orders || 0),
+          partiallyPaidOrders: Number(row?.partially_paid_orders || 0),
+          includeSql,
+          sql,
+        });
+      }
+
       const isSingleDay = effectiveStart === effectiveEnd;
       let whereSql = isSingleDay
         ? `WHERE created_date = ?`
@@ -818,6 +923,83 @@ function buildMetricsReportService() {
       };
     }
 
+    // Unfiltered fast path — read directly from the daily/hourly rollup
+    // tables (one row per bucket already, no payment-type pivoting needed)
+    // instead of scanning shopify_orders. Any filter falls through below.
+    if (isUnfilteredPaymentRequest(filters, productId)) {
+      let sql;
+      let rollupReplacements;
+      if (isHourly) {
+        sql = `
+          SELECT
+            date, hour,
+            COALESCE(number_of_cod_orders, 0) AS cod_orders,
+            COALESCE(number_of_prepaid_orders, 0) AS prepaid_orders,
+            COALESCE(number_of_ppcod_orders, 0) AS partially_paid_orders,
+            COALESCE(cod_sales, 0) AS cod_sales,
+            COALESCE(prepaid_sales, 0) AS prepaid_sales,
+            COALESCE(partially_prepaid_sales, 0) AS partial_sales
+          FROM hour_wise_sales
+          WHERE date >= ? AND date <= ?
+          ${useHourlyCutoff ? "AND (date < ? OR hour <= ?)" : ""}
+          ORDER BY date ASC, hour ASC
+        `;
+        rollupReplacements = useHourlyCutoff
+          ? [start, end, end, hourLte]
+          : [start, end];
+      } else {
+        sql = `
+          SELECT
+            date,
+            COALESCE(cod_orders, 0) AS cod_orders,
+            COALESCE(prepaid_orders, 0) AS prepaid_orders,
+            COALESCE(partially_paid_orders, 0) AS partially_paid_orders,
+            COALESCE(cod_sales, 0) AS cod_sales,
+            COALESCE(prepaid_sales, 0) AS prepaid_sales,
+            COALESCE(partially_prepaid_sales, 0) AS partial_sales
+          FROM overall_summary
+          WHERE date >= ? AND date <= ?
+          ORDER BY date ASC
+        `;
+        rollupReplacements = [start, end];
+      }
+
+      const rollupRows = await conn.query(sql, {
+        type: QueryTypes.SELECT,
+        replacements: rollupReplacements,
+      });
+
+      const points = rollupRows.map((row) => {
+        const cod_orders = Number(row.cod_orders || 0);
+        const prepaid_orders = Number(row.prepaid_orders || 0);
+        const partially_paid_orders = Number(row.partially_paid_orders || 0);
+        const cod_sales = Number(row.cod_sales || 0);
+        const prepaid_sales = Number(row.prepaid_sales || 0);
+        const partial_sales = Number(row.partial_sales || 0);
+        return {
+          date: String(row.date),
+          hour: isHourly ? Number(row.hour) : null,
+          cod_orders,
+          prepaid_orders,
+          partially_paid_orders,
+          cod_sales,
+          prepaid_sales,
+          partial_sales,
+          total_orders: cod_orders + prepaid_orders + partially_paid_orders,
+          total_sales: cod_sales + prepaid_sales + partial_sales,
+        };
+      });
+
+      return {
+        metric: "PAYMENT_SPLIT_TREND",
+        timezone: resolvedTimezone,
+        granularity,
+        range: { start, end, hour_lte: useHourlyCutoff ? hourLte : null },
+        points,
+        sql_used: includeSql ? sql : undefined,
+      };
+    }
+
     let whereSql = `WHERE created_date >= ? AND created_date <= ?`;
     const replacements = [start, end];
 
@@ -916,11 +1098,109 @@ function buildMetricsReportService() {
     };
   }
 
+  // Unfiltered-only: fetches order counts + sales amounts + current + previous
+  // all in ONE query against the rollup table, instead of 4 separate calls.
+  // Same conditional-SUM pattern as computeReturnCountsPair/
+  // queryIntentSummaryPair earlier this session. hourLte (when set) applies
+  // identically to both periods, matching getPaymentSplitSummary's existing
+  // behavior of passing the same hourLte to all 4 of its underlying calls.
+  async function getUnfilteredPaymentSplitPair({
+    conn,
+    start,
+    end,
+    compareStart,
+    compareEnd,
+    hourLte,
+    timezone = DEFAULT_TIMEZONE,
+  }) {
+    const resolvedTimezone = normalizeTimezone(timezone);
+    const useHourlyCutoff = Number.isInteger(hourLte);
+    const table = useHourlyCutoff ? "hour_wise_sales" : "overall_summary";
+    const orderCols = useHourlyCutoff
+      ? { cod: "number_of_cod_orders", prepaid: "number_of_prepaid_orders", partial: "number_of_ppcod_orders" }
+      : { cod: "cod_orders", prepaid: "prepaid_orders", partial: "partially_paid_orders" };
+    const salesCols = { cod: "cod_sales", prepaid: "prepaid_sales", partial: "partially_prepaid_sales" };
+
+    const periodCase = (periodStart, periodEnd, sourceCol, alias, params) => {
+      if (useHourlyCutoff) {
+        params.push(periodStart, periodEnd, periodEnd, hourLte);
+        return `COALESCE(SUM(CASE WHEN date >= ? AND date <= ? AND (date < ? OR hour <= ?) THEN ${sourceCol} ELSE 0 END), 0) AS ${alias}`;
+      }
+      params.push(periodStart, periodEnd);
+      return `COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN ${sourceCol} ELSE 0 END), 0) AS ${alias}`;
+    };
+
+    const params = [];
+    const selectParts = [
+      periodCase(start, end, orderCols.cod, "current_cod_orders", params),
+      periodCase(start, end, orderCols.prepaid, "current_prepaid_orders", params),
+      periodCase(start, end, orderCols.partial, "current_partially_paid_orders", params),
+      periodCase(start, end, salesCols.cod, "current_cod_sales", params),
+      periodCase(start, end, salesCols.prepaid, "current_prepaid_sales", params),
+      periodCase(start, end, salesCols.partial, "current_partial_sales", params),
+      periodCase(compareStart, compareEnd, orderCols.cod, "previous_cod_orders", params),
+      periodCase(compareStart, compareEnd, orderCols.prepaid, "previous_prepaid_orders", params),
+      periodCase(compareStart, compareEnd, orderCols.partial, "previous_partially_paid_orders", params),
+      periodCase(compareStart, compareEnd, salesCols.cod, "previous_cod_sales", params),
+      periodCase(compareStart, compareEnd, salesCols.prepaid, "previous_prepaid_sales", params),
+      periodCase(compareStart, compareEnd, salesCols.partial, "previous_partial_sales", params),
+    ];
+
+    const sql = `
+      SELECT ${selectParts.join(",\n        ")}
+      FROM ${table}
+      WHERE (date >= ? AND date <= ?) OR (date >= ? AND date <= ?)
+    `;
+    params.push(start, end, compareStart, compareEnd);
+
+    const [row] = await conn.query(sql, { type: QueryTypes.SELECT, replacements: params });
+    const n = (v) => Number(v || 0);
+    const buildPeriod = (prefix) => {
+      const codOrders = n(row?.[`${prefix}_cod_orders`]);
+      const prepaidOrders = n(row?.[`${prefix}_prepaid_orders`]);
+      const partiallyPaidOrders = n(row?.[`${prefix}_partially_paid_orders`]);
+      const codSales = n(row?.[`${prefix}_cod_sales`]);
+      const prepaidSales = n(row?.[`${prefix}_prepaid_sales`]);
+      const partialSales = n(row?.[`${prefix}_partial_sales`]);
+      const salesTotal = codSales + prepaidSales + partialSales;
+      return {
+        orders: computeOrderSplitPayload({
+          start: prefix === "current" ? start : compareStart,
+          end: prefix === "current" ? end : compareEnd,
+          timezone: resolvedTimezone,
+          hourLte: useHourlyCutoff ? hourLte : null,
+          codOrders,
+          prepaidOrders,
+          partiallyPaidOrders,
+        }),
+        sales: {
+          metric: "PAYMENT_SPLIT_SALES",
+          timezone: resolvedTimezone,
+          range: {
+            start: prefix === "current" ? start : compareStart,
+            end: prefix === "current" ? end : compareEnd,
+            hour_lte: useHourlyCutoff ? hourLte : null,
+          },
+          cod_sales: codSales,
+          prepaid_sales: prepaidSales,
+          partial_sales: partialSales,
+          total_sales_from_split: salesTotal,
+          cod_percent: salesTotal > 0 ? (codSales / salesTotal) * 100 : 0,
+          prepaid_percent: salesTotal > 0 ? (prepaidSales / salesTotal) * 100 : 0,
+          partial_percent: salesTotal > 0 ? (partialSales / salesTotal) * 100 : 0,
+        },
+      };
+    };
+
+    return { current: buildPeriod("current"), previous: buildPeriod("previous"), sql_used: sql };
+  }
+
   // Combines the 4 separate requests the Mode of Payment widget used to make
   // (order-count split + sales split, each for current and previous period)
-  // into one round trip. Reuses getOrderSplit/getPaymentSalesSplit verbatim —
-  // same branch logic (discount/product-type/UTM rollups, live fallback) —
-  // just run in parallel behind a single endpoint instead of 4 separate ones.
+  // into one round trip. When unfiltered, runs a single combined rollup
+  // query (getUnfilteredPaymentSplitPair) instead of 4 calls. Any filter
+  // falls back to running getOrderSplit/getPaymentSalesSplit in parallel —
+  // same branch logic (discount/product-type/UTM rollups, live fallback).
   async function getPaymentSplitSummary({
     conn,
     start,
@@ -934,6 +1214,25 @@ function buildMetricsReportService() {
     timezone = DEFAULT_TIMEZONE,
   }) {
     const hasPrevious = !!(compareStart && compareEnd);
+
+    if (hasPrevious && isUnfilteredPaymentRequest(filters, productId)) {
+      const pair = await getUnfilteredPaymentSplitPair({
+        conn,
+        start,
+        end,
+        compareStart,
+        compareEnd,
+        hourLte,
+        timezone,
+      });
+      if (includeSql) {
+        pair.current.orders.sql_used = pair.sql_used;
+        pair.current.sales.sql_used = pair.sql_used;
+        pair.previous.orders.sql_used = pair.sql_used;
+        pair.previous.sales.sql_used = pair.sql_used;
+      }
+      return { current: pair.current, previous: pair.previous };
+    }
 
     const [currentOrders, currentSales, previousOrders, previousSales] =
       await Promise.all([
