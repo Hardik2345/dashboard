@@ -35,8 +35,11 @@ function buildMetricsRouter(sequelize) {
   const cacheService = buildMetricsCacheService();
   const metricsService = buildMetricsSnapshotService({
     fetchCachedMetricsBatch: cacheService.fetchCachedMetricsBatch,
+    getDatePresetsCache: cacheService.getDatePresetsCache,
   });
-  const reportService = buildMetricsReportService();
+  const reportService = buildMetricsReportService({
+    getDatePresetsCache: cacheService.getDatePresetsCache,
+  });
   const pageService = buildMetricsPageService({ cacheService });
   const overallSnapshotService = buildOverallSnapshotService({
     metricsService,

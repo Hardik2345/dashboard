@@ -72,9 +72,11 @@ function buildSplitController({ reportService }) {
         const brandConn = ensureBrandSequelize(req);
         if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
         const { hourLte } = parseHourLte(req.query.hour_lte);
+        const brandKey = (req.query.brand || req.query.brand_key || req.brandKey || '').toString().trim();
         return res.json(
           await reportService.getOrderSplit({
             conn: brandConn.conn,
+            brandKey,
             start,
             end,
             hourLte,
@@ -107,9 +109,11 @@ function buildSplitController({ reportService }) {
         const brandConn = ensureBrandSequelize(req);
         if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
         const { hourLte } = parseHourLte(req.query.hour_lte);
+        const brandKey = (req.query.brand || req.query.brand_key || req.brandKey || '').toString().trim();
         return res.json(
           await reportService.getPaymentSalesSplit({
             conn: brandConn.conn,
+            brandKey,
             start,
             end,
             hourLte,
