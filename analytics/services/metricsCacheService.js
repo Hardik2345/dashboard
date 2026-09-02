@@ -259,13 +259,53 @@ function buildMetricsCacheService({
     };
   }
 
+  // Pre-computed totals for 5 fixed date-range windows (last 7/30/90 days,
+  // last month, month-to-date), written by the pipeline. Unlike the daily
+  // metrics:<brand>:<date> cache above (one day at a time), this covers
+  // whole ranges directly — but only these 5 specific windows, so callers
+  // must match the requested start/end against each entry's OWN start_date/
+  // end_date rather than recomputing the boundaries themselves (the
+  // dashboard's date pickers run in the browser's local time, so an
+  // independently-recomputed boundary could silently be a day off from what
+  // the pipeline actually cached).
+  async function getDatePresetsCache(brandKey) {
+    if (!redisClient || !brandKey) return null;
+    try {
+      const raw = await redisClient.get(`date_presets:${brandKey.toLowerCase()}`);
+      if (!raw) {
+        log.debug(`[REDIS MISS] date_presets:${brandKey.toLowerCase()}`);
+        return null;
+      }
+      log.debug(`[REDIS HIT] date_presets:${brandKey.toLowerCase()}`);
+      return JSON.parse(raw);
+    } catch (error) {
+      log.error(`[REDIS ERROR] date_presets fetch failed for ${brandKey}`, error.message);
+      return null;
+    }
+  }
+
   return {
     fetchCachedMetrics,
     fetchCachedMetricsBatch,
     getHourlySalesSummary,
+    getDatePresetsCache,
   };
+}
+
+// Finds the preset entry (if any) whose own start_date/end_date exactly
+// matches the requested range. Pure function, no I/O — safe to call with a
+// null/undefined presetsData (e.g. on a cache miss).
+function matchDatePreset(presetsData, start, end) {
+  if (!presetsData || !start || !end) return null;
+  for (const preset of Object.values(presetsData)) {
+    if (preset && preset.start_date === start && preset.end_date === end) {
+      return preset;
+    }
+  }
+  return null;
 }
 
 module.exports = {
   buildMetricsCacheService,
+  matchDatePreset,
 };

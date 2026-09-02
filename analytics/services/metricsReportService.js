@@ -18,6 +18,7 @@ const {
   resolveCompareRange,
   buildCompletedHourOrderCutoffTime,
 } = require("./metricsFoundation");
+const { matchDatePreset } = require("./metricsCacheService");
 
 const PAYMENT_TYPE_CASE_SQL = `
   CASE
@@ -206,7 +207,20 @@ async function fetchHourlySalesRange(conn, start, end) {
   );
 }
 
-function buildMetricsReportService() {
+function buildMetricsReportService(deps = {}) {
+  const { getDatePresetsCache } = deps;
+
+  // Checks the pipeline's date_presets:<brand> cache for an exact
+  // start/end match (see matchDatePreset — never independently recomputed,
+  // only trusted on an exact string match against the preset's own stored
+  // boundaries) and returns its payment_breakdown, or null on any miss.
+  async function getPresetPaymentBreakdown(brandKey, start, end) {
+    if (!getDatePresetsCache || !brandKey) return null;
+    const presetsData = await getDatePresetsCache(brandKey);
+    const preset = matchDatePreset(presetsData, start, end);
+    return preset?.payment_breakdown || null;
+  }
+
   async function getTrafficSourceSplit({
     conn,
     start,
@@ -259,6 +273,7 @@ function buildMetricsReportService() {
 
   async function getPaymentSalesSplit({
     conn,
+    brandKey = "",
     start,
     end,
     hourLte = null,
@@ -379,6 +394,33 @@ function buildMetricsReportService() {
         payment_mode_unavailable: true,
         sql_used: includeSql ? sql : undefined,
       };
+    }
+
+    // Preset-cache fast path — for the 5 fixed windows the pipeline
+    // pre-computes (last 7/30/90 days, last month, month-to-date), the
+    // payment split comes straight from Redis, zero DB round trips. Only
+    // applies to whole-range (no hourly cutoff), unfiltered requests whose
+    // start/end exactly match a preset's own stored boundaries.
+    if (!useHourlyCutoff && isUnfilteredPaymentRequest(filters, productId)) {
+      const breakdown = await getPresetPaymentBreakdown(brandKey, effectiveStart, effectiveEnd);
+      if (breakdown) {
+        const codSales = Number(breakdown.cod_sales || 0);
+        const prepaidSales = Number(breakdown.prepaid_sales || 0);
+        const partialSales = Number(breakdown.partially_paid_sales || 0);
+        const total = codSales + prepaidSales + partialSales;
+        return {
+          metric: "PAYMENT_SPLIT_SALES",
+          timezone: resolvedTimezone,
+          range: { start: effectiveStart, end: effectiveEnd, hour_lte: null },
+          cod_sales: codSales,
+          prepaid_sales: prepaidSales,
+          partial_sales: partialSales,
+          total_sales_from_split: total,
+          cod_percent: total > 0 ? (codSales / total) * 100 : 0,
+          prepaid_percent: total > 0 ? (prepaidSales / total) * 100 : 0,
+          partial_percent: total > 0 ? (partialSales / total) * 100 : 0,
+        };
+      }
     }
 
     // Unfiltered fast path — the pipeline now maintains cod_sales/
@@ -514,6 +556,7 @@ function buildMetricsReportService() {
 
   async function getOrderSplit({
     conn,
+    brandKey = "",
     start,
     end,
     hourLte = null,
@@ -814,6 +857,23 @@ function buildMetricsReportService() {
         includeSql,
         sql,
       });
+    }
+
+    // Preset-cache fast path — same 5 fixed windows as getPaymentSalesSplit,
+    // served straight from Redis on an exact start/end match. Only reaches
+    // here when unfiltered and no hourly cutoff (see branches above).
+    if (isUnfilteredPaymentRequest(filters, productId)) {
+      const breakdown = await getPresetPaymentBreakdown(brandKey, effectiveStart, effectiveEnd);
+      if (breakdown) {
+        return computeOrderSplitPayload({
+          start: effectiveStart,
+          end: effectiveEnd,
+          timezone: resolvedTimezone,
+          codOrders: Number(breakdown.cod_orders || 0),
+          prepaidOrders: Number(breakdown.prepaid_orders || 0),
+          partiallyPaidOrders: Number(breakdown.partially_paid_orders || 0),
+        });
+      }
     }
 
     const { where, params } = buildWhereClause(start, end);

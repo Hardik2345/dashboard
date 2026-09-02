@@ -5,6 +5,7 @@ const {
   computeReturnCountsPair,
   appendProductFilter,
 } = require("../shared/utils/metricsUtils");
+const { matchDatePreset } = require("./metricsCacheService");
 const {
   appendUtmWhere,
 } = require("../shared/utils/filters");
@@ -1983,7 +1984,7 @@ function buildDailyPoints(rows, start, end) {
 }
 
 function buildMetricsSnapshotService(deps = {}) {
-  const { fetchCachedMetricsBatch } = deps;
+  const { fetchCachedMetricsBatch, getDatePresetsCache } = deps;
   const now = deps.now || (() => new Date());
 
   async function getSnapshot({ conn, range, filters = {}, cutoffTime = null, cachedData = null }) {
@@ -2248,6 +2249,35 @@ function buildMetricsSnapshotService(deps = {}) {
       !cutoffTime &&
       !hasAnyFilters(filters)
     ) {
+      // Try the pipeline's pre-computed date-range presets for the current
+      // period. On a hit, the previous period only needs a single-range
+      // query (queryOverallSummaryTotals) instead of the combined
+      // current+previous conditional-sum query — lighter on the DB even
+      // though a round trip still happens for the previous side. CI events
+      // aren't in the preset payload, so still fetched live either way.
+      let presetCurrent = null;
+      if (getDatePresetsCache && brandKey) {
+        const presetsData = await getDatePresetsCache(brandKey);
+        presetCurrent = matchDatePreset(presetsData, currentRange.start, currentRange.end);
+      }
+
+      if (presetCurrent) {
+        const [previousMetrics, currentCiEvents, returnsPair] = await Promise.all([
+          queryOverallSummaryTotals(conn, previousRange.start, previousRange.end),
+          queryCheckoutInitiatedTotals(conn, currentRange.start, currentRange.end),
+          getReturnsSnapshotPair(conn, currentRange, previousRange, filters),
+        ]);
+
+        return {
+          current: buildSnapshotPayload(
+            { ...presetCurrent, total_ci_events: currentCiEvents },
+            returnsPair.current,
+            "preset-cache",
+          ),
+          previous: buildSnapshotPayload(previousMetrics, returnsPair.previous, "db"),
+        };
+      }
+
       const [metricsPair, returnsPair] = await Promise.all([
         queryOverallSummaryPair(conn, currentRange, previousRange),
         getReturnsSnapshotPair(conn, currentRange, previousRange, filters),

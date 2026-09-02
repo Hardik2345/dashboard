@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DATUM Access Scopes Catalog</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    color: #1f2430;
+    background: #ffffff;
+    font-size: 10.2pt;
+    line-height: 1.48;
+    margin: 0;
+  }
+  code, .mono { font-family: "Consolas", "Courier New", monospace; font-size: 9pt; }
+  h1 { font-size: 18pt; margin: 0 0 4px 0; color: #12253f; }
+  h2 {
+    font-size: 12.5pt; margin: 22px 0 8px 0; padding-bottom: 4px;
+    border-bottom: 2px solid #2b5a8c; color: #12253f;
+  }
+  .cover-meta { color: #55606e; font-size: 9.6pt; margin-bottom: 2px; }
+  .cover-sub { font-size: 11pt; color: #3b4a5a; margin: 10px 0 16px 0; }
+  .summary-box {
+    background: #f2f6fa; border: 1px solid #cfdce8; border-radius: 6px;
+    padding: 11px 15px; margin: 8px 0 4px 0;
+  }
+  .summary-box p { margin: 4px 0; }
+  .note-box {
+    background: #fbf3e3; border: 1px solid #ecd8ab; border-radius: 6px;
+    padding: 10px 14px; margin: 10px 0 6px 0; font-size: 9.6pt;
+  }
+  .note-box strong { color: #8a5a0f; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 4px 0; }
+  th, td { text-align: left; padding: 6px 7px; border: 1px solid #d7dfe6; vertical-align: top; font-size: 9.2pt; }
+  th { background: #eaf0f6; color: #12253f; font-weight: 700; }
+  td.perm { font-family: "Consolas", "Courier New", monospace; font-size: 8.5pt; color: #2b5a8c; white-space: nowrap; }
+  td.ref { font-size: 8.4pt; color: #55606e; }
+  .group-desc { font-size: 9.4pt; color: #4a5568; margin: 2px 0 8px 0; }
+  .footer-note { font-size: 8.3pt; color: #8994a0; margin-top: 26px; border-top: 1px solid #e2e8ee; padding-top: 7px; }
+  .tag-auto { display: inline-block; font-size: 7.6pt; font-weight: 700; text-transform: uppercase; background: #eee2fa; color: #6b3a9c; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+  .tag-uigate { display: inline-block; font-size: 7.6pt; font-weight: 700; text-transform: uppercase; background: #fbedd6; color: #9a6210; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+</style>
+</head>
+<body>
+
+<h1>DATUM Access Scopes Catalog</h1>
+<p class="cover-meta">Every grantable permission in the dashboard, what it unlocks, and where it applies · Prepared 2026-09-02</p>
+<p class="cover-sub">Reference for admins deciding what to grant a user or custom role. Grouped by the part of the dashboard each permission controls.</p>
+
+<div class="summary-box">
+  <p><strong>Total scopes:</strong> 47 grantable permission strings, defined in one place (<code>api-gateway/src/constants/permissions.js</code>) and shared by both individual user grants and custom roles.</p>
+  <p><strong>One special value:</strong> <code>all</code> — grants everything at once and overrides every other check. Treat it as "give this user every permission below."</p>
+</div>
+
+<div class="note-box">
+  <strong>Worth knowing before granting filter permissions:</strong> the eight dashboard-wide filter permissions (Section E) only control whether the filter's dropdown/field is <em>shown</em> in the interface. None of them are checked again by the backend — the underlying data endpoints accept that filter parameter regardless of whether the user holds the permission. In practice this means these permissions hide a control from the interface rather than block the underlying data if someone were to request it directly. Everything else in this catalog (tabs, widgets, table columns) is enforced on both the interface and the server.
+</div>
+
+<h2>A. Global</h2>
+<table>
+  <tr><th style="width:16%">Scope</th><th style="width:44%">What It Unlocks</th><th style="width:40%">Reference</th></tr>
+  <tr>
+    <td class="perm">all</td>
+    <td>Full access. Bypasses every other permission check across the entire dashboard and its APIs — a user with this sees and can do everything listed in this document at once.</td>
+    <td class="ref">Checked everywhere access is gated; shown as "Full Access" in the admin user list. <code>analytics/shared/middleware/identityEdge.js:150,177</code></td>
+  </tr>
+</table>
+
+<h2>B. Sidebar Tabs (whole-section access)</h2>
+<p class="group-desc">Each of these controls whether an entire tab appears in the sidebar at all, plus the data behind it.</p>
+<table>
+  <tr><th style="width:16%">Scope</th><th style="width:44%">What It Unlocks</th><th style="width:40%">Reference</th></tr>
+  <tr><td class="perm">overall_snapshot</td><td>The "Overall Snapshot" tab — a cross-brand summary landing page.</td><td class="ref">App.jsx:618-621 · sidebar tab</td></tr>
+  <tr><td class="perm">requests_panel</td><td>The "Requests" tab, where merchant requests are submitted and tracked.</td><td class="ref">App.jsx:608-611 · merchant-requests-service</td></tr>
+  <tr><td class="perm">bundles_panel</td><td>The "Bundles" tab — product-bundle performance data and CSV export.</td><td class="ref">App.jsx:588-591 · analytics/modules/bundles</td></tr>
+  <tr><td class="perm">inventory_panel</td><td>The "Inventory" tab (stock-level DRR/DOH report). <span class="tag-auto">Also auto-grants</span> the Orders, DRR, and DOH columns in the Product Performance table, even without those column permissions individually assigned.</td><td class="ref">App.jsx:583-586 · analytics/modules/product-conversion/controller.js:23,28-29</td></tr>
+  <tr><td class="perm">daily_funnel_panel</td><td>The "Daily Funnel" tab — day-by-day sessions → cart → orders funnel.</td><td class="ref">App.jsx:593-596 · analytics/modules/metrics/index.js:98</td></tr>
+  <tr><td class="perm">session_analytics</td><td>The "Session Analytics" tab — visitor session-level detail.</td><td class="ref">App.jsx:613-616 · dedicated permission middleware</td></tr>
+  <tr><td class="perm">health_monitor_panel</td><td>The "Health Monitor" tab — system/site uptime and health status.</td><td class="ref">App.jsx:623-626 · health-monitor-service</td></tr>
+  <tr><td class="perm">web_vitals_panel</td><td>The dedicated "Web Vitals" tab — full page-speed/performance report (separate from the smaller widget on the Dashboard tab, see <code>web_vitals</code> below).</td><td class="ref">App.jsx:628-631 · analytics/routes/webVitals.routes.js:8</td></tr>
+  <tr><td class="perm">product_conversion</td><td>The "Product Performance" table shown on the main Dashboard tab (per-product sessions/ATC/orders/sales funnel), plus its CSV export. <span class="tag-auto">Interchangeable with inventory_panel</span> for viewing the table's data (either one is enough); CSV export specifically needs this one.</td><td class="ref">DashboardRouteContainer.jsx:257,341 · analytics/modules/product-conversion/index.js:10-11</td></tr>
+</table>
+
+<h2>C. Requests Tab — Sub-feature</h2>
+<table>
+  <tr><th style="width:16%">Scope</th><th style="width:44%">What It Unlocks</th><th style="width:40%">Reference</th></tr>
+  <tr>
+    <td class="perm">requests_timeline</td>
+    <td>The activity/history log shown on an individual merchant request — who did what and when. <span class="tag-auto">Requires requests_panel</span> — granting this alone automatically adds requests_panel too, and removing requests_panel automatically removes this.</td>
+    <td class="ref">merchant-requests-service/src/services/requestService.js:227 · AccessControlCard.jsx:266-275</td>
+  </tr>
+</table>
+
+<h2>D. Dashboard Widgets &amp; KPI Cards</h2>
+<p class="group-desc">These control individual pieces of the main Dashboard tab — specific KPI cards, chart widgets, or editing capabilities — without hiding the whole tab.</p>
+<table>
+  <tr><th style="width:20%">Scope</th><th style="width:44%">What It Unlocks</th><th style="width:36%">Reference</th></tr>
+  <tr><td class="perm">intent_metrics</td><td>The three "Intent" KPI cards (High/Medium/Low intent sessions).</td><td class="ref">DashboardRouteContainer.jsx:534 · KPIs.jsx:1070-1100</td></tr>
+  <tr><td class="perm">ci_events</td><td>The "Checkout Initiated" KPI card, plus the CI Events column in the Daily Funnel table and Hourly Sales comparison.</td><td class="ref">DashboardRouteContainer.jsx:532 · DailyFunnelPanel.jsx:246</td></tr>
+  <tr><td class="perm">rto_kpi</td><td>The "RTO Orders (Approx.)" KPI card.</td><td class="ref">DashboardRouteContainer.jsx:533 · KPIs.jsx:2026</td></tr>
+  <tr><td class="perm">payment_split_order</td><td>The "Mode of Payment" panel and Payment Trend chart widget. <span class="tag-auto">Either-or with payment_split_sales</span> — holding just one of the two unlocks both widgets.</td><td class="ref">dashboardLayout.js:84-85</td></tr>
+  <tr><td class="perm">payment_split_sales</td><td>Same Mode of Payment panel / Payment Trend widget as above — no separate effect found beyond the either-or pairing with payment_split_order.</td><td class="ref">dashboardLayout.js:84-85</td></tr>
+  <tr><td class="perm">traffic_split</td><td>The "Traffic Split" widget (Meta / Google / Direct / Others breakdown).</td><td class="ref">dashboardLayout.js:92</td></tr>
+  <tr><td class="perm">web_vitals</td><td>The "Top Pages" mini-widget and the "Web Performance (Avg)" panel — both on the main Dashboard tab. Separate from the dedicated Web Vitals tab (<code>web_vitals_panel</code>).</td><td class="ref">dashboardLayout.js:88 · DashboardRouteContainer.jsx:565,574,612</td></tr>
+  <tr><td class="perm">daily_insight_view</td><td>A short written "insight" note shown at the top of the Dashboard tab for the day.</td><td class="ref">daily-insights-service/src/routes/dailyInsights.js:21</td></tr>
+  <tr><td class="perm">sessions_drop_off_funnel</td><td>The "Sessions Drop-off Funnel" chart (Sessions → Add to Cart → Checkout → Orders).</td><td class="ref">DashboardRouteContainer.jsx:250</td></tr>
+  <tr><td class="perm">compare_mode</td><td>The "Compare" toggle in the Product Performance table (view current vs. a prior period side by side).</td><td class="ref">DashboardRouteContainer.jsx:355 · ProductConversionTable.jsx:1877-1882</td></tr>
+  <tr><td class="perm">multiselectable_kpi_cards</td><td>Lets a user pin multiple KPI cards at once for the trend chart, instead of only one at a time.</td><td class="ref">App.jsx:579-581,1397,1752</td></tr>
+  <tr><td class="perm">dashboard_layout_customize</td><td>The ability to drag-and-drop rearrange and save a custom Dashboard widget layout. Without it, the layout is fixed and there's no "Customize Layout" button.</td><td class="ref">App.jsx:576-578,2379-2384 · analytics/modules/dashboard/index.js:17,35</td></tr>
+</table>
+
+<h2>E. Dashboard-Wide Filters <span class="tag-uigate">Interface-only, see note above</span></h2>
+<p class="group-desc">Each controls one filter field in the dashboard's filter bar / mobile filter drawer. Not enforced server-side — see the callout at the top of this document.</p>
+<table>
+  <tr><th style="width:20%">Scope</th><th style="width:44%">What It Unlocks</th><th style="width:36%">Reference</th></tr>
+  <tr><td class="perm">product_filter</td><td>The "Product" filter dropdown.</td><td class="ref">App.jsx:2491,2576,2610</td></tr>
+  <tr><td class="perm">utm_filter</td><td>The UTM (source/medium/campaign/term/content) filter control.</td><td class="ref">App.jsx:2492,2599,2611</td></tr>
+  <tr><td class="perm">product_utm_filter_sync</td><td>Allows a Product filter and a UTM-source filter to be applied together at the same time. Without it, choosing one clears the other. <span class="tag-auto">Only enforced permission in this section</span> — this one is checked on the backend too.</td><td class="ref">App.jsx:818 · summaryController.js:40-47</td></tr>
+  <tr><td class="perm">discount_filter</td><td>The "Discount code" filter field.</td><td class="ref">App.jsx:1847,2496,2602,2645</td></tr>
+  <tr><td class="perm">sales_channel_filter</td><td>The "Sales Channel" filter dropdown (e.g. website vs. app).</td><td class="ref">App.jsx:2493,2600,2612</td></tr>
+  <tr><td class="perm">device_type_filter</td><td>The "Device Type" filter dropdown (Desktop / Mobile / Others).</td><td class="ref">App.jsx:2494,2614</td></tr>
+  <tr><td class="perm">product_type_filter</td><td>The "Product Type" (division) filter, mobile drawer.</td><td class="ref">App.jsx:2497,2649</td></tr>
+  <tr><td class="perm">city_filter</td><td>The "City" filter dropdown.</td><td class="ref">App.jsx:2495,2601,2613</td></tr>
+</table>
+
+<h2>F. Daily Funnel — Sub-features</h2>
+<table>
+  <tr><th style="width:20%">Scope</th><th style="width:44%">What It Unlocks</th><th style="width:36%">Reference</th></tr>
+  <tr><td class="perm">utm_funnel_table</td><td>Adds a UTM (marketing source) breakdown to the Daily Funnel tab's data. <span class="tag-auto">Requires daily_funnel_panel</span> to have any effect.</td><td class="ref">trendController.js:66-70</td></tr>
+  <tr><td class="perm">utm_funnel_table:utm_campaign_grain</td><td>Breaks that UTM data down further by campaign name, not just source/medium. <span class="tag-auto">Requires utm_funnel_table</span>.</td><td class="ref">trendController.js:71-74</td></tr>
+</table>
+
+<h2>G. Product Performance Table — Columns</h2>
+<p class="group-desc">Each controls one column in the Product Performance table (shown on the Dashboard tab and the dedicated Product Funnel page).</p>
+<table>
+  <tr><th style="width:26%">Scope</th><th style="width:40%">What It Unlocks</th><th style="width:34%">Reference / Notes</th></tr>
+  <tr><td class="perm">product_conversion:landing_page_path</td><td>The "Landing Page" column. <span class="tag-auto">Always shown</span> — this permission has no real effect since every user who can see the table gets this column regardless.</td><td class="ref">product-conversion/controller.js:32-33</td></tr>
+  <tr><td class="perm">product_conversion:sessions</td><td>The "Sessions" column.</td><td class="ref">controller.js:24-26</td></tr>
+  <tr><td class="perm">product_conversion:atc</td><td>The "ATC" (Add to Cart count) column.</td><td class="ref">controller.js:24-26</td></tr>
+  <tr><td class="perm">product_conversion:atc_rate</td><td>The "ATC Rate" column.</td><td class="ref">controller.js:24-26</td></tr>
+  <tr><td class="perm">product_conversion:orders</td><td>The "Orders" column. <span class="tag-auto">Auto-granted by inventory_panel</span> even without this permission set directly.</td><td class="ref">controller.js:23,28-29</td></tr>
+  <tr><td class="perm">product_conversion:sales</td><td>The "Sales" (revenue) column. Not auto-granted by inventory_panel.</td><td class="ref">controller.js:24-26</td></tr>
+  <tr><td class="perm">product_conversion:cvr</td><td>The "CVR" (Conversion Rate) column.</td><td class="ref">controller.js:24-26</td></tr>
+  <tr><td class="perm">product_conversion:drr</td><td>The "DRR" (Daily Run Rate) column. <span class="tag-auto">Auto-granted by inventory_panel</span>.</td><td class="ref">controller.js:23,28-29</td></tr>
+  <tr><td class="perm">product_conversion:doh</td><td>The "DOH" (Days of Stock) column. <span class="tag-auto">Auto-granted by inventory_panel</span>. Sorting on DRR/DOH was removed dashboard-wide; filtering by them still works.</td><td class="ref">controller.js:23,28-29</td></tr>
+</table>
+
+<h2>H. Product Performance Table — Filters</h2>
+<table>
+  <tr><th style="width:26%">Scope</th><th style="width:40%">What It Unlocks</th><th style="width:34%">Reference / Notes</th></tr>
+  <tr><td class="perm">product_table_filters</td><td>A catch-all that grants all the filters below at once. Only acts as a catch-all if none of the specific filter permissions in this section (or the column permissions in Section G) are individually assigned — once any specific one is granted, this stops being a blanket grant.</td><td class="ref">ProductConversionTable.jsx:1727-1733</td></tr>
+  <tr><td class="perm">product_table_filters:inventory</td><td>The "Inventory Analysis" filter (change the DRR/DOH lookback period). <span class="tag-auto">Requires DRR or DOH column access</span> — without at least one of those two column permissions, this filter stays hidden even if granted.</td><td class="ref">ProductConversionTable.jsx:872-874</td></tr>
+  <tr><td class="perm">product_table_filters:page_type</td><td>The "Page Type" filter (Product vs. Collection pages).</td><td class="ref">ProductConversionTable.jsx:951-952</td></tr>
+  <tr><td class="perm">product_table_filters:product_types</td><td>The "Product Types" filter.</td><td class="ref">ProductConversionTable.jsx:1017-1018</td></tr>
+  <tr><td class="perm">product_table_filters:sort_filter</td><td>The ability to change the table's sort order/criteria.</td><td class="ref">ProductConversionTable.jsx:1130-1131</td></tr>
+</table>
+
+<hr style="border:none;border-top:1px solid #e2e8ee;margin:20px 0;">
+<p class="footer-note">Internal reference document — DATUM access scopes. All 47 permission strings defined in <code>api-gateway/src/constants/permissions.js</code> are covered above (Sections A-H). Line-number references reflect the codebase as of this document's preparation date and may shift as the code changes; the permission string itself is the stable identifier to search for if a reference goes stale.</p>
+
+</body>
+</html>
