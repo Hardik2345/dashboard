@@ -62,8 +62,6 @@ function ChartTooltip({ active, label, payload }) {
 export default function WebVitalsTrendChart({
   points,
   loading,
-  granularity,
-  onGranularityChange,
   rangeStart,
   rangeEnd,
   onRangeChange,
@@ -71,7 +69,6 @@ export default function WebVitalsTrendChart({
   const theme = useTheme();
   const [chartMode, setChartMode] = useState("bar");
 
-  const isSingleDay = rangeStart === rangeEnd;
   const gridStroke = alpha(theme.palette.divider, 0.5);
   const tickStyle = { fontSize: 10, fill: theme.palette.text.secondary };
 
@@ -88,17 +85,6 @@ export default function WebVitalsTrendChart({
           Daily Trend (Performance)
         </Typography>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-          <FormControl size="small" sx={{ minWidth: 100 }}>
-            <Select
-              value={granularity}
-              onChange={(event) => onGranularityChange(event.target.value)}
-            >
-              <MenuItem value="daily">Daily</MenuItem>
-              <MenuItem value="hourly" disabled={!isSingleDay}>
-                Hourly
-              </MenuItem>
-            </Select>
-          </FormControl>
           <FormControl size="small" sx={{ minWidth: 90 }}>
             <Select
               value={chartMode}

@@ -23,7 +23,6 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
   const [snapshotDate, setSnapshotDate] = useState(today);
   const [trendStart, setTrendStart] = useState(() => formatDate(dayjs().subtract(6, "day")));
   const [trendEnd, setTrendEnd] = useState(today);
-  const [granularity, setGranularity] = useState("daily");
 
   // Admins pick which brand's Summary/Trend/Page table show by clicking a
   // card in the Overall Snapshot grid — decoupled from the global brand
@@ -102,13 +101,11 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
   useEffect(() => {
     if (!selectedBrandKey) return;
     let cancelled = false;
-    const effectiveGranularity = trendStart === trendEnd ? granularity : "daily";
     setTrendLoading(true);
     getWebVitalsTrend({
       brand_key: selectedBrandKey,
       start: trendStart,
       end: trendEnd,
-      granularity: effectiveGranularity,
     })
       .then((result) => {
         if (cancelled) return;
@@ -124,7 +121,7 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
     return () => {
       cancelled = true;
     };
-  }, [selectedBrandKey, trendStart, trendEnd, granularity]);
+  }, [selectedBrandKey, trendStart, trendEnd]);
 
   useEffect(() => {
     if (!selectedBrandKey) return;
@@ -200,8 +197,6 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
       <WebVitalsTrendChart
         points={trendPoints}
         loading={trendLoading}
-        granularity={granularity}
-        onGranularityChange={setGranularity}
         rangeStart={trendStart}
         rangeEnd={trendEnd}
         onRangeChange={handleTrendRangeChange}

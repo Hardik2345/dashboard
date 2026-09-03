@@ -8,12 +8,11 @@ function todayIsoDate() {
 const webVitalsController = {
   async snapshot(req, res) {
     try {
-      const brandKey = req.query.brand_key;
-      if (!brandKey) {
-        return res.status(400).json({ error: "brand_key is required" });
+      if (!req.brandDb?.sequelize) {
+        return res.status(500).json({ error: "Brand DB connection unavailable" });
       }
       const date = req.query.date ? String(req.query.date) : todayIsoDate();
-      return res.json(await webVitalsService.getSnapshot({ brandKey, date }));
+      return res.json(await webVitalsService.getSnapshot({ conn: req.brandDb.sequelize, date }));
     } catch (error) {
       return handleControllerError(res, error, "web-vitals-snapshot failed");
     }
@@ -21,15 +20,13 @@ const webVitalsController = {
 
   async trend(req, res) {
     try {
-      const brandKey = req.query.brand_key;
-      if (!brandKey) {
-        return res.status(400).json({ error: "brand_key is required" });
+      if (!req.brandDb?.sequelize) {
+        return res.status(500).json({ error: "Brand DB connection unavailable" });
       }
       const end = req.query.end ? String(req.query.end) : todayIsoDate();
       const start = req.query.start ? String(req.query.start) : end;
-      const granularity = req.query.granularity === "hourly" ? "hourly" : "daily";
       return res.json(
-        await webVitalsService.getTrend({ brandKey, start, end, granularity }),
+        await webVitalsService.getTrend({ conn: req.brandDb.sequelize, start, end }),
       );
     } catch (error) {
       return handleControllerError(res, error, "web-vitals-trend failed");
@@ -46,7 +43,7 @@ const webVitalsController = {
       const date = req.query.date ? String(req.query.date) : todayIsoDate();
       return res.json({
         date,
-        brands: await webVitalsService.getAllBrandsSnapshot({ date }),
+        brands: await webVitalsService.getAllBrandsSnapshot({ date, user: req.user }),
       });
     } catch (error) {
       return handleControllerError(res, error, "web-vitals-all-brands-snapshot failed");
@@ -55,14 +52,13 @@ const webVitalsController = {
 
   async pages(req, res) {
     try {
-      const brandKey = req.query.brand_key;
-      if (!brandKey) {
-        return res.status(400).json({ error: "brand_key is required" });
+      if (!req.brandDb?.sequelize) {
+        return res.status(500).json({ error: "Brand DB connection unavailable" });
       }
       const date = req.query.date ? String(req.query.date) : todayIsoDate();
       return res.json({
         date,
-        rows: await webVitalsService.getPageBreakdown({ brandKey, date }),
+        rows: await webVitalsService.getPageBreakdown({ conn: req.brandDb.sequelize, date }),
       });
     } catch (error) {
       return handleControllerError(res, error, "web-vitals-pages failed");

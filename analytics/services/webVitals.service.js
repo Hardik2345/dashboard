@@ -1,4 +1,11 @@
-const { connectWebVitalsMongo } = require("../db/webVitals.mongo");
+const { QueryTypes } = require("sequelize");
+const { resolveTenantRoute } = require("../shared/db/tenantRouterClient");
+const { getTenantConnection } = require("../shared/db/tenantConnection");
+const { getDynamicBrandsMap } = require("../config/brands");
+const {
+  resolveAccessibleBrandKeys,
+  humanizeBrandKey,
+} = require("./overallSnapshotService");
 
 const METRICS = ["performance", "fcp", "lcp", "ttfb", "inp", "cls"];
 
@@ -42,10 +49,6 @@ function getStatus(metric, value) {
   return "poor";
 }
 
-function normalizeBrandKey(brandKey) {
-  return (brandKey || "").toString().trim().toUpperCase();
-}
-
 function getPreviousIsoDate(value) {
   const [year, month, day] = String(value || "")
     .split("-")
@@ -56,19 +59,6 @@ function getPreviousIsoDate(value) {
   const utcDate = new Date(Date.UTC(year, month - 1, day));
   utcDate.setUTCDate(utcDate.getUTCDate() - 1);
   return utcDate.toISOString().slice(0, 10);
-}
-
-function buildMetricGroupStage(idExpr) {
-  return {
-    _id: idExpr,
-    performance: { $avg: "$performance" },
-    fcp: { $avg: "$fcp" },
-    lcp: { $avg: "$lcp" },
-    ttfb: { $avg: "$ttfb" },
-    inp: { $avg: "$inp" },
-    cls: { $avg: "$cls" },
-    count: { $sum: 1 },
-  };
 }
 
 function mapMetricRow(row) {
@@ -82,24 +72,33 @@ function mapMetricRow(row) {
   };
 }
 
-async function averageMetricsForDate(collection, brandKey, date) {
-  const rows = await collection
-    .aggregate([
-      { $match: { brand_key: brandKey, date } },
-      { $group: buildMetricGroupStage(null) },
-    ])
-    .toArray();
-  return rows[0] || null;
+const AVERAGE_METRICS_SQL = `
+  SELECT
+    AVG(avg_performance) AS performance,
+    AVG(avg_fcp) AS fcp,
+    AVG(avg_lcp) AS lcp,
+    AVG(avg_ttfb) AS ttfb,
+    AVG(avg_inp) AS inp,
+    AVG(avg_cls) AS cls,
+    SUM(sample_count) AS count
+  FROM daily_web_vitals_summary
+  WHERE date = ?
+`;
+
+async function averageMetricsForDate(conn, date) {
+  const rows = await conn.query(AVERAGE_METRICS_SQL, {
+    type: QueryTypes.SELECT,
+    replacements: [date],
+  });
+  return rows?.[0] || null;
 }
 
-async function getSnapshot({ brandKey, date }) {
-  const normalizedBrandKey = normalizeBrandKey(brandKey);
+async function getSnapshot({ conn, date }) {
   const previousDate = getPreviousIsoDate(date);
-  const collection = await connectWebVitalsMongo();
 
   const [currentAgg, previousAgg] = await Promise.all([
-    averageMetricsForDate(collection, normalizedBrandKey, date),
-    averageMetricsForDate(collection, normalizedBrandKey, previousDate),
+    averageMetricsForDate(conn, date),
+    averageMetricsForDate(conn, previousDate),
   ]);
 
   const currentValues = mapMetricRow(currentAgg);
@@ -124,126 +123,125 @@ async function getSnapshot({ brandKey, date }) {
   return {
     date,
     previousDate,
-    sampleCount: currentAgg?.count || 0,
-    previousSampleCount: previousAgg?.count || 0,
+    sampleCount: Number(currentAgg?.count || 0),
+    previousSampleCount: Number(previousAgg?.count || 0),
     metrics,
     previousMetrics,
   };
 }
 
-async function getTrend({ brandKey, start, end, granularity }) {
-  const normalizedBrandKey = normalizeBrandKey(brandKey);
-  const collection = await connectWebVitalsMongo();
-  const isSingleDay = !!start && start === end;
-  const effectiveGranularity = granularity === "hourly" && isSingleDay ? "hourly" : "daily";
-
-  if (effectiveGranularity === "hourly") {
-    const rows = await collection
-      .aggregate([
-        { $match: { brand_key: normalizedBrandKey, date: start } },
-        {
-          $addFields: {
-            hour: {
-              $toInt: { $arrayElemAt: [{ $split: [{ $ifNull: ["$time", "00:00:00"] }, ":"] }, 0] },
-            },
-          },
-        },
-        { $group: buildMetricGroupStage("$hour") },
-        { $sort: { _id: 1 } },
-      ])
-      .toArray();
-
-    return {
-      granularity: "hourly",
-      points: rows.map((row) => ({
-        label: `${String(row._id).padStart(2, "0")}:00`,
-        ...mapMetricRow(row),
-      })),
-    };
-  }
-
-  const rows = await collection
-    .aggregate([
-      { $match: { brand_key: normalizedBrandKey, date: { $gte: start, $lte: end } } },
-      { $group: buildMetricGroupStage("$date") },
-      { $sort: { _id: 1 } },
-    ])
-    .toArray();
+async function getTrend({ conn, start, end }) {
+  const rows = await conn.query(
+    `
+      SELECT
+        date,
+        AVG(avg_performance) AS performance,
+        AVG(avg_fcp) AS fcp,
+        AVG(avg_lcp) AS lcp,
+        AVG(avg_ttfb) AS ttfb,
+        AVG(avg_inp) AS inp,
+        AVG(avg_cls) AS cls
+      FROM daily_web_vitals_summary
+      WHERE date >= ? AND date <= ?
+      GROUP BY date
+      ORDER BY date ASC
+    `,
+    {
+      type: QueryTypes.SELECT,
+      replacements: [start, end],
+    },
+  );
 
   return {
     granularity: "daily",
     points: rows.map((row) => ({
-      label: row._id,
+      label: row.date,
       ...mapMetricRow(row),
     })),
   };
 }
 
-async function getPageBreakdown({ brandKey, date }) {
-  const normalizedBrandKey = normalizeBrandKey(brandKey);
-  const collection = await connectWebVitalsMongo();
-
-  const rows = await collection
-    .find({ brand_key: normalizedBrandKey, date })
-    .sort({ sessions: -1, rank: 1 })
-    .toArray();
+async function getPageBreakdown({ conn, date }) {
+  const rows = await conn.query(
+    `
+      SELECT
+        page_name,
+        url,
+        avg_performance,
+        avg_fcp,
+        avg_lcp,
+        avg_ttfb,
+        avg_inp,
+        avg_cls,
+        date
+      FROM daily_web_vitals_summary
+      WHERE date = ?
+      ORDER BY avg_performance ASC
+    `,
+    {
+      type: QueryTypes.SELECT,
+      replacements: [date],
+    },
+  );
 
   return rows.map((row) => {
-    const performance = numberOrNull(row.performance);
+    const performance = numberOrNull(row.avg_performance);
     return {
       page_name: row.page_name || "",
       url: row.url || "",
-      sessions: Number(row.sessions || 0),
       performance,
       performance_status: getStatus("performance", performance),
-      fcp: numberOrNull(row.fcp),
-      lcp: numberOrNull(row.lcp),
-      ttfb: numberOrNull(row.ttfb),
-      inp: numberOrNull(row.inp),
-      cls: numberOrNull(row.cls),
+      fcp: numberOrNull(row.avg_fcp),
+      lcp: numberOrNull(row.avg_lcp),
+      ttfb: numberOrNull(row.avg_ttfb),
+      inp: numberOrNull(row.avg_inp),
+      cls: numberOrNull(row.avg_cls),
       date: row.date || null,
-      time: row.time || null,
     };
   });
 }
 
-async function getAllBrandsSnapshot({ date }) {
-  const collection = await connectWebVitalsMongo();
-
-  const rows = await collection
-    .aggregate([
-      { $match: { date } },
-      {
-        $group: {
-          _id: "$brand_key",
-          brand_name: { $first: "$brand_name" },
-          performance: { $avg: "$performance" },
-          fcp: { $avg: "$fcp" },
-          lcp: { $avg: "$lcp" },
-          ttfb: { $avg: "$ttfb" },
-          inp: { $avg: "$inp" },
-          cls: { $avg: "$cls" },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ])
-    .toArray();
-
-  return rows.map((row) => {
-    const values = mapMetricRow(row);
+async function getBrandSnapshot(brandKey, date) {
+  try {
+    const route = await resolveTenantRoute(brandKey);
+    if (!route || route.error) {
+      return {
+        brand_key: brandKey,
+        brand_name: humanizeBrandKey(brandKey),
+        sampleCount: 0,
+        metrics: null,
+      };
+    }
+    const tenant = getTenantConnection({ ...route, brandId: brandKey });
+    const agg = await averageMetricsForDate(tenant.sequelize, date);
+    const values = mapMetricRow(agg);
     const metrics = {};
     for (const metric of METRICS) {
       const value = values[metric];
       metrics[metric] = { value, status: getStatus(metric, value) };
     }
     return {
-      brand_key: row._id,
-      brand_name: row.brand_name || row._id,
-      sampleCount: row.count || 0,
+      brand_key: brandKey,
+      brand_name: humanizeBrandKey(brandKey),
+      sampleCount: Number(agg?.count || 0),
       metrics,
     };
-  });
+  } catch {
+    return {
+      brand_key: brandKey,
+      brand_name: humanizeBrandKey(brandKey),
+      sampleCount: 0,
+      metrics: null,
+    };
+  }
+}
+
+async function getAllBrandsSnapshot({ date, user = {} }) {
+  const accessibleBrandKeys = resolveAccessibleBrandKeys(user, await getDynamicBrandsMap());
+  const brands = await Promise.all(
+    accessibleBrandKeys.map((brandKey) => getBrandSnapshot(brandKey, date)),
+  );
+  return brands;
 }
 
 module.exports = {

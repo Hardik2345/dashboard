@@ -99,6 +99,44 @@ let brands = loadBrands();
 
 function getBrands() { return { ...brands }; }
 
+let dynamicBrandsMapCache = { map: null, timestamp: 0 };
+const DYNAMIC_BRANDS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+// Full brand-key universe from the tenant-router's live registry (its
+// /tenant/brands endpoint, backed by the tenants collection in Mongo) —
+// used by admin cross-brand features (Overall Snapshot, Web Vitals) to
+// decide "all brands" for an author/admin user. Distinct from getBrands()
+// above, which is the legacy static per-brand DB-credential map sourced
+// from BRAND_LIST/BRANDS_CONFIG env vars — some legacy direct-connect code
+// (e.g. splitController's hourlySalesCompare) still depends on that one for
+// its dbHost/dbUser/dbPass fields, so it's left untouched. This only needs
+// brand-key presence, so it returns a plain { BRANDKEY: true, ... } map,
+// shaped to drop straight into resolveAccessibleBrandKeys(user, brandsMap).
+async function getDynamicBrandsMap() {
+  const now = Date.now();
+  if (dynamicBrandsMapCache.map && now - dynamicBrandsMapCache.timestamp < DYNAMIC_BRANDS_CACHE_TTL_MS) {
+    return dynamicBrandsMapCache.map;
+  }
+  try {
+    const baseUrl = process.env.TENANT_ROUTER_URL || "http://tenant-router-main:3004";
+    const res = await axios.get(`${baseUrl}/tenant/brands`, { timeout: 5000 });
+    const data = res.data || {};
+    const map = {};
+    for (const key of Object.values(data)) {
+      const upper = String(key || "").trim().toUpperCase();
+      if (upper && upper !== "MILA") map[upper] = true;
+    }
+    if (Object.keys(map).length > 0) {
+      dynamicBrandsMapCache = { map, timestamp: now };
+      return map;
+    }
+    return dynamicBrandsMapCache.map || getBrands();
+  } catch (e) {
+    console.error("[Brands Config] Failed to fetch dynamic brand list:", e.message);
+    return dynamicBrandsMapCache.map || getBrands();
+  }
+}
+
 function getBrandById(id) {
   if (id == null) return null;
   const numeric = Number(id);
@@ -107,4 +145,4 @@ function getBrandById(id) {
   return Object.values(map).find((b) => Number(b.brandId) === numeric) || null;
 }
 
-module.exports = { brands, getBrands, getBrandById, fetchBrandIds };
+module.exports = { brands, getBrands, getBrandById, fetchBrandIds, getDynamicBrandsMap };
