@@ -1,6 +1,6 @@
 const { handleControllerError } = require('../../shared/middleware/handleControllerError');
 const { extractFilters } = require('../../shared/utils/filters');
-const { getBrands } = require('../../config/brands');
+const { getDynamicBrandsMap } = require('../../config/brands');
 const { getBrandConnection } = require('../../shared/db/brandConnectionManager');
 const {
   parseHourLte,
@@ -205,9 +205,9 @@ function buildSplitController({ reportService }) {
           .trim()
           .toUpperCase();
         if (!brandKey) return res.status(400).json({ error: 'brand_key required' });
-        const map = getBrands();
+        const map = await getDynamicBrandsMap();
         if (!map[brandKey]) return res.status(400).json({ error: 'Unknown brand_key' });
-        const brandConn = await getBrandConnection(map[brandKey]);
+        const brandConn = await getBrandConnection(brandKey);
         const daysParam = (req.query.days || '').toString();
         const N = Number(daysParam) || 1;
         if (N <= 0 || N > 30) return res.status(400).json({ error: 'days must be between 1 and 30' });

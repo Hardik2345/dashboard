@@ -1,4 +1,4 @@
-const { getBrands } = require("../config/brands");
+const { getBrands, getDynamicBrandsMap } = require("../config/brands");
 const { resolveTenantRoute } = require("../shared/db/tenantRouterClient");
 const { getTenantConnection } = require("../shared/db/tenantConnection");
 
@@ -119,7 +119,7 @@ function buildOverallSnapshotService({
   metricsService,
   resolveRoute = resolveTenantRoute,
   getConnection = getTenantConnection,
-  getBrandsMap = getBrands,
+  getBrandsMap = getDynamicBrandsMap,
 } = {}) {
   if (!metricsService || typeof metricsService.getDashboardSummary !== "function") {
     throw new Error("metricsService.getDashboardSummary is required");
@@ -149,7 +149,7 @@ function buildOverallSnapshotService({
   async function getOverallSnapshot({ user = {}, spec = {} }) {
     const accessibleBrandKeys = resolveAccessibleBrandKeys(
       user,
-      getBrandsMap(),
+      await getBrandsMap(),
       spec.brandKeys,
     );
     if (accessibleBrandKeys.length === 0) {
@@ -185,4 +185,8 @@ function buildOverallSnapshotService({
 module.exports = {
   SUMMARY_METRIC_KEYS,
   buildOverallSnapshotService,
+  getAllowedBrands,
+  resolveAccessibleBrandKeys,
+  normalizeBrandKeys,
+  humanizeBrandKey,
 };

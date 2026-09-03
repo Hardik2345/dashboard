@@ -28,7 +28,6 @@ import { METRIC_DEFS, getStatusMeta, normalizeWebVitalsUrl } from "../webVitalsF
 const ALL_COLUMNS = [
   { id: "page_name", label: "Page Name" },
   { id: "url", label: "URL" },
-  { id: "sessions", label: "Sessions" },
   { id: "performance", label: "Performance" },
   { id: "fcp", label: "FCP (s)" },
   { id: "lcp", label: "LCP (s)" },
@@ -51,7 +50,6 @@ function escapeCsvValue(value) {
 function formatCellValue(columnId, row) {
   if (columnId === "page_name") return row.page_name || "—";
   if (columnId === "url") return normalizeWebVitalsUrl(row.url) || "—";
-  if (columnId === "sessions") return Number(row.sessions || 0).toLocaleString();
   const def = METRIC_DEFS[columnId];
   return def ? def.format(row[columnId]) : row[columnId] ?? "—";
 }
