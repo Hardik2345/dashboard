@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Datum — Documentation Index</title>
+<style>
+  @page { margin: 22mm 18mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    color: #1c2330;
+    font-size: 11pt;
+    line-height: 1.55;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 24px 8px;
+  }
+  h1 {
+    font-size: 24pt;
+    color: #14202e;
+    margin-bottom: 2px;
+    border-bottom: 3px solid #2b6cb0;
+    padding-bottom: 10px;
+  }
+  .subtitle {
+    color: #5b6472;
+    font-size: 10.5pt;
+    margin-top: 4px;
+    margin-bottom: 28px;
+  }
+  h2 {
+    font-size: 15.5pt;
+    color: #14202e;
+    margin-top: 34px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #d8dee6;
+  }
+  h3 {
+    font-size: 12.5pt;
+    color: #1f3a5f;
+    margin-top: 20px;
+    margin-bottom: 6px;
+  }
+  h3.svc {
+    background: #eef4fb;
+    padding: 6px 10px;
+    border-left: 4px solid #2b6cb0;
+    border-radius: 3px;
+  }
+  p { margin: 8px 0; text-align: justify; }
+  ul { margin: 8px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  strong { color: #14202e; }
+  code {
+    background: #eef1f5;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: "Consolas", monospace;
+    font-size: 9.8pt;
+    color: #7a2e8c;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 20px 0;
+    font-size: 9.8pt;
+  }
+  th, td {
+    border: 1px solid #d8dee6;
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #14202e;
+    color: #fff;
+    font-weight: 600;
+  }
+  tr:nth-child(even) td { background: #f6f8fa; }
+  .purpose-label {
+    font-weight: 600;
+    color: #2b6cb0;
+  }
+  hr { border: none; border-top: 1px solid #d8dee6; margin: 24px 0; }
+</style>
+</head>
+<body>
+
+<h1>Datum — Documentation Index</h1>
+<div class="subtitle">Platform overview and service catalog · Internal engineering documentation</div>
+
+<h2>1. Introduction</h2>
+
+<h3>1.1 What is Datum?</h3>
+<p>Datum is a multi-tenant e-commerce merchant dashboard platform. It gives merchants (brands) a single place to see how their store is performing — sales and product metrics, session and web-vitals analytics, inventory alerts, daily operational insights, and merchant support requests — pulled together from multiple backend services behind one authenticated gateway. The production frontend is served at <code>datum.trytechit.co</code>.</p>
+
+<h3>1.2 Overall Goal</h3>
+<p>The platform exists to consolidate operational visibility for multiple brands (tenants) into one product, while keeping each brand's data isolated and access-controlled. Concretely, Datum aims to:</p>
+<ul>
+  <li>Give merchants and internal staff a unified dashboard for metrics, alerts, session behavior, and daily insights across brands they have access to.</li>
+  <li>Ingest and process operational events (sessions, web vitals, inventory changes, tracked events) in near real time.</li>
+  <li>Route and authenticate every request per-tenant, so a user only ever sees data for the brand(s) they're authorized on.</li>
+  <li>Surface the health of the platform itself (service uptime, registered routes, health checks) through a dedicated monitoring layer.</li>
+  <li>Keep merchant-facing operational workflows (requests/tickets, alerts, daily notes) inside the same product instead of scattered across external tools.</li>
+</ul>
+
+<h3>1.3 How It Works</h3>
+<p>Datum is a set of independently deployed Node.js services (plus one Lua/OpenResty gateway) that sit behind a single entry point, with a React frontend consuming them all through that entry point.</p>
+<ul>
+  <li><strong>Entry point</strong> — All external traffic goes through <code>api-gateway</code>, an OpenResty/nginx reverse proxy. It routes requests by path prefix to the correct backend service, verifies JWTs and enforces rate limits on protected routes via embedded Lua modules, and leaves a small set of routes (public tracking/webhook endpoints) unauthenticated by design.</li>
+  <li><strong>Identity</strong> — <code>auth-service</code> (bundled with the gateway's codebase, run as its own container) owns signup/login, refresh/logout, Google OAuth, and publishes a JWKS endpoint that the gateway's Lua layer uses to verify tokens. It also manages admin-level user, domain-rule, and role administration.</li>
+  <li><strong>Tenancy</strong> — <code>tenant-router</code> is the source of truth for which brand maps to which database shard and pipeline credentials. Other services resolve tenant context through it, and it also relays brand onboarding jobs to an external pipeline orchestrator.</li>
+  <li><strong>Domain services</strong> — Independent services own their own slice of functionality: analytics/reporting (<code>analytics</code>), inventory + push alerts (<code>alerts-service</code>), merchant support tickets synced to Todoist (<code>merchant-requests-service</code>), per-brand daily notes (<code>daily-insights-service</code>), and raw session ingestion (<code>sessions-service</code>). Each is a small Express app with its own database access, deployed and health-checked independently via Docker Compose.</li>
+  <li><strong>Platform health</strong> — <code>health-monitor-service</code> is a registry that every other service reports into on startup (its health-check config and discovered routes). The dashboard's Health Monitor panel reads aggregated status from it.</li>
+  <li><strong>Frontend</strong> — <code>client/dashboard</code>, a React + Vite single-page app, is the surface merchants and staff use. It talks to every backend service exclusively through the gateway, and renders KPIs, funnels, inventory, alerts, requests, session/web-vitals analytics, and the health monitor panel.</li>
+  <li><strong>Deployment</strong> — The whole stack (gateway, auth, tenant-router, alerts, merchant-requests, daily-insights, analytics, sessions) is brought up together via <code>scripts/compose-stack.js</code> / <code>docker-compose.yml</code>. <code>health-monitor-service</code> runs from its own compose file since it isn't a hard dependency of the gateway.</li>
+</ul>
+
+<hr/>
+
+<h2>2. Services</h2>
+
+<table>
+<tr><th>#</th><th>Service</th><th>Port</th><th>One-line purpose</th></tr>
+<tr><td>1</td><td>api-gateway</td><td>18080 (exposed as 8081)</td><td>Edge reverse proxy: routing, JWT auth, rate limiting</td></tr>
+<tr><td>2</td><td>auth-service</td><td>3001</td><td>Identity: signup/login, OAuth, JWKS, user/role admin</td></tr>
+<tr><td>3</td><td>tenant-router</td><td>3004</td><td>Tenant resolution, onboarding relay, pipeline credentials</td></tr>
+<tr><td>4</td><td>alerts-service</td><td>5005</td><td>Alert rules, inventory cache, event tracking, push notifications</td></tr>
+<tr><td>5</td><td>merchant-requests-service</td><td>4020</td><td>Merchant support requests synced with Todoist</td></tr>
+<tr><td>6</td><td>daily-insights-service</td><td>4030</td><td>Per-brand daily insight notes</td></tr>
+<tr><td>7</td><td>analytics</td><td>3006</td><td>Core metrics, reporting, uploads, API keys, Shopify integration</td></tr>
+<tr><td>8</td><td>sessions-service</td><td>4010</td><td>Session ingestion and de-duplication</td></tr>
+<tr><td>9</td><td>health-monitor-service</td><td>4015</td><td>Central service health registry and reporting</td></tr>
+<tr><td>10</td><td>client/dashboard</td><td>— (static SPA)</td><td>React frontend consumed by merchants and staff</td></tr>
+</table>
+
+<h3 class="svc">2.1 api-gateway</h3>
+<p><span class="purpose-label">Purpose:</span> The single public entry point for the entire platform, built on OpenResty (nginx + Lua). It routes incoming requests by path prefix (<code>/analytics</code>, <code>/alerts</code>, <code>/merchant-requests</code>, <code>/daily-insights</code>, <code>/tenant</code>, <code>/sessions</code>, <code>/health-monitor</code>, plus Socket.IO passthroughs for <code>tenant-router</code> and <code>merchant-requests-service</code>) to the correct backend service. Embedded Lua modules handle JWT verification (<code>auth.lua</code>, <code>jwks.lua</code>) and rate limiting (<code>ratelimit.lua</code>) on protected routes; a small set of routes (<code>/track</code>, <code>/events</code>, <code>/inventory</code>, the Todoist webhook) are deliberately left public or gated by a shared pipeline key instead of a user JWT. It also exposes <code>/health</code> and <code>/nginx_status</code>.</p>
+
+<h3 class="svc">2.2 auth-service</h3>
+<p><span class="purpose-label">Purpose:</span> Owns identity for the platform. Built from <code>api-gateway/Dockerfile.auth</code> and backed by MongoDB. Handles signup, login, refresh, logout, <code>/me</code>, Google OAuth (<code>/google/start</code>, <code>/google/callback</code>), and publishes a JWKS endpoint (<code>/.well-known/jwks.json</code>) that the gateway's Lua layer uses to verify JWTs. Also exposes admin endpoints for user management, domain rules, and custom roles.</p>
+
+<h3 class="svc">2.3 tenant-router</h3>
+<p><span class="purpose-label">Purpose:</span> Central tenant registry and onboarding relay. Resolves a brand to its database shard (<code>/resolve</code>), forwards onboarding payloads to an external pipeline orchestrator and relays onboarding logs over Socket.IO (<code>/onboard</code>, <code>/onboard/logs</code>), manages CDS brand mappings and tenant CRUD (<code>/brands</code>, <code>/create</code>, <code>/cds/mappings</code>), and looks up tenants by credentials. A separate pipeline-key-gated route group manages encrypted per-brand pipeline database credentials and validates onboarding "speed keys."</p>
+
+<h3 class="svc">2.4 alerts-service</h3>
+<p><span class="purpose-label">Purpose:</span> Handles alert configuration, inventory caching, event tracking, and push notifications. Provides CRUD for alert rules (author-only), refreshes an inventory cache from per-brand MySQL into Redis on a timer with a pipeline-key-gated ingest endpoint, tracks events (<code>/track</code>, with a public <code>/events</code> count endpoint), and delivers/manages FCM push notifications (<code>/push/receive</code>, <code>/push/register-token</code>, <code>/push/notifications</code>).</p>
+
+<h3 class="svc">2.5 merchant-requests-service</h3>
+<p><span class="purpose-label">Purpose:</span> Manages merchant-submitted support requests, kept in sync with Todoist. Supports request listing/creation, comments, and assignee/due-date/status updates, plus author-only configuration and provisioning of per-brand Todoist projects. A dedicated webhook route ingests Todoist callbacks to keep request state reconciled with Todoist.</p>
+
+<h3 class="svc">2.6 daily-insights-service</h3>
+<p><span class="purpose-label">Purpose:</span> A focused service for per-brand daily insight notes. Supports fetching an insight for a given date (permission-gated), listing history (author-only), and creating/upserting insights (author-only), all scoped per-brand.</p>
+
+<h3 class="svc">2.7 analytics</h3>
+<p><span class="purpose-label">Purpose:</span> The core metrics and reporting service, and the largest in the platform. Covers dashboard summary and metrics endpoints, product conversion and bundle analytics, session analytics and web-vitals ingestion/query, file uploads, API key issuance and management, Shopify integration, notifications, and an external-facing API router. It also contains a <code>pipeline.py</code> file kept only as a reference copy — the live ETL pipeline that populates analytics data runs in a separate repository, not here.</p>
+
+<h3 class="svc">2.8 sessions-service</h3>
+<p><span class="purpose-label">Purpose:</span> A minimal session-ingestion endpoint. Records a user session (id, user/email, brand, device/user-agent, IP, route) on <code>POST /sessions</code>, enforcing session ID uniqueness and de-duplicating repeat sessions from the same user within a rolling window (<code>SESSION_WINDOW_MINUTES</code>, default 30). Brand and role context are taken from gateway-injected headers when present.</p>
+
+<h3 class="svc">2.9 health-monitor-service</h3>
+<p><span class="purpose-label">Purpose:</span> The platform's central health/registry hub. Every other service self-registers its health-check configuration and discovered routes with it on startup. It exposes <code>/register</code>, <code>/events</code> for application event ingestion, and a permission-gated query API that the dashboard's Health Monitor panel uses to read aggregated service status. It is deployed via its own compose file since it is not a hard startup dependency of the gateway.</p>
+
+<h3 class="svc">2.10 client/dashboard</h3>
+<p><span class="purpose-label">Purpose:</span> The Datum web dashboard — a React + Vite single-page application, served in production at <code>datum.trytechit.co</code>. It provides the merchant/staff-facing UI: KPI tiles, daily funnel and insights panels, inventory tables, alerts administration, the merchant-requests panel, author/brand management, notifications, session analytics and web-vitals views, mobile navigation, and the Health Monitor panel. All data access goes through <code>api-gateway</code>.</p>
+
+</body>
+</html>
