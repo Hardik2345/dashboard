@@ -26,7 +26,11 @@ const sessionSchema = new mongoose.Schema(
       required: true,
     },
     session_id: { type: String, required: true },
-    variantId: { type: String },
+    // Some event types (e.g. checkout_initiated) report every variant in the
+    // cart as an array, while single-product events (e.g. add_to_cart) send
+    // one plain value — Mixed accepts either without a cast error dropping
+    // the whole event.
+    variantId: { type: mongoose.Schema.Types.Mixed },
     shop_name: { type: String },
     cart_token: { type: String },
     checkout_token: { type: String },
