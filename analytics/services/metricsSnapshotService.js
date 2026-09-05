@@ -2502,15 +2502,15 @@ function buildMetricsSnapshotService(deps = {}) {
         checkout_rate: discountActive || cityActive || combinedProductUtmSourceActive || productTypeActive
           ? buildUnavailableSummaryMetric()
           : buildSummaryMetric(
-              computeRatePercent(checkoutInitiatedPair.current, current.total_atc_sessions),
-              computeRatePercent(checkoutInitiatedPair.previous, previous.total_atc_sessions),
+              computeRatePercent(checkoutInitiatedPair.current, current.total_sessions),
+              computeRatePercent(checkoutInitiatedPair.previous, previous.total_sessions),
               computeRatePercent(
                 checkoutInitiatedDeltaPair.current,
-                deltaCurrentRowTwo.total_atc_sessions,
+                deltaCurrentRowTwo.total_sessions,
               ),
               computeRatePercent(
                 checkoutInitiatedDeltaPair.previous,
-                deltaPreviousRowTwo.total_atc_sessions,
+                deltaPreviousRowTwo.total_sessions,
               ),
             ),
         atc_rate: discountActive
