@@ -1,0 +1,188 @@
+const { handleControllerError } = require('../../shared/middleware/handleControllerError');
+const { extractFilters } = require('../../shared/utils/filters');
+const {
+  parseRangeQuery,
+  ensureBrandSequelize,
+} = require('./requestNormalizer');
+const { resolveShopSubdomain } = require('../../shared/utils/shop');
+
+function canSyncProductUtmFilters(req) {
+  if (req?.user?.isAuthor) return true;
+  const permissions = Array.isArray(req?.user?.permissions) ? req.user.permissions : [];
+  return (
+    permissions.includes("all") ||
+    permissions.includes("product_utm_filter_sync")
+  );
+}
+
+function buildProductController({ pageService }) {
+  return {
+    topProductPages: async (req, res) => {
+      try {
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
+        if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
+        const { start, end } = parsed.data;
+        const brandConn = ensureBrandSequelize(req);
+        if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
+        const rangeStart = start || end;
+        const rangeEnd = end || start;
+        if (!rangeStart || !rangeEnd) return res.status(400).json({ error: 'start or end date required' });
+        if (rangeStart > rangeEnd) return res.status(400).json({ error: 'start must be on or before end' });
+        const limitParam = Number(req.query.limit);
+        const limit = Number.isFinite(limitParam)
+          ? Math.min(Math.max(Math.trunc(limitParam), 1), 20)
+          : 5;
+        return res.json(
+          await pageService.getTopProductPages({
+            conn: brandConn.conn,
+            brandKey: req.brandKey,
+            start: rangeStart,
+            end: rangeEnd,
+            limit,
+            resolveShopSubdomain,
+            timezone: req.tenantRoute?.timezone,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'top-pdps failed');
+      }
+    },
+
+    topProducts: async (req, res) => {
+      try {
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
+        if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
+        const { start, end } = parsed.data;
+        const brandConn = ensureBrandSequelize(req);
+        if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
+        const rangeStart = start || end;
+        const rangeEnd = end || start;
+        if (!rangeStart || !rangeEnd) return res.status(400).json({ error: 'start or end date required' });
+        if (rangeStart > rangeEnd) return res.status(400).json({ error: 'start must be on or before end' });
+        const limitParam = Number(req.query.limit);
+        const limit = Number.isFinite(limitParam)
+          ? Math.min(Math.max(Math.trunc(limitParam), 1), 50)
+          : 50;
+        return res.json(
+          await pageService.getTopProducts({
+            conn: brandConn.conn,
+            brandKey: req.brandKey,
+            start: rangeStart,
+            end: rangeEnd,
+            limit,
+            filters: canSyncProductUtmFilters(req)
+              ? extractFilters(req)
+              : {
+                  ...extractFilters(req),
+                  utm_source: null,
+                },
+            timezone: req.tenantRoute?.timezone,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'top-products failed');
+      }
+    },
+
+    productKpis: async (req, res) => {
+      try {
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
+        if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
+        const { start, end } = parsed.data;
+        const brandConn = ensureBrandSequelize(req);
+        if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
+        const rangeStart = start || end;
+        const rangeEnd = end || start;
+        if (!rangeStart || !rangeEnd) return res.status(400).json({ error: 'start or end date required' });
+        if (rangeStart > rangeEnd) return res.status(400).json({ error: 'start must be on or before end' });
+        return res.json(
+          await pageService.getProductKpis({
+            conn: brandConn.conn,
+            brandKey: req.brandKey,
+            start: rangeStart,
+            end: rangeEnd,
+            filters: extractFilters(req),
+            timezone: req.tenantRoute?.timezone,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'product-kpis failed');
+      }
+    },
+
+    productTypes: async (req, res) => {
+      try {
+        const brandConn = ensureBrandSequelize(req);
+        if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
+        return res.json(
+          await pageService.getProductTypes({
+            conn: brandConn.conn,
+            date: req.query.date,
+            timezone: req.tenantRoute?.timezone,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'product-types failed');
+      }
+    },
+
+    hourlyProductSessionsExport: async (req, res) => {
+      try {
+        const parsed = parseRangeQuery(req.query, {
+          defaultToToday: true,
+          timezone: req.tenantRoute?.timezone,
+        });
+        if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
+        const { start, end } = parsed.data;
+        const brandConn = ensureBrandSequelize(req);
+        if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
+        const filters = {};
+        const filterKeys = [
+          'product_id', 'landing_page_path',
+          'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
+          'referrer_name',
+        ];
+        for (const key of filterKeys) {
+          if (req.query[key]) filters[key] = req.query[key];
+        }
+        if (req.query.hour !== undefined) filters.hour = req.query.hour;
+        const exportResult = await pageService.getHourlyProductSessionsExport({
+          conn: brandConn.conn,
+          brandKey: (req.brandKey || '').toString().trim().toUpperCase(),
+          start,
+          end,
+          filters,
+          timezone: req.tenantRoute?.timezone,
+        });
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${exportResult.filename}"`);
+        return res.send(exportResult.csv);
+      } catch (e) {
+        return handleControllerError(res, e, 'hourly-product-sessions-export failed');
+      }
+    },
+
+    hourlySalesSummary: async (req, res) => {
+      try {
+        const brandKey = (req.brandKey || req.query.brand_key || '')
+          .toString()
+          .trim()
+          .toUpperCase();
+        if (!brandKey) return res.status(400).json({ error: 'Brand key required' });
+        const brandConn = ensureBrandSequelize(req);
+        if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
+        return res.json(
+          await pageService.getHourlySalesSummary({
+            conn: brandConn.conn,
+            brandKey,
+            timezone: req.tenantRoute?.timezone,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'hourly-sales-summary failed');
+      }
+    },
+  };
+}
+
+module.exports = { buildProductController };

@@ -1,0 +1,320 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Aligned to the dashboard MUI brand palette (light): primary #0b6bcb on #FDFDFD/#ffffff */
+    --background: 0 0% 99%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 210 90% 42%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 210 90% 42%;
+    --radius: 0.5rem;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+  }
+
+  .dark {
+    /* Aligned to the dashboard MUI brand palette (dark): primary #5ba3e0, #000 bg / #1a1a1a paper */
+    --background: 0 0% 0%;
+    --foreground: 0 0% 94%;
+    --card: 0 0% 10%;
+    --card-foreground: 0 0% 94%;
+    /* Floating surfaces (dropdowns/menus) use elevated "paper" #1a1a1a, not the #000 page */
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 94%;
+    --primary: 208 68% 62%;
+    --primary-foreground: 0 0% 8%;
+    --secondary: 0 0% 18%;
+    --secondary-foreground: 0 0% 94%;
+    --muted: 0 0% 18%;
+    --muted-foreground: 0 0% 80%;
+    --accent: 0 0% 18%;
+    --accent-foreground: 0 0% 94%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 0 0% 25%;
+    --input: 0 0% 25%;
+    --ring: 208 68% 62%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Basic reset and mobile-first tweaks */
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background-color: #fdfdfd;
+}
+
+/* Google Sign-in custom button styles (gsi-material-button) */
+.gsi-material-button {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  -webkit-appearance: none;
+  background-color: WHITE;
+  background-image: none;
+  border: 1px solid #747775;
+  -webkit-border-radius: 4px;
+  border-radius: 4px;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  color: #1f1f1f;
+  cursor: pointer;
+  font-family: "Roboto", arial, sans-serif;
+  font-size: 14px;
+  height: 40px;
+  letter-spacing: 0.25px;
+  outline: none;
+  overflow: hidden;
+  padding: 0 12px;
+  position: relative;
+  text-align: center;
+  -webkit-transition:
+    background-color 0.218s,
+    border-color 0.218s,
+    box-shadow 0.218s;
+  transition:
+    background-color 0.218s,
+    border-color 0.218s,
+    box-shadow 0.218s;
+  vertical-align: middle;
+  white-space: nowrap;
+  width: auto;
+  max-width: 400px;
+  min-width: min-content;
+}
+
+.gsi-material-button .gsi-material-button-icon {
+  height: 20px;
+  margin-right: 12px;
+  min-width: 20px;
+  width: 20px;
+}
+
+.gsi-material-button .gsi-material-button-content-wrapper {
+  -webkit-align-items: center;
+  align-items: center;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  -webkit-flex-wrap: nowrap;
+  flex-wrap: nowrap;
+  height: 100%;
+  justify-content: space-between;
+  position: relative;
+  width: 100%;
+}
+
+.gsi-material-button .gsi-material-button-contents {
+  -webkit-flex-grow: 1;
+  flex-grow: 1;
+  font-family: "Roboto", arial, sans-serif;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+
+.gsi-material-button .gsi-material-button-state {
+  -webkit-transition: opacity 0.218s;
+  transition: opacity 0.218s;
+  bottom: 0;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.gsi-material-button:disabled {
+  cursor: default;
+  background-color: #ffffff61;
+  border-color: #1f1f1f1f;
+}
+
+.gsi-material-button:disabled .gsi-material-button-contents {
+  opacity: 38%;
+}
+
+.gsi-material-button:disabled .gsi-material-button-icon {
+  opacity: 38%;
+}
+
+.gsi-material-button:not(:disabled):active .gsi-material-button-state,
+.gsi-material-button:not(:disabled):focus .gsi-material-button-state {
+  background-color: #303030;
+  opacity: 12%;
+}
+
+.gsi-material-button:not(:disabled):hover {
+  -webkit-box-shadow:
+    0 1px 2px 0 rgba(60, 64, 67, 0.3),
+    0 1px 3px 1px rgba(60, 64, 67, 0.15);
+  box-shadow:
+    0 1px 2px 0 rgba(60, 64, 67, 0.3),
+    0 1px 3px 1px rgba(60, 64, 67, 0.15);
+}
+
+.gsi-material-button:not(:disabled):hover .gsi-material-button-state {
+  background-color: #303030;
+  opacity: 8%;
+}
+
+/* Polaris Popover styling - minimal visible border */
+/* .Polaris-Popover {
+  background: transparent !important;
+}
+
+.Polaris-Popover__Wrapper {
+  background: transparent !important;
+} */
+
+/* .Polaris-Popover__Content {
+  border: 1px solid #E1E3E5 !important;
+  border-radius: 6px !important; 
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  margin-top: 4px !important;
+  overflow: hidden !important;
+} */
+
+/* .Polaris-Popover,
+.Polaris-Popover__Content,
+.Polaris-DatePicker,
+.Polaris-DatePicker__Month {
+  background-color: #111 !important;
+  color: #eee !important;
+} */
+
+/* Selected day */
+/* .Polaris-DatePicker__Day--selected {
+  background-color: #333 !important;
+  color: #fff !important;
+} */
+
+/* Hover */
+/* .Polaris-DatePicker__Day:hover {
+  background-color: #222 !important;
+  color: #222 !important;
+} */
+
+/* Kill Polaris' own border + background in dark mode only; keep light defaults intact. */
+[data-theme="dark"] .Polaris-Popover__Popover {
+  box-shadow: none !important;
+  background-color: transparent !important;
+}
+
+[data-theme="dark"] .Polaris-Popover__Content {
+  background-color: #1e1e1e !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 8px !important;
+}
+
+[data-theme="dark"] .Polaris-Popover__Section {
+  background-color: transparent !important;
+  border-top-color: transparent !important;
+}
+
+/* Polaris DatePicker dark mode styling */
+[data-theme="dark"] .Polaris-DatePicker {
+  background-color: #1e1e1e !important;
+}
+
+[data-theme="dark"] .Polaris-DatePicker__Month {
+  background-color: #1e1e1e !important;
+}
+
+[data-theme="dark"] .Polaris-DatePicker__Title,
+[data-theme="dark"] .Polaris-DatePicker__TitleText,
+[data-theme="dark"] .Polaris-DatePicker__Weekday {
+  color: #c0c0c0 !important;
+}
+
+/* Ensure month + year are visible in light mode as well */
+.Polaris-DatePicker__TitleText {
+  color: #202223 !important;
+}
+
+[data-theme="dark"] .Polaris-DatePicker__Day {
+  color: #f0f0f0 !important;
+}
+
+[data-theme="dark"] .Polaris-DatePicker__Day--disabled {
+  color: #606060 !important;
+}
+
+[data-theme="dark"] .Polaris-DatePicker__Day--selected {
+  background-color: #5ba3e0 !important;
+  color: #121212 !important;
+}
+
+[data-theme="dark"] .Polaris-DatePicker__Day--inRange {
+  background-color: rgba(91, 163, 224, 0.25) !important;
+}
+
+[data-theme="dark"]
+  .Polaris-DatePicker__Day:hover:not(.Polaris-DatePicker__Day--disabled) {
+  background-color: rgba(91, 163, 224, 0.35) !important;
+}
+
+[data-theme="dark"] .Polaris-Button--iconOnly svg {
+  fill: #c0c0c0 !important;
+}
+
+/* Dark mode number input arrow fix */
+[data-theme="dark"] input[type="number"]::-webkit-inner-spin-button,
+[data-theme="dark"] input[type="number"]::-webkit-outer-spin-button {
+  filter: invert(1);
+}
+
+@keyframes shine {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}

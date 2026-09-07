@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Datum — Analytics Service</title>
+<style>
+  @page { margin: 22mm 18mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    color: #1c2330;
+    font-size: 10.5pt;
+    line-height: 1.5;
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 24px 8px;
+  }
+  h1 {
+    font-size: 23pt;
+    color: #14202e;
+    margin-bottom: 2px;
+    border-bottom: 3px solid #2b6cb0;
+    padding-bottom: 10px;
+  }
+  .subtitle {
+    color: #5b6472;
+    font-size: 10.5pt;
+    margin-top: 4px;
+    margin-bottom: 26px;
+  }
+  h2 {
+    font-size: 15pt;
+    color: #14202e;
+    margin-top: 30px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #d8dee6;
+  }
+  h3 {
+    font-size: 12pt;
+    color: #1f3a5f;
+    margin-top: 18px;
+    margin-bottom: 6px;
+  }
+  h3.grp {
+    background: #eef4fb;
+    padding: 5px 10px;
+    border-left: 4px solid #2b6cb0;
+    border-radius: 3px;
+    font-size: 11pt;
+  }
+  p { margin: 7px 0; text-align: justify; }
+  ul { margin: 7px 0; padding-left: 20px; }
+  li { margin: 3px 0; }
+  strong { color: #14202e; }
+  code {
+    background: #eef1f5;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: "Consolas", monospace;
+    font-size: 9pt;
+    color: #7a2e8c;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 18px 0;
+    font-size: 9pt;
+  }
+  th, td {
+    border: 1px solid #d8dee6;
+    padding: 5px 7px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #14202e;
+    color: #fff;
+    font-weight: 600;
+  }
+  tr:nth-child(even) td { background: #f6f8fa; }
+  hr { border: none; border-top: 1px solid #d8dee6; margin: 20px 0; }
+  .callout {
+    background: #fff8e6;
+    border-left: 4px solid #d9a622;
+    border-radius: 3px;
+    padding: 10px 14px;
+    margin: 10px 0 18px 0;
+  }
+  .callout strong { color: #8a6100; }
+  .quote {
+    background: #f4f6f8;
+    border-left: 4px solid #9aa5b1;
+    border-radius: 3px;
+    padding: 8px 14px;
+    margin: 10px 0 18px 0;
+    font-size: 9.5pt;
+    color: #3c4650;
+  }
+</style>
+</head>
+<body>
+
+<h1>Datum — Analytics Service</h1>
+<div class="subtitle">Service documentation · Analytics · Internal engineering documentation</div>
+
+<h2>1. Overview</h2>
+<p>The <strong>analytics</strong> service is the brain behind the numbers you see on the Datum dashboard. It's the biggest service in the platform, and it's responsible for calculating and serving almost everything merchants look at: sales KPIs, funnels, product performance, session behavior, website speed (web vitals), file uploads, API keys, and the Shopify file-upload feature. It runs on port 3006, and nothing talks to it directly — all requests come in through the api-gateway, which forwards the right traffic to it.</p>
+
+<h2>2. Architecture</h2>
+<h3>2.1 How the Service Starts and Handles Requests</h3>
+<ul>
+  <li>The service starts up, connects to its databases, and sets up a clean shutdown process so that if it's restarted or stopped, it closes all its database connections properly instead of leaving them hanging.</li>
+  <li>Before any request reaches actual business logic, it passes through a chain of checks: security headers are added, errors are tracked (via Sentry), only approved websites are allowed to call it (CORS), and incoming request size is capped at 60MB. Each feature area (metrics, dashboard, sessions, etc.) has its own set of routes, all wired together at startup.</li>
+  <li>Internally, it listens on port 3000 by default but is addressed on the network as <code>analytics-service:3006</code>.</li>
+</ul>
+
+<h3>2.2 Reporting Its Own Health</h3>
+<p>The service tells the platform's health-monitor whenever it starts up — sharing what it depends on (MongoDB, MySQL, Redis) and what routes it exposes. While running, it also reports whenever a request fails or recovers, so the health-monitor dashboard stays up to date on whether analytics is working properly.</p>
+
+<h2>3. Where the Data Lives</h2>
+<table>
+<tr><th>Data store</th><th>How it's used</th><th>What's stored there</th></tr>
+<tr><td>Shared MySQL database</td><td>Used for platform-wide data</td><td>API keys, saved dashboard layouts</td></tr>
+<tr><td>Per-brand MySQL database</td><td>Each brand has its own database; the service looks up and connects to the right one per request</td><td>Each brand's actual sales/order/product data</td></tr>
+<tr><td>Shared MongoDB (main)</td><td>General-purpose document storage</td><td>Dashboard layout customizations</td></tr>
+<tr><td>MongoDB (session analytics)</td><td>Dedicated store for visitor session data</td><td>Records of user sessions — who visited, when, from where</td></tr>
+<tr><td>MongoDB (web vitals)</td><td>Dedicated store for site speed data</td><td>Website performance / loading-speed measurements</td></tr>
+<tr><td>Redis</td><td>Fast in-memory cache</td><td>Recently-computed metrics, so repeat requests don't have to be recalculated from scratch</td></tr>
+</table>
+<p><strong>Multi-brand data isolation:</strong> because Datum serves many different brands, each brand's real business data lives in its own separate MySQL database. When a request comes in, the service figures out which brand it's for, looks up that brand's database connection details from a separate "tenant-router" service, and connects to the right database for that request. This keeps every brand's data cleanly separated from every other brand's.</p>
+
+<h2>4. Who's Allowed to Do What</h2>
+<p>The analytics service doesn't check logins itself — it trusts that the api-gateway has already verified who the user is, and simply reads that information from the incoming request (user ID, which brand they belong to, their role, their permissions). Optionally, the gateway can cryptographically sign this information so the service can confirm it wasn't tampered with — though right now that extra check is only enforced if it's specifically turned on.</p>
+<table>
+<tr><th>Check</th><th>What it does</th></tr>
+<tr><td>Logged-in check</td><td>Confirms someone is logged in, without caring who</td></tr>
+<tr><td>Author-level check</td><td>Confirms the user has an elevated role (author, admin, or super admin)</td></tr>
+<tr><td>Permission check</td><td>Confirms the user has been granted a specific permission for that feature</td></tr>
+<tr><td>Brand check</td><td>Figures out which brand the request is for and connects to that brand's database</td></tr>
+<tr><td>API key check</td><td>Lets external tools call the API using a long-lived key instead of a user login, with its own rate limit (100 requests/minute)</td></tr>
+<tr><td>Login-or-API-key check</td><td>Accepts either a normal login or an API key, whichever is present</td></tr>
+<tr><td>Author-or-internal-key check</td><td>Used for admin actions — allows either an author-level user or a trusted internal system</td></tr>
+</table>
+
+<h2>5. What the Service Can Do (API Reference)</h2>
+<p>The tables below list every endpoint the service exposes, grouped by feature area, along with who's allowed to call each one.</p>
+
+<h3 class="grp">5.1 Sales &amp; Traffic Metrics — /metrics</h3>
+<table>
+<tr><th>Endpoint</th><th>What it does</th><th>Who can access it</th></tr>
+<tr><td>GET /order-split</td><td>Breaks down orders by category</td><td>Logged-in users (brand-specific)</td></tr>
+<tr><td>GET /payment-sales-split</td><td>Breaks down sales by payment method</td><td>Logged-in users (brand-specific)</td></tr>
+<tr><td>GET /payment-split-summary</td><td>Summary of payment method usage</td><td>Logged-in users (brand-specific)</td></tr>
+<tr><td>GET /payment-split-trend</td><td>Payment method usage over time</td><td>Logged-in users (brand-specific)</td></tr>
+<tr><td>GET /traffic-source-split</td><td>Where visitors are coming from</td><td>Logged-in users (brand-specific)</td></tr>
+<tr><td>GET /summary</td><td>The main dashboard summary numbers</td><td>Logged-in users (brand-specific)</td></tr>
+<tr><td>GET /data-restriction-config</td><td>How far back in time data can be queried</td><td>Logged-in users</td></tr>
+<tr><td>GET /summary/brands</td><td>Summary across every brand a user can see</td><td>Logged-in users</td></tr>
+<tr><td>GET /summary-filter-options</td><td>Filter choices available on the summary screen</td><td>Logged-in users</td></tr>
+<tr><td>GET /web-performance-summary</td><td>Overview of website speed</td><td>Logged-in users</td></tr>
+<tr><td>GET /top-pdps</td><td>Most-visited product pages</td><td>Open to the public, or via login/API key</td></tr>
+<tr><td>GET /top-products</td><td>Best-selling products</td><td>Login or API key</td></tr>
+<tr><td>GET /product-kpis</td><td>Key numbers per product</td><td>Login or API key</td></tr>
+<tr><td>GET /product-types</td><td>Sales broken down by product type</td><td>Login or API key</td></tr>
+<tr><td>GET /hourly-trend</td><td>Hour-by-hour trend</td><td>Logged-in users (brand-specific)</td></tr>
+<tr><td>GET /daily-trend</td><td>Day-by-day trend</td><td>Logged-in users (brand-specific)</td></tr>
+<tr><td>GET /monthly-trend</td><td>Month-by-month trend</td><td>Logged-in users (brand-specific)</td></tr>
+<tr><td>GET /daily-funnel</td><td>Conversion funnel for the day</td><td>Requires the "daily funnel" permission</td></tr>
+<tr><td>GET /hourly-product-sessions/export</td><td>Download hourly product session data as a spreadsheet</td><td>Author-level users only</td></tr>
+<tr><td>GET /hourly-sales-compare</td><td>Compares sales hour-to-hour</td><td>Logged-in users</td></tr>
+<tr><td>GET /hourly-sales-summary</td><td>Hourly sales overview</td><td>Logged-in users</td></tr>
+<tr><td>GET /diagnose/total-orders</td><td>Internal troubleshooting tool</td><td>Protected/internal use</td></tr>
+</table>
+
+<h3 class="grp">5.2 Product Conversion — /metrics</h3>
+<table>
+<tr><th>Endpoint</th><th>What it does</th><th>Who can access it</th></tr>
+<tr><td>GET /product-conversion</td><td>How well products convert browsers into buyers</td><td>Requires "product conversion" or "inventory" permission</td></tr>
+<tr><td>GET /product-conversion/export</td><td>Download the above as a spreadsheet</td><td>Requires "product conversion" permission</td></tr>
+</table>
+
+<h3 class="grp">5.3 Bundles — /metrics</h3>
+<table>
+<tr><th>Endpoint</th><th>What it does</th><th>Who can access it</th></tr>
+<tr><td>GET /bundles/options</td><td>Filter choices for the bundles screen</td><td>Requires "bundles" permission</td></tr>
+<tr><td>GET /bundles/summary</td><td>How product bundles are performing</td><td>Requires "bundles" permission</td></tr>
+<tr><td>GET /bundles/summary/export</td><td>Download bundle summary as a spreadsheet</td><td>Requires "bundles" permission</td></tr>
+<tr><td>GET /bundles/products</td><td>Breakdown of products inside bundles</td><td>Requires "bundles" permission</td></tr>
+<tr><td>GET /bundles/products/export</td><td>Download bundle products as a spreadsheet</td><td>Requires "bundles" permission</td></tr>
+</table>
+
+<h3 class="grp">5.4 Dashboard Layout — /dashboard</h3>
+<table>
+<tr><th>Endpoint</th><th>What it does</th><th>Who can access it</th></tr>
+<tr><td>GET /layout</td><td>Load a user's saved dashboard layout</td><td>Requires layout-customization permission</td></tr>
+<tr><td>POST /layout</td><td>Save a dashboard layout</td><td>Requires layout-customization permission</td></tr>
+</table>
+
+<h3 class="grp">5.5 Visitor Session Analytics — /session-analytics</h3>
+<p>Every endpoint below requires session-analytics permission.</p>
+<table>
+<tr><th>Endpoint</th><th>What it does</th></tr>
+<tr><td>GET /summary</td><td>Overview of visitor sessions</td></tr>
+<tr><td>GET /trend</td><td>Session activity over time</td></tr>
+<tr><td>GET /brands</td><td>Session breakdown by brand</td></tr>
+<tr><td>GET /brands/export</td><td>Download the brand breakdown as a spreadsheet</td></tr>
+<tr><td>GET /users</td><td>Session activity by individual user</td></tr>
+<tr><td>GET /users/export</td><td>Download user session data as a spreadsheet</td></tr>
+<tr><td>GET /insights</td><td>Automatically surfaced session insights</td></tr>
+<tr><td>GET /filters</td><td>Filter choices for session analytics</td></tr>
+</table>
+
+<h3 class="grp">5.6 Website Speed / Web Vitals — /web-vitals</h3>
+<p>Every endpoint below requires the web-vitals permission.</p>
+<table>
+<tr><th>Endpoint</th><th>What it does</th></tr>
+<tr><td>GET /snapshot</td><td>Current site speed snapshot</td></tr>
+<tr><td>GET /all-brands-snapshot</td><td>Snapshot across every brand</td></tr>
+<tr><td>GET /trend</td><td>Site speed trend over time</td></tr>
+<tr><td>GET /pages</td><td>Speed broken down by page</td></tr>
+</table>
+
+<h3 class="grp">5.7 External-Facing — /external</h3>
+<table>
+<tr><th>Endpoint</th><th>What it does</th><th>Who can access it</th></tr>
+<tr><td>GET /last-updated/pts</td><td>Checks how fresh the underlying data is</td><td>Logged-in users (brand-specific)</td></tr>
+</table>
+
+<h3 class="grp">5.8 File Uploads — /</h3>
+<table>
+<tr><th>Endpoint</th><th>What it does</th><th>Who can access it</th></tr>
+<tr><td>POST /upload</td><td>Uploads a file to cloud storage</td><td><strong>Nobody is checked — open access</strong></td></tr>
+<tr><td>GET /uploads</td><td>Lists previously uploaded files</td><td><strong>Nobody is checked — open access</strong></td></tr>
+</table>
+
+<h3 class="grp">5.9 API Key Management — /admin/api-keys</h3>
+<table>
+<tr><th>Endpoint</th><th>What it does</th><th>Who can access it</th></tr>
+<tr><td>POST /admin/api-keys</td><td>Creates a new API key</td><td>Author-level user or internal system</td></tr>
+<tr><td>GET /admin/api-keys</td><td>Lists API keys for a brand</td><td>Author-level user or internal system</td></tr>
+<tr><td>POST /admin/api-keys/:id/revoke</td><td>Disables an API key</td><td>Author-level user or internal system</td></tr>
+<tr><td>POST /admin/api-keys/:id/rotate</td><td>Replaces an API key with a new one</td><td>Author-level user or internal system</td></tr>
+</table>
+
+<h3 class="grp">5.10 Shopify File Upload — /shopify</h3>
+<table>
+<tr><th>Endpoint</th><th>What it does</th><th>Who can access it</th></tr>
+<tr><td>POST /upload-file</td><td>Uploads a file directly into a brand's Shopify store</td><td>Requires an API key with file-upload permission</td></tr>
+</table>
+
+<h3 class="grp">5.11 Push Notifications — /notifications</h3>
+<table>
+<tr><th>Endpoint</th><th>What it does</th><th>Who can access it</th></tr>
+<tr><td>POST /push/receive</td><td>Receives incoming push notification callbacks</td><td><strong>Nobody is checked — open access</strong></td></tr>
+<tr><td>POST /subscribe</td><td>Subscribes a device to notification topics</td><td><strong>Nobody is checked — open access</strong></td></tr>
+</table>
+
+<h2>6. How the Numbers Actually Get Calculated</h2>
+<ul>
+  <li><strong>Dashboard summary</strong> — the main KPI numbers merchants see are calculated by a dedicated summary service, which pulls together sales figures, filters, and timezone-adjusted date ranges.</li>
+  <li><strong>Payment split &amp; trend reporting</strong> — a separate reporting service handles anything related to how customers paid and how that's changed over time.</li>
+  <li><strong>Hourly, daily, and monthly trends, plus the daily funnel</strong> — all handled by shared trend-calculation logic built on top of the same summary engine.</li>
+  <li><strong>Product analytics</strong> — top products, top pages, and per-product KPIs are handled by a paged, cache-aware service so large product catalogs don't slow things down.</li>
+  <li><strong>Smart caching</strong> — recently-requested numbers are kept in a short-lived cache (both in memory and in Redis) so that if the same report is requested again moments later, it doesn't have to be recalculated. It also avoids doing the same expensive calculation twice at once if two requests come in together.</li>
+  <li><strong>Guardrails on huge date ranges</strong> — asking for data across a very long time span (more than 30 days, by default) is intentionally limited, to avoid overloading the system with an enormous, slow query.</li>
+  <li><strong>Consistent date handling</strong> — a shared helper makes sure every part of the service interprets date ranges and timezones the same way.</li>
+</ul>
+<div class="quote">One file in this service, <code>pipeline.py</code>, is kept only as a reference copy. The actual system that processes and loads analytics data runs in a completely separate repository — this copy isn't live and doesn't affect production.</div>
+
+<h2>7. Shopify Integration</h2>
+<p>This service can push a file directly into a brand's Shopify store — for example, uploading an image or document into Shopify's file library. It does this in three steps: it asks Shopify for a temporary upload location, sends the file there, and then tells Shopify to register the file as part of the store. This is a one-way upload feature, not a two-way sync — the service doesn't receive anything back from Shopify automatically (no webhooks), and there's no login/connect flow; each brand's Shopify access is pre-configured ahead of time.</p>
+
+<h2>8. Something Worth Flagging</h2>
+<div class="callout">
+<strong>⚠ Four endpoints have no access control at all</strong>: the two file-upload endpoints (<code>/upload</code>, <code>/uploads</code>) and the two push-notification endpoints (<code>/push/receive</code>, <code>/subscribe</code>). Anyone who can reach the service can call these without logging in or providing any credentials. This is called out here so it's visible and can be prioritized — nothing has been changed as part of writing this documentation.
+</div>
+
+<h2>9. Configuration</h2>
+<p>The service is configured through environment variables, grouped below by purpose.</p>
+<table>
+<tr><th>Category</th><th>What it controls</th></tr>
+<tr><td>Basic setup</td><td>Which port to run on, which environment it's in, its service name</td></tr>
+<tr><td>Error tracking &amp; metrics</td><td>Sending errors to Sentry, exposing internal performance metrics</td></tr>
+<tr><td>Allowed websites (CORS)</td><td>Which frontend domains are allowed to call this service</td></tr>
+<tr><td>Shared database connection</td><td>Connection details and pool sizing for the shared MySQL database</td></tr>
+<tr><td>Per-brand database connections</td><td>Pool sizing for the many per-brand MySQL connections</td></tr>
+<tr><td>MongoDB connections</td><td>Connection details for the three separate MongoDB stores (main, sessions, web vitals)</td></tr>
+<tr><td>Cache (Redis)</td><td>Connection details for the caching layer</td></tr>
+<tr><td>Brand lookup service</td><td>How to reach the tenant-router service, how long to cache brand lookups, and the key used to decrypt stored database passwords</td></tr>
+<tr><td>Trust between gateway and service</td><td>The shared secret used to confirm requests genuinely came from the gateway</td></tr>
+<tr><td>Internal system access</td><td>The shared key that lets other internal services bypass normal login checks</td></tr>
+<tr><td>Business thresholds</td><td>Numeric thresholds used in inventory-related alerts and calculations</td></tr>
+<tr><td>Long date-range limits</td><td>How far back a single query is allowed to look before being restricted</td></tr>
+<tr><td>File storage (AWS S3)</td><td>Credentials and bucket details for storing uploaded files</td></tr>
+<tr><td>Shopify credentials</td><td>Store name, access token, and API version for each brand's Shopify store</td></tr>
+<tr><td>Health monitoring</td><td>Where and how this service reports its health and any failures</td></tr>
+<tr><td>Legacy brand config</td><td>An older, fallback way of listing brand database configs</td></tr>
+</table>
+
+<h2>10. Notable Tools &amp; Libraries It Relies On</h2>
+<table>
+<tr><th>Tool</th><th>What it's used for</th></tr>
+<tr><td>Express</td><td>The framework that handles incoming web requests</td></tr>
+<tr><td>Sequelize &amp; MySQL driver</td><td>Talking to the shared MySQL database</td></tr>
+<tr><td>Mongoose &amp; MongoDB driver</td><td>Talking to the MongoDB stores</td></tr>
+<tr><td>DuckDB</td><td>Running fast analytical queries over large archived datasets</td></tr>
+<tr><td>Redis client</td><td>The caching layer</td></tr>
+<tr><td>In-memory cache library</td><td>Quick lookups without hitting the database, e.g. for brand routing</td></tr>
+<tr><td>AWS S3 tools</td><td>Storing and retrieving uploaded files</td></tr>
+<tr><td>Firebase Admin</td><td>Sending push notifications</td></tr>
+<tr><td>HTTP request tools</td><td>Talking to Shopify's API</td></tr>
+<tr><td>Password hashing</td><td>Securing stored API keys</td></tr>
+<tr><td>Data validation</td><td>Checking that incoming requests are well-formed</td></tr>
+<tr><td>Sentry</td><td>Tracking and reporting errors</td></tr>
+<tr><td>Metrics exposition</td><td>Exposing performance stats for monitoring</td></tr>
+<tr><td>Spreadsheet export</td><td>Generating the CSV downloads used throughout the service</td></tr>
+<tr><td>Security headers &amp; CORS</td><td>Basic web security protections</td></tr>
+<tr><td>File upload handling</td><td>Processing uploaded files in memory before storing them</td></tr>
+<tr><td>Real-time communication</td><td>Supporting live, socket-based updates</td></tr>
+<tr><td>Testing tools</td><td>Automated tests that check the service works as expected</td></tr>
+</table>
+
+</body>
+</html>

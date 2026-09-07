@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DATUM Backend Performance — Status Report</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    color: #1f2430;
+    background: #ffffff;
+    font-size: 10.6pt;
+    line-height: 1.5;
+    margin: 0;
+  }
+  code, .mono { font-family: "Consolas", "Courier New", monospace; font-size: 9.4pt; }
+  h1 { font-size: 19pt; margin: 0 0 4px 0; color: #12253f; }
+  h2 {
+    font-size: 13.5pt; margin: 26px 0 10px 0; padding-bottom: 5px;
+    border-bottom: 2px solid #2b5a8c; color: #12253f;
+  }
+  h3 { font-size: 11.5pt; margin: 16px 0 6px 0; color: #1c3a5e; }
+  .cover-meta { color: #55606e; font-size: 10pt; margin-bottom: 2px; }
+  .cover-sub { font-size: 11.5pt; color: #3b4a5a; margin: 10px 0 18px 0; }
+  .summary-box {
+    background: #f2f6fa; border: 1px solid #cfdce8; border-radius: 6px;
+    padding: 12px 16px; margin: 10px 0 4px 0;
+  }
+  .summary-box p { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 4px 0; }
+  th, td { text-align: left; padding: 6px 8px; border: 1px solid #d7dfe6; vertical-align: top; font-size: 9.8pt; }
+  th { background: #eaf0f6; color: #12253f; }
+  .status-count { font-weight: 600; }
+  .item { margin: 14px 0 18px 0; padding: 10px 14px; border-left: 4px solid #2b5a8c; background: #fafcfe; border-radius: 0 4px 4px 0; }
+  .item.fixed { border-left-color: #2f9e5a; }
+  .item.pending { border-left-color: #d98c1f; }
+  .item.pipeline { border-left-color: #8a4fc9; }
+  .item-title { font-weight: 700; font-size: 10.8pt; margin-bottom: 3px; color: #12253f; }
+  .tag {
+    display: inline-block; font-size: 8pt; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.03em; padding: 2px 7px; border-radius: 3px; margin-left: 6px; vertical-align: 2px;
+  }
+  .tag.fixed { background: #dff3e6; color: #1e7a44; }
+  .tag.pending { background: #fbedd6; color: #9a6210; }
+  .tag.pipeline { background: #eee2fa; color: #6b3a9c; }
+  .ref {
+    display: inline-block; background: #eef2f6; border: 1px solid #d7dfe6; border-radius: 3px;
+    padding: 1px 6px; font-family: "Consolas", "Courier New", monospace; font-size: 8.8pt; color: #2b5a8c;
+    margin: 2px 4px 2px 0;
+  }
+  .refs { margin-top: 6px; }
+  ul { margin: 4px 0 4px 0; padding-left: 20px; }
+  li { margin: 2px 0; }
+  .footer-note { font-size: 8.6pt; color: #8994a0; margin-top: 30px; border-top: 1px solid #e2e8ee; padding-top: 8px; }
+  .divider { border: none; border-top: 1px solid #e2e8ee; margin: 18px 0; }
+</style>
+</head>
+<body>
+
+<h1>DATUM Backend Performance — Status Report</h1>
+<p class="cover-meta">Analytics service, tenant databases, and ETL pipeline · Prepared 2026-08-30 · Updated 2026-08-31</p>
+<p class="cover-sub">Why the dashboard slows down for larger brands, what's already fixed, what's left, and what needs to move upstream into the ETL pipeline.</p>
+
+<div class="summary-box">
+  <p><strong>Method:</strong> live timing and query-plan checks against the tenant databases (8 brands sampled, ranging from small to the largest current brand), plus a direct read of the exact backend code behind each dashboard feature.</p>
+  <p><strong>Found:</strong> <span class="status-count">11 issues/changes tracked</span> — <span class="status-count">7 fixed and verified</span>, <span class="status-count">1 query-level fix verified but not yet resolving the end-to-end symptom (item 8)</span>, <span class="status-count">1 fixed for request count but still slow per-query (Payment Split)</span>, <span class="status-count">1 still open (Product Conversion's unbounded scan)</span>, plus one attempted index that was verified useless and cleanly removed.</p>
+  <p><strong>Important correction:</strong> item 8 below fixed one specific, real, verified database problem (a missing index behind the KPI grid's own query) — but <strong>the dashboard is still not fixed</strong>. Real-world testing shows the full page still takes <strong>30-35 seconds to load</strong> for big brands at 30+ day ranges. The isolated query fix is confirmed correct; it just isn't the whole story. See item 8 for what's confirmed vs. what's still unexplained.</p>
+</div>
+
+<h2>1. Issues Found</h2>
+
+<div class="item fixed">
+  <div class="item-title">1. Sales trend charts were scanning the entire orders table <span class="tag fixed">Fixed</span></div>
+  <p>Every time the dashboard drew a daily or hourly sales/orders trend chart, the database had to check every single order row in the date range — up to ~2 million rows for the largest brand — because the column being counted (<code>order_name</code>) wasn't part of any database index. For the largest brand this took close to <strong>2 minutes</strong> per load.</p>
+  <div class="refs">
+    <span class="ref">analytics/services/metricsSnapshotService.js:1474 fetchHourlyRows</span>
+    <span class="ref">analytics/services/metricsSnapshotService.js:1650 fetchDailyRows</span>
+    <span class="ref">analytics/services/metricsAggregateService.js:298 queryOrderSalesTotals</span>
+  </div>
+</div>
+
+<div class="item pending">
+  <div class="item-title">2. Product list page could fetch an unlimited number of rows <span class="tag fixed">Fixed</span></div>
+  <p>When sorting the product list by stock-based metrics ("days of stock", "daily run rate") or exporting it to CSV, the query that pulled candidate rows had no upper limit at all — for a store with a very large catalog, this could pull back an unbounded number of rows in one request before the app even started sorting them.</p>
+  <div class="refs">
+    <span class="ref">analytics/services/productConversionService.js:1005 getProductConversion (inventory-sort path)</span>
+    <span class="ref">analytics/services/productConversionService.js:1037 getProductConversionCsv</span>
+    <span class="ref">analytics/services/productConversionService.js:390 buildSelectSql</span>
+  </div>
+</div>
+
+<div class="item fixed">
+  <div class="item-title">3. Returns numbers ran two database trips instead of one <span class="tag fixed">Fixed</span></div>
+  <p>Getting "this period" and "last period" counts of cancelled/refunded/returned orders made two separate calls to the database instead of one combined request.</p>
+  <div class="refs">
+    <span class="ref">analytics/services/metricsSnapshotService.js:863 getReturnsSnapshotPair</span>
+    <span class="ref">analytics/shared/utils/metricsUtils.js:23 computeReturnCounts</span>
+  </div>
+</div>
+
+<div class="item fixed">
+  <div class="item-title">4. Dashboard summary loads its pieces one at a time <span class="tag fixed">Fixed — different cause than first thought</span></div>
+  <p>The main dashboard KPI summary is built from up to 8 independent pieces of data, fetched one after another. The original theory was that overlapping these 5-8 pieces (parallelizing) was the fix. Live measurement disproved that: it wasn't 8 evenly-slow pieces — <strong>2 of the 6 branches that actually ran accounted for 97% of the total time</strong> (19.2s and 11.9s out of ~32s on TMC), and both traced back to one missing index (see item 8 below). Parallelizing alone would have capped the improvement at best-case ~19s; fixing the real cause got it to 2.4s. Kept here as a record of the corrected diagnosis — the actual fix is filed under item 8.</p>
+  <div class="refs">
+    <span class="ref">analytics/services/metricsSnapshotService.js:2286 getDashboardSummary</span>
+    <span class="ref">analytics/shared/db/tenantConnection.js:9 POOL_MAX (default 5)</span>
+    <span class="ref">analytics/shared/db/tenantConnection.js:16 poolKey</span>
+  </div>
+</div>
+
+<div class="item pending">
+  <div class="item-title">5. Payment Split Trend chart makes far too many requests <span class="tag pending">Request count fixed — query itself still slow</span></div>
+  <p>To draw one "payment split over time" chart, the dashboard used to call the backend once per hour or once per day (up to ~360 calls for a 90-day view). <strong>Fixed:</strong> a new bucketed endpoint returns the whole series in one request — 90-day view now 2 requests instead of ~360; the Mode of Payment donuts went from 4 requests to 1. <strong>Still open:</strong> the underlying query itself remains slow (measured 72-90 seconds on TMC for a 30-day view) because it classifies each order's payment type with a text-search (<code>LIKE '%Gokwik PPCOD%'</code>, etc.) against a raw text column — a pattern no database index can speed up, since it has to read and pattern-match every row's actual text. An index was attempted and confirmed <em>not</em> to help (MySQL never chose to use it — see item 11), then removed. The real fix needs a pre-computed column (see below), not yet implemented.</p>
+  <div class="refs">
+    <span class="ref">analytics/services/metricsReportService.js:242 getPaymentSalesSplit</span>
+    <span class="ref">analytics/services/metricsReportService.js:440 getOrderSplit</span>
+    <span class="ref">analytics/services/metricsReportService.js (new) getPaymentSplitTrend, getPaymentSplitSummary</span>
+    <span class="ref">client/dashboard/src/features/dashboard/widgetDataHooks.js:1238 useDashboardPaymentSplitTrendData</span>
+    <span class="ref">client/dashboard/src/components/HourlySalesCompare.jsx:974 (same pattern, not yet fixed)</span>
+  </div>
+</div>
+
+<div class="item fixed">
+  <div class="item-title">6. Product list page repeats the same groundwork twice <span class="tag fixed">Fixed</span></div>
+  <p>Loading a page of the product conversion table ran two separate queries back to back — one to count total matching products, one to fetch the actual page — both independently redoing the same underlying joins. <strong>Fixed</strong> by folding the count into the page-fetch query using a window function (<code>COUNT(*) OVER()</code>), now supported since the database version was confirmed to support it (MySQL 8.0.45). The now-unused separate count-query builder was removed. Verified via updated unit tests (6/6 passing); a live production timing comparison hasn't been captured yet.</p>
+  <div class="refs">
+    <span class="ref">analytics/services/productConversionService.js:401 buildSelectSql (now builds COUNT(*) OVER())</span>
+    <span class="ref">analytics/services/productConversionService.js:978 getProductConversion (single query)</span>
+  </div>
+</div>
+
+<div class="item pending">
+  <div class="item-title">7. Notifications feature fetches its full recipient list every time <span class="tag pending">Low priority</span></div>
+  <p>Sending a push notification fetches every stored device token with no filter or limit. Currently harmless — only 16 records exist in this collection today — so this is flagged for later, not urgent now.</p>
+  <div class="refs">
+    <span class="ref">alerts-service/utils/fcm.js:45 sendToAll</span>
+    <span class="ref">alerts-service/utils/fcm.js:60</span>
+  </div>
+</div>
+
+<div class="item pending">
+  <div class="item-title">8. KPI grid's "today vs. same completed hours yesterday" comparison had no index either <span class="tag pending">Query-level fix verified — dashboard still slow end-to-end</span></div>
+  <p><strong>Exact issue:</strong> whenever the selected date range includes today (true for almost any real selection), the KPI grid runs an extra comparison so a partial "today" isn't unfairly compared against a full previous day. That comparison calls the same order-totals query as item 1 — but with one extra condition, <code>AND created_time &lt; ?</code>. The item-1 index didn't include that column, so the database still had to look up the full row for every matching order just to check that one condition. This one query shape gets called <strong>3 times</strong> across two of the summary's branches.</p>
+  <p><strong>Fix applied:</strong> new covering index <code>(created_date, created_time, order_name, total_price)</code> on <code>shopify_orders</code>, applied live and online (<code>ALGORITHM=INPLACE, LOCK=NONE</code>, no write blocking) across all 8 brands, each verified with a real before/after query plan, timing, and byte-identical result diff — then re-confirmed against the actual read replica the live app queries (not just the write database), with zero replication lag.</p>
+  <table>
+    <tr><th>Brand</th><th>Before</th><th>After</th><th>Speedup</th></tr>
+    <tr><td>TMC</td><td>24.0s</td><td>1.2s</td><td>19.7x</td></tr>
+    <tr><td>PTS</td><td>5.4s</td><td>0.4s</td><td>12.0x</td></tr>
+    <tr><td>BBB</td><td>20.9s</td><td>0.5s</td><td>38.4x</td></tr>
+    <tr><td>AJMAL</td><td>16.5s</td><td>0.5s</td><td>35.8x</td></tr>
+    <tr><td>VAMA</td><td>6.8s</td><td>0.4s</td><td>15.8x</td></tr>
+    <tr><td>URBAN HINDU</td><td>0.2s</td><td>0.1s</td><td>2.0x</td></tr>
+    <tr><td>3TENX</td><td>0.5s</td><td>0.2s</td><td>2.4x</td></tr>
+    <tr><td>SHYLENEW</td><td>0.5s</td><td>0.1s</td><td>5.1x</td></tr>
+  </table>
+  <p><strong>This specific query, isolated (TMC, full KPI grid, all branches combined):</strong> 32-44 seconds &rarr; 2.4 seconds — measured by calling the backend function directly, bypassing the network/HTTP layer.</p>
+  <p><strong>Not fixed — the actual dashboard page is still slow.</strong> Real-world browser testing after this fix shipped shows the full page still takes <strong>30-35 seconds</strong> to load for big brands at 30+ day ranges. The isolated-query improvement above is real and verified, but it has not translated into a faster page. Leading theory, not yet confirmed: the dashboard fires ~15-20 requests at once on load, several of which (particularly Payment Split — still 72-90s per query, see item 5) share the same brand's database connection pool, capped at 5 connections — so this now-fast query may simply be queueing behind other still-slow ones rather than running slowly itself. This needs direct confirmation (checking actual connection-pool wait time under real concurrent load) before it can be called understood, let alone fixed.</p>
+  <div class="refs">
+    <span class="ref">analytics/services/metricsAggregateService.js:298 queryOrderSalesTotals</span>
+    <span class="ref">analytics/services/metricsSnapshotService.js:2311 getDashboardSummary (totalPair/deltaPair)</span>
+    <span class="ref">analytics/services/metricsSnapshotService.js:1241 getRowTwoComparisonSnapshots</span>
+  </div>
+</div>
+
+<div class="item fixed">
+  <div class="item-title">9. Duplicate network request for page-speed data <span class="tag fixed">Fixed</span></div>
+  <p>The Web Vitals panel and the Web Performance panel both independently fetched the exact same page-speed data (same brand, same date range) — two identical requests every dashboard load, because the fetch bypassed the shared request cache the rest of the dashboard uses. Fixed with a small shared cache so whichever widget asks first triggers the real fetch and the second one reuses it.</p>
+  <div class="refs">
+    <span class="ref">client/dashboard/src/features/dashboard/widgetDataHooks.js fetchPagespeedResults</span>
+  </div>
+</div>
+
+<div class="item fixed">
+  <div class="item-title">10. DRR/DOH sorting removed from Product Conversion and Inventory tables <span class="tag fixed">Done (by request, not a perf bug)</span></div>
+  <p>Sorting by DRR ("daily run rate") or DOH ("days of stock") required fetching every matching row and sorting in application code (these values come from Redis, not the database, so the database can't sort by them). Removed the sort affordance from both tables' column headers since it wasn't needed in practice — filtering by DRR/DOH is unaffected and still works.</p>
+  <div class="refs">
+    <span class="ref">analytics/services/productConversionService.js ALLOWED_SORT, needsInventoryPostProcessing</span>
+    <span class="ref">client/dashboard/src/components/ProductConversionTable.jsx, InventoryTable.jsx</span>
+  </div>
+</div>
+
+<div class="item pending">
+  <div class="item-title">11. Investigated: a payment-gateway index — tried, measured, found useless, removed <span class="tag pending">Reverted, documented</span></div>
+  <p>Before landing on the pre-computed-column plan for item 5, a more direct index was tried first: <code>(created_date, payment_gateway_names(191), order_name, total_price)</code>. Applied to TMC, it only improved timing by ~25% (90s &rarr; 68s) and the query plan showed MySQL never actually chose to use it (<code>key: null</code>) — confirming a text-search index limitation, not a fluke. Rather than leave a useless index quietly costing write overhead forever, it was dropped from TMC (the only brand it was ever applied to) once confirmed. No other brand was ever touched by this one.</p>
+</div>
+
+<h2>2. Fixable Directly in the Backend Service Code</h2>
+<p>These don't require any change to the ETL pipeline or the raw database tables — just changes to how the analytics service queries and combines data.</p>
+
+<table>
+  <tr><th>Issue</th><th>What changes</th><th>Status</th></tr>
+  <tr>
+    <td>#1 — Sales trend scans</td>
+    <td>Added a database index covering <code>created_date, order_name, total_price</code> on <code>shopify_orders</code>, rolled out to all 8 brand databases.</td>
+    <td class="status-count">Done</td>
+  </tr>
+  <tr>
+    <td>#2 — Unbounded product export</td>
+    <td>Added a safety row limit (<code>UNBOUNDED_ROW_SAFETY_CAP</code>) to the two paths that had no ceiling, sized well above real catalog sizes measured live across all 8 brands.</td>
+    <td class="status-count">Done</td>
+  </tr>
+  <tr>
+    <td>#3 — Returns double-query</td>
+    <td>Combined the two returns-count queries into one, using a single query with conditional sums for current vs. previous period (<code>computeReturnCountsPair</code>).</td>
+    <td class="status-count">Done</td>
+  </tr>
+  <tr>
+    <td>#4 — Dashboard summary serial loading</td>
+    <td>Turned out not to be the cause on its own — see #8. Parallelization not implemented; the index fix in #8 alone didn't resolve the dashboard's real-world load time, so this may still need revisiting once #8's remaining gap is understood.</td>
+    <td class="status-count">Not resolved — see #8</td>
+  </tr>
+  <tr>
+    <td>#5 — Payment Split Trend (backend half)</td>
+    <td>Added a bucketed endpoint (<code>getPaymentSplitTrend</code>) and a consolidated summary endpoint (<code>getPaymentSplitSummary</code>) so requests collapse from ~360/4 down to 1-2. The underlying query is still slow per-call (see item 5, item 11) — needs a pre-computed classification column next.</td>
+    <td class="status-count">Request count done; query speed still open</td>
+  </tr>
+  <tr>
+    <td>#6 — Product list double query</td>
+    <td>Merged the count query into the row-fetch query via <code>COUNT(*) OVER()</code>, now that the database version is confirmed to support it (MySQL 8.0.45).</td>
+    <td class="status-count">Done</td>
+  </tr>
+  <tr>
+    <td>#7 — Notifications full fetch</td>
+    <td>Add a filter/limit if the recipient list ever grows meaningfully. Not scheduled — low impact today.</td>
+    <td class="status-count">Backlog</td>
+  </tr>
+  <tr>
+    <td>#8 — KPI grid missing <code>created_time</code> index</td>
+    <td>New covering index on <code>shopify_orders</code>, all 8 brands. Isolated query timing: TMC 32-44s &rarr; 2.4s. <strong>Real dashboard page load is still 30-35s for big brands at 30+ day ranges</strong> — this fix did not resolve the reported symptom on its own; likely masked by connection-pool contention from other still-slow widgets, not yet confirmed.</td>
+    <td class="status-count">Query fixed; symptom not resolved</td>
+  </tr>
+  <tr>
+    <td>#9 — Duplicate page-speed request</td>
+    <td>Shared request cache added so Web Vitals and Web Performance panels reuse one fetch instead of two.</td>
+    <td class="status-count">Done</td>
+  </tr>
+  <tr>
+    <td>#10 — DRR/DOH sorting</td>
+    <td>Removed from both tables' UI and backend allow-list, per product decision (filtering unaffected).</td>
+    <td class="status-count">Done</td>
+  </tr>
+  <tr>
+    <td>#11 — Payment-gateway text index (attempt)</td>
+    <td>Applied to TMC, measured, confirmed unused by the query planner, removed.</td>
+    <td class="status-count">Reverted</td>
+  </tr>
+  <tr>
+    <td>New — Payment Split classification column</td>
+    <td>Pre-compute COD/Prepaid/Partial as a small generated column at write time (MySQL feature, auto-maintained on every insert/update — no pipeline changes needed), index that instead of the raw text, update the 4 query functions to read it.</td>
+    <td class="status-count">Designed, not yet built</td>
+  </tr>
+  <tr>
+    <td>New — Product Conversion unbounded scan</td>
+    <td><code>product_variant_map</code> CTE scans the brand's entire order history with no date bound, every load, regardless of selected range. Needs a date bound or its own index; not yet designed.</td>
+    <td class="status-count">Open, not started</td>
+  </tr>
+</table>
+
+<h2>3. Needs a Pipeline-Side Fix (New or Updated Rollup Tables)</h2>
+<p>A few of these issues are patched for now but will keep getting slower as raw order/session data keeps growing, because the backend still has to add up raw rows at the moment a dashboard request comes in. The lasting fix for those is moving the aggregation earlier — into the ETL pipeline — so the backend can read a small, pre-summed table instead.</p>
+
+<div class="item pipeline">
+  <div class="item-title">Add a daily order rollup table <span class="tag pipeline">Pipeline</span></div>
+  <p>A table with one row per day (plus whichever filter breakdowns the dashboard supports — UTM source, device, city, product) holding pre-added-up order counts and sales. This would let the daily/hourly trend charts (issue #1) read a few dozen rows instead of scanning the full orders table — a fix that keeps working no matter how much order data piles up, unlike the index fix which only buys time.</p>
+</div>
+
+<div class="item pipeline">
+  <div class="item-title">Payment-split fix update: turned out to be a database change, not a pipeline change <span class="tag pipeline">Correction</span></div>
+  <p>Originally scoped as a pipeline rollup table. After investigation, the actual bottleneck is a text-search classification (<code>LIKE '%Gokwik PPCOD%'</code> etc.) that no index can speed up — the fix for that is a MySQL generated column (auto-computed by the database on every write, no separate job, no pipeline code involved) plus an index on it, both applied directly to the schema. This repo's <code>analytics/pipeline.py</code> is a reference copy only — the live ETL runs in a separate repo maintained outside this session, so nothing pipeline-side was or needs to be touched for this fix. The order-count side of Payment Split (COD/Prepaid counts) does already partially exist in the <code>hour_wise_sales</code> rollup, missing only a Partial/PPCOD count column — that piece, if wanted, is genuinely pipeline work for the separate repo. The sales-amount split (₹ COD/Prepaid/Partial) has no rollup coverage at any grain today and was discussed as a future pipeline addition, but is not required for the generated-column fix to work.</p>
+</div>
+
+<div class="item pipeline">
+  <div class="item-title">Extend the existing session/product rollups to cover more of Product Conversion <span class="tag pipeline">Pipeline, lower priority</span></div>
+  <p>Part of this feature already reads from a materialized daily table (<span class="mono">mv_product_sessions_by_path_daily</span>), which is good — that part of the pipeline is already doing its job. But two other pieces still get recalculated from scratch on every request: order totals per product, and checkout-initiated events per product, each re-summed over a 60-day window every time someone loads the page. Rolling these up daily the same way would remove that repeated work.</p>
+  <div class="refs">
+    <span class="ref">analytics/services/productConversionService.js:242 orders_60d CTE</span>
+    <span class="ref">analytics/services/productConversionService.js:262 ci_60d CTE</span>
+    <span class="ref">analytics/services/productConversionService.js:271 sessions_60d CTE (already partly rolled up)</span>
+  </div>
+</div>
+
+<h3>One thing to design carefully before building any of these</h3>
+<p>A rollup table is only useful if it's broken down finely enough to answer every filter combination the dashboard actually supports (by UTM source, device, city, product, etc.) — otherwise a filtered request just falls back to scanning the raw tables anyway, and the new table doesn't help the cases that need it most. This needs to be scoped against the real filter options before writing any pipeline code — it's a bigger, slower-to-build fix than the query-level changes above, and worth planning out properly rather than adding on the side.</p>
+
+<hr class="divider">
+<p class="footer-note">Internal engineering status report — DATUM backend performance investigation. Code references point to file paths and line numbers current as of this report's preparation date; line numbers may shift as the code changes. Section 1 items 1-7 reflect the original audit; items 8-11 and the updated statuses on items 4-6 were added 2026-08-31 after live verification with Docker access restored.</p>
+
+</body>
+</html>

@@ -1,0 +1,283 @@
+<title>DATUM Optimization Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #f5f6f8; --surface: #ffffff; --surface-sunken: #eef0f3; --border: #dde1e7;
+    --ink: #171a21; --ink-soft: #565d6b; --ink-faint: #8891a0;
+    --accent: #6d28d9; --accent-soft: #efe9fc;
+    --code-bg: #f1f3f6; --code-ink: #2b303b;
+    --shadow: 0 1px 2px rgba(20,22,28,0.04), 0 6px 20px rgba(20,22,28,0.05);
+    --a: #0f8b5f; --a-soft: #e2f5ec;
+    --b: #0e7490; --b-soft: #e0f2f6;
+    --c: #b45309; --c-soft: #fbedd3;
+    --d: #64748b; --d-soft: #eaedf1;
+    --p0: #dc2626; --p0-soft: #fde8e8;
+    --p1: #ea580c; --p1-soft: #fdead9;
+    --p2: #b45309; --p2-soft: #fbedd3;
+    --p3: #64748b; --p3-soft: #eaedf1;
+    --font-display: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-body: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12141a; --surface: #191c24; --surface-sunken: #14161c; --border: #2b2f3a;
+      --ink: #eceef2; --ink-soft: #a8afbd; --ink-faint: #6b7280;
+      --accent: #a78bfa; --accent-soft: #241c38;
+      --code-bg: #14161c; --code-ink: #d7dbe3;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 28px rgba(0,0,0,0.35);
+      --a: #34d399; --a-soft: #10241c; --b: #22b8d8; --b-soft: #123640;
+      --c: #fbbf24; --c-soft: #362a0d; --d: #94a3b8; --d-soft: #262a33;
+      --p0: #f87171; --p0-soft: #3a1a1a; --p1: #fb923c; --p1-soft: #3a2410;
+      --p2: #fbbf24; --p2-soft: #362a0d; --p3: #94a3b8; --p3-soft: #262a33;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12141a; --surface: #191c24; --surface-sunken: #14161c; --border: #2b2f3a;
+    --ink: #eceef2; --ink-soft: #a8afbd; --ink-faint: #6b7280;
+    --accent: #a78bfa; --accent-soft: #241c38;
+    --code-bg: #14161c; --code-ink: #d7dbe3;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 28px rgba(0,0,0,0.35);
+    --a: #34d399; --a-soft: #10241c; --b: #22b8d8; --b-soft: #123640;
+    --c: #fbbf24; --c-soft: #362a0d; --d: #94a3b8; --d-soft: #262a33;
+    --p0: #f87171; --p0-soft: #3a1a1a; --p1: #fb923c; --p1-soft: #3a2410;
+    --p2: #fbbf24; --p2-soft: #362a0d; --p3: #94a3b8; --p3-soft: #262a33;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .shell { max-width: 1120px; margin: 0 auto; padding: 0 24px 100px; }
+  header.masthead { padding: 56px 0 32px; border-bottom: 1px solid var(--border); margin-bottom: 36px; }
+  .eyebrow { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin-bottom: 14px; }
+  h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(28px, 4vw, 40px); line-height: 1.12; margin: 0 0 10px; text-wrap: balance; letter-spacing: -0.01em; }
+  .subhead { color: var(--ink-soft); font-size: 17px; max-width: 68ch; margin: 0 0 22px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 10px 28px; font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-faint); }
+  .meta-row b { color: var(--ink-soft); font-weight: 500; }
+  .layout { display: grid; grid-template-columns: 200px 1fr; gap: 56px; align-items: start; }
+  @media (max-width: 880px) { .layout { grid-template-columns: 1fr; } .toc { display: none; } }
+  .toc { position: sticky; top: 24px; font-size: 13px; border-left: 1px solid var(--border); padding-left: 16px; }
+  .toc .toc-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 10px; }
+  .toc a { display: block; color: var(--ink-soft); text-decoration: none; padding: 5px 0; }
+  .toc a:hover { color: var(--accent); }
+  main { min-width: 0; }
+  section { margin-bottom: 52px; scroll-margin-top: 20px; }
+  h2 { font-family: var(--font-display); font-size: 22px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.005em; display: flex; align-items: baseline; gap: 10px; }
+  h2 .num { font-family: var(--font-mono); color: var(--ink-faint); font-size: 15px; font-weight: 500; }
+  .section-intro { color: var(--ink-soft); font-size: 15px; margin: 0 0 22px; max-width: 76ch; }
+  h3 { font-family: var(--font-display); font-size: 16.5px; font-weight: 600; margin: 26px 0 10px; }
+  p { margin: 0 0 14px; max-width: 78ch; }
+  a { color: var(--accent); }
+  code { font-family: var(--font-mono); font-size: 0.88em; background: var(--code-bg); color: var(--code-ink); padding: 1.5px 5px; border-radius: 4px; }
+  pre { font-family: var(--font-mono); font-size: 12.5px; background: var(--code-bg); color: var(--code-ink); padding: 14px 16px; border-radius: 10px; overflow-x: auto; line-height: 1.55; margin: 0 0 16px; border: 1px solid var(--border); }
+  ul, ol { margin: 0 0 14px; padding-left: 22px; max-width: 78ch; }
+  li { margin-bottom: 7px; }
+  .exec-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 26px 28px; box-shadow: var(--shadow); margin-bottom: 16px; }
+  .exec-panel p:last-child { margin-bottom: 0; }
+  .badge { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: 0.03em; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .badge.a { background: var(--a-soft); color: var(--a); }
+  .badge.b { background: var(--b-soft); color: var(--b); }
+  .badge.c { background: var(--c-soft); color: var(--c); }
+  .badge.d { background: var(--d-soft); color: var(--d); }
+  .badge.p0 { background: var(--p0-soft); color: var(--p0); }
+  .badge.p1 { background: var(--p1-soft); color: var(--p1); }
+  .badge.p2 { background: var(--p2-soft); color: var(--p2); }
+  .badge.p3 { background: var(--p3-soft); color: var(--p3); }
+  .table-wrap { overflow-x: auto; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; background: var(--surface); }
+  thead th { text-align: left; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-faint); background: var(--surface-sunken); padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; font-variant-numeric: tabular-nums; }
+  tbody tr:last-child td { border-bottom: none; }
+  .step { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; margin-bottom: 14px; box-shadow: var(--shadow); display: flex; gap: 16px; }
+  .step .step-num { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--accent); flex-shrink: 0; width: 28px; }
+  .step h4 { font-family: var(--font-display); font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+  .step p { margin: 0; font-size: 14px; color: var(--ink-soft); }
+  .callout { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 10px 10px 0; font-size: 14.5px; margin: 0 0 16px; }
+  footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--ink-faint); font-family: var(--font-mono); }
+</style>
+
+<div class="shell">
+  <header class="masthead">
+    <div class="eyebrow">Validation-Gated Implementation Plan</div>
+    <h1>DATUM Optimization Plan</h1>
+    <p class="subhead">Re-validating the prior performance audit's findings against exact code and live queries before scheduling any fix — one audit recommendation turned out to be factually wrong.</p>
+    <div class="meta-row">
+      <span><b>Input</b> datum-performance-audit.html</span>
+      <span><b>Method</b> 4 parallel re-validation passes + live read-only DB probes</span>
+      <span><b>Changes made</b> none — planning only</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="toc">
+      <div class="toc-label">Contents</div>
+      <a href="#summary">Validation Summary</a>
+      <a href="#evidence">Evidence Classes</a>
+      <a href="#matrix">Priority Matrix</a>
+      <a href="#phases">Phases</a>
+      <a href="#benchmark">Benchmark Plan</a>
+      <a href="#index">Index Validation</a>
+      <a href="#api">API Plan</a>
+      <a href="#concurrency">Concurrency Strategy</a>
+      <a href="#order">Implementation Order</a>
+    </aside>
+
+    <main>
+
+      <section id="summary">
+        <h2><span class="num">01</span> Audit Validation Summary</h2>
+        <div class="exec-panel">
+          <p>The prior audit's live-measured findings hold up. Its <em>recommendations</em> don't all survive contact with the exact code. Two corrections stand out:</p>
+          <p><b>Finding 2 was wrong, not just unproven.</b> The audit said Payment Split Trend's N+1 loop could be fixed by "using the ranged API that already works elsewhere." Reading the actual SQL in <code>getOrderSplit</code>/<code>getPaymentSalesSplit</code> shows every query branch collapses the requested range into a single row — there is no <code>date</code>/<code>hour</code> <code>GROUP BY</code> anywhere in this endpoint, and no granularity parameter exists at the controller layer. The "working precedent" cited never needed a bucketed response either. This is new backend work, not a call-site swap.</p>
+          <p><b>A previously unflagged infrastructure constraint changes Finding 3.</b> Tenant MySQL connections are pooled by <code>host:port:user</code>, and the brands sampled all resolved to the same RDS host — meaning the connection pool (default cap of 5) may be shared across many brands, not per-brand. Blindly wrapping <code>getDashboardSummary</code>'s 8 branches in <code>Promise.all</code> could exhaust that shared pool under real concurrent traffic. This needs a bounded-concurrency benchmark, not maximum parallelism.</p>
+          <p>Everything else in the original audit was confirmed, several findings were sharpened with exact query text, and one worse-than-reported issue surfaced: Product Conversion's inventory-sort and CSV export paths have <b>zero row cap anywhere in the code</b> — not just inefficient, genuinely unbounded.</p>
+        </div>
+      </section>
+
+      <section id="evidence">
+        <h2><span class="num">02</span> Evidence Classification</h2>
+        <p class="section-intro"><span class="badge a">A — Proven</span> live timing + execution plan &nbsp; <span class="badge b">B — Strongly Supported</span> clear code inefficiency, not fully measured &nbsp; <span class="badge c">C — Hypothesis</span> reasonable but unproven &nbsp; <span class="badge d">D — Deprioritized</span> valid but low/unrelated impact</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Finding</th><th>Class</th><th>Why</th></tr></thead>
+            <tbody>
+              <tr><td>Daily-funnel/trend full index scan</td><td><span class="badge a">A</span></td><td>Live-timed 8 brands (654ms&ndash;109.6s) + live EXPLAIN, re-confirmed verbatim this pass</td></tr>
+              <tr><td>Missing covering index is the cause</td><td><span class="badge a">A</span></td><td>SHOW INDEX confirms no index contains <code>order_name</code></td></tr>
+              <tr><td><code>(created_date, order_name, total_price)</code> is <em>the</em> index</td><td><span class="badge b">B</span></td><td>Right for the common path; product-filtered path uses a different sales expression, not covered</td></tr>
+              <tr><td>Payment Split N+1 pattern exists</td><td><span class="badge a">A</span></td><td>Loop bounds confirmed in code (~97 / ~360 requests)</td></tr>
+              <tr><td>"Existing ranged API" fixes it</td><td><span class="badge d">Rejected</span></td><td>Confirmed false by reading all 3 SQL branches + controller</td></tr>
+              <tr><td><code>getDashboardSummary</code> branches are independent</td><td><span class="badge a">A</span></td><td>Confirmed via direct read of every await site</td></tr>
+              <tr><td>Blind <code>Promise.all</code> is correct</td><td><span class="badge c">C</span></td><td>Shared small connection pool makes this a real risk</td></tr>
+              <tr><td>Product Conversion CTE re-derivation</td><td><span class="badge a">A</span> mechanism / <span class="badge c">C</span> magnitude</td><td>Sequential + independent CTEs confirmed; ~50% figure was never measured</td></tr>
+              <tr><td>Inventory-sort / CSV export fully unbounded</td><td><span class="badge a">A</span></td><td>Confirmed: no <code>pagination</code> arg passed, <code>limitClause</code> resolves to empty string</td></tr>
+              <tr><td><code>computeReturnCounts</code> pair — safe to consolidate</td><td><span class="badge a">A</span></td><td>No per-call divergence in filters/joins/cutoff/cache</td></tr>
+              <tr><td><code>getSnapshot</code> pair — safe to consolidate</td><td><span class="badge b">B</span> conditional</td><td>Safe only if current/previous ranges are always symmetric in day-count</td></tr>
+              <tr><td><code>fcm_tokens</code> full scan per notification</td><td><span class="badge b">B</span> code / <span class="badge c">C</span> impact</td><td>Pattern real; collection size unmeasured (Docker went down mid-probe)</td></tr>
+              <tr><td>Connection-pool cap is shared across brands</td><td><span class="badge a">A</span> code / unconfirmed deployed value</td><td><code>poolKey</code> keyed by host:port:user, all sampled brands share a host</td></tr>
+              <tr><td>MySQL server version</td><td><span class="badge d">D</span></td><td>Zero version evidence in repo; must check live before window-function work</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="matrix">
+        <h2><span class="num">03</span> Priority Matrix</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Pri.</th><th>Optimization</th><th>Evidence</th><th>Impact</th><th>Risk</th><th>Dependencies</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge p0">P0</span></td><td>Covering index for daily-funnel/trend scan</td><td>A</td><td>Up to 109.6s per load, largest brand</td><td>Low</td><td>Index-shape decision (§6)</td></tr>
+              <tr><td><span class="badge p0">P0</span></td><td>Cap Product Conversion inventory-sort + CSV export</td><td>A</td><td>Unbounded rows today</td><td>Low-Med</td><td>None</td></tr>
+              <tr><td><span class="badge p1">P1</span></td><td>Bounded-concurrency <code>getDashboardSummary</code></td><td>A / C</td><td>Full serial latency, every load</td><td>Medium</td><td>Deployed pool size</td></tr>
+              <tr><td><span class="badge p1">P1</span></td><td>Consolidate <code>computeReturnCounts</code> pair</td><td>A</td><td>Extra scan on every UTM-filtered returns calc</td><td>Low</td><td>None</td></tr>
+              <tr><td><span class="badge p2">P2</span></td><td>Real granularity for order/payment split</td><td>A problem / new solution</td><td>~97&ndash;360 req/render</td><td>Med-High</td><td>None, but nontrivial</td></tr>
+              <tr><td><span class="badge p2">P2</span></td><td>Product Conversion COUNT/SELECT consolidation</td><td>B / C</td><td>Extra CTE derivation per load</td><td>Medium</td><td>MySQL version check</td></tr>
+              <tr><td><span class="badge p2">P2</span></td><td>Verify + consolidate <code>getSnapshotPair</code></td><td>B conditional</td><td>Doubles fan-out on filtered dashboards</td><td>Medium</td><td>Range-symmetry audit</td></tr>
+              <tr><td><span class="badge p3">P3</span></td><td><code>fcm_tokens</code> caching/cleanup</td><td>B / C</td><td>Unsized</td><td>Low</td><td>Real size measurement</td></tr>
+              <tr><td><span class="badge p3">P3</span></td><td>Visibility-gate notification poll</td><td>B</td><td>Fixed background load</td><td>Low</td><td>None</td></tr>
+              <tr><td><span class="badge p3">P3</span></td><td>Dedup pagespeed fetch path</td><td>B</td><td>1 extra request, one action</td><td>Low</td><td>None</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="phases">
+        <h2><span class="num">04</span> Phase-by-Phase Plan</h2>
+        <h3>Phase 0 — Baseline &amp; Unblock Live Checks</h3>
+        <p>Re-run once dev DB access is stable: <code>SELECT VERSION()</code>; <code>COUNT(DISTINCT order_id)</code> vs <code>order_name</code> over the same window; a real <code>fcm_tokens</code> count; confirm the <em>deployed</em> <code>BRAND_POOL_MAX</code>. Add flag-gated timing instrumentation to <code>getDashboardSummary</code>, the funnel/trend queries, and <code>getProductConversion</code> only. No optimization changes.</p>
+        <h3>Phase A — Proven Quick Wins</h3>
+        <ul>
+          <li>Covering index for the daily-funnel query shape (candidate decided in §6, not assumed)</li>
+          <li>Row caps on Product Conversion's inventory-sort + CSV paths — a correctness fix as much as a perf one</li>
+          <li>Consolidate <code>computeReturnCounts</code> current/previous into one query</li>
+          <li>Ship the Phase 0 instrumentation as a standing, sampled capability</li>
+        </ul>
+        <h3>Phase B — Controlled Query &amp; API Optimization</h3>
+        <ul>
+          <li>Real <code>hourly</code>/<code>daily</code> bucketing for <code>getOrderSplit</code>/<code>getPaymentSalesSplit</code>, then migrate the frontend loop off it</li>
+          <li>Product Conversion COUNT/SELECT consolidation — technique chosen only after the MySQL-version check</li>
+          <li><code>getSnapshotPair</code> consolidation — only after confirming range symmetry across every call site</li>
+          <li>Bounded-concurrency <code>getDashboardSummary</code> rework, at whatever limit the benchmark actually supports</li>
+        </ul>
+        <h3>Phase C — Architectural (trigger-gated, not scheduled)</h3>
+        <ul>
+          <li><code>fcm_tokens</code> caching — <b>trigger:</b> only if Phase 0's real size/frequency measurement shows material cost</li>
+          <li>Pre-aggregation for the multi-query-then-JS-merge pattern — <b>trigger:</b> only if the index fix doesn't bring P95 under target</li>
+          <li>Redis/materialized views for Product Conversion — <b>trigger:</b> only if Phase B's query fix still leaves large brands above target</li>
+        </ul>
+      </section>
+
+      <section id="benchmark">
+        <h2><span class="num">05</span> Benchmark Plan</h2>
+        <ul>
+          <li><b>Brands:</b> TMC, PTS, BBB, AJMAL (large/medium), VAMA (mid), 3TENX/SHYLENEW/URBAN HINDU (small) — the same 8-brand panel, ~170&times; spread already established</li>
+          <li><b>Date ranges:</b> 1, 7, 30, 90 days — the original audit only measured 30 days, but Product Conversion and Payment Split are range-size-sensitive</li>
+          <li><b>Filters:</b> unfiltered, UTM, product, product+UTM combined, city — each hits a genuinely different query branch</li>
+          <li><b>Concurrency:</b> single request, 5 concurrent same-brand, 5 concurrent different-brand — required specifically to test the shared-pool risk, invisible to single-request timing</li>
+          <li><b>Metrics:</b> wall-clock, DB time, rows examined, rows returned, payload size, and — once instrumentation lands — real p50/p95/p99, not single-shot numbers</li>
+        </ul>
+      </section>
+
+      <section id="index">
+        <h2><span class="num">06</span> Database Index Validation Plan</h2>
+        <h3>Current query (filtered daily branch)</h3>
+        <pre>SELECT created_date AS date, COUNT(DISTINCT order_name) AS orders,
+       COALESCE(SUM(total_price), 0) AS sales
+FROM shopify_orders
+WHERE created_date >= ? AND created_date <= ?
+  [+ equality/IN filters: utm_source, order_app_name, user_agent LIKE, product_id]
+GROUP BY created_date ORDER BY created_date ASC</pre>
+        <p>Hourly branch adds <code>AND HOUR(created_time) &lt;= ?</code>; <code>queryOrderSalesTotals</code>'s cutoff uses <code>AND created_time &lt; ?</code> instead — <b>two incompatible cutoff shapes</b>, one index can't serve both without a generated column. When a product filter is active, the sales expression changes entirely (line-item based, not <code>total_price</code>).</p>
+        <h3>Current plan (TMC, live)</h3>
+        <pre>type: index   key: idx_so_created_date_totalprice   rows: 1,881,980   filtered: 11.11%</pre>
+        <p><b>Root cause:</b> no index carries <code>order_name</code> alongside <code>created_date</code>, so MySQL can't range-seek and cover the read at once.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Candidate</th><th>Covers</th><th>Trade-off</th></tr></thead>
+            <tbody>
+              <tr><td class="mono" style="font-family:var(--font-mono)">(created_date, order_name)</td><td>Fixes the scan-type regression</td><td>Still needs a row lookup for <code>total_price</code></td></tr>
+              <tr><td class="mono" style="font-family:var(--font-mono)">(created_date, order_name, total_price)</td><td>Fully covers the common (non-product-filtered) path</td><td>Doesn't help the product-filtered variant</td></tr>
+              <tr><td class="mono" style="font-family:var(--font-mono)">+ line-item columns</td><td>Covers both shapes</td><td>Wider index, more write overhead, marginal extra read benefit</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><b>Recommendation to validate:</b> start with Candidate B for the common case (where the 109.6s was measured); treat the product-filtered path as a separate, lower-priority follow-up once timed on its own. Rollout is per-tenant-database (one schema per brand) — largest brands first. Fully reversible (<code>DROP INDEX</code>). Verification: re-run the exact same EXPLAIN + live timing per migrated brand, confirm <code>type</code> moves from <code>index</code> to <code>range</code>, and confirm identical result values before/after.</p>
+      </section>
+
+      <section id="api">
+        <h2><span class="num">07</span> API Optimization Plan</h2>
+        <h3>Payment Split Trend</h3>
+        <p><b>Current:</b> one HTTP call per hour/day &times; 2 endpoints &times; up to 2 ranges. <b>Target:</b> one call per series with a <code>granularity=hourly|daily</code> param, returning an array of per-bucket rows via <code>GROUP BY DATE(created_date)</code> (or + hour) instead of today's <code>GROUP BY payment_type</code>-only shape. This is a <b>new response shape</b> (array vs. object) — must be opt-in via the granularity param so <code>useDashboardModeOfPaymentData</code>'s existing single-aggregate contract stays untouched. Ship behind a flag, verify in isolation, then migrate the frontend loop, keeping the old path available until verified.</p>
+        <h3>Product Conversion</h3>
+        <p><b>Current:</b> sequential COUNT then SELECT, each re-deriving the same core CTEs; two paths with zero row cap. <b>Target (pending MySQL-version confirmation):</b> fold <code>COUNT(*) OVER()</code> into the SELECT to drop the separate round-trip for the common path; add a hard page cap to the inventory-sort/CSV paths regardless of the CTE decision. Validate identical output across all 8 benchmark brands before removing the old path.</p>
+      </section>
+
+      <section id="concurrency">
+        <h2><span class="num">08</span> Concurrency Strategy</h2>
+        <p>The independent branches in <code>getDashboardSummary</code> are proven independent — no data flows between them. But connection pooling is keyed by <code>host:port:user</code>, and every brand sampled this session shares one RDS host, so the real pool may be shared across many brands at a default cap of 5. An unbounded 8-way <code>Promise.all</code> for one request could consume most of that shared pool and stall other brands' concurrent traffic.</p>
+        <p><b>Benchmark before choosing:</b> serial (control), full parallel, and concurrency limits 2/3/4 — measured both in isolation and under 5 simultaneous requests (same and different brands). <b>Starting point for the first controlled experiment: limit 3</b> — adjust based on measured queue depth, not assumed.</p>
+        <p><b>Success:</b> latency drops materially at the chosen limit with no measurable queue-depth/tail-latency regression for concurrent traffic. <b>Failure:</b> any level that increases p95/p99 for other requests or produces connection-acquisition timeouts. <b>Rollback:</b> concurrency limit is a config value, defaulting back to serial (limit 1) with no deploy required.</p>
+      </section>
+
+      <section id="order">
+        <h2><span class="num">09</span> Final Recommended Implementation Order</h2>
+        <div class="step"><div class="step-num">1</div><div><h4>Unblock Phase 0's live checks</h4><p>MySQL version, order_id/order_name distinctness, fcm_tokens count, deployed pool size — every later step's exact technique depends on at least one of these.</p></div></div>
+        <div class="step"><div class="step-num">2</div><div><h4>Ship flag-gated instrumentation</h4><p>Needed to get real before-numbers for everything downstream, not just single-shot timings.</p></div></div>
+        <div class="step"><div class="step-num">3</div><div><h4>Add the covering index</h4><p>Highest proven impact, lowest risk, fully reversible, no dependency on anything else here.</p></div></div>
+        <div class="step"><div class="step-num">4</div><div><h4>Cap Product Conversion's unbounded paths</h4><p>As much a correctness fix as a perf one; independent of the CTE-consolidation question.</p></div></div>
+        <div class="step"><div class="step-num">5</div><div><h4>Consolidate the returns-pair query</h4><p>Proven safe, independent, cheap to ship.</p></div></div>
+        <div class="step"><div class="step-num">6</div><div><h4>Run the MySQL-version check, then decide Product Conversion's technique</h4><p>Sequenced after step 1's data exists.</p></div></div>
+        <div class="step"><div class="step-num">7</div><div><h4>Run the concurrency benchmark, then rework getDashboardSummary</h4><p>Needs step 2's instrumentation and step 1's confirmed pool size.</p></div></div>
+        <div class="step"><div class="step-num">8</div><div><h4>Build real granularity for order/payment split</h4><p>Largest-scope item — benefits from the instrumentation/benchmarking muscle built in steps 2 and 7.</p></div></div>
+        <div class="step"><div class="step-num">9</div><div><h4>Verify range-symmetry, then consolidate getSnapshotPair</h4><p>Last among planned items — an incorrect consolidation here silently corrupts KPI numbers.</p></div></div>
+        <div class="step"><div class="step-num">10</div><div><h4>Re-measure fcm_tokens size/frequency</h4><p>Only schedule the caching fix in Phase C if this shows material impact.</p></div></div>
+        <div class="step"><div class="step-num">11</div><div><h4>Frontend low-priority items</h4><p>Independent of the database work — sequenced last so they don't compete for review attention.</p></div></div>
+      </section>
+
+    </main>
+  </div>
+
+  <footer>Validation performed via 4 parallel code re-audits plus live read-only MySQL probes against the TMC tenant database. No code, index, query, or configuration was changed in this pass.</footer>
+</div>

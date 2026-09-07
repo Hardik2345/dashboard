@@ -1,0 +1,35 @@
+/node_modules
+*/node_modules
+/.env
+**/.env
+/infra-firehose
+api-gateway/.env
+tenant-router/.env
+client/.env
+client/dashboard/vite.config.js
+api-gateway/node_modules
+tenant-router/node_modules
+client/node_modules
+
+# Ignore specific scripts exports
+# sessions CSV export and export script in scripts/
+/scripts/sessions_2025-11-17.csv
+/scripts/sessions_export.js
+/service-account.json
+
+# macOS finder artifacts
+.DS_Store
+
+# OpenResty / NGINX runtime files
+api-gateway/client_body_temp/
+api-gateway/proxy_temp/
+api-gateway/fastcgi_temp/
+api-gateway/uwsgi_temp/
+api-gateway/scgi_temp/
+
+# Logs & pid
+api-gateway/logs/
+*.pid
+alerts-service/.env
+analytics/.env
+tenant-router/.env

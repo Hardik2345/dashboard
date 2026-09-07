@@ -1,0 +1,228 @@
+const { handleControllerError } = require('../../shared/middleware/handleControllerError');
+const { extractFilters } = require('../../shared/utils/filters');
+const { getDynamicBrandsMap } = require('../../config/brands');
+const { getBrandConnection } = require('../../shared/db/brandConnectionManager');
+const {
+  parseHourLte,
+} = require('../../services/metricsReportService');
+const {
+  parseRangeQuery,
+  ensureBrandSequelize,
+} = require('./requestNormalizer');
+const {
+  isRangeOverDataRestrictionPeriod,
+  buildLongRangeUnavailablePayload,
+} = require('./longRangeGate');
+
+function buildSplitController({ reportService }) {
+  return {
+    trafficSourceSplit: async (req, res) => {
+      try {
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
+        if (!parsed.ok) return res.status(400).json({ error: 'Invalid date range' });
+        const { start, end } = parsed.data;
+        if (isRangeOverDataRestrictionPeriod(start, end)) {
+          return res.json(
+            buildLongRangeUnavailablePayload({
+              meta: null,
+              google: null,
+              direct: null,
+              others: null,
+              meta_breakdown: [],
+              others_breakdown: [],
+              total_sessions: 0,
+              total_atc_sessions: 0,
+              prev_range: null,
+            }),
+          );
+        }
+        const brandConn = ensureBrandSequelize(req);
+        if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
+        return res.json(
+          await reportService.getTrafficSourceSplit({
+            conn: brandConn.conn,
+            start,
+            end,
+            compareStart: req.query.compare_start || null,
+            compareEnd: req.query.compare_end || null,
+            productId: req.query.product_id || "",
+            timezone: req.tenantRoute?.timezone,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'traffic-source-split failed');
+      }
+    },
+
+    orderSplit: async (req, res) => {
+      try {
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
+        if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
+        const { start, end } = parsed.data;
+        if (isRangeOverDataRestrictionPeriod(start, end)) {
+          return res.json(
+            buildLongRangeUnavailablePayload({
+              total: 0,
+              prepaid_orders: 0,
+              cod_orders: 0,
+              partially_paid_orders: 0,
+            }),
+          );
+        }
+        const brandConn = ensureBrandSequelize(req);
+        if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
+        const { hourLte } = parseHourLte(req.query.hour_lte);
+        const brandKey = (req.query.brand || req.query.brand_key || req.brandKey || '').toString().trim();
+        return res.json(
+          await reportService.getOrderSplit({
+            conn: brandConn.conn,
+            brandKey,
+            start,
+            end,
+            hourLte,
+            productId: (req.query.product_id || '').toString().trim(),
+            filters: extractFilters(req),
+            includeSql: process.env.NODE_ENV !== 'production',
+            timezone: req.tenantRoute?.timezone,
+          }),
+        );
+      } catch (err) {
+        return handleControllerError(res, err, 'order-split failed');
+      }
+    },
+
+    paymentSalesSplit: async (req, res) => {
+      try {
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
+        if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
+        const { start, end } = parsed.data;
+        if (isRangeOverDataRestrictionPeriod(start, end)) {
+          return res.json(
+            buildLongRangeUnavailablePayload({
+              total: 0,
+              prepaid_sales: 0,
+              cod_sales: 0,
+              partial_sales: 0,
+            }),
+          );
+        }
+        const brandConn = ensureBrandSequelize(req);
+        if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
+        const { hourLte } = parseHourLte(req.query.hour_lte);
+        const brandKey = (req.query.brand || req.query.brand_key || req.brandKey || '').toString().trim();
+        return res.json(
+          await reportService.getPaymentSalesSplit({
+            conn: brandConn.conn,
+            brandKey,
+            start,
+            end,
+            hourLte,
+            productId: (req.query.product_id || '').toString().trim(),
+            filters: extractFilters(req),
+            includeSql: process.env.NODE_ENV !== 'production',
+            timezone: req.tenantRoute?.timezone,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'payment-sales-split failed');
+      }
+    },
+
+    paymentSplitSummary: async (req, res) => {
+      try {
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
+        if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
+        const { start, end } = parsed.data;
+        if (isRangeOverDataRestrictionPeriod(start, end)) {
+          return res.json(
+            buildLongRangeUnavailablePayload({
+              current: { orders: null, sales: null },
+              previous: { orders: null, sales: null },
+            }),
+          );
+        }
+        const brandConn = ensureBrandSequelize(req);
+        if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
+        const { hourLte } = parseHourLte(req.query.hour_lte);
+        return res.json(
+          await reportService.getPaymentSplitSummary({
+            conn: brandConn.conn,
+            start,
+            end,
+            compareStart: (req.query.compare_start || '').toString().trim() || null,
+            compareEnd: (req.query.compare_end || '').toString().trim() || null,
+            hourLte,
+            productId: (req.query.product_id || '').toString().trim(),
+            filters: extractFilters(req),
+            includeSql: process.env.NODE_ENV !== 'production',
+            timezone: req.tenantRoute?.timezone,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'payment-split-summary failed');
+      }
+    },
+
+    paymentSplitTrend: async (req, res) => {
+      try {
+        const parsed = parseRangeQuery(req.query, { timezone: req.tenantRoute?.timezone });
+        if (!parsed.ok) return res.status(parsed.status).json(parsed.body);
+        const { start, end } = parsed.data;
+        if (isRangeOverDataRestrictionPeriod(start, end)) {
+          return res.json(
+            buildLongRangeUnavailablePayload({
+              granularity: (req.query.granularity || 'daily').toString(),
+              points: [],
+            }),
+          );
+        }
+        const brandConn = ensureBrandSequelize(req);
+        if (!brandConn.ok) return res.status(brandConn.status).json(brandConn.body);
+        const { hourLte } = parseHourLte(req.query.hour_lte);
+        const granularity = req.query.granularity === 'hourly' ? 'hourly' : 'daily';
+        return res.json(
+          await reportService.getPaymentSplitTrend({
+            conn: brandConn.conn,
+            start,
+            end,
+            granularity,
+            hourLte,
+            productId: (req.query.product_id || '').toString().trim(),
+            filters: extractFilters(req),
+            includeSql: process.env.NODE_ENV !== 'production',
+            timezone: req.tenantRoute?.timezone,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'payment-split-trend failed');
+      }
+    },
+
+    hourlySalesCompare: async (req, res) => {
+      try {
+        const brandKey = (req.query.brand_key || req.query.brand || '')
+          .toString()
+          .trim()
+          .toUpperCase();
+        if (!brandKey) return res.status(400).json({ error: 'brand_key required' });
+        const map = await getDynamicBrandsMap();
+        if (!map[brandKey]) return res.status(400).json({ error: 'Unknown brand_key' });
+        const brandConn = await getBrandConnection(brandKey);
+        const daysParam = (req.query.days || '').toString();
+        const N = Number(daysParam) || 1;
+        if (N <= 0 || N > 30) return res.status(400).json({ error: 'days must be between 1 and 30' });
+        return res.json(
+          await reportService.getHourlySalesCompare({
+            conn: brandConn.sequelize,
+            days: N,
+            timezone: req.tenantRoute?.timezone,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'hourly-sales-compare failed');
+      }
+    },
+  };
+}
+
+module.exports = { buildSplitController };

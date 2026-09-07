@@ -1,0 +1,39 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/api/external-pagespeed/(.*)",
+      "destination": "https://speed-audit-service.onrender.com/api/$1"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/proxy?path=$1"
+    },
+    { "source": "/overall-snapshot", "destination": "/" },
+    { "source": "/dashboard", "destination": "/" },
+    { "source": "/session-analytics", "destination": "/" },
+    { "source": "/funnels", "destination": "/" },
+    { "source": "/daily-funnel", "destination": "/" },
+    { "source": "/bundles", "destination": "/" },
+    { "source": "/inventory", "destination": "/" },
+    { "source": "/health-monitor", "destination": "/" },
+    { "source": "/alerts", "destination": "/" },
+    { "source": "/requests", "destination": "/" },
+    { "source": "/access-control", "destination": "/" },
+    { "source": "/configurations", "destination": "/" },
+    { "source": "/tenant-setup", "destination": "/" },
+    { "source": "/login", "destination": "/" },
+    { "source": "/unauthorized", "destination": "/" }
+  ],
+
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    }
+  ]
+}
