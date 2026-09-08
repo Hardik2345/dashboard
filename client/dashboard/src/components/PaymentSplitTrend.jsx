@@ -299,7 +299,7 @@ function buildWeeklyPaymentBuckets(points = []) {
   });
 }
 
-function buildTooltipRows(payload = [], chartMode, formatter, seriesTotals = {}) {
+function buildTooltipRows(payload = [], chartMode, formatter) {
   return payload
     .filter((entry) => Number(entry.value || 0) > 0)
     .map((entry, index) => {
@@ -312,8 +312,10 @@ function buildTooltipRows(payload = [], chartMode, formatter, seriesTotals = {})
         ? dataKey.replace("Pct", "")
         : dataKey;
       const rawValue = Number(entry.payload?.[rawKey] || 0);
-      const seriesTotal = Number(seriesTotals?.[rawKey] || 0);
-      const sharePct = seriesTotal > 0 ? (rawValue / seriesTotal) * 100 : null;
+      // Share of this point's total (orders/sales) contributed by this category.
+      const totalKey = bucket === "Previous" ? "comparisonTotal" : "currentTotal";
+      const bucketTotal = Number(entry.payload?.[totalKey] || 0);
+      const sharePct = bucketTotal > 0 ? (rawValue / bucketTotal) * 100 : null;
       return {
         color: entry.color || entry.fill || entry.stroke,
         name,
@@ -325,10 +327,10 @@ function buildTooltipRows(payload = [], chartMode, formatter, seriesTotals = {})
     });
 }
 
-const TrendTooltip = ({ active, payload, label, formatter, chartMode, seriesTotals }) => {
+const TrendTooltip = ({ active, payload, label, formatter, chartMode }) => {
   if (!active || !payload?.length) return null;
 
-  const rows = buildTooltipRows(payload, chartMode, formatter, seriesTotals);
+  const rows = buildTooltipRows(payload, chartMode, formatter);
 
   const currentRows = rows.filter((row) => row.bucket === "Current");
   const previousRows = rows.filter((row) => row.bucket === "Previous");
@@ -451,25 +453,6 @@ export default memo(function PaymentSplitTrend({ query }) {
     useWeeklyBuckets,
     convertAmount,
   });
-  // Totals per series/bucket across every visible point, so the tooltip can show
-  // each point's share of the range total (e.g. this hour vs. the whole day).
-  const seriesTotals = useMemo(() => {
-    const keys = [
-      "currentPrepaid",
-      "currentCod",
-      "currentPartial",
-      "comparisonPrepaid",
-      "comparisonCod",
-      "comparisonPartial",
-    ];
-    return keys.reduce((acc, key) => {
-      acc[key] = chartData.reduce(
-        (sum, point) => sum + Number(point?.[key] || 0),
-        0,
-      );
-      return acc;
-    }, {});
-  }, [chartData]);
   const shouldTiltDateLabels = chartData.length > 30;
   const percentAxisMax = getPercentAxisMax(
     chartData,
@@ -815,7 +798,7 @@ export default memo(function PaymentSplitTrend({ query }) {
                     allowEscapeViewBox={{ x: true, y: true }}
                     reverseDirection={{ x: true, y: false }}
                     cursor={{ stroke: theme.palette.divider, strokeWidth: 1, strokeDasharray: "4 4" }}
-                    content={<TrendTooltip formatter={config.formatter} chartMode="line" seriesTotals={seriesTotals} />}
+                    content={<TrendTooltip formatter={config.formatter} chartMode="line" />}
                     wrapperStyle={{ zIndex: 1000, pointerEvents: "none" }}
                   />
                   {selectedSeries.map((series) => (
@@ -884,7 +867,7 @@ export default memo(function PaymentSplitTrend({ query }) {
                     allowEscapeViewBox={{ x: true, y: true }}
                     reverseDirection={{ x: true, y: false }}
                     cursor={{ fill: alpha(theme.palette.divider, 0.2) }}
-                    content={<TrendTooltip formatter={config.formatter} chartMode="bar" seriesTotals={seriesTotals} />}
+                    content={<TrendTooltip formatter={config.formatter} chartMode="bar" />}
                     wrapperStyle={{ zIndex: 1000, pointerEvents: "none" }}
                   />
                   {selectedSeries.map((series) => (
