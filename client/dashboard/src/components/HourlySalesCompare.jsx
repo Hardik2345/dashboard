@@ -308,7 +308,9 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
       axisGroup: "percent",
       color: "#22c55e",
       strokeDasharray: "2 0",
-      accessor: (metrics) => Number(metrics?.high_intent_pct || 0),
+      // Backend sends intent pct on a 0-100 scale (matching the KPI card),
+      // but nfPercent1 is an Intl percent formatter expecting a 0-1 fraction.
+      accessor: (metrics) => Number(metrics?.high_intent_pct || 0) / 100,
       formatter: (value) => nfPercent1.format(value || 0),
       compactFormatter: (value) => nfPercent1.format(value || 0),
     },
@@ -319,7 +321,7 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
       axisGroup: "percent",
       color: "#f59e0b",
       strokeDasharray: "6 2",
-      accessor: (metrics) => Number(metrics?.medium_intent_pct || 0),
+      accessor: (metrics) => Number(metrics?.medium_intent_pct || 0) / 100,
       formatter: (value) => nfPercent1.format(value || 0),
       compactFormatter: (value) => nfPercent1.format(value || 0),
     },
@@ -330,9 +332,42 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
       axisGroup: "percent",
       color: "#ef4444",
       strokeDasharray: "1 3",
-      accessor: (metrics) => Number(metrics?.low_intent_pct || 0),
+      accessor: (metrics) => Number(metrics?.low_intent_pct || 0) / 100,
       formatter: (value) => nfPercent1.format(value || 0),
       compactFormatter: (value) => nfPercent1.format(value || 0),
+    },
+    high_intent_sessions: {
+      id: "high_intent_sessions",
+      label: "High Intent",
+      unitKind: "count",
+      axisGroup: "count",
+      color: "#22c55e",
+      strokeDasharray: "2 0",
+      accessor: (metrics) => Number(metrics?.high_intent_sessions || 0),
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    medium_intent_sessions: {
+      id: "medium_intent_sessions",
+      label: "Medium Intent",
+      unitKind: "count",
+      axisGroup: "count",
+      color: "#f59e0b",
+      strokeDasharray: "6 2",
+      accessor: (metrics) => Number(metrics?.medium_intent_sessions || 0),
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    low_intent_sessions: {
+      id: "low_intent_sessions",
+      label: "Low Intent",
+      unitKind: "count",
+      axisGroup: "count",
+      color: "#ef4444",
+      strokeDasharray: "1 3",
+      accessor: (metrics) => Number(metrics?.low_intent_sessions || 0),
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
     },
     performance: {
       id: "performance",
@@ -774,7 +809,6 @@ export default memo(function HourlySalesCompare({
       (isLongRange ||
         hasPerformanceSelected ||
         hasActiveProductTypeFilter ||
-        hasIntentSelected ||
         (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend)) &&
       viewMode === "hourly"
     ) {
@@ -783,12 +817,21 @@ export default memo(function HourlySalesCompare({
   }, [
     canUseHourlyPaymentTrend,
     hasActiveProductTypeFilter,
-    hasIntentSelected,
     hasPaymentCompositeSelected,
     hasPerformanceSelected,
     isLongRange,
     viewMode,
   ]);
+
+  // Intent metrics (high/medium/low) only have a daily grain
+  // (daily_user_intent_summary) — no hourly or monthly rollup exists, so
+  // selecting one always forces the trend chart into the daily view,
+  // regardless of which view it's currently switching away from.
+  useEffect(() => {
+    if (hasIntentSelected && viewMode !== "daily") {
+      setViewMode("daily");
+    }
+  }, [hasIntentSelected, viewMode]);
 
   useEffect(() => {
     setHiddenMetricIds((prev) =>
