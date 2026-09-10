@@ -671,7 +671,7 @@ export default function DashboardRouteContainer({
   const desktopWidgetRegistry = useMemo(
     () => ({
       kpi_cards: (
-        <DeferredMount minHeight={190}>{kpiCardsDesktopElement}</DeferredMount>
+        <DeferredMount minHeight={340}>{kpiCardsDesktopElement}</DeferredMount>
       ),
       overall_snapshot: (
         <DeferredMount minHeight={320}>{overallSnapshotElement}</DeferredMount>
@@ -805,7 +805,7 @@ export default function DashboardRouteContainer({
   const mobileWidgetRegistry = useMemo(
     () => ({
       kpi_cards: (
-        <DeferredMount minHeight={190}>{kpiCardsMobileElement}</DeferredMount>
+        <DeferredMount minHeight={230}>{kpiCardsMobileElement}</DeferredMount>
       ),
       overall_snapshot: (
         <DeferredMount minHeight={320}>{overallSnapshotElement}</DeferredMount>
