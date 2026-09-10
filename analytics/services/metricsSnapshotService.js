@@ -24,6 +24,7 @@ const {
   buildLiveCutoffContext,
   buildCompletedHourCutoffContext,
   buildRowTwoComparisonCutoffs,
+  ciEventsSqlExpr,
 } = require("./metricsFoundation");
 const {
   normalizeMetricRequest,
@@ -381,13 +382,14 @@ async function queryCityRows(
   });
 }
 
-async function queryCheckoutInitiatedTotals(conn, start, end, cutoffHour = null) {
+async function queryCheckoutInitiatedTotals(conn, start, end, cutoffHour = null, brandKey = null) {
+  const ciEventsExpr = ciEventsSqlExpr(brandKey);
   const hasCutoff = Number.isInteger(cutoffHour);
   if (!hasCutoff) {
     const rows = await conn.query(
       `
         SELECT
-          COALESCE(SUM(COALESCE(ci_events, 0) + COALESCE(buy_now_events, 0)), 0) AS total_ci_events
+          COALESCE(SUM(${ciEventsExpr}), 0) AS total_ci_events
         FROM hourly_sessions_summary_shopify
         WHERE date >= ? AND date <= ?
       `,
@@ -401,7 +403,7 @@ async function queryCheckoutInitiatedTotals(conn, start, end, cutoffHour = null)
 
   const sql = `
     SELECT
-      COALESCE(SUM(COALESCE(ci_events, 0) + COALESCE(buy_now_events, 0)), 0) AS total_ci_events
+      COALESCE(SUM(${ciEventsExpr}), 0) AS total_ci_events
     FROM hourly_sessions_summary_shopify
     WHERE date >= ? AND date <= ?${hasCutoff ? " AND hour <= ?" : ""}
   `;
@@ -419,6 +421,7 @@ async function queryCheckoutInitiatedPair(
   previousRange,
   currentCutoffHour = null,
   previousCutoffHour = null,
+  brandKey = null,
 ) {
   const [current, previous] = await Promise.all([
     queryCheckoutInitiatedTotals(
@@ -426,12 +429,14 @@ async function queryCheckoutInitiatedPair(
       currentRange.start,
       currentRange.end,
       currentCutoffHour,
+      brandKey,
     ),
     queryCheckoutInitiatedTotals(
       conn,
       previousRange.start,
       previousRange.end,
       previousCutoffHour,
+      brandKey,
     ),
   ]);
 
@@ -444,13 +449,15 @@ async function queryCheckoutInitiatedRows(
   end,
   granularity = "hourly",
   cutoffHour = null,
+  brandKey = null,
 ) {
+  const ciEventsExpr = ciEventsSqlExpr(brandKey);
   if (granularity === "daily") {
     const rows = await conn.query(
       `
         SELECT
           DATE_FORMAT(date, '%Y-%m-%d') AS date,
-          COALESCE(SUM(COALESCE(ci_events, 0) + COALESCE(buy_now_events, 0)), 0) AS ci_events
+          COALESCE(SUM(${ciEventsExpr}), 0) AS ci_events
         FROM hourly_sessions_summary_shopify
         WHERE date >= ? AND date <= ?
         GROUP BY date
@@ -470,7 +477,7 @@ async function queryCheckoutInitiatedRows(
       SELECT
         DATE_FORMAT(date, '%Y-%m-%d') AS date,
         hour,
-        COALESCE(ci_events, 0) + COALESCE(buy_now_events, 0) AS ci_events
+        ${ciEventsExpr} AS ci_events
       FROM hourly_sessions_summary_shopify
       WHERE date >= ? AND date <= ?${hasCutoff ? " AND hour <= ?" : ""}
       ORDER BY date ASC, hour ASC
@@ -1481,7 +1488,7 @@ function buildMetricShape(metrics) {
   };
 }
 
-async function fetchHourlyRows(conn, start, end, filters = {}, cutoffHour = 23) {
+async function fetchHourlyRows(conn, start, end, filters = {}, cutoffHour = 23, brandKey = null) {
   const hasProduct = !!filters.product_id;
   const hasDevice = !!filters.device_type;
   const hasSnapshot = hasSnapshotFilters(filters);
@@ -1605,7 +1612,7 @@ async function fetchHourlyRows(conn, start, end, filters = {}, cutoffHour = 23) 
       replacements: orderReplacements,
     }),
     sessionRowsPromise,
-    queryCheckoutInitiatedRows(conn, start, end, "hourly", cutoffHour),
+    queryCheckoutInitiatedRows(conn, start, end, "hourly", cutoffHour, brandKey),
   ]);
 
   const byKey = new Map();
@@ -1657,7 +1664,7 @@ async function fetchHourlyRows(conn, start, end, filters = {}, cutoffHour = 23) 
   });
 }
 
-async function fetchDailyRows(conn, start, end, filters = {}) {
+async function fetchDailyRows(conn, start, end, filters = {}, brandKey = null) {
   const hasProduct = !!filters.product_id;
   const hasDevice = !!filters.device_type;
   const hasSnapshot = hasSnapshotFilters(filters);
@@ -1716,7 +1723,7 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
         type: QueryTypes.SELECT,
         replacements: [start, end],
       }),
-      queryCheckoutInitiatedRows(conn, start, end, "daily"),
+      queryCheckoutInitiatedRows(conn, start, end, "daily", null, brandKey),
       queryDailyIntentRows(conn, start, end),
     ]);
     const byDate = new Map();
@@ -1862,7 +1869,7 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
       replacements: orderReplacements,
     }),
     sessionRowsPromise,
-    queryCheckoutInitiatedRows(conn, start, end, "daily"),
+    queryCheckoutInitiatedRows(conn, start, end, "daily", null, brandKey),
   ]);
   const byDate = new Map();
   for (const row of orderRows) {
@@ -1903,8 +1910,8 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
   return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
-async function fetchMonthlyRows(conn, start, end, filters = {}) {
-  const dailyRows = await fetchDailyRows(conn, start, end, filters);
+async function fetchMonthlyRows(conn, start, end, filters = {}, brandKey = null) {
+  const dailyRows = await fetchDailyRows(conn, start, end, filters, brandKey);
   const byMonth = new Map();
   for (const row of dailyRows) {
     const bucket = monthBucket(row.date);
@@ -2002,14 +2009,14 @@ function buildMetricsSnapshotService(deps = {}) {
   const { fetchCachedMetricsBatch, getDatePresetsCache } = deps;
   const now = deps.now || (() => new Date());
 
-  async function getSnapshot({ conn, range, filters = {}, cutoffTime = null, cachedData = null }) {
+  async function getSnapshot({ conn, range, filters = {}, cutoffTime = null, cachedData = null, brandKey = null }) {
     if (!conn) throw new Error("Database connection unavailable");
     const { start, end } = range;
 
     if (cachedData && isCacheEligible(range, filters, cutoffTime)) {
       const [returnsObj, totalCiEvents] = await Promise.all([
         getReturnsSnapshot(conn, start, end, filters),
-        queryCheckoutInitiatedTotals(conn, start, end),
+        queryCheckoutInitiatedTotals(conn, start, end, null, brandKey),
       ]);
       return buildCachedSnapshot(
         cachedData,
@@ -2056,7 +2063,7 @@ function buildMetricsSnapshotService(deps = {}) {
 
     let metrics;
     if (!cutoffTime && !hasAnyFilters(filters)) {
-      metrics = await queryOverallSummaryTotals(conn, start, end);
+      metrics = await queryOverallSummaryTotals(conn, start, end, brandKey);
     } else {
       const cutoffHour = cutoffTime ? parseHourFromCutoff(cutoffTime) : 23;
       const [orderSales, sessionTotals, returnsObj] = await Promise.all([
@@ -2091,7 +2098,7 @@ function buildMetricsSnapshotService(deps = {}) {
           if (hasSnapshotFilters(filters)) {
             return querySnapshotSessionTotals(conn, start, end, filters);
           }
-          return queryOverallSummaryTotals(conn, start, end);
+          return queryOverallSummaryTotals(conn, start, end, brandKey);
         })(),
         getReturnsSnapshot(conn, start, end, filters),
       ]);
@@ -2278,8 +2285,8 @@ function buildMetricsSnapshotService(deps = {}) {
 
       if (presetCurrent) {
         const [previousMetrics, currentCiEvents, returnsPair] = await Promise.all([
-          queryOverallSummaryTotals(conn, previousRange.start, previousRange.end),
-          queryCheckoutInitiatedTotals(conn, currentRange.start, currentRange.end),
+          queryOverallSummaryTotals(conn, previousRange.start, previousRange.end, brandKey),
+          queryCheckoutInitiatedTotals(conn, currentRange.start, currentRange.end, null, brandKey),
           getReturnsSnapshotPair(conn, currentRange, previousRange, filters),
         ]);
 
@@ -2294,7 +2301,7 @@ function buildMetricsSnapshotService(deps = {}) {
       }
 
       const [metricsPair, returnsPair] = await Promise.all([
-        queryOverallSummaryPair(conn, currentRange, previousRange),
+        queryOverallSummaryPair(conn, currentRange, previousRange, brandKey),
         getReturnsSnapshotPair(conn, currentRange, previousRange, filters),
       ]);
 
@@ -2315,6 +2322,7 @@ function buildMetricsSnapshotService(deps = {}) {
         filters,
         cutoffTime,
         cachedData: cachedCurrent,
+        brandKey,
       }),
       getSnapshot({
         conn,
@@ -2322,6 +2330,7 @@ function buildMetricsSnapshotService(deps = {}) {
         filters,
         cutoffTime,
         cachedData: cachedPrevious,
+        brandKey,
       }),
     ]);
 
@@ -2445,6 +2454,9 @@ function buildMetricsSnapshotService(deps = {}) {
           spec.conn,
           { start: spec.start, end: spec.end },
           compareRange,
+          null,
+          null,
+          spec.brandKey,
         );
     const checkoutInitiatedDeltaPair = cityActive
       ? checkoutInitiatedPair
@@ -2455,6 +2467,7 @@ function buildMetricsSnapshotService(deps = {}) {
             compareRange,
             rowTwoCutoffCtx.cutoffHour,
             rowTwoCutoffCtx.cutoffHour,
+            spec.brandKey,
           )
         : checkoutInitiatedPair;
 
@@ -2626,7 +2639,7 @@ function buildMetricsSnapshotService(deps = {}) {
 
     if (granularity === "hourly") {
       [currentRows, previousRows] = await Promise.all([
-        fetchHourlyRows(spec.conn, spec.start, spec.end, spec.filters, cutoffHour),
+        fetchHourlyRows(spec.conn, spec.start, spec.end, spec.filters, cutoffHour, spec.brandKey),
         compareRange
           ? fetchHourlyRows(
               spec.conn,
@@ -2634,6 +2647,7 @@ function buildMetricsSnapshotService(deps = {}) {
               compareRange.end,
               spec.filters,
               cutoffCtx.includesToday ? cutoffHour : 23,
+              spec.brandKey,
             )
           : Promise.resolve([]),
       ]);
@@ -2656,9 +2670,9 @@ function buildMetricsSnapshotService(deps = {}) {
 
     if (granularity === "daily") {
       [currentRows, previousRows] = await Promise.all([
-        fetchDailyRows(spec.conn, spec.start, spec.end, spec.filters),
+        fetchDailyRows(spec.conn, spec.start, spec.end, spec.filters, spec.brandKey),
         compareRange
-          ? fetchDailyRows(spec.conn, compareRange.start, compareRange.end, spec.filters)
+          ? fetchDailyRows(spec.conn, compareRange.start, compareRange.end, spec.filters, spec.brandKey)
           : Promise.resolve([]),
       ]);
       const points = buildDailyPoints(currentRows, spec.start, spec.end);
@@ -2678,9 +2692,9 @@ function buildMetricsSnapshotService(deps = {}) {
     }
 
     [currentRows, previousRows] = await Promise.all([
-      fetchMonthlyRows(spec.conn, spec.start, spec.end, spec.filters),
+      fetchMonthlyRows(spec.conn, spec.start, spec.end, spec.filters, spec.brandKey),
       compareRange
-        ? fetchMonthlyRows(spec.conn, compareRange.start, compareRange.end, spec.filters)
+        ? fetchMonthlyRows(spec.conn, compareRange.start, compareRange.end, spec.filters, spec.brandKey)
         : Promise.resolve([]),
     ]);
     return {
@@ -2712,7 +2726,7 @@ function buildMetricsSnapshotService(deps = {}) {
       : null;
     const [baseRows, paymentRows, discountRows, utmRows] = await Promise.all([
       includeDaily
-        ? fetchDailyRows(spec.conn, spec.start, spec.end, {})
+        ? fetchDailyRows(spec.conn, spec.start, spec.end, {}, spec.brandKey)
         : Promise.resolve([]),
       includeDaily
         ? spec.conn.query(

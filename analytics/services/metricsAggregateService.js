@@ -2,6 +2,7 @@ const { QueryTypes } = require("sequelize");
 const {
   appendUtmWhere,
 } = require("../shared/utils/filters");
+const { ciEventsSqlExpr } = require("./metricsFoundation");
 
 function pickSupportedUtmFilters(filters = {}) {
   return {
@@ -194,7 +195,8 @@ function appendProductFilter(sql, replacements, productId, column = "product_id"
   return sql;
 }
 
-async function queryOverallSummaryTotals(conn, start, end) {
+async function queryOverallSummaryTotals(conn, start, end, brandKey = null) {
+  const ciEventsExpr = ciEventsSqlExpr(brandKey);
   const sql = `
     SELECT
       COALESCE(SUM(total_orders), 0) AS total_orders,
@@ -202,7 +204,7 @@ async function queryOverallSummaryTotals(conn, start, end) {
       COALESCE(SUM(COALESCE(adjusted_total_sessions, total_sessions)), 0) AS total_sessions,
       COALESCE(SUM(total_atc_sessions), 0) AS total_atc_sessions,
       (
-        SELECT COALESCE(SUM(COALESCE(ci_events, 0) + COALESCE(buy_now_events, 0)), 0)
+        SELECT COALESCE(SUM(${ciEventsExpr}), 0)
         FROM hourly_sessions_summary_shopify
         WHERE date >= ? AND date <= ?
       ) AS total_ci_events
@@ -216,7 +218,8 @@ async function queryOverallSummaryTotals(conn, start, end) {
   return rows?.[0] || {};
 }
 
-async function queryOverallSummaryPair(conn, currentRange, previousRange) {
+async function queryOverallSummaryPair(conn, currentRange, previousRange, brandKey = null) {
+  const ciEventsExpr = ciEventsSqlExpr(brandKey);
   const combinedStart =
     currentRange.start <= previousRange.start
       ? currentRange.start
@@ -233,7 +236,7 @@ async function queryOverallSummaryPair(conn, currentRange, previousRange) {
       COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN COALESCE(adjusted_total_sessions, total_sessions) ELSE 0 END), 0) AS current_total_sessions,
       COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_atc_sessions ELSE 0 END), 0) AS current_total_atc_sessions,
       (
-        SELECT COALESCE(SUM(COALESCE(ci_events, 0) + COALESCE(buy_now_events, 0)), 0)
+        SELECT COALESCE(SUM(${ciEventsExpr}), 0)
         FROM hourly_sessions_summary_shopify
         WHERE date >= ? AND date <= ?
       ) AS current_total_ci_events,
@@ -242,7 +245,7 @@ async function queryOverallSummaryPair(conn, currentRange, previousRange) {
       COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN COALESCE(adjusted_total_sessions, total_sessions) ELSE 0 END), 0) AS previous_total_sessions,
       COALESCE(SUM(CASE WHEN date >= ? AND date <= ? THEN total_atc_sessions ELSE 0 END), 0) AS previous_total_atc_sessions,
       (
-        SELECT COALESCE(SUM(COALESCE(ci_events, 0) + COALESCE(buy_now_events, 0)), 0)
+        SELECT COALESCE(SUM(${ciEventsExpr}), 0)
         FROM hourly_sessions_summary_shopify
         WHERE date >= ? AND date <= ?
       ) AS previous_total_ci_events

@@ -106,6 +106,15 @@ function buildRowTwoComparisonCutoffs(cutoffCtx) {
   };
 }
 
+// AJMAL's checkout-initiated count should be ci_events alone — every other
+// brand keeps ci_events + buy_now_events, matching how buy-now purchases are
+// tracked as a distinct funnel step only for AJMAL.
+function ciEventsSqlExpr(brandKey) {
+  return brandKey && String(brandKey).trim().toUpperCase() === "AJMAL"
+    ? "COALESCE(ci_events, 0)"
+    : "COALESCE(ci_events, 0) + COALESCE(buy_now_events, 0)";
+}
+
 module.exports = {
   IST_OFFSET_MIN,
   DEFAULT_TIMEZONE,
@@ -128,4 +137,5 @@ module.exports = {
   buildCompletedHourCutoffContext,
   buildCompletedHourOrderCutoffTime,
   buildRowTwoComparisonCutoffs,
+  ciEventsSqlExpr,
 };
