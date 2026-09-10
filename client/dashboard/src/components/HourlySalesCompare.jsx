@@ -1384,15 +1384,19 @@ export default memo(function HourlySalesCompare({
   const axisGroups = useMemo(() => {
     const groups = new Map();
 
+    // One axis per selected metric (keyed by the metric, not by unit kind) so
+    // that e.g. two percent metrics each get their own scale. Composite series
+    // (Mode of Payment split) still share their parent metric's axis.
     visibleDefs.forEach((def) => {
-      if (!groups.has(def.axisGroup)) {
-        groups.set(def.axisGroup, {
-          axisGroup: def.axisGroup,
+      const key = def.parentId || def.id;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          axisGroup: key,
           unitKind: def.unitKind,
           defs: [],
         });
       }
-      groups.get(def.axisGroup).defs.push(def);
+      groups.get(key).defs.push(def);
     });
 
     return Array.from(groups.values()).map((group, index) => {
@@ -1407,7 +1411,9 @@ export default memo(function HourlySalesCompare({
       return {
         ...group,
         color: highlightedDef.color,
-        orientation: index === 0 ? "left" : "right",
+        // Alternate sides so a 3rd axis lands on the left instead of stacking a
+        // second axis on the right (where it was being clipped and hidden).
+        orientation: index % 2 === 0 ? "left" : "right",
         domain: computeAxisDomain(values, group.unitKind),
       };
     });
@@ -1456,6 +1462,17 @@ export default memo(function HourlySalesCompare({
           ) || axisGroups.length === 1,
       )
     : axisGroups;
+
+  const leftAxisCount = activeAxisGroups.filter(
+    (group) => group.orientation === "left",
+  ).length;
+  const rightAxisCount = activeAxisGroups.length - leftAxisCount;
+  // Narrower ticks when a side stacks two axes, so the plot area stays usable.
+  const axisWidth = activeAxisGroups.length > 2 ? 58 : 70;
+  const chartMarginLeft =
+    leftAxisCount > 1 ? 16 : leftAxisCount > 0 ? 12 : 0;
+  const chartMarginRight =
+    rightAxisCount > 1 ? 16 : rightAxisCount > 0 ? 28 : 12;
 
   return (
     <Card
@@ -1715,8 +1732,8 @@ export default memo(function HourlySalesCompare({
                   data={processedChartData}
                   margin={{
                     top: 24,
-                    right: activeAxisGroups.length > 1 ? 28 : 12,
-                    left: activeAxisGroups.length > 0 ? 12 : 0,
+                    right: chartMarginRight,
+                    left: chartMarginLeft,
                     bottom: shouldTiltDateLabels ? 28 : 5,
                   }}
                   barGap={8}
@@ -1776,7 +1793,7 @@ export default memo(function HourlySalesCompare({
                               ? 0.4
                               : 1,
                         }}
-                        width={70}
+                        width={axisWidth}
                         domain={group.domain}
                       />
                     ))
@@ -1836,7 +1853,7 @@ export default memo(function HourlySalesCompare({
                       return (
                         <Bar
                           key={def.id}
-                          yAxisId={def.axisGroup}
+                          yAxisId={def.parentId || def.id}
                           dataKey={`${def.id}PrimaryValue`}
                           name={def.label}
                           fill={def.color}
@@ -1856,8 +1873,8 @@ export default memo(function HourlySalesCompare({
                   data={processedChartData}
                   margin={{
                     top: 18,
-                    right: activeAxisGroups.length > 1 ? 28 : 12,
-                    left: activeAxisGroups.length > 0 ? 12 : 0,
+                    right: chartMarginRight,
+                    left: chartMarginLeft,
                     bottom: shouldTiltDateLabels ? 28 : 5,
                   }}
                 >
@@ -1922,7 +1939,7 @@ export default memo(function HourlySalesCompare({
                             ? 0.4
                             : 1,
                       }}
-                      width={70}
+                      width={axisWidth}
                       domain={group.domain}
                     />
                   ))
@@ -2014,7 +2031,7 @@ export default memo(function HourlySalesCompare({
                     return (
                       <Fragment key={def.id}>
                         <Line
-                          yAxisId={def.axisGroup}
+                          yAxisId={def.parentId || def.id}
                           type="monotone"
                           dataKey={`${def.id}PrimaryValue`}
                           name={def.label}
@@ -2042,7 +2059,7 @@ export default memo(function HourlySalesCompare({
                           onMouseLeave={() => setHoveredMetric(null)}
                         />
                         <Line
-                          yAxisId={def.axisGroup}
+                          yAxisId={def.parentId || def.id}
                           type="monotone"
                           dataKey={`${def.id}PrimaryTailValue`}
                           name={`${def.label} (In progress)`}
