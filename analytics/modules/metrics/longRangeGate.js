@@ -1,5 +1,5 @@
 const DEFAULT_RESTRICT_DATA = true;
-const DEFAULT_DATA_RESTRICTION_PERIOD = 30;
+const DEFAULT_DATA_RESTRICTION_PERIOD = 31;
 
 function parseBooleanEnv(value, fallback = DEFAULT_RESTRICT_DATA) {
   if (value == null || value === "") return fallback;

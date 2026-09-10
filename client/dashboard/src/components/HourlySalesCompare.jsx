@@ -789,7 +789,7 @@ export default memo(function HourlySalesCompare({
   // Bar readability depends on bar count, not raw days spanned: a wide date
   // range collapses to just a few bars in the monthly view, so it's never
   // too crowded there the way a daily bar chart over the same range would be.
-  const canUseBarChart = viewMode === "monthly" ? true : daysInRange <= 8;
+  const canUseBarChart = viewMode === "monthly" ? true : daysInRange <= 31;
   const hasComparisonData = useMemo(
     () =>
       chartData.some(
