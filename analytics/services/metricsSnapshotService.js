@@ -1178,7 +1178,10 @@ async function queryDailyIntentRows(conn, start, end) {
           COALESCE(SUM(high_intent_pct * total_sessions), 0) AS high_pct_weighted,
           COALESCE(SUM(medium_intent_pct * total_sessions), 0) AS medium_pct_weighted,
           COALESCE(SUM(low_intent_pct * total_sessions), 0) AS low_pct_weighted,
-          COALESCE(SUM(total_sessions), 0) AS total_sessions
+          COALESCE(SUM(total_sessions), 0) AS total_sessions,
+          COALESCE(SUM(high_sessions), 0) AS high_sessions,
+          COALESCE(SUM(medium_sessions), 0) AS medium_sessions,
+          COALESCE(SUM(low_sessions), 0) AS low_sessions
         FROM daily_user_intent_summary
         WHERE date >= ? AND date <= ?
         GROUP BY date
@@ -1199,6 +1202,9 @@ async function queryDailyIntentRows(conn, start, end) {
           totalSessions > 0 ? Number(row.medium_pct_weighted || 0) / totalSessions : 0,
         low_intent_pct:
           totalSessions > 0 ? Number(row.low_pct_weighted || 0) / totalSessions : 0,
+        high_intent_sessions: Number(row.high_sessions || 0),
+        medium_intent_sessions: Number(row.medium_sessions || 0),
+        low_intent_sessions: Number(row.low_sessions || 0),
       };
     });
   } catch (error) {
@@ -1469,6 +1475,9 @@ function buildMetricShape(metrics) {
     high_intent_pct: Number(metrics.high_intent_pct || 0),
     medium_intent_pct: Number(metrics.medium_intent_pct || 0),
     low_intent_pct: Number(metrics.low_intent_pct || 0),
+    high_intent_sessions: Number(metrics.high_intent_sessions || 0),
+    medium_intent_sessions: Number(metrics.medium_intent_sessions || 0),
+    low_intent_sessions: Number(metrics.low_intent_sessions || 0),
   };
 }
 
@@ -1720,6 +1729,9 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
       high_intent_pct: 0,
       medium_intent_pct: 0,
       low_intent_pct: 0,
+      high_intent_sessions: 0,
+      medium_intent_sessions: 0,
+      low_intent_sessions: 0,
     });
     for (const row of salesRows) {
       byDate.set(String(row.date), {
@@ -1754,6 +1766,9 @@ async function fetchDailyRows(conn, start, end, filters = {}) {
       existing.high_intent_pct = row.high_intent_pct;
       existing.medium_intent_pct = row.medium_intent_pct;
       existing.low_intent_pct = row.low_intent_pct;
+      existing.high_intent_sessions = row.high_intent_sessions;
+      existing.medium_intent_sessions = row.medium_intent_sessions;
+      existing.low_intent_sessions = row.low_intent_sessions;
       byDate.set(String(row.date), existing);
     }
     return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));

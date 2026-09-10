@@ -806,7 +806,10 @@ function buildDesktopMetrics({
       mode === "S" ? (value) => nfInt.format(value) : (value) => nfPct.format(value),
     activeColor,
     hidden,
-    ...createSelectionProps(id, metricKey),
+    // The trend chart has separate metric ids for the percent vs. session-
+    // count series (e.g. "high_intent" vs "high_intent_sessions") — select
+    // whichever one matches the card's current S/% toggle.
+    ...createSelectionProps(id, mode === "S" ? `${metricKey}_sessions` : metricKey),
   });
 
   const cards = [

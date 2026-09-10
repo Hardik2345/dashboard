@@ -17,6 +17,12 @@ export const TREND_METRICS = [
   "performance",
   "payment_orders",
   "payment_sales",
+  "high_intent",
+  "medium_intent",
+  "low_intent",
+  "high_intent_sessions",
+  "medium_intent_sessions",
+  "low_intent_sessions",
 ];
 
 export const TREND_METRIC_SET = new Set(TREND_METRICS);

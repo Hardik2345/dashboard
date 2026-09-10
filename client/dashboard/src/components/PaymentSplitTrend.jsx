@@ -312,12 +312,17 @@ function buildTooltipRows(payload = [], chartMode, formatter) {
         ? dataKey.replace("Pct", "")
         : dataKey;
       const rawValue = Number(entry.payload?.[rawKey] || 0);
+      // Share of this point's total (orders/sales) contributed by this category.
+      const totalKey = bucket === "Previous" ? "comparisonTotal" : "currentTotal";
+      const bucketTotal = Number(entry.payload?.[totalKey] || 0);
+      const sharePct = bucketTotal > 0 ? (rawValue / bucketTotal) * 100 : null;
       return {
         color: entry.color || entry.fill || entry.stroke,
         name,
         bucket,
         valueColor: TOOLTIP_VALUE_COLORS[index % TOOLTIP_VALUE_COLORS.length],
         displayValue: formatter(rawValue),
+        shareLabel: sharePct == null ? "" : `(${nfPercent1.format(sharePct / 100)})`,
       };
     });
 }
@@ -363,6 +368,15 @@ const TrendTooltip = ({ active, payload, label, formatter, chartMode }) => {
             >
               {row.displayValue}
             </Typography>
+            {row.shareLabel ? (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ fontWeight: 600 }}
+              >
+                {row.shareLabel}
+              </Typography>
+            ) : null}
           </Box>
         ))}
       </Box>

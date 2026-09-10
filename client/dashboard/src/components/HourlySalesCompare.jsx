@@ -308,7 +308,9 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
       axisGroup: "percent",
       color: "#22c55e",
       strokeDasharray: "2 0",
-      accessor: (metrics) => Number(metrics?.high_intent_pct || 0),
+      // Backend sends intent pct on a 0-100 scale (matching the KPI card),
+      // but nfPercent1 is an Intl percent formatter expecting a 0-1 fraction.
+      accessor: (metrics) => Number(metrics?.high_intent_pct || 0) / 100,
       formatter: (value) => nfPercent1.format(value || 0),
       compactFormatter: (value) => nfPercent1.format(value || 0),
     },
@@ -319,7 +321,7 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
       axisGroup: "percent",
       color: "#f59e0b",
       strokeDasharray: "6 2",
-      accessor: (metrics) => Number(metrics?.medium_intent_pct || 0),
+      accessor: (metrics) => Number(metrics?.medium_intent_pct || 0) / 100,
       formatter: (value) => nfPercent1.format(value || 0),
       compactFormatter: (value) => nfPercent1.format(value || 0),
     },
@@ -330,9 +332,42 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
       axisGroup: "percent",
       color: "#ef4444",
       strokeDasharray: "1 3",
-      accessor: (metrics) => Number(metrics?.low_intent_pct || 0),
+      accessor: (metrics) => Number(metrics?.low_intent_pct || 0) / 100,
       formatter: (value) => nfPercent1.format(value || 0),
       compactFormatter: (value) => nfPercent1.format(value || 0),
+    },
+    high_intent_sessions: {
+      id: "high_intent_sessions",
+      label: "High Intent",
+      unitKind: "count",
+      axisGroup: "count",
+      color: "#22c55e",
+      strokeDasharray: "2 0",
+      accessor: (metrics) => Number(metrics?.high_intent_sessions || 0),
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    medium_intent_sessions: {
+      id: "medium_intent_sessions",
+      label: "Medium Intent",
+      unitKind: "count",
+      axisGroup: "count",
+      color: "#f59e0b",
+      strokeDasharray: "6 2",
+      accessor: (metrics) => Number(metrics?.medium_intent_sessions || 0),
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
+    },
+    low_intent_sessions: {
+      id: "low_intent_sessions",
+      label: "Low Intent",
+      unitKind: "count",
+      axisGroup: "count",
+      color: "#ef4444",
+      strokeDasharray: "1 3",
+      accessor: (metrics) => Number(metrics?.low_intent_sessions || 0),
+      formatter: (value) => nfInt0.format(value || 0),
+      compactFormatter: (value) => nfCompactInt.format(value || 0),
     },
     performance: {
       id: "performance",
@@ -774,7 +809,6 @@ export default memo(function HourlySalesCompare({
       (isLongRange ||
         hasPerformanceSelected ||
         hasActiveProductTypeFilter ||
-        hasIntentSelected ||
         (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend)) &&
       viewMode === "hourly"
     ) {
@@ -783,12 +817,21 @@ export default memo(function HourlySalesCompare({
   }, [
     canUseHourlyPaymentTrend,
     hasActiveProductTypeFilter,
-    hasIntentSelected,
     hasPaymentCompositeSelected,
     hasPerformanceSelected,
     isLongRange,
     viewMode,
   ]);
+
+  // Intent metrics (high/medium/low) only have a daily grain
+  // (daily_user_intent_summary) — no hourly or monthly rollup exists, so
+  // selecting one always forces the trend chart into the daily view,
+  // regardless of which view it's currently switching away from.
+  useEffect(() => {
+    if (hasIntentSelected && viewMode !== "daily") {
+      setViewMode("daily");
+    }
+  }, [hasIntentSelected, viewMode]);
 
   useEffect(() => {
     setHiddenMetricIds((prev) =>
@@ -1384,15 +1427,19 @@ export default memo(function HourlySalesCompare({
   const axisGroups = useMemo(() => {
     const groups = new Map();
 
+    // One axis per selected metric (keyed by the metric, not by unit kind) so
+    // that e.g. two percent metrics each get their own scale. Composite series
+    // (Mode of Payment split) still share their parent metric's axis.
     visibleDefs.forEach((def) => {
-      if (!groups.has(def.axisGroup)) {
-        groups.set(def.axisGroup, {
-          axisGroup: def.axisGroup,
+      const key = def.parentId || def.id;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          axisGroup: key,
           unitKind: def.unitKind,
           defs: [],
         });
       }
-      groups.get(def.axisGroup).defs.push(def);
+      groups.get(key).defs.push(def);
     });
 
     return Array.from(groups.values()).map((group, index) => {
@@ -1407,7 +1454,9 @@ export default memo(function HourlySalesCompare({
       return {
         ...group,
         color: highlightedDef.color,
-        orientation: index === 0 ? "left" : "right",
+        // Alternate sides so a 3rd axis lands on the left instead of stacking a
+        // second axis on the right (where it was being clipped and hidden).
+        orientation: index % 2 === 0 ? "left" : "right",
         domain: computeAxisDomain(values, group.unitKind),
       };
     });
@@ -1456,6 +1505,17 @@ export default memo(function HourlySalesCompare({
           ) || axisGroups.length === 1,
       )
     : axisGroups;
+
+  const leftAxisCount = activeAxisGroups.filter(
+    (group) => group.orientation === "left",
+  ).length;
+  const rightAxisCount = activeAxisGroups.length - leftAxisCount;
+  // Narrower ticks when a side stacks two axes, so the plot area stays usable.
+  const axisWidth = activeAxisGroups.length > 2 ? 58 : 70;
+  const chartMarginLeft =
+    leftAxisCount > 1 ? 16 : leftAxisCount > 0 ? 12 : 0;
+  const chartMarginRight =
+    rightAxisCount > 1 ? 16 : rightAxisCount > 0 ? 28 : 12;
 
   return (
     <Card
@@ -1715,8 +1775,8 @@ export default memo(function HourlySalesCompare({
                   data={processedChartData}
                   margin={{
                     top: 24,
-                    right: activeAxisGroups.length > 1 ? 28 : 12,
-                    left: activeAxisGroups.length > 0 ? 12 : 0,
+                    right: chartMarginRight,
+                    left: chartMarginLeft,
                     bottom: shouldTiltDateLabels ? 28 : 5,
                   }}
                   barGap={8}
@@ -1776,7 +1836,7 @@ export default memo(function HourlySalesCompare({
                               ? 0.4
                               : 1,
                         }}
-                        width={70}
+                        width={axisWidth}
                         domain={group.domain}
                       />
                     ))
@@ -1836,7 +1896,7 @@ export default memo(function HourlySalesCompare({
                       return (
                         <Bar
                           key={def.id}
-                          yAxisId={def.axisGroup}
+                          yAxisId={def.parentId || def.id}
                           dataKey={`${def.id}PrimaryValue`}
                           name={def.label}
                           fill={def.color}
@@ -1856,8 +1916,8 @@ export default memo(function HourlySalesCompare({
                   data={processedChartData}
                   margin={{
                     top: 18,
-                    right: activeAxisGroups.length > 1 ? 28 : 12,
-                    left: activeAxisGroups.length > 0 ? 12 : 0,
+                    right: chartMarginRight,
+                    left: chartMarginLeft,
                     bottom: shouldTiltDateLabels ? 28 : 5,
                   }}
                 >
@@ -1922,7 +1982,7 @@ export default memo(function HourlySalesCompare({
                             ? 0.4
                             : 1,
                       }}
-                      width={70}
+                      width={axisWidth}
                       domain={group.domain}
                     />
                   ))
@@ -2014,7 +2074,7 @@ export default memo(function HourlySalesCompare({
                     return (
                       <Fragment key={def.id}>
                         <Line
-                          yAxisId={def.axisGroup}
+                          yAxisId={def.parentId || def.id}
                           type="monotone"
                           dataKey={`${def.id}PrimaryValue`}
                           name={def.label}
@@ -2042,7 +2102,7 @@ export default memo(function HourlySalesCompare({
                           onMouseLeave={() => setHoveredMetric(null)}
                         />
                         <Line
-                          yAxisId={def.axisGroup}
+                          yAxisId={def.parentId || def.id}
                           type="monotone"
                           dataKey={`${def.id}PrimaryTailValue`}
                           name={`${def.label} (In progress)`}
