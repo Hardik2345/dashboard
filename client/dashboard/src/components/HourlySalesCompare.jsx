@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, memo } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, memo } from "react";
 import {
   Card,
   CardContent,
@@ -713,7 +713,7 @@ export default memo(function HourlySalesCompare({
   const [chartMode, setChartMode] = useState("line");
   const [rangeLabels, setRangeLabels] = useState({ current: "", previous: "" });
   const [hiddenMetricIds, setHiddenMetricIds] = useState([]);
-  const [visibleRangeLines, setVisibleRangeLines] = useState(["primary"]);
+  const [visibleRangeLines, setVisibleRangeLines] = useState(["primary", "comparison"]);
   const [hoveredMetric, setHoveredMetric] = useState(null);
 
   const start = query?.start;
@@ -850,6 +850,20 @@ export default memo(function HourlySalesCompare({
       setChartMode("line");
     }
   }, [canUseBarChart, chartMode]);
+
+  // Default to Daily + Bar the moment the selected range grows to 3+ days
+  // (only on that transition, so a manual override made while already in a
+  // 3+ day range isn't fought on every subsequent render). Ranges over 8
+  // days still fall back to Line via the canUseBarChart effect above.
+  const isMultiDayRange = daysInRange >= 3;
+  const wasMultiDayRangeRef = useRef(isMultiDayRange);
+  useEffect(() => {
+    if (isMultiDayRange && !wasMultiDayRangeRef.current) {
+      setViewMode("daily");
+      setChartMode("bar");
+    }
+    wasMultiDayRangeRef.current = isMultiDayRange;
+  }, [isMultiDayRange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2011,6 +2025,7 @@ export default memo(function HourlySalesCompare({
                         currentValue={point.currentValue}
                         metricValues={point}
                         hiddenMetricIds={hiddenMetricIds}
+                        visibleRangeLines={visibleRangeLines}
                       />
                     );
                   }}

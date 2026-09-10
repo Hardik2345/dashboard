@@ -84,6 +84,11 @@ const saveState = (state) => {
     const toSave = {
       start: state.start,
       end: state.end,
+      // Date fields are only restored on load if this matches "today" at
+      // that time — keeps the selection while navigating within the same
+      // day, but always resets to today on a fresh day instead of carrying
+      // forward a date picked weeks ago.
+      savedOn: new Date().toISOString().slice(0, 10),
       compareMode: state.compareMode,
       compareStart: state.compareStart,
       compareEnd: state.compareEnd,
@@ -111,10 +116,11 @@ const loadState = () => {
 };
 
 const saved = loadState();
+const savedDateIsFromToday = saved.savedOn === today;
 
 const initialState = {
-  start: saved.start || today,
-  end: saved.end || today,
+  start: (savedDateIsFromToday && saved.start) || today,
+  end: (savedDateIsFromToday && saved.end) || today,
   page: 1,
   pageSize: saved.pageSize || 10,
   sortBy: "sessions",
@@ -123,9 +129,9 @@ const initialState = {
   totalCount: 0,
   status: "idle",
   error: null,
-  compareMode: saved.compareMode ?? false,
-  compareStart: saved.compareStart || null,
-  compareEnd: saved.compareEnd || null,
+  compareMode: savedDateIsFromToday ? (saved.compareMode ?? false) : false,
+  compareStart: savedDateIsFromToday ? saved.compareStart || null : null,
+  compareEnd: savedDateIsFromToday ? saved.compareEnd || null : null,
 
   filters: Array.isArray(saved.filters) ? saved.filters : [],
   productTypes: Array.isArray(saved.productTypes) ? saved.productTypes : [],
