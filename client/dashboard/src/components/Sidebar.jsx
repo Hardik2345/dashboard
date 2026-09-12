@@ -22,6 +22,7 @@ import {
   Package,
   ClipboardList,
   Gauge,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -74,6 +75,7 @@ const NAV_ITEMS = [
       { id: "bundles", label: "Bundles", icon: Table2 },
       { id: "inventory", label: "Inventory", icon: Package },
       { id: "web-vitals", label: "Web Vitals", icon: Gauge },
+      { id: "pnl", label: "P&L", icon: Wallet },
       { id: "requests", label: "Requests", icon: ClipboardList },
     ],
   },
